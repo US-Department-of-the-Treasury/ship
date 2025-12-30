@@ -69,7 +69,7 @@ async function seed() {
       { email: 'jack.brown@ship.local', name: 'Jack Brown' },
     ];
 
-    const passwordHash = await bcrypt.hash('password', 10);
+    const passwordHash = await bcrypt.hash('admin123', 10);
     let usersCreated = 0;
 
     for (const member of teamMembers) {
@@ -89,7 +89,7 @@ async function seed() {
     }
 
     if (usersCreated > 0) {
-      console.log(`✅ Created ${usersCreated} users (all use password: password)`);
+      console.log(`✅ Created ${usersCreated} users (all use password: admin123)`);
     } else {
       console.log('ℹ️  All users already exist');
     }
@@ -99,7 +99,7 @@ async function seed() {
     console.log('');
     console.log('Login credentials:');
     console.log('  Email: dev@ship.local');
-    console.log('  Password: password');
+    console.log('  Password: admin123');
   } catch (error) {
     console.error('❌ Seed failed:', error);
     process.exit(1);
