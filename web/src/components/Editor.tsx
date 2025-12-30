@@ -31,6 +31,10 @@ interface EditorProps {
   sidebar?: React.ReactNode;
   /** Callback to create a sub-document (for slash commands) */
   onCreateSubDocument?: () => Promise<{ id: string; title: string } | null>;
+  /** Callback to navigate to a document (for slash commands) */
+  onNavigateToDocument?: (id: string) => void;
+  /** Callback to delete the document */
+  onDelete?: () => void;
 }
 
 type SyncStatus = 'connecting' | 'synced' | 'disconnected';
@@ -58,6 +62,8 @@ export function Editor({
   headerBadge,
   sidebar,
   onCreateSubDocument,
+  onNavigateToDocument,
+  onDelete,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -153,8 +159,8 @@ export function Editor({
   // Create slash commands extension (memoized to avoid recreation)
   const slashCommandsExtension = useMemo(() => {
     if (!onCreateSubDocument) return null;
-    return createSlashCommands({ onCreateSubDocument });
-  }, [onCreateSubDocument]);
+    return createSlashCommands({ onCreateSubDocument, onNavigateToDocument });
+  }, [onCreateSubDocument, onNavigateToDocument]);
 
   // Build extensions - only include CollaborationCursor when provider is ready
   const baseExtensions = [
@@ -242,6 +248,18 @@ export function Editor({
           </span>
         </div>
 
+        {/* Delete button */}
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-red-500/10 hover:text-red-500 transition-colors"
+            title="Delete document"
+            aria-label="Delete document"
+          >
+            <TrashIcon />
+          </button>
+        )}
+
         {/* Connected users */}
         <div className="flex items-center gap-1">
           {connectedUsers.map((user, index) => (
@@ -259,9 +277,9 @@ export function Editor({
 
       {/* Content area with optional sidebar */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Editor area */}
-        <div className="flex-1 overflow-auto p-8">
-          <div className="mx-auto max-w-3xl">
+        {/* Editor area - clickable to focus at end */}
+        <div className="flex flex-1 flex-col overflow-auto cursor-text">
+          <div className="mx-auto max-w-3xl w-full p-8">
             {/* Large document title */}
             <input
               ref={titleInputRef}
@@ -273,6 +291,28 @@ export function Editor({
             />
             <EditorContent editor={editor} />
           </div>
+          {/* Spacer to fill remaining height - clickable to focus editor at end */}
+          <div
+            className="flex-1 min-h-[200px]"
+            onClick={() => {
+              if (!editor) return;
+              // Focus editor at the end
+              const lastNode = editor.state.doc.lastChild;
+              const isLastNodeEmpty = lastNode?.type.name === 'paragraph' && lastNode.content.size === 0;
+
+              if (isLastNodeEmpty) {
+                // Focus the existing empty paragraph at the end
+                editor.chain().focus('end').run();
+              } else {
+                // Insert a new empty paragraph at the end of the document and focus it
+                const endPos = editor.state.doc.content.size;
+                editor.chain()
+                  .insertContentAt(endPos, { type: 'paragraph' })
+                  .focus('end')
+                  .run();
+              }
+            }}
+          />
         </div>
 
         {/* Optional sidebar (e.g., issue properties) */}
@@ -330,6 +370,14 @@ function ExpandLeftIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 19l-7-7 7-7m8 14V5" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
     </svg>
   );
 }

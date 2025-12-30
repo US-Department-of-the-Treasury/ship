@@ -15,6 +15,7 @@ interface DocumentsContextValue {
   loading: boolean;
   createDocument: (parentId?: string) => Promise<WikiDocument | null>;
   updateDocument: (id: string, updates: Partial<WikiDocument>) => Promise<WikiDocument | null>;
+  deleteDocument: (id: string) => Promise<boolean>;
   refreshDocuments: () => Promise<void>;
 }
 
@@ -88,8 +89,24 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
     return null;
   }, []);
 
+  const deleteDocument = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/api/documents/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        setDocuments(prev => prev.filter(d => d.id !== id));
+        return true;
+      }
+    } catch (err) {
+      console.error('Failed to delete document:', err);
+    }
+    return false;
+  }, []);
+
   return (
-    <DocumentsContext.Provider value={{ documents, loading, createDocument, updateDocument, refreshDocuments }}>
+    <DocumentsContext.Provider value={{ documents, loading, createDocument, updateDocument, deleteDocument, refreshDocuments }}>
       {children}
     </DocumentsContext.Provider>
   );
