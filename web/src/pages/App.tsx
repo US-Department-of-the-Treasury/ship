@@ -91,7 +91,7 @@ export function AppLayout() {
           />
           <RailIcon
             icon={<TeamIcon />}
-            label="Team"
+            label="Teams"
             active={activeMode === 'team'}
             onClick={() => handleModeClick('team')}
           />
@@ -140,7 +140,7 @@ export function AppLayout() {
               {activeMode === 'docs' && 'Documents'}
               {activeMode === 'issues' && 'Issues'}
               {activeMode === 'projects' && 'Projects'}
-              {activeMode === 'team' && 'Team'}
+              {activeMode === 'team' && 'Teams'}
               {activeMode === 'settings' && 'Settings'}
             </span>
             <div className="flex items-center gap-1">

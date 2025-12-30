@@ -12,19 +12,19 @@ test.describe('Team Mode (Phase 7)', () => {
     await expect(page).not.toHaveURL('/login', { timeout: 5000 })
   })
 
-  test('can navigate to Team mode via icon rail', async ({ page }) => {
-    // Click Team icon in rail
-    await page.getByRole('button', { name: 'Team' }).click()
+  test('can navigate to Teams mode via icon rail', async ({ page }) => {
+    // Click Teams icon in rail
+    await page.getByRole('button', { name: 'Teams' }).click()
 
     // Should navigate to /team
     await expect(page).toHaveURL('/team', { timeout: 5000 })
   })
 
-  test('Team mode shows header with team member count', async ({ page }) => {
+  test('Teams mode shows header with team member count', async ({ page }) => {
     await page.goto('/team')
 
-    // Should see Team heading
-    await expect(page.getByRole('heading', { name: 'Team' })).toBeVisible({ timeout: 5000 })
+    // Should see Teams heading
+    await expect(page.getByRole('heading', { name: 'Teams' })).toBeVisible({ timeout: 5000 })
 
     // Should see team member count
     await expect(page.getByText(/\d+ team members/)).toBeVisible({ timeout: 5000 })

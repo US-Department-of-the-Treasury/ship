@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { cn } from '@/lib/cn';
 
@@ -42,35 +42,64 @@ interface TeamGridData {
   users: User[];
   sprints: Sprint[];
   associations: Record<string, Record<number, CellData>>;
+  currentSprintNumber: number;
 }
+
+const SPRINTS_PER_LOAD = 5; // How many sprints to load when scrolling
+const SCROLL_THRESHOLD = 200; // Pixels from edge to trigger load
 
 export function TeamModePage() {
   const [data, setData] = useState<TeamGridData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState<'left' | 'right' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sprintRange, setSprintRange] = useState<{ min: number; max: number } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const hasScrolledToCurrentRef = useRef(false);
 
+  // Initial load
   useEffect(() => {
     fetchTeamGrid();
   }, []);
 
-  // Scroll to current sprint on load
+  // Scroll to current sprint on initial load
   useEffect(() => {
-    if (data && scrollContainerRef.current) {
+    if (data && scrollContainerRef.current && !hasScrolledToCurrentRef.current) {
       const currentSprintIndex = data.sprints.findIndex(s => s.isCurrent);
-      if (currentSprintIndex > 0) {
-        const columnWidth = 140; // matches w-[140px]
-        const scrollPosition = currentSprintIndex * columnWidth - 100;
-        scrollContainerRef.current.scrollLeft = Math.max(0, scrollPosition);
+      if (currentSprintIndex >= 0) {
+        // Use requestAnimationFrame to ensure DOM is ready
+        requestAnimationFrame(() => {
+          if (scrollContainerRef.current) {
+            const columnWidth = 140;
+            // Position current sprint at the left edge (show one previous sprint for context)
+            const scrollPosition = Math.max(0, (currentSprintIndex - 1) * columnWidth);
+            scrollContainerRef.current.scrollLeft = scrollPosition;
+            hasScrolledToCurrentRef.current = true;
+          }
+        });
       }
     }
   }, [data]);
 
-  async function fetchTeamGrid() {
+  async function fetchTeamGrid(fromSprint?: number, toSprint?: number) {
     try {
-      const res = await fetch(`${API_URL}/api/team/grid`, { credentials: 'include' });
+      const params = new URLSearchParams();
+      if (fromSprint !== undefined) params.set('fromSprint', String(fromSprint));
+      if (toSprint !== undefined) params.set('toSprint', String(toSprint));
+
+      const url = `${API_URL}/api/team/grid${params.toString() ? `?${params}` : ''}`;
+      const res = await fetch(url, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch team grid');
-      const json = await res.json();
+      const json: TeamGridData = await res.json();
+
+      // Set initial sprint range
+      if (json.sprints.length > 0) {
+        setSprintRange({
+          min: json.sprints[0].number,
+          max: json.sprints[json.sprints.length - 1].number,
+        });
+      }
+
       setData(json);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -78,6 +107,114 @@ export function TeamModePage() {
       setLoading(false);
     }
   }
+
+  // Fetch more sprints (left or right)
+  const fetchMoreSprints = useCallback(async (direction: 'left' | 'right') => {
+    if (!data || !sprintRange || loadingMore) return;
+
+    const fromSprint = direction === 'left'
+      ? Math.max(1, sprintRange.min - SPRINTS_PER_LOAD)
+      : sprintRange.max + 1;
+    const toSprint = direction === 'left'
+      ? sprintRange.min - 1
+      : sprintRange.max + SPRINTS_PER_LOAD;
+
+    // Don't load if we're at sprint 1 going left
+    if (direction === 'left' && sprintRange.min <= 1) return;
+
+    setLoadingMore(direction);
+
+    try {
+      const params = new URLSearchParams({
+        fromSprint: String(fromSprint),
+        toSprint: String(toSprint),
+      });
+
+      const res = await fetch(`${API_URL}/api/team/grid?${params}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to fetch more sprints');
+      const newData: TeamGridData = await res.json();
+
+      // Store current scroll position for left-loading
+      const scrollContainer = scrollContainerRef.current;
+      const prevScrollLeft = scrollContainer?.scrollLeft || 0;
+      const prevScrollWidth = scrollContainer?.scrollWidth || 0;
+
+      // Merge data
+      setData(prev => {
+        if (!prev) return newData;
+
+        const mergedSprints = direction === 'left'
+          ? [...newData.sprints, ...prev.sprints]
+          : [...prev.sprints, ...newData.sprints];
+
+        // Merge associations
+        const mergedAssociations = { ...prev.associations };
+        for (const [userId, userSprints] of Object.entries(newData.associations)) {
+          if (!mergedAssociations[userId]) {
+            mergedAssociations[userId] = {};
+          }
+          for (const [sprintNum, cellData] of Object.entries(userSprints)) {
+            mergedAssociations[userId][Number(sprintNum)] = cellData;
+          }
+        }
+
+        return {
+          ...prev,
+          sprints: mergedSprints,
+          associations: mergedAssociations,
+        };
+      });
+
+      // Update range
+      setSprintRange(prev => {
+        if (!prev) return { min: fromSprint, max: toSprint };
+        return {
+          min: direction === 'left' ? fromSprint : prev.min,
+          max: direction === 'right' ? toSprint : prev.max,
+        };
+      });
+
+      // Adjust scroll position when prepending (left load)
+      if (direction === 'left' && scrollContainer) {
+        requestAnimationFrame(() => {
+          const newScrollWidth = scrollContainer.scrollWidth;
+          const addedWidth = newScrollWidth - prevScrollWidth;
+          scrollContainer.scrollLeft = prevScrollLeft + addedWidth;
+        });
+      }
+    } catch (err) {
+      console.error('Error loading more sprints:', err);
+    } finally {
+      setLoadingMore(null);
+    }
+  }, [data, sprintRange, loadingMore]);
+
+  // Handle scroll to detect when near edges
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container || loadingMore) return;
+
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+
+    // Check if near left edge
+    if (scrollLeft < SCROLL_THRESHOLD && sprintRange && sprintRange.min > 1) {
+      fetchMoreSprints('left');
+    }
+
+    // Check if near right edge
+    if (scrollWidth - scrollLeft - clientWidth < SCROLL_THRESHOLD) {
+      fetchMoreSprints('right');
+    }
+  }, [fetchMoreSprints, loadingMore, sprintRange]);
+
+  // Attach scroll listener
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [handleScroll]);
 
   if (loading) {
     return (
@@ -103,7 +240,7 @@ export function TeamModePage() {
     <div className="flex h-full flex-col">
       {/* Header */}
       <header className="flex h-10 items-center justify-between border-b border-border px-4">
-        <h1 className="text-sm font-medium text-foreground">Team</h1>
+        <h1 className="text-sm font-medium text-foreground">Teams</h1>
         <span className="text-xs text-muted">
           {data.users.length} team members
         </span>
@@ -114,7 +251,7 @@ export function TeamModePage() {
         {/* Fixed user column */}
         <div className="flex flex-col border-r border-border bg-background">
           {/* Header cell */}
-          <div className="flex h-10 w-[180px] items-center border-b border-border px-3">
+          <div className="flex h-10 w-[180px] items-center justify-center border-b border-border px-3">
             <span className="text-xs font-medium text-muted">Team Member</span>
           </div>
           {/* User rows */}
@@ -136,9 +273,18 @@ export function TeamModePage() {
         {/* Scrollable sprint columns */}
         <div
           ref={scrollContainerRef}
-          className="flex-1 overflow-x-auto"
+          className="flex-1 overflow-x-auto overflow-y-hidden"
         >
-          <div className="inline-flex min-w-full">
+          <div className="inline-flex items-start">
+            {/* Loading indicator for left */}
+            {loadingMore === 'left' && (
+              <div className="flex h-full w-[60px] flex-col items-center justify-center">
+                <div className="h-10 flex items-center justify-center border-b border-border">
+                  <span className="text-xs text-muted animate-pulse">...</span>
+                </div>
+              </div>
+            )}
+
             {data.sprints.map((sprint) => (
               <div key={sprint.number} className="flex flex-col">
                 {/* Sprint header */}
@@ -174,6 +320,15 @@ export function TeamModePage() {
                 })}
               </div>
             ))}
+
+            {/* Loading indicator for right */}
+            {loadingMore === 'right' && (
+              <div className="flex h-full w-[60px] flex-col items-center justify-center">
+                <div className="h-10 flex items-center justify-center border-b border-border">
+                  <span className="text-xs text-muted animate-pulse">...</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -45,6 +45,9 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 // GET /api/team/grid - Get team grid data
+// Query params:
+//   fromSprint: number - start of range (default: current - 7)
+//   toSprint: number - end of range (default: current + 7)
 router.get('/grid', requireAuth, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.user!.workspaceId;
@@ -55,8 +58,7 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
       [workspaceId]
     );
 
-    // Get all sprints with their project info (past 2, current, future 2 based on dates)
-    // We'll generate sprint periods based on workspace start date
+    // Get workspace sprint start date
     const workspaceResult = await pool.query(
       `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
       [workspaceId]
@@ -65,7 +67,6 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
     const sprintStartDate = workspaceResult.rows[0]?.sprint_start_date || new Date().toISOString().split('T')[0];
     const sprintDurationDays = 14; // 2-week sprints
 
-    // Calculate sprint periods (2 past, current, 2 future = 5 total)
     const today = new Date();
     const startDate = new Date(sprintStartDate);
 
@@ -73,11 +74,19 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
     const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
     const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
 
-    // Generate sprint periods (2 before current, current, 2 after)
-    const sprints = [];
-    for (let i = currentSprintNumber - 2; i <= currentSprintNumber + 2; i++) {
-      if (i < 1) continue;
+    // Parse query params for sprint range (default: ~quarter each way)
+    const defaultBack = 7;
+    const defaultForward = 7;
+    const fromSprint = req.query.fromSprint
+      ? Math.max(1, parseInt(req.query.fromSprint as string, 10))
+      : Math.max(1, currentSprintNumber - defaultBack);
+    const toSprint = req.query.toSprint
+      ? parseInt(req.query.toSprint as string, 10)
+      : currentSprintNumber + defaultForward;
 
+    // Generate sprint periods for requested range
+    const sprints = [];
+    for (let i = fromSprint; i <= toSprint; i++) {
       const sprintStart = new Date(startDate);
       sprintStart.setDate(sprintStart.getDate() + (i - 1) * sprintDurationDays);
 
@@ -172,6 +181,7 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
       users: usersResult.rows,
       sprints,
       associations,
+      currentSprintNumber,
     });
   } catch (err) {
     console.error('Get team grid error:', err);

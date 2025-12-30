@@ -40,12 +40,15 @@ async function seed() {
       workspaceId = existingWorkspace.rows[0].id;
       console.log('ℹ️  Workspace already exists');
     } else {
-      // Create workspace
+      // Create workspace with sprint_start_date 3 months ago
+      // This gives us historical sprint data to display
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
       const workspaceResult = await pool.query(
         `INSERT INTO workspaces (name, sprint_start_date)
          VALUES ($1, $2)
          RETURNING id`,
-        ['Ship Workspace', new Date().toISOString().split('T')[0]]
+        ['Ship Workspace', threeMonthsAgo.toISOString().split('T')[0]]
       );
       workspaceId = workspaceResult.rows[0].id;
       console.log('✅ Workspace created');
