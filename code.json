@@ -9,6 +9,7 @@
       "name": "Ship",
       "description": "A modern project management and issue tracking application built with React, Express, and PostgreSQL. Features real-time collaboration, sprint planning, and a unified document model.",
       "repositoryURL": "https://github.com/US-Department-of-the-Treasury/ship",
+      "usageType": "openSource",
       "permissions": {
         "licenses": [
           {
@@ -37,8 +38,8 @@
         "JavaScript"
       ],
       "date": {
-        "created": "2024-12-30",
-        "lastModified": "2024-12-30"
+        "created": "2025-12-30",
+        "lastModified": "2025-12-30"
       }
     }
   ]
