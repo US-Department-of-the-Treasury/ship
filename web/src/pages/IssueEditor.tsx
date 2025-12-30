@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
+import { Combobox } from '@/components/ui/Combobox';
 
 interface TeamMember {
   id: string;
@@ -191,49 +192,40 @@ export function IssueEditorPage() {
             </PropertyRow>
 
             <PropertyRow label="Assignee">
-              <select
-                value={issue.assignee_id || ''}
-                onChange={(e) => handleUpdateIssue({ assignee_id: e.target.value || null })}
-                className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                <option key="unassigned" value="">Unassigned</option>
-                {teamMembers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
+              <Combobox
+                options={teamMembers.map((m) => ({ value: m.id, label: m.name }))}
+                value={issue.assignee_id}
+                onChange={(value) => handleUpdateIssue({ assignee_id: value })}
+                placeholder="Unassigned"
+                clearLabel="Unassigned"
+                searchPlaceholder="Search people..."
+                emptyText="No people found"
+              />
             </PropertyRow>
 
             <PropertyRow label="Project">
-              <select
-                value={issue.project_id || ''}
-                onChange={(e) => handleProjectChange(e.target.value || null)}
-                className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                <option key="no-project" value="">No Project</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.prefix} - {p.name}
-                  </option>
-                ))}
-              </select>
+              <Combobox
+                options={projects.map((p) => ({ value: p.id, label: p.name, description: p.prefix }))}
+                value={issue.project_id}
+                onChange={handleProjectChange}
+                placeholder="No Project"
+                clearLabel="No Project"
+                searchPlaceholder="Search projects..."
+                emptyText="No projects found"
+              />
             </PropertyRow>
 
             {issue.project_id && (
               <PropertyRow label="Sprint">
-                <select
-                  value={issue.sprint_id || ''}
-                  onChange={(e) => handleUpdateIssue({ sprint_id: e.target.value || null })}
-                  className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                >
-                  <option key="no-sprint" value="">No Sprint</option>
-                  {sprints.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.status})
-                    </option>
-                  ))}
-                </select>
+                <Combobox
+                  options={sprints.map((s) => ({ value: s.id, label: s.name, description: s.status }))}
+                  value={issue.sprint_id}
+                  onChange={(value) => handleUpdateIssue({ sprint_id: value })}
+                  placeholder="No Sprint"
+                  clearLabel="No Sprint"
+                  searchPlaceholder="Search sprints..."
+                  emptyText="No sprints found"
+                />
               </PropertyRow>
             )}
         </div>

@@ -222,23 +222,30 @@ test.describe('Sprints (Phase 6)', () => {
     // Wait for title to save (API call)
     await page.waitForResponse(resp => resp.url().includes('/api/issues/') && resp.request().method() === 'PATCH')
 
-    // Assign the issue to the project using the Project dropdown
-    const projectSelect = page.locator('select').filter({ has: page.locator('option:has-text("No Project")') })
-    await projectSelect.selectOption({ value: projectId })
+    // Assign the issue to the project using the Project combobox
+    // Click the Project combobox button (shows "No Project")
+    await page.getByRole('combobox').filter({ hasText: 'No Project' }).click()
+
+    // Wait for popover and click the project (it will show the project name)
+    await page.waitForTimeout(300) // Wait for popover animation
+    // The project name appears in the dropdown - click it
+    const projectItems = page.locator('[cmdk-item]')
+    // Find the project item (not "No Project") and click it
+    await projectItems.filter({ hasNot: page.getByText('No Project') }).first().click()
 
     // Wait for sprints to load (triggered by project selection)
-    await page.waitForTimeout(1000)
+    await page.waitForResponse(resp => resp.url().includes('/api/projects/') && resp.url().includes('/sprints'))
 
-    // Now use the Sprint picker dropdown to assign the issue to the sprint
-    const sprintSelect = page.locator('select').filter({ has: page.locator('option:has-text("No Sprint")') })
-    await expect(sprintSelect).toBeVisible({ timeout: 5000 })
+    // Now use the Sprint picker combobox to assign the issue to the sprint
+    // Click the Sprint combobox button (shows "No Sprint")
+    await page.getByRole('combobox').filter({ hasText: 'No Sprint' }).click()
 
-    // Find the option containing our sprint name and select it
-    const sprintOption = await sprintSelect.locator('option').filter({ hasText: 'Picker Test Sprint' }).getAttribute('value')
-    await sprintSelect.selectOption(sprintOption!)
+    // Wait for popover and click the sprint
+    await page.waitForTimeout(300)
+    await page.getByText('Picker Test Sprint').click()
 
     // Wait for the update to save
-    await page.waitForTimeout(500)
+    await page.waitForResponse(resp => resp.url().includes('/api/issues/') && resp.request().method() === 'PATCH')
 
     // Navigate to the sprint view
     await page.goto(sprintUrl)
