@@ -13,6 +13,8 @@
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/US-Department-of-the-Treasury/ship/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
+  <img src="https://img.shields.io/badge/Section_508-Compliant-blue.svg" alt="Section 508 Compliant">
+  <img src="https://img.shields.io/badge/WCAG_2.1-AA-blue.svg" alt="WCAG 2.1 AA">
 </p>
 
 ---
@@ -162,6 +164,88 @@ Ship is a monorepo with three packages:
 
 See [docs/application-architecture.md](docs/application-architecture.md) for more.
 
+### Repository Structure
+
+```
+ship/
+├── api/                    # Express backend
+│   ├── src/
+│   │   ├── routes/         # REST endpoints
+│   │   ├── collaboration/  # WebSocket + Yjs sync
+│   │   └── db/             # Database queries
+│   └── package.json
+│
+├── web/                    # React frontend
+│   ├── src/
+│   │   ├── components/     # UI components
+│   │   ├── pages/          # Route pages
+│   │   └── hooks/          # Custom hooks
+│   └── package.json
+│
+├── shared/                 # Shared TypeScript types
+├── e2e/                    # Playwright E2E tests
+└── docs/                   # Architecture documentation
+```
+
+---
+
+## Testing
+
+```bash
+# Run all E2E tests
+pnpm test
+
+# Run tests with UI
+pnpm test:ui
+
+# Run specific test file
+pnpm test e2e/documents.spec.ts
+```
+
+Ship uses Playwright for end-to-end testing with 73+ tests covering all major functionality.
+
+---
+
+## Deployment
+
+Ship supports multiple deployment patterns:
+
+| Environment | Recommended Approach |
+|-------------|---------------------|
+| **Development** | Local with Docker Compose |
+| **Staging** | AWS Elastic Beanstalk |
+| **Production** | AWS GovCloud with Terraform |
+
+### Docker
+
+```bash
+# Build production images
+docker build -t ship-api ./api
+docker build -t ship-web ./web
+
+# Run with Docker Compose
+docker-compose -f docker-compose.prod.yml up
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | Required |
+| `SESSION_SECRET` | Cookie signing secret | Required |
+| `PORT` | API server port | `3000` |
+
+---
+
+## Security
+
+- **No external telemetry** — No Sentry, PostHog, or third-party analytics
+- **No external CDN** — All assets served from your infrastructure
+- **Session timeout** — 15-minute idle timeout (government standard)
+- **Audit logging** — Track all document operations
+
+> **Reporting Vulnerabilities:** See [SECURITY.md](./SECURITY.md) for our vulnerability disclosure policy.
+
 ---
 
 ## Accessibility
@@ -178,6 +262,17 @@ Ship is Section 508 compliant and meets WCAG 2.1 AA standards:
 ## Contributing
 
 We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
+---
+
+## Documentation
+
+- [Application Architecture](./docs/application-architecture.md) — Tech stack and design decisions
+- [Unified Document Model](./docs/unified-document-model.md) — Data model and sync architecture
+- [Document Model Conventions](./docs/document-model-conventions.md) — Terminology and patterns
+- [Sprint Documentation Philosophy](./docs/sprint-documentation-philosophy.md) — Why sprints work the way they do
+- [Contributing Guidelines](./CONTRIBUTING.md) — How to contribute
+- [Security Policy](./SECURITY.md) — Vulnerability reporting
 
 ---
 
