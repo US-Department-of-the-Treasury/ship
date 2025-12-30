@@ -1,17 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { cn } from '@/lib/cn';
 
 type Mode = 'docs' | 'issues' | 'team' | 'settings';
-
-interface Document {
-  id: string;
-  title: string;
-  document_type: string;
-  created_at: string;
-  updated_at: string;
-}
 
 interface Issue {
   id: string;
@@ -26,7 +19,7 @@ export function AppLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const { documents, createDocument } = useDocuments();
   const [issues, setIssues] = useState<Issue[]>([]);
 
   // Determine active mode from path
@@ -41,14 +34,8 @@ export function AppLayout() {
   const activeMode = getActiveMode();
   const isInEditor = /^\/docs\/[^/]+$/.test(location.pathname) || /^\/issues\/[^/]+$/.test(location.pathname);
 
-  // Fetch documents for sidebar
+  // Fetch issues for sidebar
   useEffect(() => {
-    if (activeMode === 'docs') {
-      fetch(`${API_URL}/api/documents?type=wiki`, { credentials: 'include' })
-        .then(res => res.ok ? res.json() : [])
-        .then(setDocuments)
-        .catch(() => setDocuments([]));
-    }
     if (activeMode === 'issues') {
       fetch(`${API_URL}/api/issues`, { credentials: 'include' })
         .then(res => res.ok ? res.json() : [])
@@ -84,21 +71,10 @@ export function AppLayout() {
     }
   };
 
-  const createDocument = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/documents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled', document_type: 'wiki' }),
-      });
-      if (res.ok) {
-        const doc = await res.json();
-        setDocuments(prev => [doc, ...prev]);
-        navigate(`/docs/${doc.id}`);
-      }
-    } catch (err) {
-      console.error('Failed to create document:', err);
+  const handleCreateDocument = async () => {
+    const doc = await createDocument();
+    if (doc) {
+      navigate(`/docs/${doc.id}`);
     }
   };
 
@@ -164,7 +140,7 @@ export function AppLayout() {
             </span>
             {activeMode === 'docs' && (
               <button
-                onClick={createDocument}
+                onClick={handleCreateDocument}
                 className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
                 title="New document"
               >
@@ -231,7 +207,7 @@ function RailIcon({ icon, label, active, onClick }: { icon: React.ReactNode; lab
   );
 }
 
-function DocumentsList({ documents, activeId, onSelect }: { documents: Document[]; activeId?: string; onSelect: (id: string) => void }) {
+function DocumentsList({ documents, activeId, onSelect }: { documents: WikiDocument[]; activeId?: string; onSelect: (id: string) => void }) {
   if (documents.length === 0) {
     return <div className="px-3 py-2 text-sm text-muted">No documents yet</div>;
   }

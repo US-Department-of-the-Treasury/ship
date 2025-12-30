@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { DocumentsProvider } from '@/contexts/DocumentsContext';
 import { LoginPage } from '@/pages/Login';
 import { AppLayout } from '@/pages/App';
 import { DocumentsPage } from '@/pages/Documents';
@@ -54,7 +55,9 @@ function App() {
           path="/"
           element={
             <ProtectedRoute>
-              <AppLayout />
+              <DocumentsProvider>
+                <AppLayout />
+              </DocumentsProvider>
             </ProtectedRoute>
           }
         >

@@ -1,58 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDocuments } from '@/contexts/DocumentsContext';
 import { cn } from '@/lib/cn';
 
-interface Document {
-  id: string;
-  title: string;
-  document_type: string;
-  created_at: string;
-  updated_at: string;
-}
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-
 export function DocumentsPage() {
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { documents, loading, createDocument } = useDocuments();
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchDocuments();
-  }, []);
-
-  async function fetchDocuments() {
-    try {
-      const res = await fetch(`${API_URL}/api/documents?type=wiki`, {
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setDocuments(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch documents:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function createDocument() {
+  async function handleCreateDocument() {
     setCreating(true);
     try {
-      const res = await fetch(`${API_URL}/api/documents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled', document_type: 'wiki' }),
-      });
-      if (res.ok) {
-        const doc = await res.json();
+      const doc = await createDocument();
+      if (doc) {
         navigate(`/docs/${doc.id}`);
       }
-    } catch (err) {
-      console.error('Failed to create document:', err);
     } finally {
       setCreating(false);
     }
@@ -82,7 +44,7 @@ export function DocumentsPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-lg font-medium text-foreground">Documents</h1>
         <button
-          onClick={createDocument}
+          onClick={handleCreateDocument}
           disabled={creating}
           className={cn(
             'rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white',

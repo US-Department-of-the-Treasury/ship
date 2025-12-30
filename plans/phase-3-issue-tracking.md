@@ -101,21 +101,24 @@ Build `KanbanBoard.tsx`:
 - Reuse collaboration WebSocket server - add issue: prefix for issue descriptions
 - Issue IDs displayed as short codes (first 8 chars of UUID or sequential number)
 - Consider adding issue number sequence per workspace later
-## Session State (Auto-updated: 2025-12-30T18:27:46Z)
+## Session State (Auto-updated: 2025-12-30T18:43:07Z)
 
-**Branch:** `unknown`
+**Branch:** `master`
 **Project:** `/Users/corcoss/code/ship`
 
 ### Recent Commits
 ```
-
+ed17b87 Initial commit: Ship MVP with document and issue tracking
 ```
 
 ### Uncommitted Changes
 ```
-
+ M web/src/components/Editor.tsx
+ M web/src/pages/IssueEditor.tsx
+?? docs/solutions/
 ```
 
 ### Modified Files
-
+web/src/components/Editor.tsx
+web/src/pages/IssueEditor.tsx
 
