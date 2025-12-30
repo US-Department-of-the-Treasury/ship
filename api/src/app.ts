@@ -7,8 +7,9 @@ import documentsRoutes from './routes/documents.js';
 import issuesRoutes from './routes/issues.js';
 import projectsRoutes from './routes/projects.js';
 import sprintsRoutes from './routes/sprints.js';
+import teamRoutes from './routes/team.js';
 
-export function createApp(corsOrigin: string = 'http://localhost:5173') {
+export function createApp(corsOrigin: string = 'http://localhost:5173'): express.Express {
   const app = express();
 
   // Middleware
@@ -30,6 +31,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173') {
   app.use('/api/issues', issuesRoutes);
   app.use('/api/projects', projectsRoutes);
   app.use('/api/sprints', sprintsRoutes);
+  app.use('/api/team', teamRoutes);
 
   return app;
 }

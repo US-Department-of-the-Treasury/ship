@@ -196,7 +196,7 @@ export function AppLayout() {
               />
             )}
             {activeMode === 'team' && (
-              <div className="px-3 py-2 text-sm text-muted">Coming soon</div>
+              <div className="px-3 py-2 text-sm text-muted">Team grid view</div>
             )}
             {activeMode === 'settings' && (
               <div className="px-3 py-2 text-sm text-muted">Settings</div>

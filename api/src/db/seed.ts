@@ -51,23 +51,44 @@ async function seed() {
       console.log('✅ Workspace created');
     }
 
-    // Check if dev user exists
-    const existingUser = await pool.query(
-      'SELECT id FROM users WHERE email = $1',
-      ['dev@ship.local']
-    );
+    // Team members to seed (dev user + 10 fake users)
+    const teamMembers = [
+      { email: 'dev@ship.local', name: 'Dev User' },
+      { email: 'alice.chen@ship.local', name: 'Alice Chen' },
+      { email: 'bob.martinez@ship.local', name: 'Bob Martinez' },
+      { email: 'carol.williams@ship.local', name: 'Carol Williams' },
+      { email: 'david.kim@ship.local', name: 'David Kim' },
+      { email: 'emma.johnson@ship.local', name: 'Emma Johnson' },
+      { email: 'frank.garcia@ship.local', name: 'Frank Garcia' },
+      { email: 'grace.lee@ship.local', name: 'Grace Lee' },
+      { email: 'henry.patel@ship.local', name: 'Henry Patel' },
+      { email: 'iris.nguyen@ship.local', name: 'Iris Nguyen' },
+      { email: 'jack.brown@ship.local', name: 'Jack Brown' },
+    ];
 
-    if (existingUser.rows[0]) {
-      console.log('ℹ️  Dev user already exists');
-    } else {
-      // Create dev user with password "password"
-      const passwordHash = await bcrypt.hash('password', 10);
-      await pool.query(
-        `INSERT INTO users (workspace_id, email, password_hash, name)
-         VALUES ($1, $2, $3, $4)`,
-        [workspaceId, 'dev@ship.local', passwordHash, 'Dev User']
+    const passwordHash = await bcrypt.hash('password', 10);
+    let usersCreated = 0;
+
+    for (const member of teamMembers) {
+      const existingUser = await pool.query(
+        'SELECT id FROM users WHERE email = $1',
+        [member.email]
       );
-      console.log('✅ Dev user created (dev@ship.local / password)');
+
+      if (!existingUser.rows[0]) {
+        await pool.query(
+          `INSERT INTO users (workspace_id, email, password_hash, name)
+           VALUES ($1, $2, $3, $4)`,
+          [workspaceId, member.email, passwordHash, member.name]
+        );
+        usersCreated++;
+      }
+    }
+
+    if (usersCreated > 0) {
+      console.log(`✅ Created ${usersCreated} users (all use password: password)`);
+    } else {
+      console.log('ℹ️  All users already exist');
     }
 
     console.log('');

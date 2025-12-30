@@ -17,6 +17,7 @@ import { ProjectEditorPage } from '@/pages/ProjectEditor';
 import { ProjectViewPage } from '@/pages/ProjectView';
 import { SprintEditorPage } from '@/pages/SprintEditor';
 import { SprintViewPage } from '@/pages/SprintView';
+import { TeamModePage } from '@/pages/TeamMode';
 import './index.css';
 
 function PlaceholderPage({ title, subtitle }: { title: string; subtitle: string }) {
@@ -82,7 +83,7 @@ function App() {
           <Route path="projects/:id/view" element={<ProjectViewPage />} />
           <Route path="sprints/:id" element={<SprintEditorPage />} />
           <Route path="sprints/:id/view" element={<SprintViewPage />} />
-          <Route path="team" element={<PlaceholderPage title="Team" subtitle="Coming soon" />} />
+          <Route path="team" element={<TeamModePage />} />
           <Route path="settings" element={<PlaceholderPage title="Settings" subtitle="Coming soon" />} />
         </Route>
       </Routes>

@@ -368,6 +368,7 @@ AUTH-1 now appears in the sprint.
 - [ ] Cells = programs/projects the person is working on
 - [ ] Calculate association from: Sprint Plan owner_id + issue assignees
 - [ ] Implement column navigation (scroll through sprints)
+- [ ] the ship philosohy agent approves of the way we built this
 
 #### Validation
 ```bash
@@ -387,6 +388,7 @@ The Sprint 1 cell shows "AUTH" because AUTH-1 is assigned to me.
 I scroll left/right to see past/future sprints.
 The current sprint column is highlighted.
 I click a cell and see a tooltip with the specific issues.
+- [ ] the ship philosohy agent approves of the way we built this
 ```
 
 **Lock the Door:** E2E tests in `e2e/team-mode.spec.ts` cover all above criteria. `pnpm test:e2e` passes.
@@ -408,6 +410,7 @@ I click a cell and see a tooltip with the specific issues.
 - [ ] Add empty states (helpful prompts)
 - [ ] Optimize for information density
 - [ ] Final design polish pass
+- [ ] the ship philosohy agent approves of the way we built this
 
 #### Validation
 ```bash
@@ -425,6 +428,7 @@ Tab order is logical and focus is always visible.
 Error messages are announced to screen readers.
 Loading states show skeletons, not blank screens.
 The UI feels dense with information but not cluttered.
+- [ ] the ship philosohy agent approves of the way we built this
 ```
 
 **Lock the Door:** E2E tests in `e2e/accessibility.spec.ts` cover keyboard nav and axe-core audit. `pnpm test:e2e` passes.
@@ -697,41 +701,38 @@ Each phase is complete when:
 
 ---
 
-## Session State (Auto-updated: 2025-12-30T20:48:18Z)
+## Session State (Auto-updated: 2025-12-30T21:53:46Z)
 
 **Branch:** `master`
 **Project:** `/Users/corcoss/code/ship`
 
 ### Recent Commits
 ```
-7b6c985 Fix sidebar not syncing with document list
-6cd5446 Refactor editor to shared component with Notion-style title
-ed17b87 Initial commit: Ship MVP with document and issue tracking
+8bf24fc Replace native selects with searchable Combobox in IssueEditor
+e0d5757 Fix documents E2E tests to match actual UI
+eda4cae Fix race conditions, memory leaks, and performance issues
+542e41f Fix documents sharing content by recreating Y.Doc per documentId
+0fcdf4d Add E2E tests for docs, issues, projects, and sprints
 ```
 
 ### Uncommitted Changes
 ```
- M api/package.json
- M api/src/collaboration/index.ts
- M api/src/db/schema.sql
- M api/src/index.ts
- M api/src/routes/issues.ts
- M docs/document-model-conventions.md
- M package.json
+ M .gitignore
+ M api/src/app.ts
+ M api/src/db/seed.ts
  M plans/ship-mvp-greenfield.md
- M pnpm-lock.yaml
- M web/src/components/Editor.tsx
+ M web/src/main.tsx
+ M web/src/pages/App.tsx
+?? api/src/routes/team.ts
+?? e2e/team-mode.spec.ts
+?? web/src/pages/TeamMode.tsx
 ```
 
 ### Modified Files
-api/package.json
-api/src/collaboration/index.ts
-api/src/db/schema.sql
-api/src/index.ts
-api/src/routes/issues.ts
-docs/document-model-conventions.md
-package.json
+.gitignore
+api/src/app.ts
+api/src/db/seed.ts
 plans/ship-mvp-greenfield.md
-pnpm-lock.yaml
-web/src/components/Editor.tsx
+web/src/main.tsx
+web/src/pages/App.tsx
 
