@@ -53,45 +53,61 @@ export function IssueEditorPage() {
   // Get the current issue from context
   const issue = issues.find(i => i.id === id) || null;
 
-  // Fetch related data (projects, sprints, team members)
+  // Fetch related data (projects, team members) with cancellation
   useEffect(() => {
-    if (id) {
-      fetchRelatedData();
+    if (!id) return;
+
+    // Reset state for new issue
+    setProjects([]);
+    setTeamMembers([]);
+    setSprints([]);
+    setRelatedDataLoading(true);
+
+    let cancelled = false;
+
+    async function fetchRelatedData() {
+      try {
+        const [projectsRes, userRes] = await Promise.all([
+          fetch(`${API_URL}/api/projects`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/auth/me`, { credentials: 'include' }),
+        ]);
+
+        if (cancelled) return;
+
+        if (projectsRes.ok) {
+          setProjects(await projectsRes.json());
+        }
+
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          setTeamMembers([{ id: userData.id, name: userData.name }]);
+        }
+      } catch (err) {
+        if (!cancelled) console.error('Failed to fetch related data:', err);
+      } finally {
+        if (!cancelled) setRelatedDataLoading(false);
+      }
     }
+
+    fetchRelatedData();
+    return () => { cancelled = true; };
   }, [id]);
 
-  async function fetchRelatedData() {
-    try {
-      const [projectsRes, userRes] = await Promise.all([
-        fetch(`${API_URL}/api/projects`, { credentials: 'include' }),
-        fetch(`${API_URL}/api/auth/me`, { credentials: 'include' }),
-      ]);
-
-      if (projectsRes.ok) {
-        setProjects(await projectsRes.json());
-      }
-
-      if (userRes.ok) {
-        const userData = await userRes.json();
-        setTeamMembers([{ id: userData.id, name: userData.name }]);
-      }
-    } catch (err) {
-      console.error('Failed to fetch related data:', err);
-    } finally {
-      setRelatedDataLoading(false);
-    }
-  }
-
-  // Fetch sprints when issue's project changes
+  // Fetch sprints when issue's project changes with cancellation
   useEffect(() => {
-    if (issue?.project_id) {
-      fetch(`${API_URL}/api/projects/${issue.project_id}/sprints`, { credentials: 'include' })
-        .then(res => res.ok ? res.json() : [])
-        .then(setSprints)
-        .catch(() => setSprints([]));
-    } else {
+    if (!issue?.project_id) {
       setSprints([]);
+      return;
     }
+
+    let cancelled = false;
+
+    fetch(`${API_URL}/api/projects/${issue.project_id}/sprints`, { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => { if (!cancelled) setSprints(data); })
+      .catch(() => { if (!cancelled) setSprints([]); });
+
+    return () => { cancelled = true; };
   }, [issue?.project_id]);
 
   // Redirect if issue not found after loading

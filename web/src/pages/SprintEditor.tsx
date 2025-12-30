@@ -32,27 +32,38 @@ export function SprintEditorPage() {
   const [sprint, setSprint] = useState<Sprint | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Fetch sprint with cancellation and state reset
   useEffect(() => {
-    if (id) {
-      fetchSprint();
-    }
-  }, [id]);
+    if (!id) return;
 
-  async function fetchSprint() {
-    try {
-      const res = await fetch(`${API_URL}/api/sprints/${id}`, { credentials: 'include' });
-      if (res.ok) {
-        setSprint(await res.json());
-      } else if (res.status === 404) {
-        navigate('/projects');
-        return;
+    // Reset state for new sprint
+    setSprint(null);
+    setLoading(true);
+
+    let cancelled = false;
+
+    async function fetchSprint() {
+      try {
+        const res = await fetch(`${API_URL}/api/sprints/${id}`, { credentials: 'include' });
+
+        if (cancelled) return;
+
+        if (res.ok) {
+          setSprint(await res.json());
+        } else if (res.status === 404) {
+          navigate('/projects');
+          return;
+        }
+      } catch (err) {
+        if (!cancelled) console.error('Failed to fetch sprint:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch (err) {
-      console.error('Failed to fetch sprint:', err);
-    } finally {
-      setLoading(false);
     }
-  }
+
+    fetchSprint();
+    return () => { cancelled = true; };
+  }, [id, navigate]);
 
   const updateSprint = useCallback(async (updates: Partial<Sprint>) => {
     if (!id) return;

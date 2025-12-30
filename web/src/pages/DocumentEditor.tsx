@@ -28,8 +28,16 @@ export function DocumentEditorPage() {
     await contextUpdateDocument(id, updates);
   }, [id, contextUpdateDocument]);
 
-  // Debounce title updates
+  // Debounce title updates with cleanup on unmount
   const [titleTimeout, setTitleTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear timeout on unmount to prevent memory leak
+  useEffect(() => {
+    return () => {
+      if (titleTimeout) clearTimeout(titleTimeout);
+    };
+  }, [titleTimeout]);
+
   const debouncedTitleChange = useCallback((newTitle: string) => {
     if (!newTitle) return;
     if (titleTimeout) clearTimeout(titleTimeout);

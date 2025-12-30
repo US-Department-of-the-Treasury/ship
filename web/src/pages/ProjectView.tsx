@@ -52,34 +52,47 @@ export function ProjectViewPage() {
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
 
-  const fetchProject = useCallback(async () => {
-    if (!id) return;
-    try {
-      const [projectRes, issuesRes, sprintsRes] = await Promise.all([
-        fetch(`${API_URL}/api/projects/${id}`, { credentials: 'include' }),
-        fetch(`${API_URL}/api/projects/${id}/issues`, { credentials: 'include' }),
-        fetch(`${API_URL}/api/projects/${id}/sprints`, { credentials: 'include' }),
-      ]);
-
-      if (projectRes.ok) {
-        setProject(await projectRes.json());
-      } else {
-        navigate('/projects');
-        return;
-      }
-
-      if (issuesRes.ok) setIssues(await issuesRes.json());
-      if (sprintsRes.ok) setSprints(await sprintsRes.json());
-    } catch (err) {
-      console.error('Failed to fetch project:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [id, navigate]);
-
+  // Reset state and fetch data when project ID changes
   useEffect(() => {
-    fetchProject();
-  }, [fetchProject]);
+    if (!id) return;
+
+    // Reset state for new project
+    setProject(null);
+    setIssues([]);
+    setSprints([]);
+    setLoading(true);
+
+    let cancelled = false;
+
+    async function fetchData() {
+      try {
+        const [projectRes, issuesRes, sprintsRes] = await Promise.all([
+          fetch(`${API_URL}/api/projects/${id}`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/projects/${id}/issues`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/projects/${id}/sprints`, { credentials: 'include' }),
+        ]);
+
+        if (cancelled) return;
+
+        if (projectRes.ok) {
+          setProject(await projectRes.json());
+        } else {
+          navigate('/projects');
+          return;
+        }
+
+        if (issuesRes.ok) setIssues(await issuesRes.json());
+        if (sprintsRes.ok) setSprints(await sprintsRes.json());
+      } catch (err) {
+        if (!cancelled) console.error('Failed to fetch project:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    fetchData();
+    return () => { cancelled = true; };
+  }, [id, navigate]);
 
   const createIssue = async () => {
     if (!id) return;

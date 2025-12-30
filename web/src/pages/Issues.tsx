@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
@@ -66,12 +66,12 @@ export function IssuesPage() {
     return allIssues.filter(issue => states.includes(issue.state));
   }, [allIssues, stateFilter]);
 
-  const handleCreateIssue = async () => {
+  const handleCreateIssue = useCallback(async () => {
     const issue = await contextCreateIssue();
     if (issue) {
       navigate(`/issues/${issue.id}`);
     }
-  };
+  }, [contextCreateIssue, navigate]);
 
   const setFilter = (state: string) => {
     if (state) {
@@ -86,9 +86,12 @@ export function IssuesPage() {
   };
 
   // Keyboard shortcuts - "c" to create issue
-  useKeyboardShortcuts({
+  // Memoize shortcuts object to prevent re-adding event listeners on every render
+  const shortcuts = useMemo(() => ({
     c: handleCreateIssue,
-  });
+  }), [handleCreateIssue]);
+
+  useKeyboardShortcuts(shortcuts);
 
   if (loading) {
     return (

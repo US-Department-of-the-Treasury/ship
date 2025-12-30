@@ -38,45 +38,63 @@ export function SprintViewPage() {
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalText, setGoalText] = useState('');
 
-  const fetchData = useCallback(async () => {
-    if (!id) return;
-    try {
-      const sprintRes = await fetch(`${API_URL}/api/sprints/${id}`, { credentials: 'include' });
-
-      if (!sprintRes.ok) {
-        navigate('/projects');
-        return;
-      }
-
-      const sprintData = await sprintRes.json();
-      setSprint(sprintData);
-      setGoalText(sprintData.goal || '');
-
-      // Fetch sprint issues and backlog (project issues not in any sprint)
-      const [sprintIssuesRes, backlogRes] = await Promise.all([
-        fetch(`${API_URL}/api/sprints/${id}/issues`, { credentials: 'include' }),
-        fetch(`${API_URL}/api/projects/${sprintData.project_id}/issues`, { credentials: 'include' }),
-      ]);
-
-      if (sprintIssuesRes.ok) {
-        setSprintIssues(await sprintIssuesRes.json());
-      }
-
-      if (backlogRes.ok) {
-        const projectIssues = await backlogRes.json();
-        // Filter to only show issues not in any sprint
-        setBacklogIssues(projectIssues.filter((i: Issue & { sprint_ref_id: string | null }) => !i.sprint_ref_id));
-      }
-    } catch (err) {
-      console.error('Failed to fetch sprint:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [id, navigate]);
-
+  // Reset state and fetch data when sprint ID changes
   useEffect(() => {
+    if (!id) return;
+
+    // Reset state for new sprint
+    setSprint(null);
+    setSprintIssues([]);
+    setBacklogIssues([]);
+    setLoading(true);
+    setEditingGoal(false);
+
+    let cancelled = false;
+
+    async function fetchData() {
+      try {
+        const sprintRes = await fetch(`${API_URL}/api/sprints/${id}`, { credentials: 'include' });
+
+        if (cancelled) return;
+
+        if (!sprintRes.ok) {
+          navigate('/projects');
+          return;
+        }
+
+        const sprintData = await sprintRes.json();
+        if (cancelled) return;
+
+        setSprint(sprintData);
+        setGoalText(sprintData.goal || '');
+
+        // Fetch sprint issues and backlog (project issues not in any sprint)
+        const [sprintIssuesRes, backlogRes] = await Promise.all([
+          fetch(`${API_URL}/api/sprints/${id}/issues`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/projects/${sprintData.project_id}/issues`, { credentials: 'include' }),
+        ]);
+
+        if (cancelled) return;
+
+        if (sprintIssuesRes.ok) {
+          setSprintIssues(await sprintIssuesRes.json());
+        }
+
+        if (backlogRes.ok) {
+          const projectIssues = await backlogRes.json();
+          // Filter to only show issues not in any sprint
+          setBacklogIssues(projectIssues.filter((i: Issue & { sprint_ref_id: string | null }) => !i.sprint_ref_id));
+        }
+      } catch (err) {
+        if (!cancelled) console.error('Failed to fetch sprint:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
     fetchData();
-  }, [fetchData]);
+    return () => { cancelled = true; };
+  }, [id, navigate]);
 
   const moveToSprint = async (issueId: string) => {
     if (!id) return;
