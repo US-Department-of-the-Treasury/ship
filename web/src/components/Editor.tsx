@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
@@ -15,6 +15,14 @@ interface EditorProps {
   onTitleChange?: (title: string) => void;
   initialTitle?: string;
   onBack?: () => void;
+  /** Room prefix for collaboration (e.g., 'doc' or 'issue') */
+  roomPrefix?: string;
+  /** Placeholder text for the editor */
+  placeholder?: string;
+  /** Badge to show in header (e.g., issue number) */
+  headerBadge?: React.ReactNode;
+  /** Sidebar content (e.g., issue properties) */
+  sidebar?: React.ReactNode;
 }
 
 type SyncStatus = 'connecting' | 'synced' | 'disconnected';
@@ -29,20 +37,39 @@ function stringToColor(str: string): string {
   return `hsl(${hue}, 70%, 60%)`;
 }
 
-export function Editor({ documentId, userName, userColor, onTitleChange, initialTitle = 'Untitled', onBack }: EditorProps) {
-  const [title, setTitle] = useState(initialTitle);
+export function Editor({
+  documentId,
+  userName,
+  userColor,
+  onTitleChange,
+  initialTitle = 'Untitled',
+  onBack,
+  roomPrefix = 'doc',
+  placeholder = 'Start writing...',
+  headerBadge,
+  sidebar,
+}: EditorProps) {
+  const [title, setTitle] = useState(initialTitle === 'Untitled' || initialTitle === 'Untitled Issue' ? '' : initialTitle);
   const [ydoc] = useState(() => new Y.Doc());
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('connecting');
   const [connectedUsers, setConnectedUsers] = useState<{ name: string; color: string }[]>([]);
 
   const color = userColor || stringToColor(userName);
 
+  // Auto-focus title if empty (new document)
+  useEffect(() => {
+    if (!title && titleInputRef.current) {
+      titleInputRef.current.focus();
+    }
+  }, []);
+
   // Setup WebSocket provider
   useEffect(() => {
     // WebsocketProvider appends roomName to URL, so just provide base path
     const wsUrl = 'ws://localhost:3000/collaboration';
-    const wsProvider = new WebsocketProvider(wsUrl, `doc:${documentId}`, ydoc, {
+    const wsProvider = new WebsocketProvider(wsUrl, `${roomPrefix}:${documentId}`, ydoc, {
       connect: true,
     });
 
@@ -86,13 +113,13 @@ export function Editor({ documentId, userName, userColor, onTitleChange, initial
       wsProvider.awareness.off('change', updateUsers);
       wsProvider.destroy();
     };
-  }, [documentId, userName, color, ydoc]);
+  }, [documentId, userName, color, ydoc, roomPrefix]);
 
   // Build extensions - only include CollaborationCursor when provider is ready
   const extensions = provider
     ? [
         StarterKit.configure({ history: false }),
-        Placeholder.configure({ placeholder: 'Start writing...' }),
+        Placeholder.configure({ placeholder }),
         Collaboration.configure({ document: ydoc }),
         CollaborationCursor.configure({
           provider: provider,
@@ -101,7 +128,7 @@ export function Editor({ documentId, userName, userColor, onTitleChange, initial
       ]
     : [
         StarterKit.configure({ history: false }),
-        Placeholder.configure({ placeholder: 'Start writing...' }),
+        Placeholder.configure({ placeholder }),
         Collaboration.configure({ document: ydoc }),
       ];
 
@@ -137,6 +164,9 @@ export function Editor({ documentId, userName, userColor, onTitleChange, initial
             </svg>
           </button>
         )}
+
+        {/* Optional header badge (e.g., issue number) */}
+        {headerBadge}
 
         {/* Title (display only - edit via large title below) */}
         <span className="flex-1 truncate text-sm font-medium text-foreground">
@@ -175,19 +205,26 @@ export function Editor({ documentId, userName, userColor, onTitleChange, initial
         </div>
       </div>
 
-      {/* Editor area - full height */}
-      <div className="flex-1 overflow-auto p-8">
-        <div className="mx-auto max-w-3xl">
-          {/* Large document title */}
-          <input
-            type="text"
-            value={title}
-            onChange={handleTitleChange}
-            placeholder="Untitled"
-            className="mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none"
-          />
-          <EditorContent editor={editor} />
+      {/* Content area with optional sidebar */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Editor area */}
+        <div className="flex-1 overflow-auto p-8">
+          <div className="mx-auto max-w-3xl">
+            {/* Large document title */}
+            <input
+              ref={titleInputRef}
+              type="text"
+              value={title}
+              onChange={handleTitleChange}
+              placeholder="Untitled"
+              className="mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none"
+            />
+            <EditorContent editor={editor} />
+          </div>
         </div>
+
+        {/* Optional sidebar (e.g., issue properties) */}
+        {sidebar}
       </div>
     </div>
   );
