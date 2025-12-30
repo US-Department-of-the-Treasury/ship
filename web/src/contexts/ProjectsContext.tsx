@@ -52,7 +52,7 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name: 'Untitled Project' }),
+        body: JSON.stringify({ title: 'Untitled' }),
       });
       if (res.ok) {
         const project = await res.json();

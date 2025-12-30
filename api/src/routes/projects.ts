@@ -45,10 +45,20 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+// Helper to generate random prefix
+function generatePrefix(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let result = 'PRJ';
+  for (let i = 0; i < 5; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 // Validation schemas
 const createProjectSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
-  prefix: z.string().min(2).max(10).regex(/^[A-Z]+$/, 'Prefix must be uppercase letters only'),
+  prefix: z.string().min(2).max(10).regex(/^[A-Z]+$/, 'Prefix must be uppercase letters only').optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#6366f1'),
 });
 
@@ -118,17 +128,32 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, prefix, color } = parsed.data;
+    const { title, color } = parsed.data;
+    let prefix = parsed.data.prefix;
 
-    // Check prefix uniqueness within workspace
-    const existingPrefix = await pool.query(
-      `SELECT id FROM documents WHERE workspace_id = $1 AND prefix = $2 AND document_type = 'project'`,
-      [req.user!.workspaceId, prefix]
-    );
+    // Generate prefix if not provided, ensuring uniqueness
+    if (!prefix) {
+      let attempts = 0;
+      while (attempts < 10) {
+        prefix = generatePrefix();
+        const existingPrefix = await pool.query(
+          `SELECT id FROM documents WHERE workspace_id = $1 AND prefix = $2 AND document_type = 'project'`,
+          [req.user!.workspaceId, prefix]
+        );
+        if (existingPrefix.rows.length === 0) break;
+        attempts++;
+      }
+    } else {
+      // Check prefix uniqueness if explicitly provided
+      const existingPrefix = await pool.query(
+        `SELECT id FROM documents WHERE workspace_id = $1 AND prefix = $2 AND document_type = 'project'`,
+        [req.user!.workspaceId, prefix]
+      );
 
-    if (existingPrefix.rows.length > 0) {
-      res.status(400).json({ error: 'Project prefix already exists' });
-      return;
+      if (existingPrefix.rows.length > 0) {
+        res.status(400).json({ error: 'Project prefix already exists' });
+        return;
+      }
     }
 
     const result = await pool.query(

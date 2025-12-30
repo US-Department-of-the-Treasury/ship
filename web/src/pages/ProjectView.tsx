@@ -106,7 +106,7 @@ export function ProjectViewPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ ...data, project_id: id }),
+        body: JSON.stringify({ title: data.name, goal: data.goal, start_date: data.start_date, end_date: data.end_date, project_id: id }),
       });
       if (res.ok) {
         const sprint = await res.json();
@@ -255,7 +255,7 @@ export function ProjectViewPage() {
         {activeTab === 'sprints' && (
           <SprintsList
             sprints={sprints}
-            onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}`)}
+            onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
           />
         )}
 

@@ -128,7 +128,7 @@ export function SprintViewPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ sprint_status: status }),
       });
 
       if (res.ok) {

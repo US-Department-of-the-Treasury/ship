@@ -38,3 +38,10 @@ Thumbs.db
 
 # Playwright MCP screenshots
 .playwright-mcp/
+
+# Playwright test artifacts
+playwright-report/
+test-results/
+
+# Plans
+/plans
