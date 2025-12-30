@@ -10,6 +10,46 @@ interface DocumentTreeItemProps {
   onCreateChild: (parentId: string) => void;
 }
 
+function DocumentIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={cn('h-4 w-4', className)}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+      />
+    </svg>
+  );
+}
+
+function ChevronIcon({ isOpen, className }: { isOpen: boolean; className?: string }) {
+  return (
+    <svg
+      className={cn(
+        'h-4 w-4 transition-transform',
+        isOpen && 'rotate-90',
+        className
+      )}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 5l7 7-7 7"
+      />
+    </svg>
+  );
+}
+
 export function DocumentTreeItem({
   document,
   activeDocumentId,
@@ -23,13 +63,16 @@ export function DocumentTreeItem({
   const isActive = activeDocumentId === document.id;
   const hasChildren = document.children.length > 0;
 
+  // Show caret on hover if document has children, otherwise show icon
+  const showCaret = hasChildren && isHovered;
+
   return (
     <div>
       <div
         role="button"
         tabIndex={0}
         className={cn(
-          'group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm cursor-pointer',
+          'group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm cursor-pointer',
           'hover:bg-border/30 transition-colors',
           isActive && 'bg-accent/10 text-accent'
         )}
@@ -44,81 +87,54 @@ export function DocumentTreeItem({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Expand/collapse chevron */}
-        {hasChildren ? (
-          <button
-            type="button"
-            className="flex-shrink-0 p-0.5 rounded hover:bg-border/50"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsOpen(!isOpen);
-            }}
-          >
-            <svg
-              className={cn(
-                'h-3.5 w-3.5 text-muted transition-transform',
-                isOpen && 'rotate-90'
-              )}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+        {/* Icon slot: shows caret on hover (if has children), otherwise document icon */}
+        <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
+          {showCaret ? (
+            <button
+              type="button"
+              className="p-0 rounded hover:bg-border/50"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(!isOpen);
+              }}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 5l7 7-7 7"
-              />
-            </svg>
-          </button>
-        ) : (
-          <div className="w-4" />
-        )}
-
-        {/* Document icon */}
-        <svg
-          className="h-4 w-4 flex-shrink-0 text-muted"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
+              <ChevronIcon isOpen={isOpen} className="text-muted" />
+            </button>
+          ) : (
+            <DocumentIcon className="text-muted" />
+          )}
+        </div>
 
         {/* Title */}
         <span className="flex-1 truncate">{document.title || 'Untitled'}</span>
 
         {/* Add child button (shown on hover) */}
-        {isHovered && (
-          <button
-            type="button"
-            className="flex-shrink-0 p-0.5 rounded hover:bg-border/50 opacity-0 group-hover:opacity-100 transition-opacity"
-            onClick={(e) => {
-              e.stopPropagation();
-              onCreateChild(document.id);
-            }}
-            title="Add sub-document"
+        <button
+          type="button"
+          className={cn(
+            'flex-shrink-0 p-0.5 rounded hover:bg-border/50 transition-opacity',
+            isHovered ? 'opacity-100' : 'opacity-0'
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCreateChild(document.id);
+          }}
+          title="Add sub-document"
+        >
+          <svg
+            className="h-3.5 w-3.5 text-muted"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
           >
-            <svg
-              className="h-3.5 w-3.5 text-muted"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-          </button>
-        )}
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 4v16m8-8H4"
+            />
+          </svg>
+        </button>
       </div>
 
       {/* Children (collapsible) */}

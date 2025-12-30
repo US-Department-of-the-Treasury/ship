@@ -174,9 +174,11 @@ export function createSlashCommands({ onCreateSubDocument }: CreateSlashCommands
             .chain()
             .focus()
             .insertContent({
-              type: 'text',
-              marks: [{ type: 'link', attrs: { href: `/docs/${doc.id}`, target: '_self' } }],
-              text: doc.title || 'Untitled',
+              type: 'documentEmbed',
+              attrs: {
+                documentId: doc.id,
+                title: doc.title || 'Untitled',
+              },
             })
             .run();
         }

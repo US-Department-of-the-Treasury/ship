@@ -9,6 +9,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { cn } from '@/lib/cn';
 import { createSlashCommands } from './editor/SlashCommands';
+import { DocumentEmbed } from './editor/DocumentEmbed';
 import 'tippy.js/dist/tippy.css';
 
 interface EditorProps {
@@ -166,6 +167,7 @@ export function Editor({
         class: 'text-accent hover:underline cursor-pointer',
       },
     }),
+    DocumentEmbed,
     ...(slashCommandsExtension ? [slashCommandsExtension] : []),
   ];
 

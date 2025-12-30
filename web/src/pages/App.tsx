@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { useProjects, Project } from '@/contexts/ProjectsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { cn } from '@/lib/cn';
+import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 
 type Mode = 'docs' | 'issues' | 'projects' | 'team' | 'settings';
 
@@ -175,7 +176,7 @@ export function AppLayout() {
           {/* Sidebar content */}
           <div className="flex-1 overflow-auto py-2">
             {activeMode === 'docs' && (
-              <DocumentsList
+              <DocumentsTree
                 documents={documents}
                 activeId={location.pathname.split('/docs/')[1]}
                 onSelect={(id) => navigate(`/docs/${id}`)}
@@ -228,30 +229,125 @@ function RailIcon({ icon, label, active, onClick }: { icon: React.ReactNode; lab
   );
 }
 
-function DocumentsList({ documents, activeId, onSelect }: { documents: WikiDocument[]; activeId?: string; onSelect: (id: string) => void }) {
+function DocumentsTree({ documents, activeId, onSelect }: { documents: WikiDocument[]; activeId?: string; onSelect: (id: string) => void }) {
+  // Build tree structure - only roots at top level
+  const tree = useMemo(() => buildDocumentTree(documents), [documents]);
+
   if (documents.length === 0) {
     return <div className="px-3 py-2 text-sm text-muted">No documents yet</div>;
   }
 
   return (
     <ul className="space-y-0.5 px-2">
-      {documents.map((doc) => (
-        <li key={doc.id}>
-          <button
-            onClick={() => onSelect(doc.id)}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-              activeId === doc.id
-                ? 'bg-border/50 text-foreground'
-                : 'text-muted hover:bg-border/30 hover:text-foreground'
-            )}
-          >
-            <DocIcon />
-            <span className="truncate">{doc.title || 'Untitled'}</span>
-          </button>
-        </li>
+      {tree.map((doc) => (
+        <DocumentTreeItem
+          key={doc.id}
+          document={doc}
+          activeId={activeId}
+          onSelect={onSelect}
+          depth={0}
+        />
       ))}
     </ul>
+  );
+}
+
+function DocumentTreeItem({
+  document,
+  activeId,
+  onSelect,
+  depth
+}: {
+  document: DocumentTreeNode;
+  activeId?: string;
+  onSelect: (id: string) => void;
+  depth: number;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+
+  const isActive = activeId === document.id;
+  const hasChildren = document.children.length > 0;
+  const showCaret = hasChildren && isHovered;
+
+  return (
+    <li>
+      <div
+        role="button"
+        tabIndex={0}
+        className={cn(
+          'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors cursor-pointer',
+          isActive
+            ? 'bg-border/50 text-foreground'
+            : 'text-muted hover:bg-border/30 hover:text-foreground'
+        )}
+        style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        onClick={() => onSelect(document.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(document.id);
+          }
+        }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Icon slot: caret on hover (if has children), otherwise doc icon */}
+        <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
+          {showCaret ? (
+            <button
+              type="button"
+              className="p-0 rounded hover:bg-border/50"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(!isOpen);
+              }}
+            >
+              <ChevronIcon isOpen={isOpen} />
+            </button>
+          ) : (
+            <DocIcon />
+          )}
+        </div>
+        <span className="truncate">{document.title || 'Untitled'}</span>
+      </div>
+
+      {/* Children (collapsible) */}
+      {hasChildren && isOpen && (
+        <ul className="space-y-0.5">
+          {document.children.map((child) => (
+            <DocumentTreeItem
+              key={child.id}
+              document={child}
+              activeId={activeId}
+              onSelect={onSelect}
+              depth={depth + 1}
+            />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function ChevronIcon({ isOpen }: { isOpen: boolean }) {
+  return (
+    <svg
+      className={cn(
+        'h-4 w-4 text-muted transition-transform',
+        isOpen && 'rotate-90'
+      )}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 5l7 7-7 7"
+      />
+    </svg>
   );
 }
 
