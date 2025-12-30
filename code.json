@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "agency": "U.S. Department of the Treasury",
+  "measurementType": {
+    "method": "projects"
+  },
+  "releases": [
+    {
+      "name": "Ship",
+      "description": "A modern project management and issue tracking application built with React, Express, and PostgreSQL. Features real-time collaboration, sprint planning, and a unified document model.",
+      "repositoryURL": "https://github.com/US-Department-of-the-Treasury/ship",
+      "permissions": {
+        "licenses": [
+          {
+            "name": "MIT",
+            "URL": "https://github.com/US-Department-of-the-Treasury/ship/blob/master/LICENSE"
+          }
+        ],
+        "usageType": "openSource"
+      },
+      "laborHours": 200,
+      "tags": [
+        "project-management",
+        "issue-tracking",
+        "collaboration",
+        "react",
+        "typescript",
+        "postgresql"
+      ],
+      "contact": {
+        "email": "opensource@treasury.gov"
+      },
+      "status": "Development",
+      "vcs": "git",
+      "languages": [
+        "TypeScript",
+        "JavaScript"
+      ],
+      "date": {
+        "created": "2024-12-30",
+        "lastModified": "2024-12-30"
+      }
+    }
+  ]
+}
