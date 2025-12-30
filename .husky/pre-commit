@@ -1,0 +1,12 @@
+# Open source compliance checks (secrets scan + AI analysis)
+if command -v comply &> /dev/null; then
+  comply opensource --hook --staged
+else
+  echo ""
+  echo "WARNING: 'comply' CLI not installed - skipping open source compliance checks"
+  echo "Install with: pip install comply-cli"
+  echo ""
+  echo "This project requires comply for pre-commit security scanning."
+  echo "Your commit will proceed, but please install comply for future commits."
+  echo ""
+fi
