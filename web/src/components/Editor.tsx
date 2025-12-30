@@ -50,8 +50,19 @@ export function Editor({
   sidebar,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
-  const [ydoc] = useState(() => new Y.Doc());
   const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Create a new Y.Doc for each documentId - must recreate when doc changes
+  const [ydoc, setYdoc] = useState(() => new Y.Doc());
+  const prevDocIdRef = useRef(documentId);
+
+  // Recreate ydoc when documentId changes
+  useEffect(() => {
+    if (prevDocIdRef.current !== documentId) {
+      prevDocIdRef.current = documentId;
+      setYdoc(new Y.Doc());
+    }
+  }, [documentId]);
 
   // Sync title when initialTitle prop changes (e.g., from context update)
   useEffect(() => {
