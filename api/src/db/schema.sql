@@ -1,0 +1,86 @@
+-- Ship Database Schema
+
+-- Workspaces
+CREATE TABLE IF NOT EXISTS workspaces (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  sprint_start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Users and auth
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  name TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Sessions with 15-minute inactivity timeout
+CREATE TABLE IF NOT EXISTS sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  last_activity TIMESTAMPTZ DEFAULT now(),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Document types enum
+DO $$ BEGIN
+  CREATE TYPE document_type AS ENUM ('wiki', 'issue', 'program', 'project', 'sprint', 'person');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+-- Core document table (unified model)
+CREATE TABLE IF NOT EXISTS documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  document_type document_type NOT NULL DEFAULT 'wiki',
+  title TEXT NOT NULL DEFAULT 'Untitled',
+
+  -- TipTap JSON content stored as JSONB
+  content JSONB DEFAULT '{"type":"doc","content":[{"type":"paragraph"}]}',
+
+  -- Yjs binary state for collaboration
+  yjs_state BYTEA,
+
+  -- Hierarchy
+  parent_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+  position INTEGER DEFAULT 0,
+
+  -- Associations (for issues/sprints)
+  program_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+  project_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+  sprint_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+
+  -- Issue-specific fields
+  ticket_number INTEGER,
+  state TEXT DEFAULT 'backlog',
+  priority TEXT DEFAULT 'medium',
+  assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
+
+  -- Program-specific fields
+  prefix TEXT,
+
+  -- Timestamps
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_workspace_id ON users(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_documents_workspace_id ON documents(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_documents_parent_id ON documents(parent_id);
+CREATE INDEX IF NOT EXISTS idx_documents_document_type ON documents(document_type);
+CREATE INDEX IF NOT EXISTS idx_documents_program_id ON documents(program_id);
+CREATE INDEX IF NOT EXISTS idx_documents_state ON documents(state);
+CREATE INDEX IF NOT EXISTS idx_documents_assignee_id ON documents(assignee_id);
