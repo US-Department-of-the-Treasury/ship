@@ -35,7 +35,12 @@ export function LoginPage() {
       <div className="w-full max-w-[360px]">
         {/* Logo / Brand */}
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-semibold text-foreground">Ship</h1>
+          <img
+            src="/icons/white/logo-128.png"
+            alt="Ship"
+            className="mx-auto h-16 w-16"
+          />
+          <h1 className="mt-4 text-2xl font-semibold text-foreground">Ship</h1>
           <p className="mt-2 text-sm text-muted">Sign in to continue</p>
         </div>
 
@@ -59,6 +64,7 @@ export function LoginPage() {
               name="email"
               type="email"
               autoComplete="email"
+              autoFocus
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -109,7 +115,7 @@ export function LoginPage() {
         {/* Dev credentials hint */}
         <div className="mt-8 text-center text-xs text-muted">
           <p>Dev credentials:</p>
-          <p className="mt-1 font-mono text-foreground/60">
+          <p className="mt-1 font-mono text-muted">
             dev@ship.local / admin123
           </p>
         </div>

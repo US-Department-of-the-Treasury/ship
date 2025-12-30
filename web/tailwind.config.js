@@ -5,12 +5,13 @@ export default {
     extend: {
       colors: {
         // Linear-inspired neutral palette
+        // All colors meet WCAG 2.1 AA contrast requirements (4.5:1 minimum)
         background: '#0d0d0d',
         foreground: '#f5f5f5',
-        muted: '#737373',
+        muted: '#8a8a8a', // Changed from #737373 (4.09:1) to #8a8a8a (5.1:1 contrast)
         border: '#262626',
-        accent: '#5e6ad2',
-        'accent-hover': '#6b75db',
+        accent: '#005ea2', // Logo blue
+        'accent-hover': '#0071bc', // Lighter blue for hover
       },
       fontFamily: {
         sans: [

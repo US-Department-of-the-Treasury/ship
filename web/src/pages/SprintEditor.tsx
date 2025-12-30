@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
+import { EditorSkeleton } from '@/components/ui/Skeleton';
 
 interface Sprint {
   id: string;
@@ -88,11 +89,7 @@ export function SprintEditorPage() {
   }, [updateSprint]);
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-muted">Loading...</div>
-      </div>
-    );
+    return <EditorSkeleton />;
   }
 
   if (!sprint || !user) {

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDocuments } from '@/contexts/DocumentsContext';
 import { buildDocumentTree } from '@/lib/documentTree';
 import { DocumentTreeItem } from '@/components/DocumentTreeItem';
+import { DocumentsListSkeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/lib/cn';
 
 export function DocumentsPage() {
@@ -26,11 +27,7 @@ export function DocumentsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-muted">Loading...</div>
-      </div>
-    );
+    return <DocumentsListSkeleton />;
   }
 
   return (
@@ -57,7 +54,7 @@ export function DocumentsPage() {
         <div className="flex h-64 items-center justify-center">
           <div className="text-center">
             <p className="text-muted">No documents yet</p>
-            <p className="mt-1 text-sm text-muted/60">
+            <p className="mt-1 text-sm text-muted">
               Create your first document to get started
             </p>
           </div>

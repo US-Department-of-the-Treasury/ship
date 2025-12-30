@@ -4,6 +4,7 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useProjects, Project } from '@/contexts/ProjectsContext';
 import { cn } from '@/lib/cn';
+import { EditorSkeleton } from '@/components/ui/Skeleton';
 
 const PROJECT_COLORS = [
   '#6366f1', // Indigo
@@ -45,11 +46,7 @@ export function ProjectEditorPage() {
   }, [handleUpdateProject]);
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-muted">Loading...</div>
-      </div>
-    );
+    return <EditorSkeleton />;
   }
 
   if (!project || !user) {

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjects, Project } from '@/contexts/ProjectsContext';
+import { ProjectsListSkeleton } from '@/components/ui/Skeleton';
 
 export function ProjectsPage() {
   const navigate = useNavigate();
@@ -24,11 +25,7 @@ export function ProjectsPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-muted">Loading...</div>
-      </div>
-    );
+    return <ProjectsListSkeleton />;
   }
 
   return (

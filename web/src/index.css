@@ -24,7 +24,7 @@ body {
 
 /* Focus styles for accessibility */
 :focus-visible {
-  outline: 2px solid #5e6ad2;
+  outline: 2px solid #005ea2; /* Logo blue */
   outline-offset: 2px;
 }
 
@@ -34,7 +34,7 @@ input {
 }
 
 input::placeholder {
-  color: #737373;
+  color: #8a8a8a; /* WCAG 2.1 AA compliant (5.1:1 contrast against #0d0d0d) */
 }
 
 /* TipTap editor styles */
