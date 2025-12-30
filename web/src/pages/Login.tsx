@@ -4,8 +4,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
 
 export function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(import.meta.env.DEV ? 'dev@ship.local' : '');
+  const [password, setPassword] = useState(import.meta.env.DEV ? 'admin123' : '');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 

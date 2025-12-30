@@ -1,7 +1,7 @@
 ---
 title: Open Source Security Review Attestation
 date: 2025-12-30
-timestamp: 2025-12-30T23:24:21Z
+timestamp: 2025-12-30T23:28:54Z
 reviewer: Sam Corcos
 reviewer_email: samuel.corcos@treasury.gov
 reviewer_title: Security Reviewer
