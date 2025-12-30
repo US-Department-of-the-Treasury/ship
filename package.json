@@ -9,7 +9,8 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "dev": "pnpm --parallel --recursive run dev",
+    "dev": "./scripts/dev.sh",
+    "dev:raw": "pnpm --parallel --recursive run dev",
     "dev:api": "pnpm --filter @ship/api dev",
     "dev:web": "pnpm --filter @ship/web dev",
     "dev:shared": "pnpm --filter @ship/shared dev",
@@ -24,7 +25,6 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "worktree:init": "./scripts/worktree-init.sh",
-    "worktree:status": "./scripts/check-ports.sh",
     "db:seed": "pnpm --filter @ship/api db:seed"
   },
   "devDependencies": {
