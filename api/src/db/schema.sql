@@ -1,4 +1,5 @@
 -- Ship Database Schema
+-- Everything is a Document - Unified Model
 
 -- Workspaces
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -36,25 +37,24 @@ EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
 
--- Core document table (unified model)
+-- Core document table (unified model - EVERYTHING IS A DOCUMENT)
 CREATE TABLE IF NOT EXISTS documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   document_type document_type NOT NULL DEFAULT 'wiki',
   title TEXT NOT NULL DEFAULT 'Untitled',
 
-  -- TipTap JSON content stored as JSONB
+  -- TipTap JSON content stored as JSONB (shared by ALL document types)
   content JSONB DEFAULT '{"type":"doc","content":[{"type":"paragraph"}]}',
 
-  -- Yjs binary state for collaboration
+  -- Yjs binary state for collaboration (shared by ALL document types)
   yjs_state BYTEA,
 
   -- Hierarchy
   parent_id UUID REFERENCES documents(id) ON DELETE SET NULL,
   position INTEGER DEFAULT 0,
 
-  -- Associations (for issues/sprints)
-  program_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+  -- Associations (documents can reference other documents)
   project_id UUID REFERENCES documents(id) ON DELETE SET NULL,
   sprint_id UUID REFERENCES documents(id) ON DELETE SET NULL,
 
@@ -64,14 +64,26 @@ CREATE TABLE IF NOT EXISTS documents (
   priority TEXT DEFAULT 'medium',
   assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
 
-  -- Program-specific fields
+  -- Project-specific fields
   prefix TEXT,
+  color TEXT DEFAULT '#6366f1',
+  archived_at TIMESTAMPTZ,
+
+  -- Sprint-specific fields
+  start_date DATE,
+  end_date DATE,
+  sprint_status TEXT DEFAULT 'planned',
 
   -- Timestamps
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
   created_by UUID REFERENCES users(id) ON DELETE SET NULL
 );
+
+-- Unique constraint for project prefixes within a workspace
+CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_workspace_prefix
+  ON documents(workspace_id, prefix)
+  WHERE document_type = 'project' AND prefix IS NOT NULL;
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
@@ -81,6 +93,11 @@ CREATE INDEX IF NOT EXISTS idx_users_workspace_id ON users(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_documents_workspace_id ON documents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_documents_parent_id ON documents(parent_id);
 CREATE INDEX IF NOT EXISTS idx_documents_document_type ON documents(document_type);
-CREATE INDEX IF NOT EXISTS idx_documents_program_id ON documents(program_id);
+CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id);
+CREATE INDEX IF NOT EXISTS idx_documents_sprint_id ON documents(sprint_id);
 CREATE INDEX IF NOT EXISTS idx_documents_state ON documents(state);
 CREATE INDEX IF NOT EXISTS idx_documents_assignee_id ON documents(assignee_id);
+
+-- Drop the legacy separate tables if they exist (greenfield cleanup)
+DROP TABLE IF EXISTS sprints CASCADE;
+DROP TABLE IF EXISTS projects CASCADE;

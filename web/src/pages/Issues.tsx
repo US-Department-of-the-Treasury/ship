@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KanbanBoard } from '@/components/KanbanBoard';
+import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { cn } from '@/lib/cn';
 
 function useKeyboardShortcuts(shortcuts: Record<string, () => void>) {
@@ -25,20 +26,6 @@ function useKeyboardShortcuts(shortcuts: Record<string, () => void>) {
 }
 
 type ViewMode = 'list' | 'kanban';
-
-interface Issue {
-  id: string;
-  title: string;
-  state: string;
-  priority: string;
-  ticket_number: number;
-  assignee_id: string | null;
-  assignee_name: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const STATE_LABELS: Record<string, string> = {
   backlog: 'Backlog',
@@ -67,48 +54,22 @@ const PRIORITY_COLORS: Record<string, string> = {
 export function IssuesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [issues, setIssues] = useState<Issue[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { issues: allIssues, loading, createIssue: contextCreateIssue, updateIssue: contextUpdateIssue } = useIssues();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
   const stateFilter = searchParams.get('state') || '';
 
-  const fetchIssues = useCallback(async () => {
-    try {
-      let url = `${API_URL}/api/issues`;
-      if (stateFilter) {
-        url += `?state=${stateFilter}`;
-      }
-      const res = await fetch(url, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setIssues(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch issues:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [stateFilter]);
+  // Filter issues client-side based on state filter
+  const issues = useMemo(() => {
+    if (!stateFilter) return allIssues;
+    const states = stateFilter.split(',');
+    return allIssues.filter(issue => states.includes(issue.state));
+  }, [allIssues, stateFilter]);
 
-  useEffect(() => {
-    fetchIssues();
-  }, [fetchIssues]);
-
-  const createIssue = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/issues`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled Issue' }),
-      });
-      if (res.ok) {
-        const issue = await res.json();
-        navigate(`/issues/${issue.id}`);
-      }
-    } catch (err) {
-      console.error('Failed to create issue:', err);
+  const handleCreateIssue = async () => {
+    const issue = await contextCreateIssue();
+    if (issue) {
+      navigate(`/issues/${issue.id}`);
     }
   };
 
@@ -120,28 +81,13 @@ export function IssuesPage() {
     }
   };
 
-  const updateIssue = async (id: string, updates: { state: string }) => {
-    try {
-      const res = await fetch(`${API_URL}/api/issues/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(updates),
-      });
-      if (res.ok) {
-        // Optimistically update local state
-        setIssues(prev => prev.map(issue =>
-          issue.id === id ? { ...issue, ...updates } : issue
-        ));
-      }
-    } catch (err) {
-      console.error('Failed to update issue:', err);
-    }
+  const handleUpdateIssue = async (id: string, updates: { state: string }) => {
+    await contextUpdateIssue(id, updates);
   };
 
   // Keyboard shortcuts - "c" to create issue
   useKeyboardShortcuts({
-    c: createIssue,
+    c: handleCreateIssue,
   });
 
   if (loading) {
@@ -180,7 +126,7 @@ export function IssuesPage() {
             </button>
           </div>
           <button
-            onClick={createIssue}
+            onClick={handleCreateIssue}
             className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
           >
             New Issue
@@ -200,7 +146,7 @@ export function IssuesPage() {
       {viewMode === 'kanban' ? (
         <KanbanBoard
           issues={issues}
-          onUpdateIssue={updateIssue}
+          onUpdateIssue={handleUpdateIssue}
           onIssueClick={(id) => navigate(`/issues/${id}`)}
         />
       ) : (
@@ -210,7 +156,7 @@ export function IssuesPage() {
               <div className="text-center">
                 <p className="text-muted">No issues yet</p>
                 <button
-                  onClick={createIssue}
+                  onClick={handleCreateIssue}
                   className="mt-2 text-sm text-accent hover:underline"
                 >
                   Create your first issue
@@ -252,7 +198,7 @@ export function IssuesPage() {
                       {issue.assignee_name || 'Unassigned'}
                     </td>
                     <td className="px-6 py-3 text-sm text-muted">
-                      {formatDate(issue.updated_at)}
+                      {issue.updated_at ? formatDate(issue.updated_at) : '-'}
                     </td>
                   </tr>
                 ))}

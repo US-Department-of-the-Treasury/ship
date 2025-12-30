@@ -18,12 +18,17 @@ const conns = new Map<WebSocket, { docName: string; awarenessClientId: number }>
 // Debounce persistence (save every 2 seconds after changes)
 const pendingSaves = new Map<string, NodeJS.Timeout>();
 
+// Extract document ID from room name (format: "type:uuid")
+// All document types (doc, issue, project, sprint) map to the unified documents table
+function parseDocId(docName: string): string {
+  const parts = docName.split(':');
+  return parts.length > 1 ? parts[1]! : parts[0]!;
+}
+
 async function persistDocument(docName: string, doc: Y.Doc) {
   const state = Y.encodeStateAsUpdate(doc);
   const content = doc.getXmlFragment('default').toJSON();
-
-  // Extract document ID from room name (format: "doc:uuid")
-  const docId = docName.replace('doc:', '');
+  const docId = parseDocId(docName);
 
   try {
     await pool.query(
@@ -52,8 +57,9 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
   doc = new Y.Doc();
   docs.set(docName, doc);
 
-  // Load existing state from database
-  const docId = docName.replace('doc:', '');
+  // Load existing state from database (all document types use the unified documents table)
+  const docId = parseDocId(docName);
+
   try {
     const result = await pool.query(
       'SELECT yjs_state, content FROM documents WHERE id = $1',

@@ -1,0 +1,109 @@
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+
+export interface Issue {
+  id: string;
+  title: string;
+  state: string;
+  priority: string;
+  ticket_number: number;
+  display_id: string;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  project_id: string | null;
+  sprint_id: string | null;
+  project_name: string | null;
+  project_prefix: string | null;
+  sprint_name: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface IssuesContextValue {
+  issues: Issue[];
+  loading: boolean;
+  createIssue: () => Promise<Issue | null>;
+  updateIssue: (id: string, updates: Partial<Issue>) => Promise<Issue | null>;
+  refreshIssues: () => Promise<void>;
+}
+
+const IssuesContext = createContext<IssuesContextValue | null>(null);
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+export function IssuesProvider({ children }: { children: ReactNode }) {
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refreshIssues = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/issues`, {
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIssues(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch issues:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshIssues();
+  }, [refreshIssues]);
+
+  const createIssue = useCallback(async (): Promise<Issue | null> => {
+    try {
+      const res = await fetch(`${API_URL}/api/issues`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ title: 'Untitled' }),
+      });
+      if (res.ok) {
+        const issue = await res.json();
+        setIssues(prev => [issue, ...prev]);
+        return issue;
+      }
+    } catch (err) {
+      console.error('Failed to create issue:', err);
+    }
+    return null;
+  }, []);
+
+  const updateIssue = useCallback(async (id: string, updates: Partial<Issue>): Promise<Issue | null> => {
+    try {
+      const res = await fetch(`${API_URL}/api/issues/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        // Update the issue in the shared state
+        setIssues(prev => prev.map(i => i.id === id ? updated : i));
+        return updated;
+      }
+    } catch (err) {
+      console.error('Failed to update issue:', err);
+    }
+    return null;
+  }, []);
+
+  return (
+    <IssuesContext.Provider value={{ issues, loading, createIssue, updateIssue, refreshIssues }}>
+      {children}
+    </IssuesContext.Provider>
+  );
+}
+
+export function useIssues() {
+  const context = useContext(IssuesContext);
+  if (!context) {
+    throw new Error('useIssues must be used within IssuesProvider');
+  }
+  return context;
+}

@@ -2,72 +2,54 @@ import { useState, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
+import { useProjects, Project } from '@/contexts/ProjectsContext';
+import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { cn } from '@/lib/cn';
 
-type Mode = 'docs' | 'issues' | 'team' | 'settings';
-
-interface Issue {
-  id: string;
-  title: string;
-  state: string;
-  ticket_number: number;
-}
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+type Mode = 'docs' | 'issues' | 'projects' | 'team' | 'settings';
 
 export function AppLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { documents, createDocument } = useDocuments();
-  const [issues, setIssues] = useState<Issue[]>([]);
+  const { projects } = useProjects();
+  const { issues, createIssue } = useIssues();
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('ship:leftSidebarCollapsed') === 'true';
+  });
+
+  // Persist sidebar state
+  useEffect(() => {
+    localStorage.setItem('ship:leftSidebarCollapsed', String(leftSidebarCollapsed));
+  }, [leftSidebarCollapsed]);
 
   // Determine active mode from path
   const getActiveMode = (): Mode => {
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
+    if (location.pathname.startsWith('/projects') || location.pathname.startsWith('/sprints')) return 'projects';
     if (location.pathname.startsWith('/team')) return 'team';
     if (location.pathname.startsWith('/settings')) return 'settings';
     return 'docs';
   };
 
   const activeMode = getActiveMode();
-  const isInEditor = /^\/docs\/[^/]+$/.test(location.pathname) || /^\/issues\/[^/]+$/.test(location.pathname);
-
-  // Fetch issues for sidebar
-  useEffect(() => {
-    if (activeMode === 'issues') {
-      fetch(`${API_URL}/api/issues`, { credentials: 'include' })
-        .then(res => res.ok ? res.json() : [])
-        .then(setIssues)
-        .catch(() => setIssues([]));
-    }
-  }, [activeMode]);
 
   const handleModeClick = (mode: Mode) => {
     switch (mode) {
       case 'docs': navigate('/docs'); break;
       case 'issues': navigate('/issues'); break;
+      case 'projects': navigate('/projects'); break;
       case 'team': navigate('/team'); break;
       case 'settings': navigate('/settings'); break;
     }
   };
 
-  const createIssue = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/issues`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled Issue' }),
-      });
-      if (res.ok) {
-        const issue = await res.json();
-        setIssues(prev => [issue, ...prev]);
-        navigate(`/issues/${issue.id}`);
-      }
-    } catch (err) {
-      console.error('Failed to create issue:', err);
+  const handleCreateIssue = async () => {
+    const issue = await createIssue();
+    if (issue) {
+      navigate(`/issues/${issue.id}`);
     }
   };
 
@@ -102,12 +84,29 @@ export function AppLayout() {
             onClick={() => handleModeClick('issues')}
           />
           <RailIcon
+            icon={<ProjectsIcon />}
+            label="Projects"
+            active={activeMode === 'projects'}
+            onClick={() => handleModeClick('projects')}
+          />
+          <RailIcon
             icon={<TeamIcon />}
             label="Team"
             active={activeMode === 'team'}
             onClick={() => handleModeClick('team')}
           />
         </nav>
+
+        {/* Expand sidebar button (shows when collapsed) */}
+        {leftSidebarCollapsed && (
+          <button
+            onClick={() => setLeftSidebarCollapsed(false)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-border/50 hover:text-foreground transition-colors"
+            title="Expand sidebar"
+          >
+            <ExpandRightIcon />
+          </button>
+        )}
 
         {/* User avatar & settings at bottom */}
         <div className="flex flex-col items-center gap-2">
@@ -127,35 +126,50 @@ export function AppLayout() {
         </div>
       </div>
 
-      {/* Contextual Sidebar - hidden when in editor */}
-      {!isInEditor && (
-        <aside className="flex w-56 flex-col border-r border-border">
+      {/* Contextual Sidebar */}
+      <aside
+        className={cn(
+          'flex flex-col border-r border-border transition-all duration-200 overflow-hidden',
+          leftSidebarCollapsed ? 'w-0 border-r-0' : 'w-56'
+        )}
+      >
+        <div className="flex w-56 flex-col h-full">
           {/* Sidebar header */}
           <div className="flex h-10 items-center justify-between border-b border-border px-3">
             <span className="text-sm font-medium text-foreground">
               {activeMode === 'docs' && 'Documents'}
               {activeMode === 'issues' && 'Issues'}
+              {activeMode === 'projects' && 'Projects'}
               {activeMode === 'team' && 'Team'}
               {activeMode === 'settings' && 'Settings'}
             </span>
-            {activeMode === 'docs' && (
+            <div className="flex items-center gap-1">
+              {activeMode === 'docs' && (
+                <button
+                  onClick={handleCreateDocument}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                  title="New document"
+                >
+                  <PlusIcon />
+                </button>
+              )}
+              {activeMode === 'issues' && (
+                <button
+                  onClick={handleCreateIssue}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                  title="New issue"
+                >
+                  <PlusIcon />
+                </button>
+              )}
               <button
-                onClick={handleCreateDocument}
+                onClick={() => setLeftSidebarCollapsed(true)}
                 className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                title="New document"
+                title="Collapse sidebar"
               >
-                <PlusIcon />
+                <CollapseLeftIcon />
               </button>
-            )}
-            {activeMode === 'issues' && (
-              <button
-                onClick={createIssue}
-                className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                title="New issue"
-              >
-                <PlusIcon />
-              </button>
-            )}
+            </div>
           </div>
 
           {/* Sidebar content */}
@@ -174,6 +188,13 @@ export function AppLayout() {
                 onSelect={(id) => navigate(`/issues/${id}`)}
               />
             )}
+            {activeMode === 'projects' && (
+              <ProjectsList
+                projects={projects}
+                activeId={location.pathname.split('/projects/')[1]}
+                onSelect={(id) => navigate(`/projects/${id}`)}
+              />
+            )}
             {activeMode === 'team' && (
               <div className="px-3 py-2 text-sm text-muted">Coming soon</div>
             )}
@@ -181,8 +202,8 @@ export function AppLayout() {
               <div className="px-3 py-2 text-sm text-muted">Settings</div>
             )}
           </div>
-        </aside>
-      )}
+        </div>
+      </aside>
 
       {/* Main content */}
       <main className="flex flex-1 flex-col overflow-hidden">
@@ -269,6 +290,38 @@ function IssuesList({ issues, activeId, onSelect }: { issues: Issue[]; activeId?
   );
 }
 
+function ProjectsList({ projects, activeId, onSelect }: { projects: Project[]; activeId?: string; onSelect: (id: string) => void }) {
+  if (projects.length === 0) {
+    return <div className="px-3 py-2 text-sm text-muted">No projects yet</div>;
+  }
+
+  return (
+    <ul className="space-y-0.5 px-2">
+      {projects.map((project) => (
+        <li key={project.id}>
+          <button
+            onClick={() => onSelect(project.id)}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              activeId === project.id
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <span
+              className="h-4 w-4 rounded flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
+              style={{ backgroundColor: project.color }}
+            >
+              {project.prefix.slice(0, 2)}
+            </span>
+            <span className="truncate">{project.name}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // Icons
 function DocsIcon() {
   return (
@@ -282,6 +335,14 @@ function IssuesIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+    </svg>
+  );
+}
+
+function ProjectsIcon() {
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
     </svg>
   );
 }
@@ -315,6 +376,22 @@ function DocIcon() {
   return (
     <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
+function CollapseLeftIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 19l-7-7 7-7m8 14V5" />
+    </svg>
+  );
+}
+
+function ExpandRightIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 5l7 7-7 7M4 5v14" />
     </svg>
   );
 }

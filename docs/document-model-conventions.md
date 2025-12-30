@@ -235,6 +235,72 @@ Create indexes for common query patterns:
 } // Sync ordering
 ```
 
+## Editor Layout (4-Panel Structure)
+
+Every document editor view follows the same 4-panel layout. This is the canonical UI structure for Ship.
+
+```
+┌──────┬────────────────┬─────────────────────────────────┬────────────────┐
+│      │                │ Header: ← Badge Title    Saved ●│                │
+│ Icon │   Contextual   ├─────────────────────────────────┤   Properties   │
+│ Rail │    Sidebar     │                                 │    Sidebar     │
+│      │                │   Large Title                   │                │
+│ 48px │    224px       │   Body content...               │     256px      │
+│      │  (mode list)   │                                 │  (doc props)   │
+│      │                │         (flex-1)                │                │
+└──────┴────────────────┴─────────────────────────────────┴────────────────┘
+```
+
+| Panel | Width | Contents | Always Visible |
+|-------|-------|----------|----------------|
+| **Icon Rail** | 48px | Mode icons (Docs, Issues, Projects, Team), Settings, User avatar | Yes |
+| **Contextual Sidebar** | 224px | List of items for active mode (documents, issues, projects) with + button | Yes |
+| **Main Content** | flex-1 | Header (back, badge, title, sync status, presence) + Editor (title input + TipTap body) | Yes |
+| **Properties Sidebar** | 256px | Type-specific properties (status, assignee, color, etc.) | Yes |
+
+**Key rules:**
+- All four panels are **always visible** when viewing/editing a document
+- Contextual sidebar shows items from the **current mode** (not the document type being edited)
+- Properties sidebar content varies by document type (via `sidebar` prop on Editor)
+- Header shows sync status and connected users for real-time collaboration
+
+## Editor Conventions
+
+All document types share a single `Editor` component. This ensures consistent UX across docs, issues, projects, and sprints.
+
+### New Document Titles
+
+**All new documents use `"Untitled"` as the default title.** No type-specific variations.
+
+| ❌ Wrong | ✅ Correct |
+|----------|-----------|
+| `"Untitled Issue"` | `"Untitled"` |
+| `"Untitled Project"` | `"Untitled"` |
+| `"Untitled Sprint"` | `"Untitled"` |
+| `"New Document"` | `"Untitled"` |
+
+**Why:** The Editor component converts `"Untitled"` to an empty input with placeholder text. Type-specific titles break this logic and create inconsistent UX.
+
+### Placeholder Text
+
+Each document type can customize the body placeholder via the `placeholder` prop:
+
+| Type | Placeholder |
+|------|-------------|
+| Document | `"Start writing..."` |
+| Issue | `"Add a description..."` |
+| Project | `"Describe this project..."` |
+
+### Document Type Differentiation
+
+Document types differ by:
+- **Sidebar content** (issue has status/priority, project has color picker)
+- **Header badge** (issue shows ticket number, project shows prefix)
+- **Placeholder text** (as above)
+- **Room prefix** for collaboration (`doc:`, `issue:`, `project:`)
+
+They do NOT differ by title handling. Keep it simple.
+
 ## Decision Log
 
 ### 2024-12-30: Greenfield Architecture Interview

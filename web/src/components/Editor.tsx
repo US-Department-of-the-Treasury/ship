@@ -49,12 +49,26 @@ export function Editor({
   headerBadge,
   sidebar,
 }: EditorProps) {
-  const [title, setTitle] = useState(initialTitle === 'Untitled' || initialTitle === 'Untitled Issue' ? '' : initialTitle);
+  const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const [ydoc] = useState(() => new Y.Doc());
   const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync title when initialTitle prop changes (e.g., from context update)
+  useEffect(() => {
+    const newTitle = initialTitle === 'Untitled' ? '' : initialTitle;
+    setTitle(newTitle);
+  }, [initialTitle]);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('connecting');
   const [connectedUsers, setConnectedUsers] = useState<{ name: string; color: string }[]>([]);
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('ship:rightSidebarCollapsed') === 'true';
+  });
+
+  // Persist right sidebar state
+  useEffect(() => {
+    localStorage.setItem('ship:rightSidebarCollapsed', String(rightSidebarCollapsed));
+  }, [rightSidebarCollapsed]);
 
   const color = userColor || stringToColor(userName);
 
@@ -224,8 +238,60 @@ export function Editor({
         </div>
 
         {/* Optional sidebar (e.g., issue properties) */}
-        {sidebar}
+        {sidebar && (
+          <aside
+            className={cn(
+              'flex flex-col border-l border-border transition-all duration-200 overflow-hidden',
+              rightSidebarCollapsed ? 'w-0 border-l-0' : 'w-64'
+            )}
+          >
+            <div className="flex w-64 flex-col h-full">
+              {/* Sidebar header with collapse button */}
+              <div className="flex h-10 items-center justify-between border-b border-border px-3">
+                <span className="text-sm font-medium text-foreground">Properties</span>
+                <button
+                  onClick={() => setRightSidebarCollapsed(true)}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                  title="Collapse sidebar"
+                >
+                  <CollapseRightIcon />
+                </button>
+              </div>
+              {/* Sidebar content */}
+              <div className="flex-1 overflow-auto">
+                {sidebar}
+              </div>
+            </div>
+          </aside>
+        )}
+
+        {/* Expand button when right sidebar is collapsed */}
+        {sidebar && rightSidebarCollapsed && (
+          <button
+            onClick={() => setRightSidebarCollapsed(false)}
+            className="flex h-10 w-10 items-center justify-center border-l border-border text-muted hover:bg-border/50 hover:text-foreground transition-colors"
+            title="Expand properties sidebar"
+          >
+            <ExpandLeftIcon />
+          </button>
+        )}
       </div>
     </div>
+  );
+}
+
+function CollapseRightIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 5l7 7-7 7m-8-14v14" />
+    </svg>
+  );
+}
+
+function ExpandLeftIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 19l-7-7 7-7m8 14V5" />
+    </svg>
   );
 }

@@ -2,20 +2,24 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
-
-interface Issue {
-  id: string;
-  title: string;
-  state: string;
-  priority: string;
-  ticket_number: number;
-  assignee_id: string | null;
-  assignee_name: string | null;
-}
+import { useIssues, Issue } from '@/contexts/IssuesContext';
 
 interface TeamMember {
   id: string;
   name: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  prefix: string;
+  color: string;
+}
+
+interface Sprint {
+  id: string;
+  name: string;
+  status: string;
 }
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -40,73 +44,74 @@ export function IssueEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [issue, setIssue] = useState<Issue | null>(null);
+  const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue } = useIssues();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [relatedDataLoading, setRelatedDataLoading] = useState(true);
 
-  // Fetch issue
+  // Get the current issue from context
+  const issue = issues.find(i => i.id === id) || null;
+
+  // Fetch related data (projects, sprints, team members)
   useEffect(() => {
     if (id) {
-      fetchIssue();
-      fetchTeamMembers();
+      fetchRelatedData();
     }
   }, [id]);
 
-  async function fetchIssue() {
+  async function fetchRelatedData() {
     try {
-      const res = await fetch(`${API_URL}/api/issues/${id}`, {
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setIssue(data);
-      } else if (res.status === 404) {
-        navigate('/issues');
+      const [projectsRes, userRes] = await Promise.all([
+        fetch(`${API_URL}/api/projects`, { credentials: 'include' }),
+        fetch(`${API_URL}/api/auth/me`, { credentials: 'include' }),
+      ]);
+
+      if (projectsRes.ok) {
+        setProjects(await projectsRes.json());
+      }
+
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        setTeamMembers([{ id: userData.id, name: userData.name }]);
       }
     } catch (err) {
-      console.error('Failed to fetch issue:', err);
+      console.error('Failed to fetch related data:', err);
     } finally {
-      setLoading(false);
+      setRelatedDataLoading(false);
     }
   }
 
-  async function fetchTeamMembers() {
-    try {
-      const res = await fetch(`${API_URL}/api/auth/me`, {
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        // For now, just use the current user as team member
-        setTeamMembers([{ id: data.id, name: data.name }]);
-      }
-    } catch (err) {
-      console.error('Failed to fetch team:', err);
+  // Fetch sprints when issue's project changes
+  useEffect(() => {
+    if (issue?.project_id) {
+      fetch(`${API_URL}/api/projects/${issue.project_id}/sprints`, { credentials: 'include' })
+        .then(res => res.ok ? res.json() : [])
+        .then(setSprints)
+        .catch(() => setSprints([]));
+    } else {
+      setSprints([]);
     }
-  }
+  }, [issue?.project_id]);
 
-  // Update handlers
-  const updateIssue = useCallback(async (updates: Partial<Issue>) => {
+  // Redirect if issue not found after loading
+  useEffect(() => {
+    if (!issuesLoading && id && !issue) {
+      navigate('/issues');
+    }
+  }, [issuesLoading, id, issue, navigate]);
+
+  // Update handler using shared context
+  const handleUpdateIssue = useCallback(async (updates: Partial<Issue>) => {
     if (!id) return;
-    try {
-      const res = await fetch(`${API_URL}/api/issues/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(updates),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setIssue(data);
-      }
-    } catch (err) {
-      console.error('Failed to update issue:', err);
-    }
-  }, [id]);
+    await contextUpdateIssue(id, updates);
+  }, [id, contextUpdateIssue]);
 
   const handleTitleChange = useCallback((newTitle: string) => {
-    updateIssue({ title: newTitle });
-  }, [updateIssue]);
+    handleUpdateIssue({ title: newTitle });
+  }, [handleUpdateIssue]);
+
+  const loading = issuesLoading || relatedDataLoading;
 
   if (loading) {
     return (
@@ -120,6 +125,11 @@ export function IssueEditorPage() {
     return null;
   }
 
+  const handleProjectChange = async (projectId: string | null) => {
+    await handleUpdateIssue({ project_id: projectId, sprint_id: null } as Partial<Issue>);
+    // Sprints will be fetched automatically via the useEffect when issue.project_id changes
+  };
+
   return (
     <Editor
       documentId={issue.id}
@@ -130,17 +140,16 @@ export function IssueEditorPage() {
       roomPrefix="issue"
       placeholder="Add a description..."
       headerBadge={
-        <span className="rounded bg-border px-2 py-0.5 text-xs font-medium text-muted">
-          #{issue.ticket_number}
+        <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted">
+          {issue.display_id}
         </span>
       }
       sidebar={
-        <aside className="w-64 border-l border-border p-4">
-          <div className="space-y-4">
-            <PropertyRow label="Status">
+        <div className="space-y-4 p-4">
+          <PropertyRow label="Status">
               <select
                 value={issue.state}
-                onChange={(e) => updateIssue({ state: e.target.value })}
+                onChange={(e) => handleUpdateIssue({ state: e.target.value })}
                 className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 {STATES.map((s) => (
@@ -154,7 +163,7 @@ export function IssueEditorPage() {
             <PropertyRow label="Priority">
               <select
                 value={issue.priority}
-                onChange={(e) => updateIssue({ priority: e.target.value })}
+                onChange={(e) => handleUpdateIssue({ priority: e.target.value })}
                 className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 {PRIORITIES.map((p) => (
@@ -168,10 +177,10 @@ export function IssueEditorPage() {
             <PropertyRow label="Assignee">
               <select
                 value={issue.assignee_id || ''}
-                onChange={(e) => updateIssue({ assignee_id: e.target.value || null })}
+                onChange={(e) => handleUpdateIssue({ assignee_id: e.target.value || null })}
                 className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
               >
-                <option value="">Unassigned</option>
+                <option key="unassigned" value="">Unassigned</option>
                 {teamMembers.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
@@ -179,8 +188,39 @@ export function IssueEditorPage() {
                 ))}
               </select>
             </PropertyRow>
-          </div>
-        </aside>
+
+            <PropertyRow label="Project">
+              <select
+                value={issue.project_id || ''}
+                onChange={(e) => handleProjectChange(e.target.value || null)}
+                className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                <option key="no-project" value="">No Project</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.prefix} - {p.name}
+                  </option>
+                ))}
+              </select>
+            </PropertyRow>
+
+            {issue.project_id && (
+              <PropertyRow label="Sprint">
+                <select
+                  value={issue.sprint_id || ''}
+                  onChange={(e) => handleUpdateIssue({ sprint_id: e.target.value || null })}
+                  className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  <option key="no-sprint" value="">No Sprint</option>
+                  {sprints.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.status})
+                    </option>
+                  ))}
+                </select>
+              </PropertyRow>
+            )}
+        </div>
       }
     />
   );

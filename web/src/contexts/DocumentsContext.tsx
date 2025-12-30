@@ -12,6 +12,7 @@ interface DocumentsContextValue {
   documents: WikiDocument[];
   loading: boolean;
   createDocument: () => Promise<WikiDocument | null>;
+  updateDocument: (id: string, updates: Partial<WikiDocument>) => Promise<WikiDocument | null>;
   refreshDocuments: () => Promise<void>;
 }
 
@@ -62,8 +63,27 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
     return null;
   }, []);
 
+  const updateDocument = useCallback(async (id: string, updates: Partial<WikiDocument>): Promise<WikiDocument | null> => {
+    try {
+      const res = await fetch(`${API_URL}/api/documents/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updated } : d));
+        return updated;
+      }
+    } catch (err) {
+      console.error('Failed to update document:', err);
+    }
+    return null;
+  }, []);
+
   return (
-    <DocumentsContext.Provider value={{ documents, loading, createDocument, refreshDocuments }}>
+    <DocumentsContext.Provider value={{ documents, loading, createDocument, updateDocument, refreshDocuments }}>
       {children}
     </DocumentsContext.Provider>
   );

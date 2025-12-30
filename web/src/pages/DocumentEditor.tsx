@@ -2,13 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
-import { cn } from '@/lib/cn';
-
-interface Document {
-  id: string;
-  title: string;
-  document_type: string;
-}
+import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -16,61 +10,33 @@ export function DocumentEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [document, setDocument] = useState<Document | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const { documents, loading: documentsLoading, updateDocument: contextUpdateDocument } = useDocuments();
 
+  // Get the current document from context
+  const document = documents.find(d => d.id === id) || null;
+
+  // Redirect if document not found after loading
   useEffect(() => {
-    if (id) {
-      fetchDocument();
+    if (!documentsLoading && id && !document) {
+      navigate('/docs');
     }
-  }, [id]);
+  }, [documentsLoading, id, document, navigate]);
 
-  async function fetchDocument() {
-    try {
-      const res = await fetch(`${API_URL}/api/documents/${id}`, {
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setDocument(data);
-      } else if (res.status === 404) {
-        navigate('/docs');
-      }
-    } catch (err) {
-      console.error('Failed to fetch document:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const handleTitleChange = useCallback(async (newTitle: string) => {
-    if (!id || !newTitle) return;
-
-    setSaving(true);
-    try {
-      await fetch(`${API_URL}/api/documents/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: newTitle }),
-      });
-      setDocument((prev) => prev ? { ...prev, title: newTitle } : null);
-    } catch (err) {
-      console.error('Failed to update title:', err);
-    } finally {
-      setSaving(false);
-    }
-  }, [id]);
+  // Update handler using shared context
+  const handleUpdateDocument = useCallback(async (updates: Partial<WikiDocument>) => {
+    if (!id) return;
+    await contextUpdateDocument(id, updates);
+  }, [id, contextUpdateDocument]);
 
   // Debounce title updates
   const [titleTimeout, setTitleTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
   const debouncedTitleChange = useCallback((newTitle: string) => {
+    if (!newTitle) return;
     if (titleTimeout) clearTimeout(titleTimeout);
-    setTitleTimeout(setTimeout(() => handleTitleChange(newTitle), 500));
-  }, [handleTitleChange, titleTimeout]);
+    setTitleTimeout(setTimeout(() => handleUpdateDocument({ title: newTitle }), 500));
+  }, [handleUpdateDocument, titleTimeout]);
 
-  if (loading) {
+  if (documentsLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-muted">Loading...</div>
@@ -89,6 +55,11 @@ export function DocumentEditorPage() {
       initialTitle={document.title}
       onTitleChange={debouncedTitleChange}
       onBack={() => navigate('/docs')}
+      sidebar={
+        <div className="space-y-4 p-4">
+          <p className="text-xs text-muted">Todo: Permissions, Maintainer, etc.</p>
+        </div>
+      }
     />
   );
 }

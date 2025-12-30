@@ -93,6 +93,7 @@ ship/
 - [ ] App shell has sidebar on left, header with user email
 - [ ] Click logout - returns to login page
 - [ ] Design feels Linear-style minimal with good information density
+- [ ] **TESTS:** `pnpm test && pnpm test:e2e` passes with tests covering above criteria
 
 ---
 
@@ -162,6 +163,8 @@ The header shows my email.
 I click logout and return to the login page.
 ```
 
+**Lock the Door:** E2E tests in `e2e/auth.spec.ts` cover all above criteria. `pnpm test:e2e` passes.
+
 ---
 
 ### Phase 2: Document Model Foundation
@@ -196,6 +199,8 @@ I see the same content.
 I type in the second tab and see it appear in the first.
 I see presence indicators showing both sessions.
 ```
+
+**Lock the Door:** E2E tests in `e2e/documents.spec.ts` cover all above criteria. `pnpm test:e2e` passes.
 
 ---
 
@@ -232,6 +237,8 @@ I can click to navigate between pages.
 The content area shows the selected document in the editor.
 ```
 
+**Lock the Door:** E2E tests in `e2e/docs-mode.spec.ts` cover all above criteria. `pnpm test:e2e` passes.
+
 ---
 
 ### Phase 4: Programs & Projects Setup
@@ -267,6 +274,8 @@ I click the Projects tab.
 I click "New Project" and create "Login Revamp".
 The project appears in the list with a start/end date.
 ```
+
+**Lock the Door:** E2E tests in `e2e/programs.spec.ts` cover all above criteria. `pnpm test:e2e` passes.
 
 ---
 
@@ -307,6 +316,8 @@ The state updates and the issue moves.
 I click the issue and see the full document editor.
 ```
 
+**Lock the Door:** E2E tests in `e2e/issues.spec.ts` cover all above criteria. `pnpm test:e2e` passes.
+
 ---
 
 ### Phase 6: Sprints
@@ -340,6 +351,8 @@ I use the sprint picker to assign it to Sprint 1.
 I return to Sprints → Sprint 1.
 AUTH-1 now appears in the sprint.
 ```
+
+**Lock the Door:** E2E tests in `e2e/sprints.spec.ts` cover all above criteria. `pnpm test:e2e` passes.
 
 ---
 
@@ -376,6 +389,8 @@ The current sprint column is highlighted.
 I click a cell and see a tooltip with the specific issues.
 ```
 
+**Lock the Door:** E2E tests in `e2e/team-mode.spec.ts` cover all above criteria. `pnpm test:e2e` passes.
+
 ---
 
 ### Phase 8: Polish & Accessibility
@@ -383,6 +398,7 @@ I click a cell and see a tooltip with the specific issues.
 
 #### Tasks
 - [ ] Audit and fix Section 508 compliance (axe-core)
+- [ ] Fully rebrand the app based on the logos / images in web/public/icons - white icons in dark mode, and blue in light mode - favicons, loading pages... the works
 - [ ] Add keyboard navigation throughout
 - [ ] Implement focus management in modals/dialogs
 - [ ] Add ARIA labels and landmarks
@@ -411,6 +427,8 @@ Loading states show skeletons, not blank screens.
 The UI feels dense with information but not cluttered.
 ```
 
+**Lock the Door:** E2E tests in `e2e/accessibility.spec.ts` cover keyboard nav and axe-core audit. `pnpm test:e2e` passes.
+
 ---
 
 ## Ralph Loop Validation Protocol
@@ -418,11 +436,16 @@ The UI feels dense with information but not cluttered.
 ### Test Execution Pattern
 For each phase's exit criteria:
 
-1. Start fresh (clear database, seed fresh)
-2. Execute criteria as written
-3. Take screenshots at each step
-4. If ANY step fails: fix and restart validation
-5. All steps must pass in sequence
+1. **Write E2E tests first** - Convert exit criteria to Playwright tests
+2. Run `pnpm test:e2e` - tests should fail initially
+3. Implement the feature
+4. Run `pnpm test:e2e` - tests should pass
+5. Start fresh (clear database, seed fresh)
+6. Execute criteria manually as written
+7. Take screenshots at each step
+8. If ANY step fails: fix and restart validation
+9. All steps must pass in sequence
+10. **Final gate:** `pnpm test && pnpm test:e2e` must pass
 
 ### Playwright MCP Integration
 Each exit criteria should be verifiable via Playwright:
@@ -446,6 +469,97 @@ After each phase:
 2. Compare to Linear for design quality
 3. Rate information density (target: high)
 4. Rate visual clarity (target: clean, minimal)
+
+---
+
+## Testing Strategy: Lock the Door Behind You
+
+### Philosophy
+Not full TDD (too slow for greenfield), but **every completed feature must have a test before moving on**. This prevents regressions without slowing exploratory work.
+
+### Test Stack
+| Layer | Tool | Purpose |
+|-------|------|---------|
+| Unit | Vitest | Business logic, utilities |
+| API | Vitest + supertest | Endpoint contracts |
+| E2E | Playwright | User flows (Ralph Loop criteria) |
+
+### Commands
+```bash
+pnpm test          # Run API unit tests
+pnpm test:e2e      # Run ALL Playwright E2E tests (use sparingly)
+pnpm test:e2e:ui   # Run Playwright with UI (debugging)
+
+# Run specific test file (preferred during development)
+pnpm test:e2e -- e2e/auth.spec.ts
+pnpm test:e2e -- e2e/documents.spec.ts
+```
+
+### Smart Test Selection
+
+**During development:** Run only the test files affected by your changes:
+
+| If you modified... | Run this test file |
+|-------------------|-------------------|
+| `api/src/routes/auth.ts`, `web/src/pages/Login.tsx` | `e2e/auth.spec.ts` |
+| `api/src/routes/documents.ts`, `web/src/components/Editor.tsx` | `e2e/documents.spec.ts` |
+| `web/src/pages/Docs*.tsx`, doc tree components | `e2e/docs-mode.spec.ts` |
+| `api/src/routes/projects.ts`, program UI | `e2e/programs.spec.ts` |
+| `api/src/routes/issues.ts`, issue UI | `e2e/issues.spec.ts` |
+| `api/src/routes/sprints.ts`, sprint UI | `e2e/sprints.spec.ts` |
+| `web/src/pages/Team*.tsx` | `e2e/team-mode.spec.ts` |
+| Accessibility, keyboard nav, ARIA | `e2e/accessibility.spec.ts` |
+
+**Before marking phase complete:** Run the full suite: `pnpm test && pnpm test:e2e`
+
+### Mandatory Testing Rule
+
+**BEFORE marking any phase complete:**
+1. **Convert Ralph Loop exit criteria to Playwright tests** - The exit criteria in each phase section MUST become automated tests in `e2e/`
+2. **Write regression tests for bugs fixed** - If you hit and fix a bug, write a test that would have caught it
+3. **All tests must pass** - `pnpm test && pnpm test:e2e` must succeed
+
+### Test File Structure
+```
+ship/
+├── api/
+│   └── src/
+│       └── **/*.test.ts    # Vitest unit/integration tests
+├── e2e/
+│   ├── auth.spec.ts        # Authentication flows
+│   ├── documents.spec.ts   # Document CRUD
+│   └── {feature}.spec.ts   # One file per major feature
+└── playwright.config.ts    # Playwright configuration
+```
+
+### Per-Phase Test Requirements
+
+| Phase | Required Tests |
+|-------|---------------|
+| 1: Auth | Login/logout flow, session timeout, protected routes |
+| 2: Documents | CRUD operations, real-time sync indicator |
+| 3: Docs Mode | Tree navigation, create/edit pages |
+| 4: Programs | Program/project CRUD, sidebar tree |
+| 5: Issues | Issue lifecycle, state transitions, ticket numbers |
+| 6: Sprints | Sprint assignment, sprint picker |
+| 7: Team Mode | Spreadsheet view, cell navigation |
+| 8: Polish | Accessibility audit, keyboard navigation |
+
+### When to Write Tests
+
+**After implementing a feature:**
+1. Write happy path test that exercises the feature
+2. Test becomes a regression guard for future changes
+
+**After fixing a bug:**
+1. Write a test that reproduces the bug first (TDD for fixes)
+2. The test should fail, then pass after the fix
+3. This test prevents the regression from returning
+
+**Do NOT test:**
+- UI styling/layout (unless accessibility-related)
+- Third-party library internals
+- Implementation details that may change
 
 ---
 
@@ -560,8 +674,9 @@ pnpm run dev
 Each phase is complete when:
 1. All tasks checked off
 2. Ralph Loop exit criteria pass
-3. Visual verification scores acceptable
-4. No accessibility violations
+3. **E2E tests pass** (`pnpm test:e2e` succeeds)
+4. Visual verification scores acceptable
+5. No accessibility violations
 
 ### MVP Complete When
 - [ ] All 8 phases pass validation
@@ -582,21 +697,41 @@ Each phase is complete when:
 
 ---
 
-## Session State (Auto-updated: 2025-12-30T18:17:38Z)
+## Session State (Auto-updated: 2025-12-30T20:48:18Z)
 
-**Branch:** `unknown`
+**Branch:** `master`
 **Project:** `/Users/corcoss/code/ship`
 
 ### Recent Commits
 ```
-
+7b6c985 Fix sidebar not syncing with document list
+6cd5446 Refactor editor to shared component with Notion-style title
+ed17b87 Initial commit: Ship MVP with document and issue tracking
 ```
 
 ### Uncommitted Changes
 ```
-
+ M api/package.json
+ M api/src/collaboration/index.ts
+ M api/src/db/schema.sql
+ M api/src/index.ts
+ M api/src/routes/issues.ts
+ M docs/document-model-conventions.md
+ M package.json
+ M plans/ship-mvp-greenfield.md
+ M pnpm-lock.yaml
+ M web/src/components/Editor.tsx
 ```
 
 ### Modified Files
-
+api/package.json
+api/src/collaboration/index.ts
+api/src/db/schema.sql
+api/src/index.ts
+api/src/routes/issues.ts
+docs/document-model-conventions.md
+package.json
+plans/ship-mvp-greenfield.md
+pnpm-lock.yaml
+web/src/components/Editor.tsx
 
