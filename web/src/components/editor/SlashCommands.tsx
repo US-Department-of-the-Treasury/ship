@@ -101,6 +101,7 @@ CommandList.displayName = 'CommandList';
 
 interface CreateSlashCommandsOptions {
   onCreateSubDocument: () => Promise<{ id: string; title: string } | null>;
+  onNavigateToDocument?: (id: string) => void;
 }
 
 // Icons for slash commands
@@ -158,7 +159,7 @@ const icons = {
   ),
 };
 
-export function createSlashCommands({ onCreateSubDocument }: CreateSlashCommandsOptions) {
+export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument }: CreateSlashCommandsOptions) {
   const slashCommands: SlashCommandItem[] = [
     // Sub-document (requires async callback)
     {
@@ -170,17 +171,8 @@ export function createSlashCommands({ onCreateSubDocument }: CreateSlashCommands
         editor.chain().focus().deleteRange(range).run();
         const doc = await onCreateSubDocument();
         if (doc) {
-          editor
-            .chain()
-            .focus()
-            .insertContent({
-              type: 'documentEmbed',
-              attrs: {
-                documentId: doc.id,
-                title: doc.title || 'Untitled',
-              },
-            })
-            .run();
+          // Navigate to the new document immediately
+          onNavigateToDocument?.(doc.id);
         }
       },
     },

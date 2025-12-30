@@ -10,7 +10,7 @@ export function DocumentEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { documents, loading: documentsLoading, updateDocument: contextUpdateDocument, createDocument } = useDocuments();
+  const { documents, loading: documentsLoading, updateDocument: contextUpdateDocument, createDocument, deleteDocument } = useDocuments();
 
   // Get the current document from context
   const document = documents.find(d => d.id === id) || null;
@@ -44,6 +44,34 @@ export function DocumentEditorPage() {
     setTitleTimeout(setTimeout(() => handleUpdateDocument({ title: newTitle }), 500));
   }, [handleUpdateDocument, titleTimeout]);
 
+  // Create sub-document (child of current document)
+  const handleCreateSubDocument = useCallback(async () => {
+    if (!document) return null;
+    const newDoc = await createDocument(document.id);
+    return newDoc;
+  }, [createDocument, document]);
+
+  // Navigate to a document (for slash commands)
+  const handleNavigateToDocument = useCallback((docId: string) => {
+    navigate(`/docs/${docId}`);
+  }, [navigate]);
+
+  // Delete current document
+  const handleDelete = useCallback(async () => {
+    if (!id || !document) return;
+    if (!window.confirm('Are you sure you want to delete this document?')) return;
+
+    const success = await deleteDocument(id);
+    if (success) {
+      // Navigate to parent or documents list
+      if (document.parent_id) {
+        navigate(`/docs/${document.parent_id}`);
+      } else {
+        navigate('/docs');
+      }
+    }
+  }, [id, deleteDocument, document, navigate]);
+
   if (documentsLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -70,12 +98,6 @@ export function DocumentEditorPage() {
     ? documents.find(d => d.id === document.parent_id)
     : null;
 
-  // Create sub-document (child of current document)
-  const handleCreateSubDocument = useCallback(async () => {
-    const newDoc = await createDocument(document.id);
-    return newDoc;
-  }, [createDocument, document.id]);
-
   return (
     <Editor
       documentId={document.id}
@@ -85,6 +107,8 @@ export function DocumentEditorPage() {
       onBack={handleBack}
       backLabel={parentDocument?.title || undefined}
       onCreateSubDocument={handleCreateSubDocument}
+      onNavigateToDocument={handleNavigateToDocument}
+      onDelete={handleDelete}
       sidebar={
         <div className="space-y-4 p-4">
           <p className="text-xs text-muted">Todo: Permissions, Maintainer, etc.</p>
