@@ -67,11 +67,17 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
 
   const updateProject = useCallback(async (id: string, updates: Partial<Project>): Promise<Project | null> => {
     try {
+      // Map frontend field names to API field names (API uses 'title', returns as 'name')
+      const apiUpdates: Record<string, unknown> = {};
+      if (updates.name !== undefined) apiUpdates.title = updates.name;
+      if (updates.color !== undefined) apiUpdates.color = updates.color;
+      if (updates.archived_at !== undefined) apiUpdates.archived_at = updates.archived_at;
+
       const res = await fetch(`${API_URL}/api/projects/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(updates),
+        body: JSON.stringify(apiUpdates),
       });
       if (res.ok) {
         const updated = await res.json();
