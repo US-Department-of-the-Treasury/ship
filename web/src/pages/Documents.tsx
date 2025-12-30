@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDocuments } from '@/contexts/DocumentsContext';
+import { buildDocumentTree } from '@/lib/documentTree';
+import { DocumentTreeItem } from '@/components/DocumentTreeItem';
 import { cn } from '@/lib/cn';
 
 export function DocumentsPage() {
@@ -8,26 +10,19 @@ export function DocumentsPage() {
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
 
-  async function handleCreateDocument() {
+  // Build tree structure from flat documents
+  const documentTree = useMemo(() => buildDocumentTree(documents), [documents]);
+
+  async function handleCreateDocument(parentId?: string) {
     setCreating(true);
     try {
-      const doc = await createDocument();
+      const doc = await createDocument(parentId);
       if (doc) {
         navigate(`/docs/${doc.id}`);
       }
     } finally {
       setCreating(false);
     }
-  }
-
-  function formatDate(dateStr: string) {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
   }
 
   if (loading) {
@@ -44,7 +39,7 @@ export function DocumentsPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-lg font-medium text-foreground">Documents</h1>
         <button
-          onClick={handleCreateDocument}
+          onClick={() => handleCreateDocument()}
           disabled={creating}
           className={cn(
             'rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white',
@@ -57,7 +52,7 @@ export function DocumentsPage() {
         </button>
       </div>
 
-      {/* Document list */}
+      {/* Document tree */}
       {documents.length === 0 ? (
         <div className="flex h-64 items-center justify-center">
           <div className="text-center">
@@ -68,38 +63,13 @@ export function DocumentsPage() {
           </div>
         </div>
       ) : (
-        <div className="space-y-1">
-          {documents.map((doc) => (
-            <button
+        <div className="space-y-0.5">
+          {documentTree.map((doc) => (
+            <DocumentTreeItem
               key={doc.id}
-              onClick={() => navigate(`/docs/${doc.id}`)}
-              className={cn(
-                'flex w-full items-center justify-between rounded-md px-3 py-2',
-                'text-left transition-colors',
-                'hover:bg-border/30',
-                'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-inset'
-              )}
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded bg-border/30">
-                  <svg
-                    className="h-4 w-4 text-muted"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                </div>
-                <span className="text-sm text-foreground">{doc.title || 'Untitled'}</span>
-              </div>
-              <span className="text-xs text-muted">{formatDate(doc.updated_at)}</span>
-            </button>
+              document={doc}
+              onCreateChild={handleCreateDocument}
+            />
           ))}
         </div>
       )}

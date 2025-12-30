@@ -50,11 +50,12 @@ CREATE TABLE IF NOT EXISTS documents (
   -- Yjs binary state for collaboration (shared by ALL document types)
   yjs_state BYTEA,
 
-  -- Hierarchy
-  parent_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+  -- Hierarchy (cascade delete: deleting parent deletes all children)
+  parent_id UUID REFERENCES documents(id) ON DELETE CASCADE,
   position INTEGER DEFAULT 0,
 
   -- Associations (documents can reference other documents)
+  program_id UUID REFERENCES documents(id) ON DELETE SET NULL,
   project_id UUID REFERENCES documents(id) ON DELETE SET NULL,
   sprint_id UUID REFERENCES documents(id) ON DELETE SET NULL,
 
@@ -93,6 +94,7 @@ CREATE INDEX IF NOT EXISTS idx_users_workspace_id ON users(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_documents_workspace_id ON documents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_documents_parent_id ON documents(parent_id);
 CREATE INDEX IF NOT EXISTS idx_documents_document_type ON documents(document_type);
+CREATE INDEX IF NOT EXISTS idx_documents_program_id ON documents(program_id);
 CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id);
 CREATE INDEX IF NOT EXISTS idx_documents_sprint_id ON documents(sprint_id);
 CREATE INDEX IF NOT EXISTS idx_documents_state ON documents(state);

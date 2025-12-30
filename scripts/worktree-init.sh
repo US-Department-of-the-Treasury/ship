@@ -36,7 +36,7 @@ cat > api/.env.local << EOF
 
 PORT=$API_PORT
 NODE_ENV=development
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/$DB_NAME
+DATABASE_URL=postgresql://localhost:5432/$DB_NAME
 LOG_LEVEL=debug
 CORS_ORIGIN=http://localhost:$WEB_PORT
 EOF
@@ -55,8 +55,37 @@ echo "Configuration files created:"
 echo "  - api/.env.local"
 echo "  - web/.env.local"
 echo ""
+
+# Install dependencies if node_modules missing
+if [ ! -d "node_modules" ]; then
+  echo "Installing dependencies..."
+  pnpm install
+  echo ""
+fi
+
+# Build shared package if dist missing
+if [ ! -d "shared/dist" ]; then
+  echo "Building shared package..."
+  pnpm build:shared
+  echo ""
+fi
+
+# Create database if it doesn't exist
+if ! psql -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
+  echo "Creating database $DB_NAME..."
+  createdb "$DB_NAME" 2>/dev/null || echo "  Note: Could not create database automatically"
+  echo ""
+fi
+
+# Seed database (idempotent - safe to run multiple times)
+echo "Seeding database..."
+pnpm db:seed
+echo ""
+
 echo "=== Initialization Complete ==="
 echo ""
 echo "Your servers will run on:"
 echo "  API: http://localhost:$API_PORT"
 echo "  Web: http://localhost:$WEB_PORT"
+echo ""
+echo "Run 'pnpm dev' to start development servers."
