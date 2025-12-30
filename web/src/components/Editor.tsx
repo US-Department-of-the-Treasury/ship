@@ -1,12 +1,15 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import Placeholder from '@tiptap/extension-placeholder';
+import Link from '@tiptap/extension-link';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { cn } from '@/lib/cn';
+import { createSlashCommands } from './editor/SlashCommands';
+import 'tippy.js/dist/tippy.css';
 
 interface EditorProps {
   documentId: string;
@@ -15,6 +18,8 @@ interface EditorProps {
   onTitleChange?: (title: string) => void;
   initialTitle?: string;
   onBack?: () => void;
+  /** Label for back button (e.g., parent document title) */
+  backLabel?: string;
   /** Room prefix for collaboration (e.g., 'doc' or 'issue') */
   roomPrefix?: string;
   /** Placeholder text for the editor */
@@ -23,6 +28,8 @@ interface EditorProps {
   headerBadge?: React.ReactNode;
   /** Sidebar content (e.g., issue properties) */
   sidebar?: React.ReactNode;
+  /** Callback to create a sub-document (for slash commands) */
+  onCreateSubDocument?: () => Promise<{ id: string; title: string } | null>;
 }
 
 type SyncStatus = 'connecting' | 'synced' | 'disconnected';
@@ -44,10 +51,12 @@ export function Editor({
   onTitleChange,
   initialTitle = 'Untitled',
   onBack,
+  backLabel,
   roomPrefix = 'doc',
   placeholder = 'Start writing...',
   headerBadge,
   sidebar,
+  onCreateSubDocument,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -140,22 +149,35 @@ export function Editor({
     };
   }, [documentId, userName, color, ydoc, roomPrefix]);
 
+  // Create slash commands extension (memoized to avoid recreation)
+  const slashCommandsExtension = useMemo(() => {
+    if (!onCreateSubDocument) return null;
+    return createSlashCommands({ onCreateSubDocument });
+  }, [onCreateSubDocument]);
+
   // Build extensions - only include CollaborationCursor when provider is ready
+  const baseExtensions = [
+    StarterKit.configure({ history: false }),
+    Placeholder.configure({ placeholder }),
+    Collaboration.configure({ document: ydoc }),
+    Link.configure({
+      openOnClick: true,
+      HTMLAttributes: {
+        class: 'text-accent hover:underline cursor-pointer',
+      },
+    }),
+    ...(slashCommandsExtension ? [slashCommandsExtension] : []),
+  ];
+
   const extensions = provider
     ? [
-        StarterKit.configure({ history: false }),
-        Placeholder.configure({ placeholder }),
-        Collaboration.configure({ document: ydoc }),
+        ...baseExtensions,
         CollaborationCursor.configure({
           provider: provider,
           user: { name: userName, color: color },
         }),
       ]
-    : [
-        StarterKit.configure({ history: false }),
-        Placeholder.configure({ placeholder }),
-        Collaboration.configure({ document: ydoc }),
-      ];
+    : baseExtensions;
 
   const editor = useEditor({
     extensions,
@@ -177,16 +199,19 @@ export function Editor({
     <div className="flex h-full flex-col">
       {/* Compact header - breadcrumb, title, status, presence all in one row */}
       <div className="flex items-center gap-3 border-b border-border px-4 py-2">
-        {/* Back button */}
+        {/* Back button with optional parent label */}
         {onBack && (
           <button
             onClick={onBack}
-            className="text-muted hover:text-foreground transition-colors"
-            aria-label="Back to documents"
+            className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors"
+            aria-label={backLabel ? `Back to ${backLabel}` : 'Back to documents'}
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
+            {backLabel && (
+              <span className="text-xs truncate max-w-[120px]">{backLabel}</span>
+            )}
           </button>
         )}
 

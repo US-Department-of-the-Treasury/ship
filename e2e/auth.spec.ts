@@ -45,7 +45,7 @@ test.describe('Authentication', () => {
 
     // Enter valid credentials (from seed data)
     await page.getByRole('textbox', { name: /email/i }).fill('dev@ship.local')
-    await page.getByRole('textbox', { name: /password/i }).fill('password')
+    await page.getByRole('textbox', { name: /password/i }).fill('admin123')
     await page.getByRole('button', { name: /sign in/i }).click()
 
     // Should redirect to app (not /login)
@@ -59,7 +59,7 @@ test.describe('Authentication', () => {
     // First login
     await page.goto('/login')
     await page.getByRole('textbox', { name: /email/i }).fill('dev@ship.local')
-    await page.getByRole('textbox', { name: /password/i }).fill('password')
+    await page.getByRole('textbox', { name: /password/i }).fill('admin123')
     await page.getByRole('button', { name: /sign in/i }).click()
 
     // Wait for app to load

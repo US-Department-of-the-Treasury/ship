@@ -10,7 +10,7 @@ export function DocumentEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { documents, loading: documentsLoading, updateDocument: contextUpdateDocument } = useDocuments();
+  const { documents, loading: documentsLoading, updateDocument: contextUpdateDocument, createDocument } = useDocuments();
 
   // Get the current document from context
   const document = documents.find(d => d.id === id) || null;
@@ -56,13 +56,35 @@ export function DocumentEditorPage() {
     return null;
   }
 
+  // Navigate to parent document or documents list
+  const handleBack = () => {
+    if (document.parent_id) {
+      navigate(`/docs/${document.parent_id}`);
+    } else {
+      navigate('/docs');
+    }
+  };
+
+  // Get parent document title for breadcrumb
+  const parentDocument = document.parent_id
+    ? documents.find(d => d.id === document.parent_id)
+    : null;
+
+  // Create sub-document (child of current document)
+  const handleCreateSubDocument = useCallback(async () => {
+    const newDoc = await createDocument(document.id);
+    return newDoc;
+  }, [createDocument, document.id]);
+
   return (
     <Editor
       documentId={document.id}
       userName={user.name}
       initialTitle={document.title}
       onTitleChange={debouncedTitleChange}
-      onBack={() => navigate('/docs')}
+      onBack={handleBack}
+      backLabel={parentDocument?.title || undefined}
+      onCreateSubDocument={handleCreateSubDocument}
       sidebar={
         <div className="space-y-4 p-4">
           <p className="text-xs text-muted">Todo: Permissions, Maintainer, etc.</p>

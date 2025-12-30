@@ -4,6 +4,8 @@ export interface WikiDocument {
   id: string;
   title: string;
   document_type: string;
+  parent_id: string | null;
+  position: number;
   created_at: string;
   updated_at: string;
 }
@@ -11,7 +13,7 @@ export interface WikiDocument {
 interface DocumentsContextValue {
   documents: WikiDocument[];
   loading: boolean;
-  createDocument: () => Promise<WikiDocument | null>;
+  createDocument: (parentId?: string) => Promise<WikiDocument | null>;
   updateDocument: (id: string, updates: Partial<WikiDocument>) => Promise<WikiDocument | null>;
   refreshDocuments: () => Promise<void>;
 }
@@ -44,13 +46,17 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
     refreshDocuments();
   }, [refreshDocuments]);
 
-  const createDocument = useCallback(async (): Promise<WikiDocument | null> => {
+  const createDocument = useCallback(async (parentId?: string): Promise<WikiDocument | null> => {
     try {
       const res = await fetch(`${API_URL}/api/documents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled', document_type: 'wiki' }),
+        body: JSON.stringify({
+          title: 'Untitled',
+          document_type: 'wiki',
+          parent_id: parentId || null,
+        }),
       });
       if (res.ok) {
         const doc = await res.json();

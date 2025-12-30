@@ -110,7 +110,7 @@ export function LoginPage() {
         <div className="mt-8 text-center text-xs text-muted">
           <p>Dev credentials:</p>
           <p className="mt-1 font-mono text-foreground/60">
-            dev@ship.local / password
+            dev@ship.local / admin123
           </p>
         </div>
       </div>
