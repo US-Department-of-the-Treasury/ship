@@ -13,64 +13,72 @@ test.describe('Documents', () => {
   })
 
   test('can view document list', async ({ page }) => {
-    // Navigate to documents (might be default or need to click)
-    await page.goto('/documents')
+    // Navigate to docs
+    await page.goto('/docs')
 
-    // Should see documents section
-    await expect(page.getByRole('heading', { name: /documents|docs/i })).toBeVisible({ timeout: 5000 })
+    // Should see Documents heading in the main content area
+    await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible({ timeout: 5000 })
   })
 
   test('can create a new document', async ({ page }) => {
-    await page.goto('/documents')
+    await page.goto('/docs')
 
-    // Click new document button
-    const newButton = page.getByRole('button', { name: /new|create|add/i })
+    // Click New Document button in header (not sidebar)
+    const newButton = page.getByRole('button', { name: 'New Document', exact: true })
     await expect(newButton).toBeVisible({ timeout: 5000 })
     await newButton.click()
 
-    // Should navigate to editor or show editor
-    await expect(page.locator('[data-testid="editor"], .ProseMirror, .tiptap')).toBeVisible({ timeout: 5000 })
+    // Should navigate to editor
+    await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
   })
 
   test('can edit document title', async ({ page }) => {
-    await page.goto('/documents')
+    await page.goto('/docs')
 
-    // Create a new document first
-    const newButton = page.getByRole('button', { name: /new|create|add/i })
+    // Create a new document first - use exact match for header button
+    const newButton = page.getByRole('button', { name: 'New Document', exact: true })
     await expect(newButton).toBeVisible({ timeout: 5000 })
     await newButton.click()
 
     // Wait for editor
-    await expect(page.locator('[data-testid="editor"], .ProseMirror, .tiptap')).toBeVisible({ timeout: 5000 })
+    await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
 
-    // Find title input and enter text
-    const titleInput = page.locator('[data-testid="document-title"], input[name="title"], .document-title')
-    if (await titleInput.isVisible()) {
-      await titleInput.fill('Test Document Title')
+    // Find title input (large title input in editor) and enter text
+    const titleInput = page.getByPlaceholder('Untitled')
+    await expect(titleInput).toBeVisible({ timeout: 5000 })
+    await titleInput.fill('Test Document Title')
 
-      // Verify title was entered
-      await expect(titleInput).toHaveValue('Test Document Title')
-    }
+    // Wait for save
+    await page.waitForResponse(resp => resp.url().includes('/api/documents/') && resp.request().method() === 'PATCH')
+
+    // Verify title was entered
+    await expect(titleInput).toHaveValue('Test Document Title')
   })
 
   test('document list updates when new document created', async ({ page }) => {
-    await page.goto('/documents')
+    await page.goto('/docs')
 
-    // Count existing documents
-    const initialDocs = await page.locator('[data-testid="document-item"], .document-item').count()
+    // Wait for main content to load
+    await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible({ timeout: 5000 })
 
-    // Create new document
-    const newButton = page.getByRole('button', { name: /new|create|add/i })
-    await expect(newButton).toBeVisible({ timeout: 5000 })
+    // Create new document - use exact match for header button
+    const newButton = page.getByRole('button', { name: 'New Document', exact: true })
     await newButton.click()
 
-    // Wait for editor and go back
-    await expect(page.locator('[data-testid="editor"], .ProseMirror, .tiptap')).toBeVisible({ timeout: 5000 })
+    // Wait for editor
+    await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
 
-    // Navigate back to list
-    await page.goto('/documents')
+    // Give title so it shows in sidebar - use unique timestamp to avoid conflicts
+    const uniqueTitle = `Test Doc ${Date.now()}`
+    const titleInput = page.getByPlaceholder('Untitled')
+    await titleInput.fill(uniqueTitle)
 
-    // Should have one more document
-    await expect(page.locator('[data-testid="document-item"], .document-item')).toHaveCount(initialDocs + 1, { timeout: 5000 })
+    // Wait for save to complete
+    await page.waitForResponse(resp => resp.url().includes('/api/documents/') && resp.request().method() === 'PATCH')
+
+    // The new document should now appear in sidebar - use longer timeout for context update
+    await expect(page.getByText(uniqueTitle).first()).toBeVisible({ timeout: 10000 })
   })
 })
