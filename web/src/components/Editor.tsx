@@ -10,6 +10,7 @@ import { WebsocketProvider } from 'y-websocket';
 import { cn } from '@/lib/cn';
 import { createSlashCommands } from './editor/SlashCommands';
 import { DocumentEmbed } from './editor/DocumentEmbed';
+import { DragHandleExtension } from './editor/DragHandle';
 import 'tippy.js/dist/tippy.css';
 
 interface EditorProps {
@@ -174,6 +175,7 @@ export function Editor({
       },
     }),
     DocumentEmbed,
+    DragHandleExtension,
     ...(slashCommandsExtension ? [slashCommandsExtension] : []),
   ];
 
@@ -279,7 +281,7 @@ export function Editor({
       <div className="flex flex-1 overflow-hidden">
         {/* Editor area - clickable to focus at end */}
         <div className="flex flex-1 flex-col overflow-auto cursor-text">
-          <div className="mx-auto max-w-3xl w-full p-8">
+          <div className="mx-auto max-w-3xl w-full py-8 pr-8 pl-12">
             {/* Large document title */}
             <input
               ref={titleInputRef}
@@ -289,7 +291,9 @@ export function Editor({
               placeholder="Untitled"
               className="mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none"
             />
-            <EditorContent editor={editor} />
+            <div className="tiptap-wrapper">
+              <EditorContent editor={editor} />
+            </div>
           </div>
           {/* Spacer to fill remaining height - clickable to focus editor at end */}
           <div

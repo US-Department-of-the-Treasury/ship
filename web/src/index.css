@@ -37,10 +37,20 @@ input::placeholder {
   color: #8a8a8a; /* WCAG 2.1 AA compliant (5.1:1 contrast against #0d0d0d) */
 }
 
-/* TipTap editor styles */
+/* TipTap editor styles - parent needs position for drag handle */
+.tiptap-wrapper {
+  position: relative;
+}
+
+/* EditorContent's inner wrapper needs position for drag handle */
+.tiptap-wrapper > div {
+  position: relative;
+}
+
 .ProseMirror {
   min-height: 300px;
   outline: none;
+  padding-left: 32px;
 }
 
 .ProseMirror p {
@@ -123,4 +133,49 @@ input::placeholder {
   top: -1.4em;
   user-select: none;
   white-space: nowrap;
+}
+
+/* Drag handle styles */
+.editor-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #525252;
+  transition: background-color 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.editor-drag-handle:hover {
+  background: #262626;
+  color: #a3a3a3;
+}
+
+.editor-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Dragging state */
+.ProseMirror.dragging {
+  cursor: grabbing;
+}
+
+.ProseMirror.dragging .ProseMirror-selectednode {
+  opacity: 0.4;
+}
+
+/* Selected node styling for drag */
+.ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid #5e6ad2;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Drop indicator */
+.ProseMirror.dragging [data-drop-target="true"] {
+  outline: 2px dashed #5e6ad2;
+  outline-offset: -2px;
 }
