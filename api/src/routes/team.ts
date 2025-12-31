@@ -372,7 +372,7 @@ router.post('/assign', requireAuth, async (req: Request, res: Response) => {
     await pool.query(
       `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, assignee_id, state, ticket_number)
        VALUES ($1, 'issue', $2, $3, $4, $5, 'todo', $6)`,
-      [workspaceId, 'Sprint Assignment', programId, sprintId, userId, nextTicket]
+      [workspaceId, 'Untitled', programId, sprintId, userId, nextTicket]
     );
 
     res.json({ success: true, sprintId });

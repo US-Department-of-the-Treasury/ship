@@ -63,12 +63,12 @@ Entities with these characteristics become documents:
 
 Entities that are "configuration" rather than "content":
 
-- State (workflow states)
-- Label (categorization tags)
-- IssueType (bug, feature, etc.)
-- Estimate points scale
-- Workspace settings
-- User identity/auth
+- Workspace settings (stored in workspace JSONB)
+- User identity/auth (separate `users` table)
+- Available custom states per workspace (in workspace settings)
+- Available labels per workspace (in workspace settings)
+
+**Key insight:** States and labels are **values in properties**, not separate tables. The list of *available* states/labels is workspace configuration, but the actual state of an issue is just a string in its properties.
 
 **Rule of thumb:** If it appears in a dropdown/picker, it's probably configuration. If it opens a full page, it's probably a document.
 
@@ -78,34 +78,39 @@ Entities that are "configuration" rather than "content":
 
 | Category               | Description                | Examples                                             |
 | ---------------------- | -------------------------- | ---------------------------------------------------- |
-| **Core fields**        | On every document          | `id`, `name`, `workspace_id`, `document_type`        |
-| **Association fields** | Relationships              | `program_id`, `project_id`, `sprint_id`, `parent_id` |
-| **Type-specific**      | Required by document type  | `state_id` (issues), `sprint_number` (sprints)       |
-| **Custom**             | User-defined per workspace | "Department", "Risk Level"                           |
+| **Core fields**        | Columns on every document  | `id`, `title`, `workspace_id`, `document_type`       |
+| **Association fields** | Columns for relationships  | `program_id`, `project_id`, `sprint_id`, `parent_id` |
+| **Type-specific**      | In properties JSONB        | `state` (issues), `sprint_number` (sprints)          |
+| **Custom**             | User-defined in properties | "Department", "Risk Level"                           |
 
 ### Schema-less with Type Enforcement
 
-Properties are stored as **JSON blobs**, with required properties enforced in TypeScript:
+Properties are stored in a **JSONB column**, with structure enforced in TypeScript:
 
 ```typescript
-// Required properties by document type
-const REQUIRED_PROPERTIES = {
-  issue: ["state_id"],
-  sprint: ["sprint_number"],
-  sprint_plan: ["owner_id"],
-  sprint_retro: ["owner_id"],
-};
+// Type-specific property interfaces (enforced in code)
+interface IssueProperties {
+  state: 'backlog' | 'todo' | 'in_progress' | 'done' | string;
+  priority?: 'low' | 'medium' | 'high';
+  assignee_id?: string;
+  ticket_number?: number;
+  [key: string]: any; // allows custom properties
+}
 
-// All properties in one blob
+// Example usage
 document.properties = {
-  state_id: "state_123",
+  state: "in_progress",
   priority: "high",
-  estimate_hours: 4,
-  department: "Engineering", // custom
+  assignee_id: "user_123",
+  department: "Engineering", // custom property
 };
 ```
 
-**Rationale:** Start simple, add validation/schema later if patterns emerge. YAGNI.
+**Why JSONB over columns:**
+- Custom properties without schema migrations
+- Simpler schema (fewer nullable columns)
+- Query performance is fine with aggressive client-side caching
+- TypeScript provides compile-time safety anyway
 
 ## Sprint Model
 
@@ -191,23 +196,15 @@ Properties that calculate from children are **computed on-demand**:
 
 **Rationale:** Compute when rendering. No precomputation or caching to start. Optimize later if needed.
 
-## Offline-First Conventions
+## Offline-Tolerant Conventions
 
-### Denormalized Snapshots
+### Current Approach
 
-For offline display, documents include snapshots of related data:
-
-```typescript
-document._snapshot = {
-  assignee: { id: "user_1", name: "Jane", avatar_url: "..." },
-  state: { id: "state_2", name: "In Progress", color: "#..." },
-  program: { id: "prog_1", name: "Auth Service", prefix: "AUTH" },
-};
-```
-
-- Snapshots are for **display only**
-- Canonical IDs (`assignee_ids`, `state_id`) are source of truth
-- Server rebuilds snapshots on sync
+The app is **offline-tolerant** (server is source of truth), not offline-first:
+- Documents cached in IndexedDB for fast reads
+- Writes go to server immediately when online
+- Offline writes queued, synced on reconnect
+- Last-write-wins conflict resolution
 
 ### IndexedDB Indexing
 
@@ -215,25 +212,26 @@ Create indexes for common query patterns:
 
 ```typescript
 // Essential indexes
-{
-  keyPath: "id";
-} // Primary key
-{
-  keyPath: "workspace_id";
-} // All docs in workspace
-{
-  keyPath: ["workspace_id", "document_type"];
-} // Docs by type
-{
-  keyPath: ["program_id", "document_type"];
-} // Docs in program
-{
-  keyPath: ["sprint_id"];
-} // Docs in sprint
-{
-  keyPath: "updated_at";
-} // Sync ordering
+{ keyPath: "id" }                              // Primary key
+{ keyPath: "workspace_id" }                    // All docs in workspace
+{ keyPath: ["workspace_id", "document_type"] } // Docs by type
+{ keyPath: ["program_id", "document_type"] }   // Docs in program
+{ keyPath: ["sprint_id"] }                     // Docs in sprint
+{ keyPath: "updated_at" }                      // Sync ordering
 ```
+
+### Roadmap: Denormalized Snapshots
+
+Future optimization for offline display - embed related data directly:
+
+```typescript
+document._snapshot = {
+  assignee: { id: "user_1", name: "Jane", avatar_url: "..." },
+  program: { id: "prog_1", name: "Auth Service", prefix: "AUTH" },
+};
+```
+
+Not yet implemented. Currently we join data client-side from cached documents.
 
 ## Editor Layout (4-Panel Structure)
 
@@ -333,7 +331,7 @@ They do NOT differ by title handling. Keep it simple.
 **Key Decisions:**
 
 1. **Permissions**: Workspace-level only (you're in or you're out)
-2. **Config entities**: Keep as lightweight tables, not documents (States, Labels, IssueTypes)
+2. **States/Labels**: Values in properties JSONB, not separate tables
 3. **Initial sync**: Recent + accessed documents (last 30 days + previously touched)
 4. **Search**: Server search with offline fallback to local IndexedDB
 5. **File attachments**: References only, files stored in S3/blob storage
@@ -342,14 +340,24 @@ They do NOT differ by title handling. Keep it simple.
 8. **Mobile**: Web-only for now, revisit later
 9. **API**: REST endpoints
 
-**Rationale for Config as Tables:**
+**Rationale for States as Values (not tables):**
 
-Config entities (State, Label, IssueType) differ from documents:
+- Simpler schema (no foreign keys, no joins)
+- Custom states just add to workspace settings
+- Query by state uses JSONB operators (performant with GIN index if needed)
+- 4 required states enforced in code, custom states allowed
 
-- Small cardinality (<50 per type)
-- Rarely change
-- Don't need versioning/comments
-- Appear in dropdowns, not navigated to
+### 2024-12-31: Properties Architecture Clarification
+
+**Attendees:** User + Claude
+
+**Key Decisions:**
+
+1. **Pure JSONB properties**: All type-specific data in `properties` JSONB column
+2. **States as values**: `state: "in_progress"` not `state_id: "uuid"`
+3. **4 required states**: backlog, todo, in_progress, done (enforced in code)
+4. **Custom states allowed**: Workspaces can add more states beyond the 4
+5. **Migration planned**: Current explicit columns will migrate to JSONB
 
 ## References
 
