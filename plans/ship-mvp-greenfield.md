@@ -697,43 +697,35 @@ Each phase is complete when:
 
 ---
 
-## Session State (Auto-updated: 2025-12-31T04:10:51Z)
+## Session State (Auto-updated: 2025-12-31T14:24:24Z)
 
-**Branch:** `master`
-**Project:** `/Users/corcoss/code/ship`
+**Branch:** `deploy`
+**Project:** `/Users/corcoss/code/ship/.worktrees/deploy`
 
 ### Recent Commits
 ```
-a5b4a01 Add Team Directory, enable slash commands on all document types
-44958dd Merge pull request #7 from US-Department-of-the-Treasury/project-mode
-67c780f Add drag handle tests, editor padding, and ProjectView TabBar
-a52d240 Add visual hierarchy to sprint list with status grouping
-7cf4aa7 Merge pull request #6 from US-Department-of-the-Treasury/project-mode
+44edb81 Fix duplicate function declarations in collaboration server
+abfd8c2 Add Notion-style auto-redirect to last visited document
+efcb75c Add sprint planning UX improvements and Cmd+K command palette
+1957e63 Merge pull request #8 from US-Department-of-the-Treasury/project-mode
+3801162 Add persona-focused tutorial and fix Yjs content loading
 ```
 
 ### Uncommitted Changes
 ```
- M api/src/app.ts
- M api/src/collaboration/index.ts
- M api/src/db/schema.sql
- M api/src/db/seed.ts
- M api/src/routes/issues.ts
- D api/src/routes/projects.ts
- M api/src/routes/sprints.ts
- M api/src/routes/team.ts
- D e2e/projects.spec.ts
- M e2e/sprints.spec.ts
+ M .gitignore
+ M web/public/robots.txt
+?? .audit/
+?? DEPLOYMENT.md
+?? DEPLOYMENT_CHECKLIST.md
+?? INFRASTRUCTURE.md
+?? INFRASTRUCTURE_README.md
+?? INFRASTRUCTURE_SUMMARY.md
+?? api/.dockerignore
+?? api/.ebextensions/
 ```
 
 ### Modified Files
-api/src/app.ts
-api/src/collaboration/index.ts
-api/src/db/schema.sql
-api/src/db/seed.ts
-api/src/routes/issues.ts
-api/src/routes/projects.ts
-api/src/routes/sprints.ts
-api/src/routes/team.ts
-e2e/projects.spec.ts
-e2e/sprints.spec.ts
+.gitignore
+web/public/robots.txt
 

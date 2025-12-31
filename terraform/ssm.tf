@@ -1,0 +1,113 @@
+# SSM Parameter Store - Database Connection String
+resource "aws_ssm_parameter" "database_url" {
+  name        = "/${var.project_name}/${var.environment}/DATABASE_URL"
+  description = "PostgreSQL connection string for Ship application"
+  type        = "SecureString"
+  value = format(
+    "postgresql://%s:%s@%s:%s/%s",
+    aws_rds_cluster.aurora.master_username,
+    random_password.db_password.result,
+    aws_rds_cluster.aurora.endpoint,
+    aws_rds_cluster.aurora.port,
+    aws_rds_cluster.aurora.database_name
+  )
+
+  tags = {
+    Name = "${var.project_name}-database-url"
+  }
+}
+
+# SSM Parameter - Database Host (separate for easier access)
+resource "aws_ssm_parameter" "db_host" {
+  name        = "/${var.project_name}/${var.environment}/DB_HOST"
+  description = "Aurora cluster endpoint"
+  type        = "String"
+  value       = aws_rds_cluster.aurora.endpoint
+
+  tags = {
+    Name = "${var.project_name}-db-host"
+  }
+}
+
+# SSM Parameter - Database Name
+resource "aws_ssm_parameter" "db_name" {
+  name        = "/${var.project_name}/${var.environment}/DB_NAME"
+  description = "Database name"
+  type        = "String"
+  value       = aws_rds_cluster.aurora.database_name
+
+  tags = {
+    Name = "${var.project_name}-db-name"
+  }
+}
+
+# SSM Parameter - Database Username
+resource "aws_ssm_parameter" "db_username" {
+  name        = "/${var.project_name}/${var.environment}/DB_USERNAME"
+  description = "Database username"
+  type        = "String"
+  value       = aws_rds_cluster.aurora.master_username
+
+  tags = {
+    Name = "${var.project_name}-db-username"
+  }
+}
+
+# SSM Parameter - Database Password
+resource "aws_ssm_parameter" "db_password" {
+  name        = "/${var.project_name}/${var.environment}/DB_PASSWORD"
+  description = "Database password"
+  type        = "SecureString"
+  value       = random_password.db_password.result
+
+  tags = {
+    Name = "${var.project_name}-db-password"
+  }
+}
+
+# SSM Parameter - CORS Origin (for frontend URL)
+resource "aws_ssm_parameter" "cors_origin" {
+  name        = "/${var.project_name}/${var.environment}/CORS_ORIGIN"
+  description = "CORS origin for API (frontend URL)"
+  type        = "String"
+  value       = var.app_domain_name != "" ? "https://${var.app_domain_name}" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
+
+  tags = {
+    Name = "${var.project_name}-cors-origin"
+  }
+}
+
+# IAM Role for EB instances to read SSM parameters
+resource "aws_iam_role_policy" "eb_ssm_access" {
+  name = "${var.project_name}-eb-ssm-access"
+  role = aws_iam_role.eb_instance.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters",
+          "ssm:GetParametersByPath"
+        ]
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/${var.environment}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "ssm.${var.aws_region}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+}
+
+data "aws_caller_identity" "current" {}

@@ -1,0 +1,19 @@
+# Copy this file to terraform.tfvars and fill in your values
+
+aws_region   = "us-east-1"
+project_name = "ship"
+environment  = "dev"
+
+# Database configuration
+db_name              = "ship_main"
+aurora_min_capacity  = 0.5
+aurora_max_capacity  = 4
+
+# VPC configuration
+vpc_cidr            = "10.0.0.0/16"
+enable_nat_gateway  = true
+
+# Custom domains (optional - leave empty to use AWS defaults)
+route53_zone_id     = ""  # e.g., "Z1234567890ABC"
+api_domain_name     = ""  # e.g., "api.example.gov"
+app_domain_name     = ""  # e.g., "app.example.gov"

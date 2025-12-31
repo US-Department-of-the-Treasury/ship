@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { pool } from '../db/client.js';
-import { SESSION_TIMEOUT_MS, ERROR_CODES, HTTP_STATUS } from '@ship/shared';
+import { SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS, ERROR_CODES, HTTP_STATUS } from '@ship/shared';
 
 // Extend Express Request to include session info
 declare global {
@@ -34,7 +34,7 @@ export async function authMiddleware(
   try {
     // Get session and check if it's valid
     const result = await pool.query(
-      `SELECT s.id, s.user_id, s.workspace_id, s.expires_at, s.last_activity
+      `SELECT s.id, s.user_id, s.workspace_id, s.expires_at, s.last_activity, s.created_at
        FROM sessions s
        WHERE s.id = $1`,
       [sessionId]
@@ -55,11 +55,26 @@ export async function authMiddleware(
 
     const now = new Date();
     const lastActivity = new Date(session.last_activity);
+    const createdAt = new Date(session.created_at);
     const inactivityMs = now.getTime() - lastActivity.getTime();
+    const sessionAgeMs = now.getTime() - createdAt.getTime();
+
+    // Check 12-hour absolute session timeout (NIST SP 800-63B-4 AAL2)
+    if (sessionAgeMs > ABSOLUTE_SESSION_TIMEOUT_MS) {
+      await pool.query('DELETE FROM sessions WHERE id = $1', [sessionId]);
+
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.SESSION_EXPIRED,
+          message: 'Session expired. Please log in again.',
+        },
+      });
+      return;
+    }
 
     // Check 15-minute inactivity timeout
     if (inactivityMs > SESSION_TIMEOUT_MS) {
-      // Delete expired session
       await pool.query('DELETE FROM sessions WHERE id = $1', [sessionId]);
 
       res.status(HTTP_STATUS.UNAUTHORIZED).json({

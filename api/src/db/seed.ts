@@ -20,7 +20,9 @@ const pool = new Pool({
 
 async function seed() {
   console.log('🌱 Starting database seed...');
-  console.log(`   Database: ${process.env.DATABASE_URL}`);
+  // Only log hostname, never full connection string (contains credentials)
+  const dbHost = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).hostname : 'unknown';
+  console.log(`   Database host: ${dbHost}`);
 
   try {
     // Run schema

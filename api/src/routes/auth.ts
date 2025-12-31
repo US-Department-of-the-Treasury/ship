@@ -1,12 +1,17 @@
 import { Router, Request, Response } from 'express';
 import type { Router as RouterType } from 'express';
 import bcrypt from 'bcrypt';
-import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 import { pool } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { ERROR_CODES, HTTP_STATUS, SESSION_TIMEOUT_MS } from '@ship/shared';
 
 const router: RouterType = Router();
+
+// Generate cryptographically secure session ID (256 bits of entropy)
+function generateSecureSessionId(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 // POST /api/auth/login
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
@@ -59,22 +64,38 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Create session
-    const sessionId = uuidv4();
+    // Session fixation prevention: Delete any existing session from this request
+    const oldSessionId = req.cookies.session_id;
+    if (oldSessionId) {
+      await pool.query('DELETE FROM sessions WHERE id = $1', [oldSessionId]);
+    }
+
+    // Create NEW session with cryptographically secure ID
+    const sessionId = generateSecureSessionId();
     const expiresAt = new Date(Date.now() + SESSION_TIMEOUT_MS);
 
+    // Store session with binding data (user_agent, ip_address for audit)
     await pool.query(
-      `INSERT INTO sessions (id, user_id, workspace_id, expires_at, last_activity)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [sessionId, user.id, user.workspace_id, expiresAt, new Date()]
+      `INSERT INTO sessions (id, user_id, workspace_id, expires_at, last_activity, user_agent, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        sessionId,
+        user.id,
+        user.workspace_id,
+        expiresAt,
+        new Date(),
+        req.headers['user-agent'] || 'unknown',
+        req.ip || req.socket.remoteAddress || 'unknown',
+      ]
     );
 
-    // Set cookie
+    // Set cookie with hardened security options
     res.cookie('session_id', sessionId, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'strict', // Strict for government applications
       maxAge: SESSION_TIMEOUT_MS,
+      path: '/',
     });
 
     res.json({
@@ -102,11 +123,16 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 // POST /api/auth/logout
 router.post('/logout', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
-    // Delete session
+    // Delete session from database
     await pool.query('DELETE FROM sessions WHERE id = $1', [req.sessionId]);
 
-    // Clear cookie
-    res.clearCookie('session_id');
+    // Clear cookie with same options used when setting it
+    res.clearCookie('session_id', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+    });
 
     res.json({ success: true });
   } catch (error) {

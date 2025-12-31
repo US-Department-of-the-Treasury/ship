@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
@@ -21,6 +22,9 @@ export function AppLayout() {
     return localStorage.getItem('ship:leftSidebarCollapsed') === 'true';
   });
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Accessibility: focus management on navigation
+  useFocusOnNavigate();
 
   // Persist sidebar state
   useEffect(() => {
@@ -77,8 +81,16 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen bg-background">
-      {/* Icon Rail */}
-      <div className="flex w-12 flex-col items-center border-r border-border bg-background py-3">
+      {/* Skip link for keyboard/screen reader users - Section 508 compliance */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-accent focus:text-white focus:rounded-md focus:outline-none focus:ring-2 focus:ring-accent-foreground"
+      >
+        Skip to main content
+      </a>
+
+      {/* Icon Rail - Navigation landmark */}
+      <nav className="flex w-12 flex-col items-center border-r border-border bg-background py-3" role="navigation" aria-label="Main navigation">
         {/* Workspace icon */}
         <div className="mb-4 flex h-8 w-8 items-center justify-center">
           <img src="/icons/white/logo-64.png" alt="Ship" className="h-8 w-8" />
@@ -139,14 +151,16 @@ export function AppLayout() {
             {user?.name?.charAt(0).toUpperCase() || 'U'}
           </button>
         </div>
-      </div>
+      </nav>
 
-      {/* Contextual Sidebar */}
+      {/* Contextual Sidebar - Complementary landmark */}
       <aside
         className={cn(
           'flex flex-col border-r border-border transition-all duration-200 overflow-hidden',
           leftSidebarCollapsed ? 'w-0 border-r-0' : 'w-56'
         )}
+        role="complementary"
+        aria-label={`${activeMode === 'docs' ? 'Documents' : activeMode === 'issues' ? 'Issues' : activeMode === 'programs' ? 'Programs' : activeMode === 'team' ? 'Teams' : 'Settings'} sidebar`}
       >
         <div className="flex w-56 flex-col h-full">
           {/* Sidebar header */}
@@ -221,7 +235,7 @@ export function AppLayout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex flex-1 flex-col overflow-hidden">
+      <main id="main-content" className="flex flex-1 flex-col overflow-hidden" role="main" tabIndex={-1}>
         <Outlet />
       </main>
 
