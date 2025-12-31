@@ -6,6 +6,7 @@ import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { cn } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
+import { CommandPalette } from '@/components/CommandPalette';
 
 type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
 
@@ -19,11 +20,24 @@ export function AppLayout() {
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
     return localStorage.getItem('ship:leftSidebarCollapsed') === 'true';
   });
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   // Persist sidebar state
   useEffect(() => {
     localStorage.setItem('ship:leftSidebarCollapsed', String(leftSidebarCollapsed));
   }, [leftSidebarCollapsed]);
+
+  // Global Cmd+K keyboard shortcut for command palette
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(open => !open);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Determine active mode from path
   const getActiveMode = (): Mode => {
@@ -210,6 +224,9 @@ export function AppLayout() {
       <main className="flex flex-1 flex-col overflow-hidden">
         <Outlet />
       </main>
+
+      {/* Command Palette (Cmd+K) */}
+      <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
     </div>
   );
 }

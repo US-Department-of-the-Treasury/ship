@@ -49,8 +49,9 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 // Validation schemas
 const createDocumentSchema = z.object({
   title: z.string().min(1).max(255).optional().default('Untitled'),
-  document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person']).optional().default('wiki'),
+  document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'sprint_plan', 'sprint_retro']).optional().default('wiki'),
   parent_id: z.string().uuid().optional().nullable(),
+  sprint_id: z.string().uuid().optional().nullable(),
 });
 
 const updateDocumentSchema = z.object({
@@ -127,13 +128,13 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, document_type, parent_id } = parsed.data;
+    const { title, document_type, parent_id, sprint_id } = parsed.data;
 
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, parent_id, created_by)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO documents (workspace_id, document_type, title, parent_id, sprint_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [req.user!.workspaceId, document_type, title, parent_id || null, req.user!.id]
+      [req.user!.workspaceId, document_type, title, parent_id || null, sprint_id || null, req.user!.id]
     );
 
     res.status(201).json(result.rows[0]);

@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 -- Document types enum
 DO $$ BEGIN
-  CREATE TYPE document_type AS ENUM ('wiki', 'issue', 'program', 'project', 'sprint', 'person');
+  CREATE TYPE document_type AS ENUM ('wiki', 'issue', 'program', 'project', 'sprint', 'person', 'sprint_plan', 'sprint_retro');
 EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS documents (
   start_date DATE,
   end_date DATE,
   sprint_status TEXT DEFAULT 'planned',
+  goal TEXT,
 
   -- Timestamps
   created_at TIMESTAMPTZ DEFAULT now(),

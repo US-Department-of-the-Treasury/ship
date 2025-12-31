@@ -83,7 +83,7 @@ export function SprintViewPage() {
         if (backlogRes.ok) {
           const programIssues = await backlogRes.json();
           // Filter to only show issues not in any sprint
-          setBacklogIssues(programIssues.filter((i: Issue & { sprint_ref_id: string | null }) => !i.sprint_ref_id));
+          setBacklogIssues(programIssues.filter((i: Issue & { sprint_id: string | null }) => !i.sprint_id));
         }
       } catch (err) {
         if (!cancelled) console.error('Failed to fetch sprint:', err);
@@ -103,7 +103,7 @@ export function SprintViewPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ sprint_ref_id: id }),
+        body: JSON.stringify({ sprint_id: id }),
       });
 
       if (res.ok) {
@@ -124,7 +124,7 @@ export function SprintViewPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ sprint_ref_id: null }),
+        body: JSON.stringify({ sprint_id: null }),
       });
 
       if (res.ok) {
@@ -176,6 +176,33 @@ export function SprintViewPage() {
     }
   };
 
+  const createSprintDocument = async (docType: 'sprint_plan' | 'sprint_retro') => {
+    if (!id || !sprint) return;
+    try {
+      const title = docType === 'sprint_plan'
+        ? `${sprint.name} - Sprint Plan`
+        : `${sprint.name} - Retrospective`;
+
+      const res = await fetch(`${API_URL}/api/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          title,
+          document_type: docType,
+          sprint_id: id,
+        }),
+      });
+
+      if (res.ok) {
+        const doc = await res.json();
+        navigate(`/docs/${doc.id}`);
+      }
+    } catch (err) {
+      console.error('Failed to create document:', err);
+    }
+  };
+
   if (loading || !sprint) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -214,6 +241,18 @@ export function SprintViewPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => createSprintDocument('sprint_plan')}
+              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-border/50 transition-colors"
+            >
+              Sprint Plan
+            </button>
+            <button
+              onClick={() => createSprintDocument('sprint_retro')}
+              className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-border/50 transition-colors"
+            >
+              Retrospective
+            </button>
             {sprint.status === 'planned' && (
               <button
                 onClick={() => updateSprintStatus('active')}

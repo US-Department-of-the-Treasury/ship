@@ -58,6 +58,7 @@ const updateSprintSchema = z.object({
   start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   sprint_status: z.enum(['planned', 'active', 'completed']).optional(),
+  goal: z.string().optional().nullable(),
 });
 
 // Get single sprint
@@ -66,7 +67,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     const { id } = req.params;
     const result = await pool.query(
       `SELECT d.id, d.title as name, d.start_date, d.end_date, d.sprint_status as status,
-              d.program_id, p.title as program_name, p.prefix as program_prefix,
+              d.program_id, d.goal, p.title as program_name, p.prefix as program_prefix,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.state = 'done') as completed_count
        FROM documents d
@@ -182,6 +183,10 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
       updates.push(`sprint_status = $${paramIndex++}`);
       values.push(data.sprint_status);
     }
+    if (data.goal !== undefined) {
+      updates.push(`goal = $${paramIndex++}`);
+      values.push(data.goal);
+    }
 
     // Validate dates if either changed
     if (new Date(newEndDate) <= new Date(newStartDate)) {
@@ -199,7 +204,7 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     const result = await pool.query(
       `UPDATE documents SET ${updates.join(', ')}
        WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'sprint'
-       RETURNING id, title as name, start_date, end_date, sprint_status as status, program_id`,
+       RETURNING id, title as name, start_date, end_date, sprint_status as status, program_id, goal`,
       [...values, id, req.user!.workspaceId]
     );
 
