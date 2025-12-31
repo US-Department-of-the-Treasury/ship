@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDocuments } from '@/contexts/DocumentsContext';
 import { buildDocumentTree } from '@/lib/documentTree';
@@ -10,6 +10,28 @@ export function DocumentsPage() {
   const { documents, loading, createDocument } = useDocuments();
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
+
+  // Auto-redirect to last visited document or "Welcome to Ship"
+  useEffect(() => {
+    if (loading || documents.length === 0) return;
+
+    // Check for last visited document
+    const lastVisitedId = localStorage.getItem('ship:lastVisitedDoc');
+    if (lastVisitedId && documents.some(d => d.id === lastVisitedId)) {
+      navigate(`/docs/${lastVisitedId}`, { replace: true });
+      return;
+    }
+
+    // Fall back to "Welcome to Ship" document
+    const welcomeDoc = documents.find(d => d.title === 'Welcome to Ship');
+    if (welcomeDoc) {
+      navigate(`/docs/${welcomeDoc.id}`, { replace: true });
+      return;
+    }
+
+    // Fall back to first document
+    navigate(`/docs/${documents[0].id}`, { replace: true });
+  }, [loading, documents, navigate]);
 
   // Build tree structure from flat documents
   const documentTree = useMemo(() => buildDocumentTree(documents), [documents]);

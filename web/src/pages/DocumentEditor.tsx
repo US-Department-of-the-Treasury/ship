@@ -40,6 +40,13 @@ export function DocumentEditorPage() {
   // Use context document if available, otherwise use directly fetched document
   const document = contextDocument || directDocument;
 
+  // Track last visited document for auto-open on /docs
+  useEffect(() => {
+    if (id && document) {
+      localStorage.setItem('ship:lastVisitedDoc', id);
+    }
+  }, [id, document]);
+
   // Update handler - uses context for wiki docs, direct API for others
   const handleUpdateDocument = useCallback(async (updates: Partial<WikiDocument>) => {
     if (!id) return;
