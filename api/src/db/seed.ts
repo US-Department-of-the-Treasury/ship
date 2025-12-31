@@ -293,6 +293,86 @@ async function seed() {
       console.log('ℹ️  All issues already exist');
     }
 
+    // Wiki documents to seed
+    const wikiDocuments = [
+      { title: 'Getting Started', children: [
+        { title: 'Quick Start Guide' },
+        { title: 'Installation' },
+        { title: 'Configuration' },
+      ]},
+      { title: 'Architecture', children: [
+        { title: 'System Overview' },
+        { title: 'Database Schema' },
+        { title: 'API Design' },
+      ]},
+      { title: 'Development Guide', children: [
+        { title: 'Local Setup' },
+        { title: 'Testing Strategy' },
+        { title: 'Code Style' },
+        { title: 'Git Workflow' },
+      ]},
+      { title: 'Deployment', children: [
+        { title: 'AWS Infrastructure' },
+        { title: 'CI/CD Pipeline' },
+        { title: 'Monitoring & Alerts' },
+      ]},
+      { title: 'Team Processes', children: [
+        { title: 'Sprint Planning' },
+        { title: 'Code Review Guidelines' },
+        { title: 'On-Call Runbook' },
+      ]},
+    ];
+
+    let docsCreated = 0;
+    const devUser = allUsers.find(u => u.name === 'Dev User');
+
+    for (const doc of wikiDocuments) {
+      // Check if parent doc exists
+      const existingDoc = await pool.query(
+        `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'wiki' AND title = $2 AND parent_id IS NULL`,
+        [workspaceId, doc.title]
+      );
+
+      let parentId: string;
+      if (existingDoc.rows[0]) {
+        parentId = existingDoc.rows[0].id;
+      } else {
+        const parentResult = await pool.query(
+          `INSERT INTO documents (workspace_id, document_type, title, created_by)
+           VALUES ($1, 'wiki', $2, $3)
+           RETURNING id`,
+          [workspaceId, doc.title, devUser?.id]
+        );
+        parentId = parentResult.rows[0].id;
+        docsCreated++;
+      }
+
+      // Create children
+      if (doc.children) {
+        for (const child of doc.children) {
+          const existingChild = await pool.query(
+            `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'wiki' AND title = $2 AND parent_id = $3`,
+            [workspaceId, child.title, parentId]
+          );
+
+          if (!existingChild.rows[0]) {
+            await pool.query(
+              `INSERT INTO documents (workspace_id, document_type, title, parent_id, created_by)
+               VALUES ($1, 'wiki', $2, $3, $4)`,
+              [workspaceId, child.title, parentId, devUser?.id]
+            );
+            docsCreated++;
+          }
+        }
+      }
+    }
+
+    if (docsCreated > 0) {
+      console.log(`✅ Created ${docsCreated} wiki documents`);
+    } else {
+      console.log('ℹ️  All wiki documents already exist');
+    }
+
     console.log('');
     console.log('🎉 Seed complete!');
     console.log('');

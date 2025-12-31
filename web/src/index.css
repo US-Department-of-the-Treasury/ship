@@ -50,7 +50,6 @@ input::placeholder {
 .ProseMirror {
   min-height: 300px;
   outline: none;
-  padding-left: 32px;
 }
 
 .ProseMirror p {
