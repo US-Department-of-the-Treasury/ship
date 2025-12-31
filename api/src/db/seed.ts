@@ -3,22 +3,26 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import pg from 'pg';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
+import { loadProductionSecrets } from '../config/ssm.js';
 
 const { Pool } = pg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load environment
+// Load environment (local dev only - production uses SSM)
 config({ path: join(__dirname, '../../.env.local') });
 config({ path: join(__dirname, '../../.env') });
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
 async function seed() {
+  // Load secrets from SSM in production (must happen before Pool creation)
+  await loadProductionSecrets();
+
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  });
   console.log('🌱 Starting database seed...');
   // Only log hostname, never full connection string (contains credentials)
   const dbHost = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).hostname : 'unknown';

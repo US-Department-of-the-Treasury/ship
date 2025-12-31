@@ -18,7 +18,7 @@ interface Sprint {
   completed_count: number;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
 
 const STATUS_OPTIONS = [
   { value: 'planned', label: 'Planned', color: 'bg-gray-500' },

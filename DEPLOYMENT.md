@@ -13,8 +13,8 @@ brew install terraform
 # AWS CLI
 brew install awscli
 
-# EB CLI
-pip install awsebcli
+# pnpm (package manager)
+npm install -g pnpm
 
 # PostgreSQL client (for database initialization)
 brew install postgresql@16
@@ -64,55 +64,29 @@ cd ..
 
 **Cost:** ~$80/month for dev environment (t3.small + Aurora Serverless v2 0.5 ACU)
 
-### 2. Initialize Elastic Beanstalk Environment (One-time)
+### 2. Deploy API (Initial and Subsequent)
 
-After infrastructure is deployed, create the EB environment:
-
-```bash
-cd api
-eb init
-```
-
-Follow the prompts:
-- Select region (same as Terraform)
-- Select application (from `terraform output eb_application_name`)
-- Select platform: **Docker running on 64bit Amazon Linux 2023**
-- Do not set up SSH (we'll configure security groups properly)
-
-Create the environment:
+Deploy the Express API to Elastic Beanstalk:
 
 ```bash
-# Get values from Terraform outputs
-cd ../terraform
-export EB_APP=$(terraform output -raw eb_application_name)
-export EB_PROFILE=$(terraform output -raw eb_instance_profile)
-export EB_SERVICE_ROLE=$(terraform output -raw eb_service_role)
-export VPC_ID=$(terraform output -raw eb_vpc_id)
-export PRIVATE_SUBNETS=$(terraform output -raw eb_private_subnets)
-export PUBLIC_SUBNETS=$(terraform output -raw eb_public_subnets)
-export INSTANCE_SG=$(terraform output -raw eb_instance_security_group)
-export ALB_SG=$(terraform output -raw eb_alb_security_group)
+# Set environment variables (required)
+export EB_APP_NAME="ship-api"           # From terraform output eb_application_name
+export EB_ENV_NAME="ship-api-dev"       # From terraform output eb_environment_name
+export AWS_REGION="us-east-1"           # Your AWS region
 
-cd ../api
-
-# Create EB environment
-eb create ship-api-dev \
-  --instance-type t3.small \
-  --instance-profile "$EB_PROFILE" \
-  --service-role "$EB_SERVICE_ROLE" \
-  --vpc.id "$VPC_ID" \
-  --vpc.ec2subnets "$PRIVATE_SUBNETS" \
-  --vpc.elbsubnets "$PUBLIC_SUBNETS" \
-  --vpc.securitygroups "$INSTANCE_SG" \
-  --vpc.elbpublic \
-  --elb-type application
+# Deploy
+./scripts/deploy-api.sh
 ```
 
-This takes 5-10 minutes. EB will:
-- Create an Application Load Balancer
-- Launch EC2 instances in private subnets
-- Build and deploy your Docker container
-- Configure health checks and auto-scaling
+The script automatically:
+1. Builds the shared TypeScript package
+2. Builds the API package (including schema.sql)
+3. Creates a deployment ZIP with proper structure
+4. Uploads to S3 and creates EB application version
+5. Deploys to EB environment and waits for completion
+
+**First deployment:** 5-10 minutes
+**Subsequent deployments:** 3-5 minutes
 
 ### 3. Initialize Database (One-time)
 
@@ -127,20 +101,7 @@ This script:
 - Applies the schema from `api/src/db/schema.sql`
 - Optionally seeds test data
 
-### 4. Deploy API (Frequent)
-
-After initial setup, deploy code changes with:
-
-```bash
-./scripts/deploy-api.sh
-```
-
-This is a fast operation (3-5 minutes) that:
-- Builds Docker image
-- Uploads to EB
-- Performs rolling deployment
-
-### 5. Deploy Frontend (Frequent)
+### 4. Deploy Frontend (Frequent)
 
 Deploy the React frontend:
 
@@ -205,23 +166,37 @@ To use custom domains (e.g., `api.example.gov` and `app.example.gov`):
 
 ### View API Logs
 
+Using AWS CLI:
+
 ```bash
-cd api
-eb logs               # View recent logs
-eb logs --stream      # Stream logs in real-time
+# Request logs from EB
+aws elasticbeanstalk request-environment-info \
+  --environment-name ship-api-dev \
+  --info-type tail
+
+# Wait a moment, then retrieve them
+aws elasticbeanstalk retrieve-environment-info \
+  --environment-name ship-api-dev \
+  --info-type tail
 ```
 
-Or use CloudWatch Logs:
-- Application: `/aws/elasticbeanstalk/ship-api/application`
-- Nginx: `/aws/elasticbeanstalk/ship-api/nginx`
+Or use CloudWatch Logs directly:
+- Application: `/aws/elasticbeanstalk/ship-api-dev/var/log/eb-docker/containers/eb-current-app/stdouterr.log`
+- Docker: `/aws/elasticbeanstalk/ship-api-dev/var/log/eb-docker/containers/eb-current-app/`
 
 ### View API Status
 
 ```bash
-cd api
-eb status            # Environment status
-eb health            # Detailed health information
-eb ssh               # SSH into instance
+# Environment status
+aws elasticbeanstalk describe-environments \
+  --environment-names ship-api-dev \
+  --query "Environments[0].[Status,Health,HealthStatus]" \
+  --output table
+
+# Detailed health
+aws elasticbeanstalk describe-environment-health \
+  --environment-name ship-api-dev \
+  --attribute-names All
 ```
 
 ### View Frontend Access Logs
@@ -360,11 +335,15 @@ To destroy all infrastructure (WARNING: irreversible):
 
 ```bash
 # Delete EB environment first
-cd api
-eb terminate ship-api-dev
+aws elasticbeanstalk terminate-environment \
+  --environment-name ship-api-dev
+
+# Wait for termination (5-10 minutes)
+aws elasticbeanstalk wait environment-terminated \
+  --environment-name ship-api-dev
 
 # Then destroy Terraform resources
-cd ../terraform
+cd terraform
 terraform destroy
 ```
 

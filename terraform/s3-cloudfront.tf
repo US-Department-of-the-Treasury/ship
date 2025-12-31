@@ -50,16 +50,92 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
 resource "aws_cloudfront_distribution" "frontend" {
   enabled             = true
   is_ipv6_enabled     = true
-  comment             = "Ship Frontend - React static site"
+  comment             = "Ship Frontend - React static site with API routing"
   default_root_object = "index.html"
   price_class         = "PriceClass_100" # US, Canada, Europe only
 
   aliases = var.app_domain_name != "" ? [var.app_domain_name] : []
 
+  # Origin 1: S3 for static assets
   origin {
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
     origin_id                = "S3-${aws_s3_bucket.frontend.id}"
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
+  }
+
+  # Origin 2: Elastic Beanstalk API
+  origin {
+    domain_name = var.eb_environment_cname
+    origin_id   = "EB-API"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # API routes - forward to EB
+  ordered_cache_behavior {
+    path_pattern           = "/api/*"
+    target_origin_id       = "EB-API"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+
+    forwarded_values {
+      query_string = true
+      headers      = ["*"]  # Forward all headers including CloudFront-Forwarded-Proto for trust proxy
+      cookies {
+        forward = "all"
+      }
+    }
+  }
+
+  # Health check endpoint
+  ordered_cache_behavior {
+    path_pattern           = "/health"
+    target_origin_id       = "EB-API"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+  }
+
+  # WebSocket collaboration endpoint
+  ordered_cache_behavior {
+    path_pattern           = "/collaboration/*"
+    target_origin_id       = "EB-API"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = false
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+
+    forwarded_values {
+      query_string = true
+      headers      = ["*"]
+      cookies {
+        forward = "all"
+      }
+    }
   }
 
   default_cache_behavior {

@@ -67,13 +67,13 @@ output "api_url" {
 output "eb_config_summary" {
   description = "Configuration values for EB CLI setup"
   value = {
-    application_name       = aws_elastic_beanstalk_application.api.name
-    instance_profile       = aws_iam_instance_profile.eb.name
-    service_role_arn       = aws_iam_role.eb_service.arn
-    vpc_id                 = aws_vpc.main.id
-    private_subnets        = join(",", aws_subnet.private[*].id)
-    public_subnets         = join(",", aws_subnet.public[*].id)
+    application_name        = aws_elastic_beanstalk_application.api.name
+    instance_profile        = aws_iam_instance_profile.eb.name
+    service_role_arn        = aws_iam_role.eb_service.arn
+    vpc_id                  = aws_vpc.main.id
+    private_subnets         = join(",", aws_subnet.private[*].id)
+    public_subnets          = join(",", aws_subnet.public[*].id)
     instance_security_group = aws_security_group.eb_instance.id
-    alb_security_group     = aws_security_group.alb.id
+    alb_security_group      = aws_security_group.alb.id
   }
 }

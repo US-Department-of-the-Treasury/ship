@@ -20,17 +20,21 @@ export async function loadProductionSecrets(): Promise<void> {
     return; // Use .env files for local dev
   }
 
-  const ssmPath = process.env.SSM_PATH || '/ship/prod';
+  const environment = process.env.ENVIRONMENT || 'dev';
+  const basePath = `/ship/${environment}`;
 
-  console.log(`Loading secrets from SSM path: ${ssmPath}`);
+  console.log(`Loading secrets from SSM path: ${basePath}`);
 
-  const [databaseUrl, sessionSecret] = await Promise.all([
-    getSSMSecret(`${ssmPath}/database-url`),
-    getSSMSecret(`${ssmPath}/session-secret`),
+  const [databaseUrl, sessionSecret, corsOrigin] = await Promise.all([
+    getSSMSecret(`${basePath}/DATABASE_URL`),
+    getSSMSecret(`${basePath}/SESSION_SECRET`),
+    getSSMSecret(`${basePath}/CORS_ORIGIN`),
   ]);
 
   process.env.DATABASE_URL = databaseUrl;
   process.env.SESSION_SECRET = sessionSecret;
+  process.env.CORS_ORIGIN = corsOrigin;
 
   console.log('Secrets loaded from SSM Parameter Store');
+  console.log(`CORS_ORIGIN: ${corsOrigin}`);
 }
