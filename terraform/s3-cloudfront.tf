@@ -1,6 +1,6 @@
-# S3 Bucket for React Frontend
+# S3 Bucket for React Frontend (includes account ID for global uniqueness)
 resource "aws_s3_bucket" "frontend" {
-  bucket = "${var.project_name}-frontend-${var.environment}"
+  bucket = "${var.project_name}-frontend-${var.environment}-${data.aws_caller_identity.current.account_id}"
 
   tags = {
     Name = "${var.project_name}-frontend"
@@ -63,77 +63,89 @@ resource "aws_cloudfront_distribution" "frontend" {
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
   }
 
-  # Origin 2: Elastic Beanstalk API
-  origin {
-    domain_name = var.eb_environment_cname
-    origin_id   = "EB-API"
+  # Origin 2: Elastic Beanstalk API (conditional - only when CNAME is provided)
+  dynamic "origin" {
+    for_each = var.eb_environment_cname != "" ? [1] : []
+    content {
+      domain_name = var.eb_environment_cname
+      origin_id   = "EB-API"
 
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "http-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-    }
-  }
-
-  # API routes - forward to EB
-  ordered_cache_behavior {
-    path_pattern           = "/api/*"
-    target_origin_id       = "EB-API"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
-    min_ttl                = 0
-    default_ttl            = 0
-    max_ttl                = 0
-
-    forwarded_values {
-      query_string = true
-      headers      = ["*"]  # Forward all headers including CloudFront-Forwarded-Proto for trust proxy
-      cookies {
-        forward = "all"
+      custom_origin_config {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
       }
     }
   }
 
-  # Health check endpoint
-  ordered_cache_behavior {
-    path_pattern           = "/health"
-    target_origin_id       = "EB-API"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
-    min_ttl                = 0
-    default_ttl            = 0
-    max_ttl                = 0
+  # API routes - forward to EB (only when EB is configured)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.eb_environment_cname != "" ? [1] : []
+    content {
+      path_pattern           = "/api/*"
+      target_origin_id       = "EB-API"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = true
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
 
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
+      forwarded_values {
+        query_string = true
+        headers      = ["*"]  # Forward all headers including CloudFront-Forwarded-Proto for trust proxy
+        cookies {
+          forward = "all"
+        }
       }
     }
   }
 
-  # WebSocket collaboration endpoint
-  ordered_cache_behavior {
-    path_pattern           = "/collaboration/*"
-    target_origin_id       = "EB-API"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = false
-    min_ttl                = 0
-    default_ttl            = 0
-    max_ttl                = 0
+  # Health check endpoint (only when EB is configured)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.eb_environment_cname != "" ? [1] : []
+    content {
+      path_pattern           = "/health"
+      target_origin_id       = "EB-API"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["GET", "HEAD"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = true
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
 
-    forwarded_values {
-      query_string = true
-      headers      = ["*"]
-      cookies {
-        forward = "all"
+      forwarded_values {
+        query_string = false
+        cookies {
+          forward = "none"
+        }
+      }
+    }
+  }
+
+  # WebSocket collaboration endpoint (only when EB is configured)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.eb_environment_cname != "" ? [1] : []
+    content {
+      path_pattern           = "/collaboration/*"
+      target_origin_id       = "EB-API"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = false
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+
+      forwarded_values {
+        query_string = true
+        headers      = ["*"]
+        cookies {
+          forward = "all"
+        }
       }
     }
   }

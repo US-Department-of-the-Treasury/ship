@@ -71,6 +71,9 @@ importers:
       express:
         specifier: ^4.21.2
         version: 4.22.1
+      express-session:
+        specifier: ^1.18.2
+        version: 1.18.2
       helmet:
         specifier: ^8.0.0
         version: 8.1.0
@@ -135,9 +138,6 @@ importers:
       '@vitest/ui':
         specifier: ^4.0.16
         version: 4.0.16(vitest@4.0.16)
-      express-session:
-        specifier: ^1.18.2
-        version: 1.18.2
       supertest:
         specifier: ^7.1.4
         version: 7.1.4
