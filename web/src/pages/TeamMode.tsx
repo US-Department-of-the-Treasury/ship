@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import * as Popover from '@radix-ui/react-popover';
+import * as Dialog from '@radix-ui/react-dialog';
+import { ProjectCombobox, Project } from '@/components/ProjectCombobox';
 import { cn } from '@/lib/cn';
-import { TeamModeSkeleton } from '@/components/ui/Skeleton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -19,38 +19,27 @@ interface Sprint {
   isCurrent: boolean;
 }
 
-interface ProjectAssociation {
-  id: string;
-  name: string;
+interface Assignment {
+  projectId: string;
+  projectName: string;
   prefix: string;
   color: string;
-  issueCount: number;
-}
-
-interface IssueAssociation {
-  id: string;
-  title: string;
-  displayId: string;
-  state: string;
-}
-
-interface CellData {
-  projects: ProjectAssociation[];
-  issues: IssueAssociation[];
+  sprintDocId: string;
 }
 
 interface TeamGridData {
   users: User[];
   sprints: Sprint[];
-  associations: Record<string, Record<number, CellData>>;
   currentSprintNumber: number;
 }
 
-const SPRINTS_PER_LOAD = 5; // How many sprints to load when scrolling
-const SCROLL_THRESHOLD = 200; // Pixels from edge to trigger load
+const SPRINTS_PER_LOAD = 5;
+const SCROLL_THRESHOLD = 200;
 
 export function TeamModePage() {
   const [data, setData] = useState<TeamGridData | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [assignments, setAssignments] = useState<Record<string, Record<number, Assignment>>>({});
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState<'left' | 'right' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,9 +47,33 @@ export function TeamModePage() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
 
+  // Dialog states
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    userId: string;
+    userName: string;
+    sprintNumber: number;
+    sprintName: string;
+    currentProject: Assignment | null;
+    newProjectId: string | null;
+    newProject: Project | null;
+  } | null>(null);
+  const [lastPersonDialog, setLastPersonDialog] = useState<{
+    open: boolean;
+    userId: string;
+    sprintNumber: number;
+    issuesOrphaned: Array<{ id: string; title: string }>;
+    onConfirm: () => void;
+  } | null>(null);
+  const [operationLoading, setOperationLoading] = useState<string | null>(null);
+
   // Initial load
   useEffect(() => {
-    fetchTeamGrid();
+    Promise.all([
+      fetchTeamGrid(),
+      fetchProjects(),
+      fetchAssignments(),
+    ]).finally(() => setLoading(false));
   }, []);
 
   // Scroll to current sprint on initial load
@@ -68,11 +81,9 @@ export function TeamModePage() {
     if (data && scrollContainerRef.current && !hasScrolledToCurrentRef.current) {
       const currentSprintIndex = data.sprints.findIndex(s => s.isCurrent);
       if (currentSprintIndex >= 0) {
-        // Use requestAnimationFrame to ensure DOM is ready
         requestAnimationFrame(() => {
           if (scrollContainerRef.current) {
             const columnWidth = 140;
-            // Position current sprint at the left edge (show one previous sprint for context)
             const scrollPosition = Math.max(0, (currentSprintIndex - 1) * columnWidth);
             scrollContainerRef.current.scrollLeft = scrollPosition;
             hasScrolledToCurrentRef.current = true;
@@ -93,7 +104,6 @@ export function TeamModePage() {
       if (!res.ok) throw new Error('Failed to fetch team grid');
       const json: TeamGridData = await res.json();
 
-      // Set initial sprint range
       if (json.sprints.length > 0) {
         setSprintRange({
           min: json.sprints[0].number,
@@ -104,12 +114,179 @@ export function TeamModePage() {
       setData(json);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setLoading(false);
     }
   }
 
-  // Fetch more sprints (left or right)
+  async function fetchProjects() {
+    try {
+      const res = await fetch(`${API_URL}/api/team/projects`, { credentials: 'include' });
+      if (res.ok) {
+        const json = await res.json();
+        setProjects(json);
+      }
+    } catch (err) {
+      console.error('Failed to fetch projects:', err);
+    }
+  }
+
+  async function fetchAssignments() {
+    try {
+      const res = await fetch(`${API_URL}/api/team/assignments`, { credentials: 'include' });
+      if (res.ok) {
+        const json = await res.json();
+        setAssignments(json);
+      }
+    } catch (err) {
+      console.error('Failed to fetch assignments:', err);
+    }
+  }
+
+  const handleAssign = async (userId: string, projectId: string, sprintNumber: number) => {
+    const cellKey = `${userId}-${sprintNumber}`;
+    setOperationLoading(cellKey);
+
+    try {
+      const res = await fetch(`${API_URL}/api/team/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ userId, projectId, sprintNumber }),
+      });
+
+      const json = await res.json();
+
+      if (res.status === 409) {
+        // User already assigned to another project - show confirmation
+        setError(`User already assigned to ${json.existingProjectName} for this sprint`);
+        return;
+      }
+
+      if (!res.ok) {
+        setError(json.error || 'Failed to assign');
+        return;
+      }
+
+      // Update local state optimistically
+      const project = projects.find(p => p.id === projectId);
+      if (project) {
+        setAssignments(prev => ({
+          ...prev,
+          [userId]: {
+            ...prev[userId],
+            [sprintNumber]: {
+              projectId,
+              projectName: project.name,
+              prefix: project.prefix,
+              color: project.color,
+              sprintDocId: json.sprintId,
+            },
+          },
+        }));
+      }
+    } catch (err) {
+      setError('Failed to assign user');
+    } finally {
+      setOperationLoading(null);
+    }
+  };
+
+  const handleUnassign = async (userId: string, sprintNumber: number, skipConfirmation = false) => {
+    const cellKey = `${userId}-${sprintNumber}`;
+    setOperationLoading(cellKey);
+
+    try {
+      const res = await fetch(`${API_URL}/api/team/assign`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ userId, sprintNumber }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        setError(json.error || 'Failed to unassign');
+        return;
+      }
+
+      // If there were orphaned issues, show them in a dialog (unless skipped)
+      if (json.issuesOrphaned?.length > 0 && !skipConfirmation) {
+        // Issues were already moved to backlog, just inform the user
+        console.log(`${json.issuesOrphaned.length} issues moved to backlog`);
+      }
+
+      // Update local state
+      setAssignments(prev => {
+        const newAssignments = { ...prev };
+        if (newAssignments[userId]) {
+          const { [sprintNumber]: _, ...rest } = newAssignments[userId];
+          newAssignments[userId] = rest;
+        }
+        return newAssignments;
+      });
+    } catch (err) {
+      setError('Failed to unassign user');
+    } finally {
+      setOperationLoading(null);
+    }
+  };
+
+  const handleCellChange = useCallback((
+    userId: string,
+    userName: string,
+    sprintNumber: number,
+    sprintName: string,
+    newProjectId: string | null,
+    currentAssignment: Assignment | null
+  ) => {
+    // Same project - no change
+    if (newProjectId === currentAssignment?.projectId) {
+      return;
+    }
+
+    // Clear assignment
+    if (newProjectId === null && currentAssignment) {
+      handleUnassign(userId, sprintNumber);
+      return;
+    }
+
+    // New assignment (no existing)
+    if (newProjectId && !currentAssignment) {
+      handleAssign(userId, newProjectId, sprintNumber);
+      return;
+    }
+
+    // Reassignment - show confirmation dialog
+    if (newProjectId && currentAssignment) {
+      const newProject = projects.find(p => p.id === newProjectId) || null;
+      setConfirmDialog({
+        open: true,
+        userId,
+        userName,
+        sprintNumber,
+        sprintName,
+        currentProject: currentAssignment,
+        newProjectId,
+        newProject,
+      });
+    }
+  }, [projects]);
+
+  const handleConfirmReassign = async () => {
+    if (!confirmDialog) return;
+
+    const { userId, sprintNumber, newProjectId } = confirmDialog;
+    setConfirmDialog(null);
+
+    if (!newProjectId) return;
+
+    // First unassign from current project
+    await handleUnassign(userId, sprintNumber, true);
+    // Then assign to new project
+    await handleAssign(userId, newProjectId, sprintNumber);
+  };
+
+  // Fetch more sprints
   const fetchMoreSprints = useCallback(async (direction: 'left' | 'right') => {
     if (!data || !sprintRange || loadingMore) return;
 
@@ -120,7 +297,6 @@ export function TeamModePage() {
       ? sprintRange.min - 1
       : sprintRange.max + SPRINTS_PER_LOAD;
 
-    // Don't load if we're at sprint 1 going left
     if (direction === 'left' && sprintRange.min <= 1) return;
 
     setLoadingMore(direction);
@@ -135,38 +311,18 @@ export function TeamModePage() {
       if (!res.ok) throw new Error('Failed to fetch more sprints');
       const newData: TeamGridData = await res.json();
 
-      // Store current scroll position for left-loading
       const scrollContainer = scrollContainerRef.current;
       const prevScrollLeft = scrollContainer?.scrollLeft || 0;
       const prevScrollWidth = scrollContainer?.scrollWidth || 0;
 
-      // Merge data
       setData(prev => {
         if (!prev) return newData;
-
         const mergedSprints = direction === 'left'
           ? [...newData.sprints, ...prev.sprints]
           : [...prev.sprints, ...newData.sprints];
-
-        // Merge associations
-        const mergedAssociations = { ...prev.associations };
-        for (const [userId, userSprints] of Object.entries(newData.associations)) {
-          if (!mergedAssociations[userId]) {
-            mergedAssociations[userId] = {};
-          }
-          for (const [sprintNum, cellData] of Object.entries(userSprints)) {
-            mergedAssociations[userId][Number(sprintNum)] = cellData;
-          }
-        }
-
-        return {
-          ...prev,
-          sprints: mergedSprints,
-          associations: mergedAssociations,
-        };
+        return { ...prev, sprints: mergedSprints };
       });
 
-      // Update range
       setSprintRange(prev => {
         if (!prev) return { min: fromSprint, max: toSprint };
         return {
@@ -175,7 +331,6 @@ export function TeamModePage() {
         };
       });
 
-      // Adjust scroll position when prepending (left load)
       if (direction === 'left' && scrollContainer) {
         requestAnimationFrame(() => {
           const newScrollWidth = scrollContainer.scrollWidth;
@@ -190,25 +345,21 @@ export function TeamModePage() {
     }
   }, [data, sprintRange, loadingMore]);
 
-  // Handle scroll to detect when near edges
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container || loadingMore) return;
 
     const { scrollLeft, scrollWidth, clientWidth } = container;
 
-    // Check if near left edge
     if (scrollLeft < SCROLL_THRESHOLD && sprintRange && sprintRange.min > 1) {
       fetchMoreSprints('left');
     }
 
-    // Check if near right edge
     if (scrollWidth - scrollLeft - clientWidth < SCROLL_THRESHOLD) {
       fetchMoreSprints('right');
     }
   }, [fetchMoreSprints, loadingMore, sprintRange]);
 
-  // Attach scroll listener
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -217,29 +368,44 @@ export function TeamModePage() {
     return () => container.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
-  if (loading) {
-    return <TeamModeSkeleton />;
-  }
+  // Clear error after 3 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
-  if (error) {
+  if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-red-500">{error}</div>
+        <div className="text-muted">Loading team grid...</div>
       </div>
     );
   }
 
   if (!data) {
-    return null;
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-red-500">{error || 'Failed to load data'}</div>
+      </div>
+    );
   }
 
   return (
     <div className="flex h-full flex-col">
+      {/* Error toast */}
+      {error && (
+        <div className="absolute right-4 top-4 z-50 rounded-md bg-red-500/90 px-4 py-2 text-sm text-white shadow-lg">
+          {error}
+        </div>
+      )}
+
       {/* Header */}
       <header className="flex h-10 items-center justify-between border-b border-border px-4">
         <h1 className="text-sm font-medium text-foreground">Teams</h1>
         <span className="text-xs text-muted">
-          {data.users.length} team members
+          {data.users.length} team members &middot; {projects.length} projects
         </span>
       </header>
 
@@ -247,11 +413,9 @@ export function TeamModePage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Fixed user column */}
         <div className="flex flex-col border-r border-border bg-background">
-          {/* Header cell */}
-          <div className="flex h-10 w-[180px] items-center justify-center border-b border-border px-3">
+          <div className="flex h-[41.5px] w-[180px] items-center justify-center border-b border-border px-3">
             <span className="text-xs font-medium text-muted">Team Member</span>
           </div>
-          {/* User rows */}
           {data.users.map((user) => (
             <div
               key={user.id}
@@ -273,7 +437,6 @@ export function TeamModePage() {
           className="flex-1 overflow-x-auto overflow-y-hidden"
         >
           <div className="inline-flex items-start">
-            {/* Loading indicator for left */}
             {loadingMore === 'left' && (
               <div className="flex h-full w-[60px] flex-col items-center justify-center">
                 <div className="h-10 flex items-center justify-center border-b border-border">
@@ -304,21 +467,33 @@ export function TeamModePage() {
 
                 {/* Sprint cells for each user */}
                 {data.users.map((user) => {
-                  const cellData = data.associations[user.id]?.[sprint.number];
+                  const assignment = assignments[user.id]?.[sprint.number];
+                  const cellKey = `${user.id}-${sprint.number}`;
+                  const isLoading = operationLoading === cellKey;
+
                   return (
                     <SprintCell
-                      key={`${user.id}-${sprint.number}`}
-                      cellData={cellData}
+                      key={cellKey}
+                      assignment={assignment}
+                      projects={projects}
                       isCurrent={sprint.isCurrent}
-                      userName={user.name}
-                      sprintName={sprint.name}
+                      loading={isLoading}
+                      onChange={(projectId) =>
+                        handleCellChange(
+                          user.id,
+                          user.name,
+                          sprint.number,
+                          sprint.name,
+                          projectId,
+                          assignment || null
+                        )
+                      }
                     />
                   );
                 })}
               </div>
             ))}
 
-            {/* Loading indicator for right */}
             {loadingMore === 'right' && (
               <div className="flex h-full w-[60px] flex-col items-center justify-center">
                 <div className="h-10 flex items-center justify-center border-b border-border">
@@ -329,113 +504,132 @@ export function TeamModePage() {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Dialog for Reassignment */}
+      <Dialog.Root open={confirmDialog?.open || false} onOpenChange={(open: boolean) => !open && setConfirmDialog(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-6 shadow-xl">
+            <Dialog.Title className="text-lg font-semibold text-foreground">
+              Reassign {confirmDialog?.userName}?
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm text-muted">
+              {confirmDialog?.userName} is currently assigned to{' '}
+              <span className="font-medium text-foreground">{confirmDialog?.currentProject?.projectName}</span>
+              {' '}for {confirmDialog?.sprintName}.
+            </Dialog.Description>
+
+            <div className="mt-4 flex items-center gap-2">
+              <span className="text-sm text-muted">Change to:</span>
+              <span
+                className="rounded px-1.5 py-0.5 text-xs font-bold text-white"
+                style={{ backgroundColor: confirmDialog?.newProject?.color || '#666' }}
+              >
+                {confirmDialog?.newProject?.prefix}
+              </span>
+              <span className="text-sm text-foreground">{confirmDialog?.newProject?.name}</span>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Dialog.Close asChild>
+                <button className="rounded-md px-4 py-2 text-sm text-muted hover:bg-border">
+                  Cancel
+                </button>
+              </Dialog.Close>
+              <button
+                onClick={handleConfirmReassign}
+                className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent/90"
+              >
+                Confirm Reassignment
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Last Person Dialog */}
+      <Dialog.Root open={lastPersonDialog?.open || false} onOpenChange={(open: boolean) => !open && setLastPersonDialog(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-6 shadow-xl">
+            <Dialog.Title className="text-lg font-semibold text-foreground">
+              Remove Last Assignee
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm text-muted">
+              This is the last person assigned to this sprint. Removing them will delete the sprint document.
+            </Dialog.Description>
+
+            {lastPersonDialog?.issuesOrphaned && lastPersonDialog.issuesOrphaned.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-medium text-foreground">
+                  {lastPersonDialog.issuesOrphaned.length} issues will be moved to backlog:
+                </p>
+                <ul className="mt-2 max-h-[150px] overflow-auto rounded border border-border p-2">
+                  {lastPersonDialog.issuesOrphaned.map((issue) => (
+                    <li key={issue.id} className="text-sm text-muted truncate">
+                      {issue.title}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Dialog.Close asChild>
+                <button className="rounded-md px-4 py-2 text-sm text-muted hover:bg-border">
+                  Cancel
+                </button>
+              </Dialog.Close>
+              <button
+                onClick={() => {
+                  lastPersonDialog?.onConfirm();
+                  setLastPersonDialog(null);
+                }}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+              >
+                Remove & Delete Sprint
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
 
 function SprintCell({
-  cellData,
+  assignment,
+  projects,
   isCurrent,
-  userName,
-  sprintName,
+  loading,
+  onChange,
 }: {
-  cellData?: CellData;
+  assignment?: Assignment;
+  projects: Project[];
   isCurrent: boolean;
-  userName: string;
-  sprintName: string;
+  loading: boolean;
+  onChange: (projectId: string | null) => void;
 }) {
-  const [open, setOpen] = useState(false);
-
-  if (!cellData || cellData.projects.length === 0) {
-    return (
-      <div
-        className={cn(
-          'flex h-12 w-[140px] items-center justify-center border-b border-r border-border',
-          isCurrent && 'bg-accent/5'
+  return (
+    <div
+      className={cn(
+        'flex h-12 w-[140px] items-center justify-start border-b border-r border-border px-1',
+        isCurrent && 'bg-accent/5',
+        loading && 'animate-pulse'
+      )}
+    >
+      <ProjectCombobox
+        projects={projects}
+        value={assignment?.projectId || null}
+        onChange={onChange}
+        disabled={loading}
+        placeholder=""
+        triggerClassName={cn(
+          'w-full h-full justify-start',
+          !assignment && 'hover:bg-border/30'
         )}
       />
-    );
-  }
-
-  return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        <button
-          className={cn(
-            'flex h-12 w-[140px] items-center gap-1 border-b border-r border-border px-2 transition-colors',
-            isCurrent ? 'bg-accent/5 hover:bg-accent/10' : 'hover:bg-border/30'
-          )}
-        >
-          {cellData.projects.slice(0, 3).map((project) => (
-            <span
-              key={project.id}
-              className="rounded px-1.5 py-0.5 text-[10px] font-bold text-white"
-              style={{ backgroundColor: project.color }}
-              title={`${project.name} (${project.issueCount} issues)`}
-            >
-              {project.prefix}
-            </span>
-          ))}
-          {cellData.projects.length > 3 && (
-            <span className="text-[10px] text-muted">
-              +{cellData.projects.length - 3}
-            </span>
-          )}
-        </button>
-      </Popover.Trigger>
-
-      <Popover.Portal>
-        <Popover.Content
-          className="z-50 w-[280px] rounded-md border border-border bg-background p-3 shadow-lg"
-          sideOffset={4}
-          align="start"
-        >
-          <div className="mb-2 border-b border-border pb-2">
-            <div className="text-xs font-medium text-foreground">{userName}</div>
-            <div className="text-[10px] text-muted">{sprintName}</div>
-          </div>
-
-          <div className="space-y-3">
-            {cellData.projects.map((project) => (
-              <div key={project.id}>
-                <div className="mb-1 flex items-center gap-2">
-                  <span
-                    className="rounded px-1.5 py-0.5 text-[10px] font-bold text-white"
-                    style={{ backgroundColor: project.color }}
-                  >
-                    {project.prefix}
-                  </span>
-                  <span className="text-xs text-foreground">{project.name}</span>
-                  <span className="text-[10px] text-muted">
-                    ({project.issueCount} {project.issueCount === 1 ? 'issue' : 'issues'})
-                  </span>
-                </div>
-
-                <ul className="space-y-1 pl-2">
-                  {cellData.issues
-                    .filter((issue) => issue.displayId.startsWith(project.prefix))
-                    .map((issue) => (
-                      <li key={issue.id} className="flex items-center gap-2 text-xs">
-                        <span className={cn(
-                          'h-1.5 w-1.5 rounded-full flex-shrink-0',
-                          issue.state === 'done' ? 'bg-green-500' :
-                          issue.state === 'in_progress' ? 'bg-yellow-500' :
-                          issue.state === 'todo' ? 'bg-blue-500' :
-                          'bg-gray-500'
-                        )} />
-                        <span className="font-mono text-[10px] text-muted">{issue.displayId}</span>
-                        <span className="truncate text-muted">{issue.title}</span>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-
-          <Popover.Arrow className="fill-border" />
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+    </div>
   );
 }
 
