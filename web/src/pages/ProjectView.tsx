@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { KanbanBoard } from '@/components/KanbanBoard';
+import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 
 interface Project {
   id: string;
@@ -178,78 +179,89 @@ export function ProjectViewPage() {
     );
   }
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-6 py-4">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/projects')}
-            className="text-muted hover:text-foreground transition-colors"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white"
-            style={{ backgroundColor: project.color }}
-          >
-            {project.prefix.slice(0, 2)}
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold text-foreground">{project.name}</h1>
-            <p className="text-xs text-muted">{project.prefix}</p>
-          </div>
-        </div>
+  const tabs: TabItem[] = [
+    { id: 'issues', label: 'Issues' },
+    { id: 'sprints', label: 'Sprints' },
+    { id: 'settings', label: 'Settings' },
+  ];
 
-        {activeTab === 'issues' && (
-          <div className="flex items-center gap-3">
-            <div className="flex rounded-md border border-border">
-              <button
-                onClick={() => setViewMode('list')}
-                className={cn(
-                  'px-3 py-1 text-sm transition-colors',
-                  viewMode === 'list' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
-                )}
-              >
-                <ListIcon />
-              </button>
-              <button
-                onClick={() => setViewMode('kanban')}
-                className={cn(
-                  'px-3 py-1 text-sm transition-colors',
-                  viewMode === 'kanban' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
-                )}
-              >
-                <KanbanIcon />
-              </button>
-            </div>
+  const renderTabActions = () => {
+    if (activeTab === 'issues') {
+      return (
+        <>
+          <div className="flex rounded-md border border-border">
             <button
-              onClick={createIssue}
-              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
+              onClick={() => setViewMode('list')}
+              className={cn(
+                'px-3 py-1 text-sm transition-colors',
+                viewMode === 'list' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
+              )}
             >
-              New Issue
+              <ListIcon />
+            </button>
+            <button
+              onClick={() => setViewMode('kanban')}
+              className={cn(
+                'px-3 py-1 text-sm transition-colors',
+                viewMode === 'kanban' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
+              )}
+            >
+              <KanbanIcon />
             </button>
           </div>
-        )}
-
-        {activeTab === 'sprints' && (
           <button
-            onClick={() => setShowCreateSprintModal(true)}
+            onClick={createIssue}
             className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
           >
-            New Sprint
+            New Issue
           </button>
-        )}
+        </>
+      );
+    }
+    if (activeTab === 'sprints') {
+      return (
+        <button
+          onClick={() => setShowCreateSprintModal(true)}
+          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
+        >
+          New Sprint
+        </button>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Breadcrumbs Header */}
+      <div className="flex items-center gap-3 border-b border-border px-6 py-3">
+        <button
+          onClick={() => navigate('/projects')}
+          className="text-muted hover:text-foreground transition-colors"
+        >
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white"
+          style={{ backgroundColor: project.color }}
+        >
+          {project.prefix.slice(0, 2)}
+        </div>
+        <div>
+          <h1 className="text-lg font-semibold text-foreground">{project.name}</h1>
+          <p className="text-xs text-muted">{project.prefix}</p>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-border px-6 py-2">
-        <TabButton label="Issues" active={activeTab === 'issues'} onClick={() => setActiveTab('issues')} />
-        <TabButton label="Sprints" active={activeTab === 'sprints'} onClick={() => setActiveTab('sprints')} />
-        <TabButton label="Settings" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
-      </div>
+      {/* Tab Bar */}
+      <TabBar
+        tabs={tabs}
+        activeTab={activeTab}
+        onTabChange={(tabId) => setActiveTab(tabId as Tab)}
+        rightContent={renderTabActions()}
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
@@ -287,21 +299,6 @@ export function ProjectViewPage() {
   );
 }
 
-function TabButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'rounded-md px-3 py-1 text-sm transition-colors',
-        active
-          ? 'bg-border text-foreground'
-          : 'text-muted hover:bg-border/50 hover:text-foreground'
-      )}
-    >
-      {label}
-    </button>
-  );
-}
 
 function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (id: string) => void }) {
   const stateColors: Record<string, string> = {
