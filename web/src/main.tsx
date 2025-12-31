@@ -25,6 +25,7 @@ import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
 import { InviteAcceptPage } from '@/pages/InviteAccept';
+import { SetupPage } from '@/pages/Setup';
 import './index.css';
 
 function PlaceholderPage({ title, subtitle }: { title: string; subtitle: string }) {
@@ -81,6 +82,10 @@ function App() {
     <WorkspaceProvider>
       <AuthProvider>
         <Routes>
+          <Route
+            path="/setup"
+            element={<SetupPage />}
+          />
           <Route
             path="/login"
             element={

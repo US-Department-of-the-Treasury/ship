@@ -1,19 +1,44 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
+
+const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
 
 export function LoginPage() {
   const [email, setEmail] = useState(import.meta.env.DEV ? 'dev@ship.local' : '');
   const [password, setPassword] = useState(import.meta.env.DEV ? 'admin123' : '');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingSetup, setIsCheckingSetup] = useState(true);
 
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+
+  // Check if setup is needed before showing login
+  useEffect(() => {
+    async function checkSetup() {
+      try {
+        const res = await fetch(`${API_URL}/api/setup/status`, {
+          credentials: 'include',
+        });
+        const data = await res.json();
+
+        if (data.success && data.data.needsSetup) {
+          navigate('/setup', { replace: true });
+          return;
+        }
+      } catch (err) {
+        // If we can't check, just show login
+        console.error('Failed to check setup status:', err);
+      }
+      setIsCheckingSetup(false);
+    }
+    checkSetup();
+  }, [navigate]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -28,6 +53,14 @@ export function LoginPage() {
       setError(result.error || 'Login failed');
       setIsLoading(false);
     }
+  }
+
+  if (isCheckingSetup) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-muted">Loading...</div>
+      </div>
+    );
   }
 
   return (
