@@ -30,6 +30,23 @@ const { csrfSynchronisedProtection, generateToken } = csrfSync({
 export function createApp(corsOrigin: string = 'http://localhost:5173'): express.Express {
   const app = express();
 
+  // Trust proxy headers (CloudFront) for secure cookies and correct protocol detection
+  if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+
+    // CloudFront with viewer_protocol_policy="redirect-to-https" always serves viewers over HTTPS.
+    // However, CloudFront -> EB uses HTTP (origin_protocol_policy="http-only"), so CloudFront
+    // sets X-Forwarded-Proto to "http". Override it to "https" when request comes via CloudFront.
+    app.use((req, _res, next) => {
+      // CloudFront adds Via header like "2.0 <id>.cloudfront.net (CloudFront)"
+      const viaHeader = req.headers['via'] as string;
+      if (viaHeader && viaHeader.includes('cloudfront')) {
+        req.headers['x-forwarded-proto'] = 'https';
+      }
+      next();
+    });
+  }
+
   // Middleware
   app.use(helmet());
   app.use(cors({

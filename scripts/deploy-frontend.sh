@@ -20,6 +20,10 @@ if [ -z "$BUCKET_NAME" ] || [ -z "$DISTRIBUTION_ID" ]; then
     exit 1
 fi
 
+echo "Building shared package..."
+pnpm build:shared
+
+echo ""
 echo "Building frontend..."
 pnpm build:web
 

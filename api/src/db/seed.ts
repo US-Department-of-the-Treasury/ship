@@ -3,22 +3,26 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import pg from 'pg';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
+import { loadProductionSecrets } from '../config/ssm.js';
 
 const { Pool } = pg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load environment
+// Load environment (local dev only - production uses SSM)
 config({ path: join(__dirname, '../../.env.local') });
 config({ path: join(__dirname, '../../.env') });
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
 async function seed() {
+  // Load secrets from SSM in production (must happen before Pool creation)
+  await loadProductionSecrets();
+
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  });
   console.log('🌱 Starting database seed...');
   // Only log hostname, never full connection string (contains credentials)
   const dbHost = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL).hostname : 'unknown';
@@ -82,9 +86,9 @@ async function seed() {
 
       if (!existingUser.rows[0]) {
         await pool.query(
-          `INSERT INTO users (email, password_hash, name)
-           VALUES ($1, $2, $3)`,
-          [member.email, passwordHash, member.name]
+          `INSERT INTO users (email, password_hash, name, last_workspace_id)
+           VALUES ($1, $2, $3, $4)`,
+          [member.email, passwordHash, member.name, workspaceId]
         );
         usersCreated++;
       }
@@ -163,7 +167,7 @@ async function seed() {
       console.log(`✅ Created ${personDocsCreated} Person documents`);
     }
 
-    // Get all user IDs for assignment (via workspace memberships)
+    // Get all user IDs for assignment (join through workspace_memberships)
     const allUsersResult = await pool.query(
       `SELECT u.id, u.name FROM users u
        JOIN workspace_memberships wm ON wm.user_id = u.id

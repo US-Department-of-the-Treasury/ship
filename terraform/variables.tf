@@ -63,3 +63,9 @@ variable "aurora_max_capacity" {
   type        = number
   default     = 4
 }
+
+variable "eb_environment_cname" {
+  description = "Elastic Beanstalk environment CNAME for API routing through CloudFront"
+  type        = string
+  default     = ""
+}

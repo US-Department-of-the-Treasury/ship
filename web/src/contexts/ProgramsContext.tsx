@@ -20,7 +20,7 @@ interface ProgramsContextValue {
 
 const ProgramsContext = createContext<ProgramsContextValue | null>(null);
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
 
 export function ProgramsProvider({ children }: { children: ReactNode }) {
   const [programs, setPrograms] = useState<Program[]>([]);

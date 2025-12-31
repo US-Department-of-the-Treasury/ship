@@ -8,7 +8,7 @@ import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 import { KanbanBoard } from '@/components/KanbanBoard';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
 
 // CSRF token cache
 let csrfToken: string | null = null;

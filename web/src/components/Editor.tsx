@@ -112,9 +112,12 @@ export function Editor({
 
   // Setup WebSocket provider
   useEffect(() => {
-    // Derive WebSocket URL from API URL (handles different ports for worktrees)
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/collaboration';
+    // In production, use current host with wss:// (through CloudFront)
+    // In development, use localhost:3000 with ws://
+    const apiUrl = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
+    const wsUrl = apiUrl
+      ? apiUrl.replace(/^http/, 'ws') + '/collaboration'
+      : `wss://${window.location.host}/collaboration`;
     const wsProvider = new WebsocketProvider(wsUrl, `${roomPrefix}:${documentId}`, ydoc, {
       connect: true,
     });
