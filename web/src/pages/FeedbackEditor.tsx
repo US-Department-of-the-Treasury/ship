@@ -253,14 +253,16 @@ export function FeedbackEditorPage() {
         roomPrefix="issue"
         placeholder="Describe your feedback..."
         headerBadge={
-          <div className="flex items-center gap-2">
-            <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted">
-              {feedback.display_id}
-            </span>
+          <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted">
+            {feedback.display_id}
+          </span>
+        }
+        secondaryHeader={
+          <div className="flex items-center gap-3">
             {feedback.feedback_status === 'draft' && (
               <button
                 onClick={handleSubmit}
-                className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent/90 transition-colors"
+                className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
               >
                 Submit Feedback
               </button>
@@ -269,13 +271,13 @@ export function FeedbackEditorPage() {
               <>
                 <button
                   onClick={handleAccept}
-                  className="rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700 transition-colors"
+                  className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 transition-colors"
                 >
                   Accept
                 </button>
                 <button
                   onClick={() => setShowRejectModal(true)}
-                  className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 transition-colors"
+                  className="rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700 transition-colors"
                 >
                   Reject
                 </button>
