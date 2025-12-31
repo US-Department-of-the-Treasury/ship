@@ -1,0 +1,3 @@
+# Auto-resolve merge conflicts for generated files
+# The pre-commit hook regenerates ATTESTATION.md anyway, so conflicts don't matter
+ATTESTATION.md merge=ours
