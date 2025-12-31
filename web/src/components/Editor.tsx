@@ -209,58 +209,58 @@ export function Editor({
     <div className="flex h-full flex-col">
       {/* Compact header - breadcrumb, title, status, presence all in one row */}
       <div className="flex items-center gap-3 border-b border-border px-4 py-2">
-        {/* Back button with optional parent label */}
-        {onBack && (
-          <button
-            onClick={onBack}
-            className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors"
-            aria-label={backLabel ? `Back to ${backLabel}` : 'Back to documents'}
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            {backLabel && (
-              <span className="text-xs truncate max-w-[120px]">{backLabel}</span>
-            )}
-          </button>
-        )}
+          {/* Back button with optional parent label */}
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors"
+              aria-label={backLabel ? `Back to ${backLabel}` : 'Back to documents'}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              {backLabel && (
+                <span className="text-xs truncate max-w-[120px]">{backLabel}</span>
+              )}
+            </button>
+          )}
 
-        {/* Optional header badge (e.g., issue number) */}
-        {headerBadge}
+          {/* Optional header badge (e.g., issue number) */}
+          {headerBadge}
 
-        {/* Title (display only - edit via large title below) */}
-        <span className="flex-1 truncate text-sm font-medium text-foreground">
-          {title || 'Untitled'}
-        </span>
-
-        {/* Sync status */}
-        <div className="flex items-center gap-1.5">
-          <div
-            className={cn(
-              'h-2 w-2 rounded-full',
-              syncStatus === 'synced' && 'bg-green-500',
-              syncStatus === 'connecting' && 'bg-yellow-500 animate-pulse',
-              syncStatus === 'disconnected' && 'bg-red-500'
-            )}
-          />
-          <span className="text-xs text-muted">
-            {syncStatus === 'synced' && 'Saved'}
-            {syncStatus === 'connecting' && 'Syncing...'}
-            {syncStatus === 'disconnected' && 'Offline'}
+          {/* Title (display only - edit via large title below) */}
+          <span className="flex-1 truncate text-sm font-medium text-foreground">
+            {title || 'Untitled'}
           </span>
-        </div>
 
-        {/* Delete button */}
-        {onDelete && (
-          <button
-            onClick={onDelete}
-            className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-red-500/10 hover:text-red-500 transition-colors"
-            title="Delete document"
-            aria-label="Delete document"
-          >
-            <TrashIcon />
-          </button>
-        )}
+          {/* Sync status */}
+          <div className="flex items-center gap-1.5">
+            <div
+              className={cn(
+                'h-2 w-2 rounded-full',
+                syncStatus === 'synced' && 'bg-green-500',
+                syncStatus === 'connecting' && 'bg-yellow-500 animate-pulse',
+                syncStatus === 'disconnected' && 'bg-red-500'
+              )}
+            />
+            <span className="text-xs text-muted">
+              {syncStatus === 'synced' && 'Saved'}
+              {syncStatus === 'connecting' && 'Syncing...'}
+              {syncStatus === 'disconnected' && 'Offline'}
+            </span>
+          </div>
+
+          {/* Delete button */}
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-red-500/10 hover:text-red-500 transition-colors"
+              title="Delete document"
+              aria-label="Delete document"
+            >
+              <TrashIcon />
+            </button>
+          )}
 
         {/* Connected users */}
         <div className="flex items-center gap-1">
