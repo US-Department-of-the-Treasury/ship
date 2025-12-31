@@ -104,6 +104,7 @@ export function FeedbackEditorPage() {
   const [loading, setLoading] = useState(true);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
 
   // Fetch the feedback data
   useEffect(() => {
@@ -167,13 +168,13 @@ export function FeedbackEditorPage() {
       const res = await apiPost(`/api/feedback/${feedback.id}/submit`);
 
       if (res.ok) {
-        const updated = await res.json();
-        setFeedback(prev => prev ? { ...prev, feedback_status: updated.feedback_status } : null);
+        // Navigate immediately to program's feedback tab with toast param
+        navigate(`/programs/${feedback.program_id}?tab=feedback&toast=submitted`);
       }
     } catch (err) {
       console.error('Failed to submit feedback:', err);
     }
-  }, [feedback]);
+  }, [feedback, navigate]);
 
   // Handle reject action
   const handleReject = useCallback(async () => {
@@ -244,6 +245,13 @@ export function FeedbackEditorPage() {
 
   return (
     <>
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 rounded-md bg-green-600 px-4 py-3 text-sm font-medium text-white shadow-lg animate-in fade-in slide-in-from-top-2">
+          {toast}
+        </div>
+      )}
+
       <Editor
         documentId={feedback.id}
         userName={user.name}

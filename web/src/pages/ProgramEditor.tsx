@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
@@ -95,9 +95,11 @@ interface Feedback {
   id: string;
   title: string;
   state: string;
+  feedback_status: 'draft' | 'submitted' | null;
   ticket_number: number;
   display_id: string;
   created_at: string;
+  created_by: string;
   created_by_name: string | null;
   rejection_reason: string | null;
 }
@@ -105,10 +107,13 @@ interface Feedback {
 export function ProgramEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { programs, loading, updateProgram: contextUpdateProgram } = usePrograms();
 
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  // Initialize activeTab from URL param or default to 'overview'
+  const tabParam = searchParams.get('tab') as Tab | null;
+  const [activeTab, setActiveTab] = useState<Tab>(tabParam && ['overview', 'issues', 'sprints', 'feedback'].includes(tabParam) ? tabParam : 'overview');
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [feedback, setFeedback] = useState<Feedback[]>([]);
@@ -116,8 +121,23 @@ export function ProgramEditorPage() {
   const [sprintsLoading, setSprintsLoading] = useState(false);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
-  const [feedbackFilter, setFeedbackFilter] = useState<'new' | 'backlog' | 'closed' | 'all'>('new');
+  const [feedbackFilter, setFeedbackFilter] = useState<'drafts' | 'new' | 'backlog' | 'closed' | 'all'>('new');
   const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Show toast from URL param (e.g., after submitting feedback)
+  useEffect(() => {
+    const toastParam = searchParams.get('toast');
+    if (toastParam === 'submitted') {
+      setToast('Feedback submitted!');
+      // Clear toast param from URL
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('toast');
+      navigate(`/programs/${id}?${newParams.toString()}`, { replace: true });
+      // Auto-hide toast after 3 seconds
+      setTimeout(() => setToast(null), 3000);
+    }
+  }, [searchParams, id, navigate]);
 
   // Get the current program from context
   const program = programs.find(p => p.id === id) || null;
@@ -312,9 +332,17 @@ export function ProgramEditorPage() {
   };
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Tab Bar */}
-      <TabBar
+    <>
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 rounded-md bg-green-600 px-4 py-3 text-sm font-medium text-white shadow-lg animate-in fade-in slide-in-from-top-2">
+          {toast}
+        </div>
+      )}
+
+      <div className="flex h-full flex-col">
+        {/* Tab Bar */}
+        <TabBar
         tabs={tabs}
         activeTab={activeTab}
         onTabChange={(tabId) => setActiveTab(tabId as Tab)}
@@ -376,6 +404,7 @@ export function ProgramEditorPage() {
                 feedback={feedback}
                 filter={feedbackFilter}
                 onFilterChange={setFeedbackFilter}
+                currentUserId={user?.id}
                 onFeedbackClick={(feedbackId) => navigate(`/feedback/${feedbackId}`)}
                 onAccept={async (feedbackId) => {
                   try {
@@ -409,7 +438,8 @@ export function ProgramEditorPage() {
           onCreate={createSprint}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -798,17 +828,27 @@ function KanbanIcon() {
   );
 }
 
+// Helper to get display status from feedback_status and rejection_reason
+function getFeedbackDisplayStatus(item: Feedback): 'draft' | 'submitted' | 'accepted' | 'rejected' {
+  if (item.feedback_status === 'draft') return 'draft';
+  if (item.feedback_status === 'submitted') return 'submitted';
+  if (item.rejection_reason) return 'rejected';
+  return 'accepted';
+}
+
 function FeedbackList({
   feedback,
   filter,
   onFilterChange,
+  currentUserId,
   onFeedbackClick,
   onAccept,
   onReject,
 }: {
   feedback: Feedback[];
-  filter: 'new' | 'backlog' | 'closed' | 'all';
-  onFilterChange: (filter: 'new' | 'backlog' | 'closed' | 'all') => void;
+  filter: 'drafts' | 'new' | 'backlog' | 'closed' | 'all';
+  onFilterChange: (filter: 'drafts' | 'new' | 'backlog' | 'closed' | 'all') => void;
+  currentUserId?: string;
   onFeedbackClick: (id: string) => void;
   onAccept: (id: string) => void;
   onReject: (id: string, reason: string) => void;
@@ -816,28 +856,39 @@ function FeedbackList({
   const [showRejectModal, setShowRejectModal] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  const stateColors: Record<string, string> = {
-    new: 'bg-purple-500/20 text-purple-400',
-    backlog: 'bg-green-500/20 text-green-400',
-    closed: 'bg-red-500/20 text-red-400',
+  const statusColors: Record<string, string> = {
+    draft: 'bg-gray-500/20 text-gray-400',
+    submitted: 'bg-purple-500/20 text-purple-400',
+    accepted: 'bg-green-500/20 text-green-400',
+    rejected: 'bg-red-500/20 text-red-400',
   };
 
-  const stateLabels: Record<string, string> = {
-    new: 'New',
-    backlog: 'Accepted',
-    closed: 'Rejected',
+  const statusLabels: Record<string, string> = {
+    draft: 'Draft',
+    submitted: 'Submitted',
+    accepted: 'Accepted',
+    rejected: 'Rejected',
   };
 
-  const filters: { id: 'new' | 'backlog' | 'closed' | 'all'; label: string }[] = [
+  const filters: { id: 'drafts' | 'new' | 'backlog' | 'closed' | 'all'; label: string }[] = [
     { id: 'new', label: 'New' },
     { id: 'backlog', label: 'Accepted' },
     { id: 'closed', label: 'Rejected' },
     { id: 'all', label: 'All' },
+    { id: 'drafts', label: 'Drafts' },
   ];
 
+  // Filter by feedback_status, not state
   const filteredFeedback = filter === 'all'
     ? feedback
-    : feedback.filter(f => f.state === filter);
+    : feedback.filter(f => {
+        const displayStatus = getFeedbackDisplayStatus(f);
+        if (filter === 'drafts') return displayStatus === 'draft' && f.created_by === currentUserId;
+        if (filter === 'new') return displayStatus === 'submitted';
+        if (filter === 'backlog') return displayStatus === 'accepted';
+        if (filter === 'closed') return displayStatus === 'rejected';
+        return true;
+      });
 
   const handleReject = () => {
     if (showRejectModal && rejectReason.trim()) {
@@ -871,7 +922,9 @@ function FeedbackList({
       {filteredFeedback.length === 0 ? (
         <div className="flex h-full items-center justify-center">
           <p className="text-muted">
-            {filter === 'new' && feedback.length > 0
+            {filter === 'drafts'
+              ? 'No draft feedback'
+              : filter === 'new' && feedback.length > 0
               ? 'All caught up! No new feedback to triage'
               : 'No feedback submitted for this program'}
           </p>
@@ -909,8 +962,8 @@ function FeedbackList({
                   onClick={() => onFeedbackClick(item.id)}
                   className="px-6 py-3"
                 >
-                  <span className={cn('rounded px-2 py-0.5 text-xs font-medium', stateColors[item.state] || 'bg-gray-500/20 text-gray-400')}>
-                    {stateLabels[item.state] || item.state}
+                  <span className={cn('rounded px-2 py-0.5 text-xs font-medium', statusColors[getFeedbackDisplayStatus(item)])}>
+                    {statusLabels[getFeedbackDisplayStatus(item)]}
                   </span>
                 </td>
                 <td
@@ -920,7 +973,7 @@ function FeedbackList({
                   {formatDate(item.created_at)}
                 </td>
                 <td className="px-6 py-3">
-                  {item.state === 'new' && (
+                  {item.feedback_status === 'submitted' && (
                     <div className="flex gap-2">
                       <button
                         onClick={(e) => {
@@ -944,7 +997,7 @@ function FeedbackList({
                       </button>
                     </div>
                   )}
-                  {item.state === 'closed' && item.rejection_reason && (
+                  {item.rejection_reason && (
                     <span className="text-xs text-muted truncate max-w-[200px] block" title={item.rejection_reason}>
                       {item.rejection_reason}
                     </span>
