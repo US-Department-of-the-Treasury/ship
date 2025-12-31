@@ -192,6 +192,19 @@ export function ProgramEditorPage() {
     }
   };
 
+  const createFeedback = async () => {
+    if (!id) return;
+    try {
+      const res = await apiPost('/api/feedback', { title: 'Untitled', program_id: id });
+      if (res.ok) {
+        const fb = await res.json();
+        navigate(`/feedback/${fb.id}`);
+      }
+    } catch (err) {
+      console.error('Failed to create feedback:', err);
+    }
+  };
+
   const createSprint = async (data: { name: string; goal: string; start_date: string; end_date: string }) => {
     if (!id) return;
     try {
@@ -288,7 +301,7 @@ export function ProgramEditorPage() {
     if (activeTab === 'feedback') {
       return (
         <button
-          onClick={() => navigate(`/feedback/new?program_id=${id}`)}
+          onClick={createFeedback}
           className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
         >
           Give Feedback

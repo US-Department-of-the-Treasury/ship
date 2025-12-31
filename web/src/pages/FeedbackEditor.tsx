@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
@@ -19,13 +19,6 @@ interface Feedback {
   created_at: string;
   created_by: string;
   created_by_name: string | null;
-}
-
-interface Program {
-  id: string;
-  name: string;
-  prefix: string;
-  color: string;
 }
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -103,52 +96,38 @@ async function apiPatch(endpoint: string, body: object) {
 
 export function FeedbackEditorPage() {
   const { id } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const isNewFeedback = !id;
-  const programIdParam = searchParams.get('program_id');
-
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [program, setProgram] = useState<Program | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
-  // For new feedback, fetch program info
+  // Fetch the feedback data
   useEffect(() => {
-    if (isNewFeedback && programIdParam) {
-      fetch(`${API_URL}/api/programs/${programIdParam}`, { credentials: 'include' })
-        .then(res => res.ok ? res.json() : null)
-        .then(setProgram)
-        .catch(console.error)
-        .finally(() => setLoading(false));
+    if (!id) {
+      navigate('/programs');
+      return;
     }
-  }, [isNewFeedback, programIdParam]);
 
-  // For existing feedback, fetch the feedback data
-  useEffect(() => {
-    if (!isNewFeedback && id) {
-      setLoading(true);
-      fetch(`${API_URL}/api/feedback/${id}`, { credentials: 'include' })
-        .then(res => {
-          if (!res.ok) {
-            if (res.status === 404) {
-              navigate('/programs');
-            }
-            throw new Error('Failed to fetch feedback');
+    setLoading(true);
+    fetch(`${API_URL}/api/feedback/${id}`, { credentials: 'include' })
+      .then(res => {
+        if (!res.ok) {
+          if (res.status === 404) {
+            navigate('/programs');
           }
-          return res.json();
-        })
-        .then(setFeedback)
-        .catch(console.error)
-        .finally(() => setLoading(false));
-    }
-  }, [id, isNewFeedback, navigate]);
+          throw new Error('Failed to fetch feedback');
+        }
+        return res.json();
+      })
+      .then(setFeedback)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [id, navigate]);
 
-  // Handle title change for existing feedback
+  // Handle title change
   const handleTitleChange = useCallback(async (newTitle: string) => {
     if (!feedback) return;
 
@@ -199,13 +178,12 @@ export function FeedbackEditorPage() {
 
   // Navigate back to program feedback tab
   const handleBack = useCallback(() => {
-    const programId = feedback?.program_id || programIdParam;
-    if (programId) {
-      navigate(`/programs/${programId}`);
+    if (feedback?.program_id) {
+      navigate(`/programs/${feedback.program_id}`);
     } else {
       navigate('/programs');
     }
-  }, [feedback?.program_id, programIdParam, navigate]);
+  }, [feedback?.program_id, navigate]);
 
   if (loading) {
     return <EditorSkeleton />;
@@ -215,43 +193,6 @@ export function FeedbackEditorPage() {
     return null;
   }
 
-  // New feedback mode
-  if (isNewFeedback) {
-    if (!program) {
-      return (
-        <div className="flex h-full items-center justify-center">
-          <p className="text-muted">Program not found</p>
-        </div>
-      );
-    }
-
-    return (
-      <NewFeedbackForm
-        program={program}
-        onSubmit={async (title, body) => {
-          setSaving(true);
-          try {
-            const res = await apiPost('/api/feedback', {
-              title,
-              program_id: program.id,
-            });
-
-            if (res.ok) {
-              navigate(`/programs/${program.id}`);
-            }
-          } catch (err) {
-            console.error('Failed to create feedback:', err);
-          } finally {
-            setSaving(false);
-          }
-        }}
-        onCancel={handleBack}
-        saving={saving}
-      />
-    );
-  }
-
-  // Existing feedback mode
   if (!feedback) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -413,92 +354,6 @@ export function FeedbackEditorPage() {
         </div>
       )}
     </>
-  );
-}
-
-function NewFeedbackForm({
-  program,
-  onSubmit,
-  onCancel,
-  saving,
-}: {
-  program: Program;
-  onSubmit: (title: string, body: string) => void;
-  onCancel: () => void;
-  saving: boolean;
-}) {
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    onSubmit(title.trim(), body.trim());
-  };
-
-  return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-6 py-3">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onCancel}
-            className="text-muted hover:text-foreground transition-colors"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <h1 className="text-lg font-semibold text-foreground">Give Feedback</h1>
-        </div>
-        <button
-          onClick={handleSubmit}
-          disabled={saving || !title.trim()}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {saving ? 'Submitting...' : 'Submit Feedback'}
-        </button>
-      </div>
-
-      {/* Content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-auto">
-          <div className="mx-auto max-w-3xl p-8">
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="What's your feedback about?"
-              className="w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/50 focus:outline-none"
-              autoFocus
-            />
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Describe your feedback, feature request, or bug report in detail..."
-              rows={10}
-              className="mt-8 w-full bg-transparent text-foreground placeholder:text-muted/50 focus:outline-none resize-none"
-            />
-          </div>
-        </form>
-
-        {/* Sidebar */}
-        <div className="w-64 border-l border-border bg-background p-4">
-          <PropertyRow label="Program">
-            <div className="flex items-center gap-2 text-sm text-foreground">
-              {program.color && (
-                <span
-                  className="inline-block h-3 w-3 rounded-full"
-                  style={{ backgroundColor: program.color }}
-                />
-              )}
-              {program.name}
-            </div>
-          </PropertyRow>
-        </div>
-      </div>
-    </div>
   );
 }
 

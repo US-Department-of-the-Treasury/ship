@@ -90,7 +90,6 @@ function App() {
           <Route path="team/allocation" element={<TeamModePage />} />
           <Route path="team/directory" element={<TeamDirectoryPage />} />
           <Route path="team/:id" element={<PersonEditorPage />} />
-          <Route path="feedback/new" element={<FeedbackEditorPage />} />
           <Route path="feedback/:id" element={<FeedbackEditorPage />} />
           <Route path="settings" element={<PlaceholderPage title="Settings" subtitle="Coming soon" />} />
         </Route>
