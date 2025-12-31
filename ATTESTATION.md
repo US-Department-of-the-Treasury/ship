@@ -1,7 +1,7 @@
 ---
 title: Open Source Security Review Attestation
-date: 2025-12-30
-timestamp: 2025-12-30T23:57:31Z
+date: 2025-12-31
+timestamp: 2025-12-31T01:40:47Z
 reviewer: Sam Corcos
 reviewer_email: samuel.corcos@treasury.gov
 reviewer_title: Security Reviewer
@@ -24,7 +24,7 @@ I, **Sam Corcos**, as **Security Reviewer**, have conducted a security review of
 
 | Item | Value |
 |------|-------|
-| Review Date | 2025-12-30 |
+| Review Date | 2025-12-31 |
 | Scanning Tool | comply CLI (gitleaks + AI analysis) |
 | Scan Result | PASS |
 
@@ -45,7 +45,7 @@ I attest that the above statements are accurate as of the date of this review.
 **Reviewer:** Sam Corcos
 **Title:** Security Reviewer
 **Email:** samuel.corcos@treasury.gov
-**Date:** 2025-12-30
+**Date:** 2025-12-31
 
 ---
 *Full attestation history: `git log -p ATTESTATION.md`*

@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey, NodeSelection } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
+import type { Slice, Node as PMNode } from '@tiptap/pm/model';
 
 // Selectors for blocks that should show drag handles
 const BLOCK_SELECTORS = [
@@ -13,6 +14,16 @@ const BLOCK_SELECTORS = [
   'hr',
   '[data-document-embed]',
 ].join(', ');
+
+// Store drag state for move operations
+interface DragState {
+  node: PMNode;
+  from: number;
+  to: number;
+  slice: Slice;
+}
+
+let dragState: DragState | null = null;
 
 // Create the drag handle button element
 function createDragHandle(): HTMLButtonElement {
@@ -55,6 +66,45 @@ function getNodePos(node: Element, view: EditorView): number | null {
     top: rect.top + 1,
   });
   return pos?.inside ?? null;
+}
+
+// Get the resolved position for inserting at drop coordinates
+function getDropPos(view: EditorView, x: number, y: number): number | null {
+  const pos = view.posAtCoords({ left: x, top: y });
+  if (!pos) return null;
+
+  // Get the position at the drop location
+  const $pos = view.state.doc.resolve(pos.pos);
+
+  // Find the block-level node
+  let depth = $pos.depth;
+  while (depth > 0 && !$pos.node(depth).type.isBlock) {
+    depth--;
+  }
+
+  if (depth > 0) {
+    // Get the DOM node to determine if we're in the top or bottom half
+    const node = $pos.node(depth);
+    const nodeStart = $pos.before(depth);
+    const dom = view.nodeDOM(nodeStart);
+
+    if (dom instanceof HTMLElement) {
+      const rect = dom.getBoundingClientRect();
+      const midpoint = rect.top + rect.height / 2;
+
+      // If drop is above the midpoint, insert before; otherwise after
+      if (y < midpoint) {
+        return $pos.before(depth);
+      } else {
+        return $pos.after(depth);
+      }
+    }
+
+    // Fallback: return position after the block
+    return $pos.after(depth);
+  }
+
+  return pos.pos;
 }
 
 export const DragHandleExtension = Extension.create({
@@ -159,12 +209,21 @@ export const DragHandleExtension = Extension.create({
             const pos = getNodePos(currentBlock, view);
             if (pos === null || pos < 0) return;
 
+            // Resolve position to get the actual node
+            const $pos = view.state.doc.resolve(pos);
+            const node = $pos.parent.child($pos.index());
+            const from = $pos.before($pos.depth + 1);
+            const to = from + node.nodeSize;
+
             view.focus();
-            const nodeSelection = NodeSelection.create(view.state.doc, pos);
+            const nodeSelection = NodeSelection.create(view.state.doc, from);
             view.dispatch(view.state.tr.setSelection(nodeSelection));
 
             const slice = view.state.selection.content();
             const { dom, text } = view.serializeForClipboard(slice);
+
+            // Store drag state for drop handling
+            dragState = { node, from, to, slice };
 
             e.dataTransfer.clearData();
             e.dataTransfer.setData('text/html', dom.innerHTML);
@@ -178,6 +237,7 @@ export const DragHandleExtension = Extension.create({
           // Drag end handler
           dragHandle.addEventListener('dragend', () => {
             isDragging = false;
+            dragState = null;
             view.dom.classList.remove('dragging');
             hideDragHandle();
           });
@@ -212,11 +272,22 @@ export const DragHandleExtension = Extension.create({
             mousemove: (view, event) => {
               if (!view.editable || isDragging) return false;
 
+              // Don't clear currentBlock if mouse is over the drag handle
+              if (isDragHandleHovered) return false;
+
+              // Also check if the event target is the drag handle itself
+              const target = event.target as HTMLElement;
+              if (target.closest('.editor-drag-handle')) return false;
+
               const block = getBlockAtCoords(event.clientX, event.clientY);
 
               if (!block) {
-                hideDragHandle();
-                currentBlock = null;
+                // Only clear currentBlock if drag handle is not visible
+                // This preserves the block reference when moving through the gap to reach the handle
+                if (dragHandle && dragHandle.style.opacity !== '1') {
+                  hideDragHandle();
+                  currentBlock = null;
+                }
                 return false;
               }
 
@@ -240,6 +311,55 @@ export const DragHandleExtension = Extension.create({
             drop: (view, event) => {
               view.dom.classList.remove('dragging');
               hideDragHandle();
+
+              // If we have stored drag state from our drag handle, handle the move
+              if (dragState && event.clientX && event.clientY) {
+                event.preventDefault();
+
+                const dropPos = getDropPos(view, event.clientX, event.clientY);
+                if (dropPos === null) {
+                  dragState = null;
+                  return false;
+                }
+
+                const { node, from, to } = dragState;
+
+                // Don't do anything if dropping in the same place
+                if (dropPos >= from && dropPos <= to) {
+                  dragState = null;
+                  return true;
+                }
+
+                // Create a transaction to move the node
+                let tr = view.state.tr;
+
+                // Calculate adjusted positions based on whether we're moving up or down
+                if (dropPos < from) {
+                  // Moving up: insert first, then delete (positions shift)
+                  tr = tr.insert(dropPos, node);
+                  tr = tr.delete(from + node.nodeSize, to + node.nodeSize);
+                } else {
+                  // Moving down: delete first, then insert (positions shift)
+                  tr = tr.delete(from, to);
+                  const adjustedDropPos = dropPos - (to - from);
+                  tr = tr.insert(adjustedDropPos, node);
+                }
+
+                view.dispatch(tr);
+                view.focus();
+
+                dragState = null;
+                return true;
+              }
+
+              return false;
+            },
+            dragover: (_view, event) => {
+              // CRITICAL: Must preventDefault on dragover for drop to work
+              if (dragState) {
+                event.preventDefault();
+                return true;
+              }
               return false;
             },
             dragenter: (view) => {
