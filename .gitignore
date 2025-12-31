@@ -52,7 +52,7 @@ test-results/
 .ports
 
 # Audit artifacts
-.audit
+/.audit
 
 # Terraform
 terraform/.terraform/
