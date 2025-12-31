@@ -3,10 +3,12 @@
   "compilerOptions": {
     "rootDir": "./src",
     "outDir": "./dist",
-    "composite": true
+    "baseUrl": ".",
+    "paths": {
+      "@ship/shared": ["../shared/dist"],
+      "@ship/shared/*": ["../shared/dist/*"]
+    }
   },
   "include": ["src/**/*"],
-  "references": [
-    { "path": "../shared" }
-  ]
+  "exclude": ["src/test/**/*"]
 }

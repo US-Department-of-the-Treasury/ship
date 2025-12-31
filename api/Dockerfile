@@ -15,24 +15,12 @@ COPY shared/package.json ./shared/
 # Disable SSL strict mode for government VPN environments
 RUN npm config set strict-ssl false
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile --prod=false
+# Install production dependencies only (ignore prepare scripts that require dev deps)
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
-# Copy source code
-COPY shared/ ./shared/
-COPY api/ ./api/
-
-# Build shared types first
-WORKDIR /app/shared
-RUN pnpm build
-
-# Build API
-WORKDIR /app/api
-RUN pnpm build
-
-# Remove dev dependencies
-WORKDIR /app
-RUN pnpm install --frozen-lockfile --prod
+# Copy pre-built dist directories (built locally before deployment)
+COPY shared/dist/ ./shared/dist/
+COPY api/dist/ ./api/dist/
 
 # Expose port
 EXPOSE 80
@@ -41,6 +29,6 @@ EXPOSE 80
 ENV NODE_ENV=production
 ENV PORT=80
 
-# Start the application
+# Start the application (seed database first - script is idempotent)
 WORKDIR /app/api
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "node dist/db/seed.js && node dist/index.js"]

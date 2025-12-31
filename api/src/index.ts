@@ -2,8 +2,6 @@ import { createServer } from 'http';
 import { config } from 'dotenv';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createApp } from './app.js';
-import { setupCollaboration } from './collaboration/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -12,17 +10,34 @@ const __dirname = dirname(__filename);
 config({ path: join(__dirname, '../.env.local') });
 config({ path: join(__dirname, '../.env') });
 
-const PORT = process.env.PORT || 3000;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
+async function main() {
+  // Load secrets from SSM in production (before importing app)
+  if (process.env.NODE_ENV === 'production') {
+    const { loadProductionSecrets } = await import('./config/ssm.js');
+    await loadProductionSecrets();
+  }
 
-const app = createApp(CORS_ORIGIN);
-const server = createServer(app);
+  // Now import app after secrets are loaded
+  const { createApp } = await import('./app.js');
+  const { setupCollaboration } = await import('./collaboration/index.js');
 
-// Setup WebSocket collaboration server
-setupCollaboration(server);
+  const PORT = process.env.PORT || 3000;
+  const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
 
-// Start server
-server.listen(PORT, () => {
-  console.log(`API server running on http://localhost:${PORT}`);
-  console.log(`CORS origin: ${CORS_ORIGIN}`);
+  const app = createApp(CORS_ORIGIN);
+  const server = createServer(app);
+
+  // Setup WebSocket collaboration server
+  setupCollaboration(server);
+
+  // Start server
+  server.listen(PORT, () => {
+    console.log(`API server running on http://localhost:${PORT}`);
+    console.log(`CORS origin: ${CORS_ORIGIN}`);
+  });
+}
+
+main().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });
