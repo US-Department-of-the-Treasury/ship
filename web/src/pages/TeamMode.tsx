@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ProjectCombobox, Project } from '@/components/ProjectCombobox';
+import { ProgramCombobox, Program } from '@/components/ProgramCombobox';
 import { cn } from '@/lib/cn';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -21,8 +21,8 @@ interface Sprint {
 }
 
 interface Assignment {
-  projectId: string;
-  projectName: string;
+  programId: string;
+  programName: string;
   prefix: string;
   color: string;
   sprintDocId: string;
@@ -40,7 +40,7 @@ const SCROLL_THRESHOLD = 200;
 export function TeamModePage() {
   const navigate = useNavigate();
   const [data, setData] = useState<TeamGridData | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [assignments, setAssignments] = useState<Record<string, Record<number, Assignment>>>({});
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState<'left' | 'right' | null>(null);
@@ -56,9 +56,9 @@ export function TeamModePage() {
     userName: string;
     sprintNumber: number;
     sprintName: string;
-    currentProject: Assignment | null;
-    newProjectId: string | null;
-    newProject: Project | null;
+    currentProgram: Assignment | null;
+    newProgramId: string | null;
+    newProgram: Program | null;
   } | null>(null);
   const [lastPersonDialog, setLastPersonDialog] = useState<{
     open: boolean;
@@ -73,7 +73,7 @@ export function TeamModePage() {
   useEffect(() => {
     Promise.all([
       fetchTeamGrid(),
-      fetchProjects(),
+      fetchPrograms(),
       fetchAssignments(),
     ]).finally(() => setLoading(false));
   }, []);
@@ -119,15 +119,15 @@ export function TeamModePage() {
     }
   }
 
-  async function fetchProjects() {
+  async function fetchPrograms() {
     try {
-      const res = await fetch(`${API_URL}/api/team/projects`, { credentials: 'include' });
+      const res = await fetch(`${API_URL}/api/team/programs`, { credentials: 'include' });
       if (res.ok) {
         const json = await res.json();
-        setProjects(json);
+        setPrograms(json);
       }
     } catch (err) {
-      console.error('Failed to fetch projects:', err);
+      console.error('Failed to fetch programs:', err);
     }
   }
 
@@ -143,7 +143,7 @@ export function TeamModePage() {
     }
   }
 
-  const handleAssign = async (userId: string, projectId: string, sprintNumber: number) => {
+  const handleAssign = async (userId: string, programId: string, sprintNumber: number) => {
     const cellKey = `${userId}-${sprintNumber}`;
     setOperationLoading(cellKey);
 
@@ -152,14 +152,14 @@ export function TeamModePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ userId, projectId, sprintNumber }),
+        body: JSON.stringify({ userId, programId, sprintNumber }),
       });
 
       const json = await res.json();
 
       if (res.status === 409) {
-        // User already assigned to another project - show confirmation
-        setError(`User already assigned to ${json.existingProjectName} for this sprint`);
+        // User already assigned to another program - show confirmation
+        setError(`User already assigned to ${json.existingProgramName} for this sprint`);
         return;
       }
 
@@ -169,17 +169,17 @@ export function TeamModePage() {
       }
 
       // Update local state optimistically
-      const project = projects.find(p => p.id === projectId);
-      if (project) {
+      const program = programs.find(p => p.id === programId);
+      if (program) {
         setAssignments(prev => ({
           ...prev,
           [userId]: {
             ...prev[userId],
             [sprintNumber]: {
-              projectId,
-              projectName: project.name,
-              prefix: project.prefix,
-              color: project.color,
+              programId,
+              programName: program.name,
+              prefix: program.prefix,
+              color: program.color,
               sprintDocId: json.sprintId,
             },
           },
@@ -238,54 +238,54 @@ export function TeamModePage() {
     userName: string,
     sprintNumber: number,
     sprintName: string,
-    newProjectId: string | null,
+    newProgramId: string | null,
     currentAssignment: Assignment | null
   ) => {
-    // Same project - no change
-    if (newProjectId === currentAssignment?.projectId) {
+    // Same program - no change
+    if (newProgramId === currentAssignment?.programId) {
       return;
     }
 
     // Clear assignment
-    if (newProjectId === null && currentAssignment) {
+    if (newProgramId === null && currentAssignment) {
       handleUnassign(userId, sprintNumber);
       return;
     }
 
     // New assignment (no existing)
-    if (newProjectId && !currentAssignment) {
-      handleAssign(userId, newProjectId, sprintNumber);
+    if (newProgramId && !currentAssignment) {
+      handleAssign(userId, newProgramId, sprintNumber);
       return;
     }
 
     // Reassignment - show confirmation dialog
-    if (newProjectId && currentAssignment) {
-      const newProject = projects.find(p => p.id === newProjectId) || null;
+    if (newProgramId && currentAssignment) {
+      const newProgram = programs.find(p => p.id === newProgramId) || null;
       setConfirmDialog({
         open: true,
         userId,
         userName,
         sprintNumber,
         sprintName,
-        currentProject: currentAssignment,
-        newProjectId,
-        newProject,
+        currentProgram: currentAssignment,
+        newProgramId,
+        newProgram,
       });
     }
-  }, [projects]);
+  }, [programs]);
 
   const handleConfirmReassign = async () => {
     if (!confirmDialog) return;
 
-    const { userId, sprintNumber, newProjectId } = confirmDialog;
+    const { userId, sprintNumber, newProgramId } = confirmDialog;
     setConfirmDialog(null);
 
-    if (!newProjectId) return;
+    if (!newProgramId) return;
 
-    // First unassign from current project
+    // First unassign from current program
     await handleUnassign(userId, sprintNumber, true);
-    // Then assign to new project
-    await handleAssign(userId, newProjectId, sprintNumber);
+    // Then assign to new program
+    await handleAssign(userId, newProgramId, sprintNumber);
   };
 
   // Fetch more sprints
@@ -407,7 +407,7 @@ export function TeamModePage() {
       <header className="flex h-10 items-center justify-between border-b border-border px-4">
         <h1 className="text-sm font-medium text-foreground">Teams</h1>
         <span className="text-xs text-muted">
-          {data.users.length} team members &middot; {projects.length} projects
+          {data.users.length} team members &middot; {programs.length} programs
         </span>
       </header>
 
@@ -477,20 +477,20 @@ export function TeamModePage() {
                     <SprintCell
                       key={cellKey}
                       assignment={assignment}
-                      projects={projects}
+                      programs={programs}
                       isCurrent={sprint.isCurrent}
                       loading={isLoading}
-                      onChange={(projectId) =>
+                      onChange={(programId) =>
                         handleCellChange(
                           user.id,
                           user.name,
                           sprint.number,
                           sprint.name,
-                          projectId,
+                          programId,
                           assignment || null
                         )
                       }
-                      onNavigate={(projectId) => navigate(`/projects/${projectId}`)}
+                      onNavigate={(programId) => navigate(`/programs/${programId}`)}
                     />
                   );
                 })}
@@ -518,7 +518,7 @@ export function TeamModePage() {
             </Dialog.Title>
             <Dialog.Description className="mt-2 text-sm text-muted">
               {confirmDialog?.userName} is currently assigned to{' '}
-              <span className="font-medium text-foreground">{confirmDialog?.currentProject?.projectName}</span>
+              <span className="font-medium text-foreground">{confirmDialog?.currentProgram?.programName}</span>
               {' '}for {confirmDialog?.sprintName}.
             </Dialog.Description>
 
@@ -526,11 +526,11 @@ export function TeamModePage() {
               <span className="text-sm text-muted">Change to:</span>
               <span
                 className="rounded px-1.5 py-0.5 text-xs font-bold text-white"
-                style={{ backgroundColor: confirmDialog?.newProject?.color || '#666' }}
+                style={{ backgroundColor: confirmDialog?.newProgram?.color || '#666' }}
               >
-                {confirmDialog?.newProject?.prefix}
+                {confirmDialog?.newProgram?.prefix}
               </span>
-              <span className="text-sm text-foreground">{confirmDialog?.newProject?.name}</span>
+              <span className="text-sm text-foreground">{confirmDialog?.newProgram?.name}</span>
             </div>
 
             <div className="mt-6 flex justify-end gap-3">
@@ -602,18 +602,18 @@ export function TeamModePage() {
 
 function SprintCell({
   assignment,
-  projects,
+  programs,
   isCurrent,
   loading,
   onChange,
   onNavigate,
 }: {
   assignment?: Assignment;
-  projects: Project[];
+  programs: Program[];
   isCurrent: boolean;
   loading: boolean;
-  onChange: (projectId: string | null) => void;
-  onNavigate: (projectId: string) => void;
+  onChange: (programId: string | null) => void;
+  onNavigate: (programId: string) => void;
 }) {
   return (
     <div
@@ -623,9 +623,9 @@ function SprintCell({
         loading && 'animate-pulse'
       )}
     >
-      <ProjectCombobox
-        projects={projects}
-        value={assignment?.projectId || null}
+      <ProgramCombobox
+        programs={programs}
+        value={assignment?.programId || null}
         onChange={onChange}
         onNavigate={onNavigate}
         disabled={loading}

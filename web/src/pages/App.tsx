@@ -2,19 +2,19 @@ import { useState, useEffect, useMemo } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
-import { useProjects, Project } from '@/contexts/ProjectsContext';
+import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { cn } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 
-type Mode = 'docs' | 'issues' | 'projects' | 'team' | 'settings';
+type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
 
 export function AppLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { documents, createDocument } = useDocuments();
-  const { projects } = useProjects();
+  const { programs } = usePrograms();
   const { issues, createIssue } = useIssues();
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
     return localStorage.getItem('ship:leftSidebarCollapsed') === 'true';
@@ -29,7 +29,7 @@ export function AppLayout() {
   const getActiveMode = (): Mode => {
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
-    if (location.pathname.startsWith('/projects') || location.pathname.startsWith('/sprints')) return 'projects';
+    if (location.pathname.startsWith('/programs') || location.pathname.startsWith('/sprints')) return 'programs';
     if (location.pathname.startsWith('/team')) return 'team';
     if (location.pathname.startsWith('/settings')) return 'settings';
     return 'docs';
@@ -41,7 +41,7 @@ export function AppLayout() {
     switch (mode) {
       case 'docs': navigate('/docs'); break;
       case 'issues': navigate('/issues'); break;
-      case 'projects': navigate('/projects'); break;
+      case 'programs': navigate('/programs'); break;
       case 'team': navigate('/team'); break;
       case 'settings': navigate('/settings'); break;
     }
@@ -85,10 +85,10 @@ export function AppLayout() {
             onClick={() => handleModeClick('issues')}
           />
           <RailIcon
-            icon={<ProjectsIcon />}
-            label="Projects"
-            active={activeMode === 'projects'}
-            onClick={() => handleModeClick('projects')}
+            icon={<ProgramsIcon />}
+            label="Programs"
+            active={activeMode === 'programs'}
+            onClick={() => handleModeClick('programs')}
           />
           <RailIcon
             icon={<TeamIcon />}
@@ -140,7 +140,7 @@ export function AppLayout() {
             <span className="text-sm font-medium text-foreground">
               {activeMode === 'docs' && 'Documents'}
               {activeMode === 'issues' && 'Issues'}
-              {activeMode === 'projects' && 'Projects'}
+              {activeMode === 'programs' && 'Programs'}
               {activeMode === 'team' && 'Teams'}
               {activeMode === 'settings' && 'Settings'}
             </span>
@@ -189,11 +189,11 @@ export function AppLayout() {
                 onSelect={(id) => navigate(`/issues/${id}`)}
               />
             )}
-            {activeMode === 'projects' && (
-              <ProjectsList
-                projects={projects}
-                activeId={location.pathname.split('/projects/')[1]}
-                onSelect={(id) => navigate(`/projects/${id}`)}
+            {activeMode === 'programs' && (
+              <ProgramsList
+                programs={programs}
+                activeId={location.pathname.split('/programs/')[1]}
+                onSelect={(id) => navigate(`/programs/${id}`)}
               />
             )}
             {activeMode === 'team' && (
@@ -382,31 +382,31 @@ function IssuesList({ issues, activeId, onSelect }: { issues: Issue[]; activeId?
   );
 }
 
-function ProjectsList({ projects, activeId, onSelect }: { projects: Project[]; activeId?: string; onSelect: (id: string) => void }) {
-  if (projects.length === 0) {
-    return <div className="px-3 py-2 text-sm text-muted">No projects yet</div>;
+function ProgramsList({ programs, activeId, onSelect }: { programs: Program[]; activeId?: string; onSelect: (id: string) => void }) {
+  if (programs.length === 0) {
+    return <div className="px-3 py-2 text-sm text-muted">No programs yet</div>;
   }
 
   return (
     <ul className="space-y-0.5 px-2">
-      {projects.map((project) => (
-        <li key={project.id}>
+      {programs.map((program) => (
+        <li key={program.id}>
           <button
-            onClick={() => onSelect(project.id)}
+            onClick={() => onSelect(program.id)}
             className={cn(
               'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-              activeId === project.id
+              activeId === program.id
                 ? 'bg-border/50 text-foreground'
                 : 'text-muted hover:bg-border/30 hover:text-foreground'
             )}
           >
             <span
               className="h-4 w-4 rounded flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
-              style={{ backgroundColor: project.color }}
+              style={{ backgroundColor: program.color }}
             >
-              {project.prefix.slice(0, 2)}
+              {program.prefix.slice(0, 2)}
             </span>
-            <span className="truncate">{project.name}</span>
+            <span className="truncate">{program.name}</span>
           </button>
         </li>
       ))}
@@ -488,7 +488,7 @@ function IssuesIcon() {
   );
 }
 
-function ProjectsIcon() {
+function ProgramsIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />

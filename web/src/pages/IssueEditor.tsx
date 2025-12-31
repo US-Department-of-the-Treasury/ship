@@ -11,7 +11,7 @@ interface TeamMember {
   name: string;
 }
 
-interface Project {
+interface Program {
   id: string;
   name: string;
   prefix: string;
@@ -48,19 +48,19 @@ export function IssueEditorPage() {
   const { user } = useAuth();
   const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue } = useIssues();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [relatedDataLoading, setRelatedDataLoading] = useState(true);
 
   // Get the current issue from context
   const issue = issues.find(i => i.id === id) || null;
 
-  // Fetch related data (projects, team members) with cancellation
+  // Fetch related data (programs, team members) with cancellation
   useEffect(() => {
     if (!id) return;
 
     // Reset state for new issue
-    setProjects([]);
+    setPrograms([]);
     setTeamMembers([]);
     setSprints([]);
     setRelatedDataLoading(true);
@@ -69,15 +69,15 @@ export function IssueEditorPage() {
 
     async function fetchRelatedData() {
       try {
-        const [projectsRes, userRes] = await Promise.all([
-          fetch(`${API_URL}/api/projects`, { credentials: 'include' }),
+        const [programsRes, userRes] = await Promise.all([
+          fetch(`${API_URL}/api/programs`, { credentials: 'include' }),
           fetch(`${API_URL}/api/auth/me`, { credentials: 'include' }),
         ]);
 
         if (cancelled) return;
 
-        if (projectsRes.ok) {
-          setProjects(await projectsRes.json());
+        if (programsRes.ok) {
+          setPrograms(await programsRes.json());
         }
 
         if (userRes.ok) {
@@ -95,22 +95,22 @@ export function IssueEditorPage() {
     return () => { cancelled = true; };
   }, [id]);
 
-  // Fetch sprints when issue's project changes with cancellation
+  // Fetch sprints when issue's program changes with cancellation
   useEffect(() => {
-    if (!issue?.project_id) {
+    if (!issue?.program_id) {
       setSprints([]);
       return;
     }
 
     let cancelled = false;
 
-    fetch(`${API_URL}/api/projects/${issue.project_id}/sprints`, { credentials: 'include' })
+    fetch(`${API_URL}/api/programs/${issue.program_id}/sprints`, { credentials: 'include' })
       .then(res => res.ok ? res.json() : [])
       .then(data => { if (!cancelled) setSprints(data); })
       .catch(() => { if (!cancelled) setSprints([]); });
 
     return () => { cancelled = true; };
-  }, [issue?.project_id]);
+  }, [issue?.program_id]);
 
   // Redirect if issue not found after loading
   useEffect(() => {
@@ -139,9 +139,9 @@ export function IssueEditorPage() {
     return null;
   }
 
-  const handleProjectChange = async (projectId: string | null) => {
-    await handleUpdateIssue({ project_id: projectId, sprint_id: null } as Partial<Issue>);
-    // Sprints will be fetched automatically via the useEffect when issue.project_id changes
+  const handleProgramChange = async (programId: string | null) => {
+    await handleUpdateIssue({ program_id: programId, sprint_id: null } as Partial<Issue>);
+    // Sprints will be fetched automatically via the useEffect when issue.program_id changes
   };
 
   return (
@@ -200,19 +200,19 @@ export function IssueEditorPage() {
               />
             </PropertyRow>
 
-            <PropertyRow label="Project">
+            <PropertyRow label="Program">
               <Combobox
-                options={projects.map((p) => ({ value: p.id, label: p.name, description: p.prefix }))}
-                value={issue.project_id}
-                onChange={handleProjectChange}
-                placeholder="No Project"
-                clearLabel="No Project"
-                searchPlaceholder="Search projects..."
-                emptyText="No projects found"
+                options={programs.map((p) => ({ value: p.id, label: p.name, description: p.prefix }))}
+                value={issue.program_id}
+                onChange={handleProgramChange}
+                placeholder="No Program"
+                clearLabel="No Program"
+                searchPlaceholder="Search programs..."
+                emptyText="No programs found"
               />
             </PropertyRow>
 
-            {issue.project_id && (
+            {issue.program_id && (
               <PropertyRow label="Sprint">
                 <Combobox
                   options={sprints.map((s) => ({ value: s.id, label: s.name, description: s.status }))}

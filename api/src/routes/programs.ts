@@ -48,7 +48,7 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 // Helper to generate random prefix
 function generatePrefix(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let result = 'PRJ';
+  let result = 'PRG';
   for (let i = 0; i < 5; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -56,28 +56,28 @@ function generatePrefix(): string {
 }
 
 // Validation schemas
-const createProjectSchema = z.object({
+const createProgramSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
   prefix: z.string().min(2).max(10).regex(/^[A-Z]+$/, 'Prefix must be uppercase letters only').optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#6366f1'),
 });
 
-const updateProjectSchema = z.object({
+const updateProgramSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   archived_at: z.string().datetime().optional().nullable(),
 });
 
-// List projects (documents with document_type = 'project')
+// List programs (documents with document_type = 'program')
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const includeArchived = req.query.archived === 'true';
     let query = `
       SELECT d.id, d.title as name, d.prefix, d.color, d.archived_at, d.created_at, d.updated_at,
-             (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
-             (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count
+             (SELECT COUNT(*) FROM documents i WHERE i.program_id = d.id AND i.document_type = 'issue') as issue_count,
+             (SELECT COUNT(*) FROM documents s WHERE s.program_id = d.id AND s.document_type = 'sprint') as sprint_count
       FROM documents d
-      WHERE d.workspace_id = $1 AND d.document_type = 'project'
+      WHERE d.workspace_id = $1 AND d.document_type = 'program'
     `;
 
     if (!includeArchived) {
@@ -89,40 +89,40 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
     const result = await pool.query(query, [req.user!.workspaceId]);
     res.json(result.rows);
   } catch (err) {
-    console.error('List projects error:', err);
+    console.error('List programs error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Get single project
+// Get single program
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
       `SELECT d.id, d.title as name, d.prefix, d.color, d.archived_at, d.created_at, d.updated_at,
-              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count
+              (SELECT COUNT(*) FROM documents i WHERE i.program_id = d.id AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents s WHERE s.program_id = d.id AND s.document_type = 'sprint') as sprint_count
        FROM documents d
-       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'project'`,
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'`,
       [id, req.user!.workspaceId]
     );
 
     if (result.rows.length === 0) {
-      res.status(404).json({ error: 'Project not found' });
+      res.status(404).json({ error: 'Program not found' });
       return;
     }
 
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('Get project error:', err);
+    console.error('Get program error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Create project (creates a document with document_type = 'project')
+// Create program (creates a document with document_type = 'program')
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
-    const parsed = createProjectSchema.safeParse(req.body);
+    const parsed = createProgramSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
       return;
@@ -137,7 +137,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       while (attempts < 10) {
         prefix = generatePrefix();
         const existingPrefix = await pool.query(
-          `SELECT id FROM documents WHERE workspace_id = $1 AND prefix = $2 AND document_type = 'project'`,
+          `SELECT id FROM documents WHERE workspace_id = $1 AND prefix = $2 AND document_type = 'program'`,
           [req.user!.workspaceId, prefix]
         );
         if (existingPrefix.rows.length === 0) break;
@@ -146,48 +146,48 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     } else {
       // Check prefix uniqueness if explicitly provided
       const existingPrefix = await pool.query(
-        `SELECT id FROM documents WHERE workspace_id = $1 AND prefix = $2 AND document_type = 'project'`,
+        `SELECT id FROM documents WHERE workspace_id = $1 AND prefix = $2 AND document_type = 'program'`,
         [req.user!.workspaceId, prefix]
       );
 
       if (existingPrefix.rows.length > 0) {
-        res.status(400).json({ error: 'Project prefix already exists' });
+        res.status(400).json({ error: 'Program prefix already exists' });
         return;
       }
     }
 
     const result = await pool.query(
       `INSERT INTO documents (workspace_id, document_type, title, prefix, color, created_by)
-       VALUES ($1, 'project', $2, $3, $4, $5)
+       VALUES ($1, 'program', $2, $3, $4, $5)
        RETURNING id, title as name, prefix, color, archived_at, created_at, updated_at`,
       [req.user!.workspaceId, title, prefix, color, req.user!.id]
     );
 
     res.status(201).json({ ...result.rows[0], issue_count: 0, sprint_count: 0 });
   } catch (err) {
-    console.error('Create project error:', err);
+    console.error('Create program error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Update project
+// Update program
 router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const parsed = updateProjectSchema.safeParse(req.body);
+    const parsed = updateProgramSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
       return;
     }
 
-    // Verify project exists and belongs to workspace
+    // Verify program exists and belongs to workspace
     const existing = await pool.query(
-      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
       [id, req.user!.workspaceId]
     );
 
     if (existing.rows.length === 0) {
-      res.status(404).json({ error: 'Project not found' });
+      res.status(404).json({ error: 'Program not found' });
       return;
     }
 
@@ -218,63 +218,63 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 
     const result = await pool.query(
       `UPDATE documents SET ${updates.join(', ')}
-       WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'project'
+       WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'program'
        RETURNING id, title as name, prefix, color, archived_at, created_at, updated_at`,
       [...values, id, req.user!.workspaceId]
     );
 
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('Update project error:', err);
+    console.error('Update program error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Delete project
+// Delete program
 router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Remove project_id from child documents first
+    // Remove program_id from child documents first
     await pool.query(
-      `UPDATE documents SET project_id = NULL WHERE project_id = $1`,
+      `UPDATE documents SET program_id = NULL WHERE program_id = $1`,
       [id]
     );
 
     const result = await pool.query(
-      `DELETE FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project' RETURNING id`,
+      `DELETE FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program' RETURNING id`,
       [id, req.user!.workspaceId]
     );
 
     if (result.rows.length === 0) {
-      res.status(404).json({ error: 'Project not found' });
+      res.status(404).json({ error: 'Program not found' });
       return;
     }
 
     res.status(204).send();
   } catch (err) {
-    console.error('Delete project error:', err);
+    console.error('Delete program error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Get project issues
+// Get program issues
 router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Verify project exists and get prefix
-    const projectExists = await pool.query(
-      `SELECT id, prefix FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+    // Verify program exists and get prefix
+    const programExists = await pool.query(
+      `SELECT id, prefix FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
       [id, req.user!.workspaceId]
     );
 
-    if (projectExists.rows.length === 0) {
-      res.status(404).json({ error: 'Project not found' });
+    if (programExists.rows.length === 0) {
+      res.status(404).json({ error: 'Program not found' });
       return;
     }
 
-    const prefix = projectExists.rows[0].prefix;
+    const prefix = programExists.rows[0].prefix;
 
     const result = await pool.query(
       `SELECT d.id, d.title, d.state, d.priority, d.assignee_id, d.ticket_number,
@@ -282,7 +282,7 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
               u.name as assignee_name
        FROM documents d
        LEFT JOIN users u ON d.assignee_id = u.id
-       WHERE d.project_id = $1 AND d.document_type = 'issue'
+       WHERE d.program_id = $1 AND d.document_type = 'issue'
        ORDER BY
          CASE d.priority
            WHEN 'urgent' THEN 1
@@ -303,24 +303,24 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
 
     res.json(issues);
   } catch (err) {
-    console.error('Get project issues error:', err);
+    console.error('Get program issues error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Get project sprints (documents with document_type = 'sprint' that belong to this project)
+// Get program sprints (documents with document_type = 'sprint' that belong to this program)
 router.get('/:id/sprints', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Verify project exists
-    const projectExists = await pool.query(
-      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+    // Verify program exists
+    const programExists = await pool.query(
+      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
       [id, req.user!.workspaceId]
     );
 
-    if (projectExists.rows.length === 0) {
-      res.status(404).json({ error: 'Project not found' });
+    if (programExists.rows.length === 0) {
+      res.status(404).json({ error: 'Program not found' });
       return;
     }
 
@@ -329,14 +329,14 @@ router.get('/:id/sprints', requireAuth, async (req: Request, res: Response) => {
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.state = 'done') as completed_count
        FROM documents d
-       WHERE d.project_id = $1 AND d.document_type = 'sprint'
+       WHERE d.program_id = $1 AND d.document_type = 'sprint'
        ORDER BY d.start_date DESC`,
       [id]
     );
 
     res.json(result.rows);
   } catch (err) {
-    console.error('Get project sprints error:', err);
+    console.error('Get program sprints error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -1,30 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Editor } from '@/components/Editor';
+import { useAuth } from '@/hooks/useAuth';
+import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { cn } from '@/lib/cn';
-import { KanbanBoard } from '@/components/KanbanBoard';
+import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
+import { KanbanBoard } from '@/components/KanbanBoard';
 
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  prefix: string;
-  color: string;
-  issue_count: number;
-  sprint_count: number;
-  archived_at: string | null;
-}
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-interface Sprint {
-  id: string;
-  name: string;
-  goal: string | null;
-  start_date: string;
-  end_date: string;
-  status: 'planned' | 'active' | 'completed';
-  issue_count: number;
-  completed_count: number;
-}
+const PROGRAM_COLORS = [
+  '#6366f1', // Indigo
+  '#8b5cf6', // Violet
+  '#ec4899', // Pink
+  '#f43f5e', // Rose
+  '#ef4444', // Red
+  '#f97316', // Orange
+  '#eab308', // Yellow
+  '#22c55e', // Green
+  '#14b8a6', // Teal
+  '#06b6d4', // Cyan
+  '#3b82f6', // Blue
+];
 
 interface Issue {
   id: string;
@@ -38,62 +36,75 @@ interface Issue {
   sprint_ref_id: string | null;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+interface Sprint {
+  id: string;
+  name: string;
+  goal: string | null;
+  start_date: string;
+  end_date: string;
+  status: 'planned' | 'active' | 'completed';
+  issue_count: number;
+  completed_count: number;
+}
 
-type Tab = 'issues' | 'sprints' | 'settings';
+type Tab = 'overview' | 'issues' | 'sprints';
 
-export function ProjectViewPage() {
+export function ProgramEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [project, setProject] = useState<Project | null>(null);
+  const { user } = useAuth();
+  const { programs, loading, updateProgram: contextUpdateProgram } = usePrograms();
+
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<Tab>('issues');
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [sprintsLoading, setSprintsLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
 
-  // Reset state and fetch data when project ID changes
+  // Get the current program from context
+  const program = programs.find(p => p.id === id) || null;
+
   useEffect(() => {
-    if (!id) return;
-
-    // Reset state for new project
-    setProject(null);
-    setIssues([]);
-    setSprints([]);
-    setLoading(true);
-
-    let cancelled = false;
-
-    async function fetchData() {
-      try {
-        const [projectRes, issuesRes, sprintsRes] = await Promise.all([
-          fetch(`${API_URL}/api/projects/${id}`, { credentials: 'include' }),
-          fetch(`${API_URL}/api/projects/${id}/issues`, { credentials: 'include' }),
-          fetch(`${API_URL}/api/projects/${id}/sprints`, { credentials: 'include' }),
-        ]);
-
-        if (cancelled) return;
-
-        if (projectRes.ok) {
-          setProject(await projectRes.json());
-        } else {
-          navigate('/projects');
-          return;
-        }
-
-        if (issuesRes.ok) setIssues(await issuesRes.json());
-        if (sprintsRes.ok) setSprints(await sprintsRes.json());
-      } catch (err) {
-        if (!cancelled) console.error('Failed to fetch project:', err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+    // If programs are loaded but this program isn't found, redirect
+    if (!loading && id && !program) {
+      navigate('/programs');
     }
+  }, [loading, id, program, navigate]);
 
-    fetchData();
-    return () => { cancelled = true; };
-  }, [id, navigate]);
+  // Fetch issues when switching to issues tab
+  useEffect(() => {
+    if (activeTab === 'issues' && id && issues.length === 0) {
+      setIssuesLoading(true);
+      fetch(`${API_URL}/api/programs/${id}/issues`, { credentials: 'include' })
+        .then(res => res.ok ? res.json() : [])
+        .then(setIssues)
+        .catch(console.error)
+        .finally(() => setIssuesLoading(false));
+    }
+  }, [activeTab, id, issues.length]);
+
+  // Fetch sprints when switching to sprints tab
+  useEffect(() => {
+    if (activeTab === 'sprints' && id && sprints.length === 0) {
+      setSprintsLoading(true);
+      fetch(`${API_URL}/api/programs/${id}/sprints`, { credentials: 'include' })
+        .then(res => res.ok ? res.json() : [])
+        .then(setSprints)
+        .catch(console.error)
+        .finally(() => setSprintsLoading(false));
+    }
+  }, [activeTab, id, sprints.length]);
+
+  const handleUpdateProgram = useCallback(async (updates: Partial<Program>) => {
+    if (!id) return;
+    await contextUpdateProgram(id, updates);
+  }, [id, contextUpdateProgram]);
+
+  const handleTitleChange = useCallback((newTitle: string) => {
+    handleUpdateProgram({ name: newTitle });
+  }, [handleUpdateProgram]);
 
   const createIssue = async () => {
     if (!id) return;
@@ -102,7 +113,7 @@ export function ProjectViewPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled', project_ref_id: id }),
+        body: JSON.stringify({ title: 'Untitled', program_id: id }),
       });
       if (res.ok) {
         const issue = await res.json();
@@ -120,7 +131,7 @@ export function ProjectViewPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ title: data.name, goal: data.goal, start_date: data.start_date, end_date: data.end_date, project_id: id }),
+        body: JSON.stringify({ title: data.name, goal: data.goal, start_date: data.start_date, end_date: data.end_date, program_id: id }),
       });
       if (res.ok) {
         const sprint = await res.json();
@@ -153,36 +164,18 @@ export function ProjectViewPage() {
     }
   };
 
-  const updateProject = async (updates: Partial<Project>) => {
-    if (!id) return;
-    try {
-      const res = await fetch(`${API_URL}/api/projects/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(updates),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setProject(prev => prev ? { ...prev, ...updated } : null);
-      }
-    } catch (err) {
-      console.error('Failed to update project:', err);
-    }
-  };
+  if (loading) {
+    return <EditorSkeleton />;
+  }
 
-  if (loading || !project) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-muted">Loading...</div>
-      </div>
-    );
+  if (!program || !user) {
+    return null;
   }
 
   const tabs: TabItem[] = [
+    { id: 'overview', label: 'Overview' },
     { id: 'issues', label: 'Issues' },
     { id: 'sprints', label: 'Sprints' },
-    { id: 'settings', label: 'Settings' },
   ];
 
   const renderTabActions = () => {
@@ -233,28 +226,6 @@ export function ProjectViewPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Breadcrumbs Header */}
-      <div className="flex items-center gap-3 border-b border-border px-6 py-3">
-        <button
-          onClick={() => navigate('/projects')}
-          className="text-muted hover:text-foreground transition-colors"
-        >
-          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white"
-          style={{ backgroundColor: project.color }}
-        >
-          {project.prefix.slice(0, 2)}
-        </div>
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">{project.name}</h1>
-          <p className="text-xs text-muted">{project.prefix}</p>
-        </div>
-      </div>
-
       {/* Tab Bar */}
       <TabBar
         tabs={tabs}
@@ -264,28 +235,47 @@ export function ProjectViewPage() {
       />
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
-        {activeTab === 'issues' && (
-          viewMode === 'kanban' ? (
-            <KanbanBoard
-              issues={issues}
-              onUpdateIssue={updateIssue}
-              onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
-            />
-          ) : (
-            <IssuesList issues={issues} onIssueClick={(issueId) => navigate(`/issues/${issueId}`)} />
-          )
-        )}
-
-        {activeTab === 'sprints' && (
-          <SprintsList
-            sprints={sprints}
-            onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
+      <div className="flex-1 overflow-hidden">
+        {activeTab === 'overview' && (
+          <OverviewTab
+            program={program}
+            user={user}
+            onTitleChange={handleTitleChange}
+            onUpdateProgram={handleUpdateProgram}
           />
         )}
 
-        {activeTab === 'settings' && (
-          <ProjectSettings project={project} onUpdate={updateProject} />
+        {activeTab === 'issues' && (
+          <div className="h-full overflow-auto">
+            {issuesLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-muted">Loading issues...</div>
+              </div>
+            ) : viewMode === 'kanban' ? (
+              <KanbanBoard
+                issues={issues}
+                onUpdateIssue={updateIssue}
+                onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+              />
+            ) : (
+              <IssuesList issues={issues} onIssueClick={(issueId) => navigate(`/issues/${issueId}`)} />
+            )}
+          </div>
+        )}
+
+        {activeTab === 'sprints' && (
+          <div className="h-full overflow-auto">
+            {sprintsLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-muted">Loading sprints...</div>
+              </div>
+            ) : (
+              <SprintsList
+                sprints={sprints}
+                onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
+              />
+            )}
+          </div>
         )}
       </div>
 
@@ -299,6 +289,67 @@ export function ProjectViewPage() {
   );
 }
 
+function OverviewTab({
+  program,
+  user,
+  onTitleChange,
+  onUpdateProgram,
+}: {
+  program: Program;
+  user: { name: string };
+  onTitleChange: (title: string) => void;
+  onUpdateProgram: (updates: Partial<Program>) => void;
+}) {
+  return (
+    <Editor
+      documentId={program.id}
+      userName={user.name}
+      initialTitle={program.name}
+      onTitleChange={onTitleChange}
+      roomPrefix="program"
+      placeholder="Describe this program..."
+      sidebar={
+        <div className="space-y-4 p-4">
+          <PropertyRow label="Prefix">
+            <input
+              type="text"
+              value={program.prefix}
+              disabled
+              className="w-full rounded bg-border/50 px-2 py-1 text-sm font-mono text-muted cursor-not-allowed"
+            />
+            <p className="mt-1 text-xs text-muted">Cannot be changed</p>
+          </PropertyRow>
+
+          <PropertyRow label="Color">
+            <div className="flex flex-wrap gap-1.5">
+              {PROGRAM_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => onUpdateProgram({ color: c })}
+                  className={cn(
+                    'h-6 w-6 rounded-full transition-transform',
+                    program.color === c ? 'ring-2 ring-white ring-offset-1 ring-offset-background scale-110' : 'hover:scale-105'
+                  )}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+          </PropertyRow>
+        </div>
+      }
+    />
+  );
+}
+
+function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-muted">{label}</label>
+      {children}
+    </div>
+  );
+}
 
 function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (id: string) => void }) {
   const stateColors: Record<string, string> = {
@@ -320,7 +371,7 @@ function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (
   if (issues.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-muted">No issues in this project</p>
+        <p className="text-muted">No issues in this program</p>
       </div>
     );
   }
@@ -364,115 +415,149 @@ function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (
 }
 
 function SprintsList({ sprints, onSprintClick }: { sprints: Sprint[]; onSprintClick: (id: string) => void }) {
-  const statusColors: Record<string, string> = {
-    planned: 'bg-gray-500/20 text-gray-400',
-    active: 'bg-green-500/20 text-green-400',
-    completed: 'bg-blue-500/20 text-blue-400',
-  };
+  const [completedExpanded, setCompletedExpanded] = useState(false);
 
   if (sprints.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-muted">No sprints in this project</p>
+        <p className="text-muted">No sprints in this program</p>
       </div>
     );
   }
 
+  // Group sprints by status
+  const grouped = {
+    active: sprints.filter(s => s.status === 'active'),
+    upcoming: sprints
+      .filter(s => s.status === 'planned')
+      .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime()),
+    completed: sprints
+      .filter(s => s.status === 'completed')
+      .sort((a, b) => new Date(b.end_date).getTime() - new Date(a.end_date).getTime()),
+  };
+
   return (
-    <div className="p-6 space-y-4">
-      {sprints.map((sprint) => {
-        const progress = sprint.issue_count > 0
-          ? Math.round((sprint.completed_count / sprint.issue_count) * 100)
-          : 0;
+    <div className="p-6 space-y-6">
+      {/* Active Sprint - Hero Card */}
+      {grouped.active.map((sprint) => (
+        <ActiveSprintCard key={sprint.id} sprint={sprint} onClick={() => onSprintClick(sprint.id)} />
+      ))}
 
-        return (
+      {/* Upcoming Section */}
+      {grouped.upcoming.length > 0 && (
+        <div>
+          <h3 className="mb-3 text-sm font-medium text-muted">Upcoming ({grouped.upcoming.length})</h3>
+          <div className="space-y-2">
+            {grouped.upcoming.map((sprint) => (
+              <UpcomingSprintRow key={sprint.id} sprint={sprint} onClick={() => onSprintClick(sprint.id)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Completed Section - Collapsible */}
+      {grouped.completed.length > 0 && (
+        <div>
           <button
-            key={sprint.id}
-            onClick={() => onSprintClick(sprint.id)}
-            className="w-full rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-border/30"
+            onClick={() => setCompletedExpanded(!completedExpanded)}
+            className="flex w-full items-center gap-2 text-sm font-medium text-muted hover:text-foreground transition-colors"
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h3 className="font-medium text-foreground">{sprint.name}</h3>
-                <span className={cn('rounded px-2 py-0.5 text-xs font-medium capitalize', statusColors[sprint.status])}>
-                  {sprint.status}
-                </span>
-              </div>
-              <span className="text-sm text-muted">
-                {formatDate(sprint.start_date)} - {formatDate(sprint.end_date)}
-              </span>
-            </div>
-
-            {sprint.goal && (
-              <p className="mt-2 text-sm text-muted">{sprint.goal}</p>
-            )}
-
-            <div className="mt-3 flex items-center gap-3">
-              <div className="flex-1 h-2 rounded-full bg-border overflow-hidden">
-                <div
-                  className="h-full bg-accent transition-all"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <span className="text-xs text-muted">
-                {sprint.completed_count}/{sprint.issue_count} done
-              </span>
-            </div>
+            <ChevronIcon expanded={completedExpanded} />
+            Completed ({grouped.completed.length})
           </button>
-        );
-      })}
+          {completedExpanded && (
+            <div className="mt-3 space-y-2">
+              {grouped.completed.map((sprint) => (
+                <CompletedSprintRow key={sprint.id} sprint={sprint} onClick={() => onSprintClick(sprint.id)} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function ProjectSettings({ project, onUpdate }: { project: Project; onUpdate: (updates: Partial<Project>) => void }) {
-  const [name, setName] = useState(project.name);
-  const [description, setDescription] = useState(project.description || '');
+function ActiveSprintCard({ sprint, onClick }: { sprint: Sprint; onClick: () => void }) {
+  const progress = sprint.issue_count > 0
+    ? Math.round((sprint.completed_count / sprint.issue_count) * 100)
+    : 0;
 
-  const handleSave = () => {
-    onUpdate({ name, description: description || null });
-  };
+  const daysRemaining = Math.max(0, Math.ceil(
+    (new Date(sprint.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  ));
 
   return (
-    <div className="p-6 max-w-xl space-y-6">
-      <div>
-        <label className="mb-1 block text-sm font-medium text-muted">Name</label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-        />
+    <button
+      onClick={onClick}
+      className="w-full rounded-lg border border-border border-l-4 border-l-accent bg-background p-6 text-left transition-colors hover:bg-border/30"
+    >
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-foreground">{sprint.name}</h3>
+        <span className="text-sm text-muted">
+          {daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} remaining
+        </span>
       </div>
 
-      <div>
-        <label className="mb-1 block text-sm font-medium text-muted">Description</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={3}
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-        />
-      </div>
+      {sprint.goal && (
+        <p className="mt-2 text-sm text-muted">{sprint.goal}</p>
+      )}
 
-      <div>
-        <label className="mb-1 block text-sm font-medium text-muted">Prefix</label>
-        <input
-          type="text"
-          value={project.prefix}
-          disabled
-          className="w-full rounded-md border border-border bg-border/50 px-3 py-2 text-muted cursor-not-allowed"
-        />
-        <p className="mt-1 text-xs text-muted">Prefix cannot be changed after creation</p>
+      <div className="mt-4 flex items-center gap-3">
+        <div className="flex-1 h-3 rounded-full bg-border overflow-hidden">
+          <div
+            className="h-full bg-accent transition-all"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <span className="text-sm font-medium text-foreground">
+          {sprint.completed_count}/{sprint.issue_count} done
+        </span>
       </div>
+    </button>
+  );
+}
 
-      <button
-        onClick={handleSave}
-        className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
-      >
-        Save Changes
-      </button>
-    </div>
+function UpcomingSprintRow({ sprint, onClick }: { sprint: Sprint; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-border/30"
+    >
+      <span className="font-medium text-foreground">{sprint.name}</span>
+      <span className="mx-2 text-muted">·</span>
+      <span className="text-muted">Starts {formatDate(sprint.start_date)}</span>
+      <span className="mx-2 text-muted">·</span>
+      <span className="text-muted">{sprint.issue_count} issues</span>
+    </button>
+  );
+}
+
+function CompletedSprintRow({ sprint, onClick }: { sprint: Sprint; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full rounded-md px-3 py-2 text-left text-sm opacity-60 transition-colors hover:bg-border/30 hover:opacity-100"
+    >
+      <span className="font-medium text-foreground">{sprint.name}</span>
+      <span className="mx-2 text-muted">·</span>
+      <span className="text-muted">{formatDate(sprint.end_date)}</span>
+      <span className="mx-2 text-muted">·</span>
+      <span className="text-muted">{sprint.completed_count}/{sprint.issue_count} done</span>
+    </button>
+  );
+}
+
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={cn('h-4 w-4 transition-transform', expanded && 'rotate-90')}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
   );
 }
 

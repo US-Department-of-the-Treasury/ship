@@ -11,9 +11,9 @@ interface Sprint {
   start_date: string;
   end_date: string;
   status: 'planned' | 'active' | 'completed';
-  project_id: string;
-  project_name?: string;
-  project_prefix?: string;
+  program_id: string;
+  program_name?: string;
+  program_prefix?: string;
   issue_count: number;
   completed_count: number;
 }
@@ -52,7 +52,7 @@ export function SprintEditorPage() {
         if (res.ok) {
           setSprint(await res.json());
         } else if (res.status === 404) {
-          navigate('/projects');
+          navigate('/programs');
           return;
         }
       } catch (err) {
@@ -106,7 +106,7 @@ export function SprintEditorPage() {
       userName={user.name}
       initialTitle={sprint.name}
       onTitleChange={handleTitleChange}
-      onBack={() => navigate(sprint.project_id ? `/projects/${sprint.project_id}` : '/projects')}
+      onBack={() => navigate(sprint.program_id ? `/programs/${sprint.program_id}` : '/programs')}
       roomPrefix="sprint"
       placeholder="Add sprint goals, notes, or description..."
       headerBadge={
@@ -165,13 +165,13 @@ export function SprintEditorPage() {
               </div>
             </PropertyRow>
 
-            {sprint.project_name && (
-              <PropertyRow label="Project">
+            {sprint.program_name && (
+              <PropertyRow label="Program">
                 <button
-                  onClick={() => navigate(`/projects/${sprint.project_id}`)}
+                  onClick={() => navigate(`/programs/${sprint.program_id}`)}
                   className="w-full rounded bg-border/50 px-2 py-1.5 text-left text-sm text-foreground hover:bg-border transition-colors"
                 >
-                  {sprint.project_name}
+                  {sprint.program_name}
                 </button>
               </PropertyRow>
             )}

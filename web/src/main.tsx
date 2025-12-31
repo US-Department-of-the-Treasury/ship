@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DocumentsProvider } from '@/contexts/DocumentsContext';
-import { ProjectsProvider } from '@/contexts/ProjectsContext';
+import { ProgramsProvider } from '@/contexts/ProgramsContext';
 import { IssuesProvider } from '@/contexts/IssuesContext';
 import { LoginPage } from '@/pages/Login';
 import { AppLayout } from '@/pages/App';
@@ -12,9 +12,9 @@ import { DocumentsPage } from '@/pages/Documents';
 import { DocumentEditorPage } from '@/pages/DocumentEditor';
 import { IssuesPage } from '@/pages/Issues';
 import { IssueEditorPage } from '@/pages/IssueEditor';
-import { ProjectsPage } from '@/pages/Projects';
-import { ProjectEditorPage } from '@/pages/ProjectEditor';
-import { ProjectViewPage } from '@/pages/ProjectView';
+import { ProgramsPage } from '@/pages/Programs';
+import { ProgramEditorPage } from '@/pages/ProgramEditor';
+import { ProgramViewPage } from '@/pages/ProgramView';
 import { SprintEditorPage } from '@/pages/SprintEditor';
 import { SprintViewPage } from '@/pages/SprintView';
 import { TeamModePage } from '@/pages/TeamMode';
@@ -66,11 +66,11 @@ function App() {
           element={
             <ProtectedRoute>
               <DocumentsProvider>
-                <ProjectsProvider>
+                <ProgramsProvider>
                   <IssuesProvider>
                     <AppLayout />
                   </IssuesProvider>
-                </ProjectsProvider>
+                </ProgramsProvider>
               </DocumentsProvider>
             </ProtectedRoute>
           }
@@ -80,9 +80,9 @@ function App() {
           <Route path="docs/:id" element={<DocumentEditorPage />} />
           <Route path="issues" element={<IssuesPage />} />
           <Route path="issues/:id" element={<IssueEditorPage />} />
-          <Route path="projects" element={<ProjectsPage />} />
-          <Route path="projects/:id" element={<ProjectEditorPage />} />
-          <Route path="projects/:id/view" element={<ProjectViewPage />} />
+          <Route path="programs" element={<ProgramsPage />} />
+          <Route path="programs/:id" element={<ProgramEditorPage />} />
+          <Route path="programs/:id/view" element={<ProgramViewPage />} />
           <Route path="sprints/:id" element={<SprintEditorPage />} />
           <Route path="sprints/:id/view" element={<SprintViewPage />} />
           <Route path="team" element={<Navigate to="/team/allocation" replace />} />

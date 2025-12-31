@@ -697,39 +697,43 @@ Each phase is complete when:
 
 ---
 
-## Session State (Auto-updated: 2025-12-31T03:29:56Z)
+## Session State (Auto-updated: 2025-12-31T04:10:51Z)
 
 **Branch:** `master`
 **Project:** `/Users/corcoss/code/ship`
 
 ### Recent Commits
 ```
+a5b4a01 Add Team Directory, enable slash commands on all document types
+44958dd Merge pull request #7 from US-Department-of-the-Treasury/project-mode
+67c780f Add drag handle tests, editor padding, and ProjectView TabBar
+a52d240 Add visual hierarchy to sprint list with status grouping
 7cf4aa7 Merge pull request #6 from US-Department-of-the-Treasury/project-mode
-7b11806 Add TabBar to ProjectEditor with Overview, Issues, Sprints tabs
-92613e7 Add wiki document seed data and fix editor alignment
-7aa186f Add team grid project assignment with split-click navigation
-76e5c40 Fix team grid header alignment and left-align cell contents
 ```
 
 ### Uncommitted Changes
 ```
+ M api/src/app.ts
+ M api/src/collaboration/index.ts
+ M api/src/db/schema.sql
  M api/src/db/seed.ts
+ M api/src/routes/issues.ts
+ D api/src/routes/projects.ts
+ M api/src/routes/sprints.ts
  M api/src/routes/team.ts
- M plans/ship-mvp-greenfield.md
- M web/src/components/Editor.tsx
- M web/src/main.tsx
- M web/src/pages/App.tsx
- M web/src/pages/DocumentEditor.tsx
-?? web/src/pages/PersonEditor.tsx
-?? web/src/pages/TeamDirectory.tsx
+ D e2e/projects.spec.ts
+ M e2e/sprints.spec.ts
 ```
 
 ### Modified Files
+api/src/app.ts
+api/src/collaboration/index.ts
+api/src/db/schema.sql
 api/src/db/seed.ts
+api/src/routes/issues.ts
+api/src/routes/projects.ts
+api/src/routes/sprints.ts
 api/src/routes/team.ts
-plans/ship-mvp-greenfield.md
-web/src/components/Editor.tsx
-web/src/main.tsx
-web/src/pages/App.tsx
-web/src/pages/DocumentEditor.tsx
+e2e/projects.spec.ts
+e2e/sprints.spec.ts
 

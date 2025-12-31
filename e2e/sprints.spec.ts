@@ -1,20 +1,20 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('Sprints (Phase 6)', () => {
-  // Helper to create a project and navigate to its view page
-  async function createProjectAndGoToView(page: import('@playwright/test').Page): Promise<string> {
-    await page.goto('/projects')
+  // Helper to create a program and navigate to its view page
+  async function createProgramAndGoToView(page: import('@playwright/test').Page): Promise<string> {
+    await page.goto('/programs')
 
-    // Click New Project and wait for navigation (longer timeout for API call)
-    await page.getByRole('button', { name: /new project/i }).click()
-    await expect(page).toHaveURL(/\/projects\/([a-f0-9-]+)/, { timeout: 15000 })
-    const projectId = page.url().split('/projects/')[1]
+    // Click New Program and wait for navigation (longer timeout for API call)
+    await page.getByRole('button', { name: /new program/i }).click()
+    await expect(page).toHaveURL(/\/programs\/([a-f0-9-]+)/, { timeout: 15000 })
+    const programId = page.url().split('/programs/')[1]
 
-    // Navigate to the project view page (tabbed view)
+    // Navigate to the program view page (tabbed view)
     await page.getByRole('button', { name: /view issues & sprints/i }).click()
-    await expect(page).toHaveURL(/\/projects\/[a-f0-9-]+\/view/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+\/view/, { timeout: 5000 })
 
-    return projectId
+    return programId
   }
 
   // Helper to click Sprints tab (avoiding icon rail)
@@ -52,16 +52,16 @@ test.describe('Sprints (Phase 6)', () => {
     await expect(page).not.toHaveURL('/login', { timeout: 5000 })
   })
 
-  test('Sprints tab shows in project view', async ({ page }) => {
-    await createProjectAndGoToView(page)
+  test('Sprints tab shows in program view', async ({ page }) => {
+    await createProgramAndGoToView(page)
 
     // Should see Sprints tab (use tabs container)
     const tabsContainer = page.locator('.flex.gap-1')
     await expect(tabsContainer.getByText('Sprints')).toBeVisible({ timeout: 5000 })
   })
 
-  test('can create a new sprint from project Sprints tab', async ({ page }) => {
-    await createProjectAndGoToView(page)
+  test('can create a new sprint from program Sprints tab', async ({ page }) => {
+    await createProgramAndGoToView(page)
 
     // Click Sprints tab
     await clickSprintsTab(page)
@@ -87,7 +87,7 @@ test.describe('Sprints (Phase 6)', () => {
   })
 
   test('sprint shows status badge (planned/active/completed)', async ({ page }) => {
-    await createProjectAndGoToView(page)
+    await createProgramAndGoToView(page)
     await createSprint(page, 'Sprint Status Test')
 
     // Should see planned status badge
@@ -95,7 +95,7 @@ test.describe('Sprints (Phase 6)', () => {
   })
 
   test('clicking sprint navigates to sprint view', async ({ page }) => {
-    await createProjectAndGoToView(page)
+    await createProgramAndGoToView(page)
     await createSprint(page, 'Sprint View Test')
 
     // Click on the sprint card
@@ -106,7 +106,7 @@ test.describe('Sprints (Phase 6)', () => {
   })
 
   test('sprint view shows backlog and sprint columns', async ({ page }) => {
-    await createProjectAndGoToView(page)
+    await createProgramAndGoToView(page)
     await createSprint(page, 'Two Column Test')
 
     // Navigate to sprint
@@ -119,7 +119,7 @@ test.describe('Sprints (Phase 6)', () => {
   })
 
   test('sprint view shows progress percentage', async ({ page }) => {
-    await createProjectAndGoToView(page)
+    await createProgramAndGoToView(page)
     await createSprint(page, 'Progress Bar Test')
 
     // Navigate to sprint
@@ -131,7 +131,7 @@ test.describe('Sprints (Phase 6)', () => {
   })
 
   test('can start a sprint (change status to active)', async ({ page }) => {
-    await createProjectAndGoToView(page)
+    await createProgramAndGoToView(page)
     await createSprint(page, 'Start Sprint Test')
 
     // Navigate to sprint
@@ -156,7 +156,7 @@ test.describe('Sprints (Phase 6)', () => {
   })
 
   test('sprint shows date range', async ({ page }) => {
-    await createProjectAndGoToView(page)
+    await createProgramAndGoToView(page)
     await createSprint(page, 'Date Range Test')
 
     // Navigate to sprint
@@ -164,20 +164,20 @@ test.describe('Sprints (Phase 6)', () => {
     await expect(page).toHaveURL(/\/sprints\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Should see date range in format like "Dec 30 - Jan 13"
-    // The page shows: project_name · Dec 30 - Jan 13
+    // The page shows: program_name · Dec 30 - Jan 13
     await expect(page.getByText(/\w{3} \d+ - \w{3} \d+/)).toBeVisible({ timeout: 5000 })
   })
 
-  test('sprint list in project shows progress', async ({ page }) => {
-    await createProjectAndGoToView(page)
+  test('sprint list in program shows progress', async ({ page }) => {
+    await createProgramAndGoToView(page)
     await createSprint(page, 'Progress List Test')
 
     // Sprint card should show progress (e.g., "0/0 done")
     await expect(page.getByText(/\d+\/\d+ done/)).toBeVisible({ timeout: 5000 })
   })
 
-  test('sprint view has back button to project', async ({ page }) => {
-    const projectId = await createProjectAndGoToView(page)
+  test('sprint view has back button to program', async ({ page }) => {
+    const programId = await createProgramAndGoToView(page)
     await createSprint(page, 'Back Button Test')
 
     // Navigate to sprint
@@ -188,13 +188,13 @@ test.describe('Sprints (Phase 6)', () => {
     // The back button has the left arrow SVG and is inside the header
     await page.locator('main button:has(svg)').first().click()
 
-    // Should navigate back to project (editor page, not view)
-    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`), { timeout: 5000 })
+    // Should navigate back to program (editor page, not view)
+    await expect(page).toHaveURL(new RegExp(`/programs/${programId}`), { timeout: 5000 })
   })
 
   test('can assign issue to sprint via sprint picker in issue editor', async ({ page }) => {
-    // Create a project with a sprint
-    await createProjectAndGoToView(page)
+    // Create a program with a sprint
+    await createProgramAndGoToView(page)
     await createSprint(page, 'Picker Test Sprint')
 
     // Get the sprint URL for later verification
@@ -202,13 +202,13 @@ test.describe('Sprints (Phase 6)', () => {
     await expect(page).toHaveURL(/\/sprints\/[a-f0-9-]+/, { timeout: 5000 })
     const sprintUrl = page.url()
 
-    // Go back to create an issue in the project
+    // Go back to create an issue in the program
     await page.locator('main button:has(svg)').first().click()
-    await expect(page).toHaveURL(/\/projects\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Get the project info for selecting in the issue
-    const projectUrl = page.url()
-    const projectId = projectUrl.split('/projects/')[1]
+    // Get the program info for selecting in the issue
+    const programUrl = page.url()
+    const programId = programUrl.split('/programs/')[1]
 
     // Navigate to issues and create a new issue
     await page.goto('/issues')
@@ -222,19 +222,19 @@ test.describe('Sprints (Phase 6)', () => {
     // Wait for title to save (API call)
     await page.waitForResponse(resp => resp.url().includes('/api/issues/') && resp.request().method() === 'PATCH')
 
-    // Assign the issue to the project using the Project combobox
-    // Click the Project combobox button (shows "No Project")
-    await page.getByRole('combobox').filter({ hasText: 'No Project' }).click()
+    // Assign the issue to the program using the Program combobox
+    // Click the Program combobox button (shows "No Program")
+    await page.getByRole('combobox').filter({ hasText: 'No Program' }).click()
 
-    // Wait for popover and click the project (it will show the project name)
+    // Wait for popover and click the program (it will show the program name)
     await page.waitForTimeout(300) // Wait for popover animation
-    // The project name appears in the dropdown - click it
-    const projectItems = page.locator('[cmdk-item]')
-    // Find the project item (not "No Project") and click it
-    await projectItems.filter({ hasNot: page.getByText('No Project') }).first().click()
+    // The program name appears in the dropdown - click it
+    const programItems = page.locator('[cmdk-item]')
+    // Find the program item (not "No Program") and click it
+    await programItems.filter({ hasNot: page.getByText('No Program') }).first().click()
 
-    // Wait for sprints to load (triggered by project selection)
-    await page.waitForResponse(resp => resp.url().includes('/api/projects/') && resp.url().includes('/sprints'))
+    // Wait for sprints to load (triggered by program selection)
+    await page.waitForResponse(resp => resp.url().includes('/api/programs/') && resp.url().includes('/sprints'))
 
     // Now use the Sprint picker combobox to assign the issue to the sprint
     // Click the Sprint combobox button (shows "No Sprint")

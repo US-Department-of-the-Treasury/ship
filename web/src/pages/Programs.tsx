@@ -1,69 +1,69 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useProjects, Project } from '@/contexts/ProjectsContext';
-import { ProjectsListSkeleton } from '@/components/ui/Skeleton';
+import { usePrograms, Program } from '@/contexts/ProgramsContext';
+import { ProgramsListSkeleton } from '@/components/ui/Skeleton';
 
-export function ProjectsPage() {
+export function ProgramsPage() {
   const navigate = useNavigate();
-  const { projects, loading, createProject } = useProjects();
+  const { programs, loading, createProgram } = usePrograms();
   const [creating, setCreating] = useState(false);
 
-  const handleCreateProject = async () => {
+  const handleCreateProgram = async () => {
     if (creating) return;
     setCreating(true);
 
     try {
-      const project = await createProject();
-      if (project) {
-        navigate(`/projects/${project.id}`);
+      const program = await createProgram();
+      if (program) {
+        navigate(`/programs/${program.id}`);
       }
     } catch (err) {
-      console.error('Failed to create project:', err);
+      console.error('Failed to create program:', err);
     } finally {
       setCreating(false);
     }
   };
 
   if (loading) {
-    return <ProjectsListSkeleton />;
+    return <ProgramsListSkeleton />;
   }
 
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
-        <h1 className="text-xl font-semibold text-foreground">Projects</h1>
+        <h1 className="text-xl font-semibold text-foreground">Programs</h1>
         <button
-          onClick={handleCreateProject}
+          onClick={handleCreateProgram}
           disabled={creating}
           className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors disabled:opacity-50"
         >
-          {creating ? 'Creating...' : 'New Project'}
+          {creating ? 'Creating...' : 'New Program'}
         </button>
       </div>
 
-      {/* Projects Grid */}
+      {/* Programs Grid */}
       <div className="flex-1 overflow-auto p-6">
-        {projects.length === 0 ? (
+        {programs.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
-              <p className="text-muted">No projects yet</p>
+              <p className="text-muted">No programs yet</p>
               <button
-                onClick={handleCreateProject}
+                onClick={handleCreateProgram}
                 disabled={creating}
                 className="mt-2 text-sm text-accent hover:underline disabled:opacity-50"
               >
-                Create your first project
+                Create your first program
               </button>
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                onClick={() => navigate(`/projects/${project.id}`)}
+            {programs.map((program) => (
+              <ProgramCard
+                key={program.id}
+                program={program}
+                onClick={() => navigate(`/programs/${program.id}`)}
               />
             ))}
           </div>
@@ -73,9 +73,9 @@ export function ProjectsPage() {
   );
 }
 
-function ProjectCard({ project, onClick }: { project: Project; onClick: () => void }) {
-  const issueCount = project.issue_count ?? 0;
-  const sprintCount = project.sprint_count ?? 0;
+function ProgramCard({ program, onClick }: { program: Program; onClick: () => void }) {
+  const issueCount = program.issue_count ?? 0;
+  const sprintCount = program.sprint_count ?? 0;
 
   return (
     <button
@@ -85,13 +85,13 @@ function ProjectCard({ project, onClick }: { project: Project; onClick: () => vo
       <div className="flex items-center gap-3">
         <div
           className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold text-white"
-          style={{ backgroundColor: project.color }}
+          style={{ backgroundColor: program.color }}
         >
-          {project.prefix.slice(0, 2)}
+          {program.prefix.slice(0, 2)}
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-medium text-foreground truncate">{project.name}</h3>
-          <p className="text-xs text-muted">{project.prefix}</p>
+          <h3 className="font-medium text-foreground truncate">{program.name}</h3>
+          <p className="text-xs text-muted">{program.prefix}</p>
         </div>
       </div>
 

@@ -4,9 +4,9 @@ import { cn } from '@/lib/cn';
 
 interface Sprint {
   id: string;
-  project_id: string;
-  project_name: string;
-  project_prefix: string;
+  program_id: string;
+  program_name: string;
+  program_prefix: string;
   name: string;
   goal: string | null;
   start_date: string;
@@ -58,7 +58,7 @@ export function SprintViewPage() {
         if (cancelled) return;
 
         if (!sprintRes.ok) {
-          navigate('/projects');
+          navigate('/programs');
           return;
         }
 
@@ -68,10 +68,10 @@ export function SprintViewPage() {
         setSprint(sprintData);
         setGoalText(sprintData.goal || '');
 
-        // Fetch sprint issues and backlog (project issues not in any sprint)
+        // Fetch sprint issues and backlog (program issues not in any sprint)
         const [sprintIssuesRes, backlogRes] = await Promise.all([
           fetch(`${API_URL}/api/sprints/${id}/issues`, { credentials: 'include' }),
-          fetch(`${API_URL}/api/projects/${sprintData.project_id}/issues`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/programs/${sprintData.program_id}/issues`, { credentials: 'include' }),
         ]);
 
         if (cancelled) return;
@@ -81,9 +81,9 @@ export function SprintViewPage() {
         }
 
         if (backlogRes.ok) {
-          const projectIssues = await backlogRes.json();
+          const programIssues = await backlogRes.json();
           // Filter to only show issues not in any sprint
-          setBacklogIssues(projectIssues.filter((i: Issue & { sprint_ref_id: string | null }) => !i.sprint_ref_id));
+          setBacklogIssues(programIssues.filter((i: Issue & { sprint_ref_id: string | null }) => !i.sprint_ref_id));
         }
       } catch (err) {
         if (!cancelled) console.error('Failed to fetch sprint:', err);
@@ -195,7 +195,7 @@ export function SprintViewPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate(`/projects/${sprint.project_id}`)}
+              onClick={() => navigate(`/programs/${sprint.program_id}`)}
               className="text-muted hover:text-foreground transition-colors"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -208,7 +208,7 @@ export function SprintViewPage() {
                 <StatusBadge status={sprint.status} />
               </div>
               <p className="text-xs text-muted">
-                {sprint.project_name} &middot; {formatDate(sprint.start_date)} - {formatDate(sprint.end_date)}
+                {sprint.program_name} &middot; {formatDate(sprint.start_date)} - {formatDate(sprint.end_date)}
               </p>
             </div>
           </div>

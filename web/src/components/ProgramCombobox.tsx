@@ -3,42 +3,42 @@ import * as Popover from '@radix-ui/react-popover';
 import { Command } from 'cmdk';
 import { cn } from '@/lib/cn';
 
-export interface Project {
+export interface Program {
   id: string;
   name: string;
   prefix: string;
   color: string;
 }
 
-interface ProjectComboboxProps {
-  projects: Project[];
+interface ProgramComboboxProps {
+  programs: Program[];
   value: string | null;
   onChange: (value: string | null) => void;
-  onNavigate?: (projectId: string) => void;
+  onNavigate?: (programId: string) => void;
   disabled?: boolean;
   placeholder?: string;
   triggerClassName?: string;
 }
 
-export function ProjectCombobox({
-  projects,
+export function ProgramCombobox({
+  programs,
   value,
   onChange,
   onNavigate,
   disabled = false,
-  placeholder = 'Select project...',
+  placeholder = 'Select program...',
   triggerClassName,
-}: ProjectComboboxProps) {
+}: ProgramComboboxProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [isHovered, setIsHovered] = useState(false);
 
-  const selectedProject = projects.find((p) => p.id === value);
+  const selectedProgram = programs.find((p) => p.id === value);
 
-  const handleProjectClick = (e: React.MouseEvent) => {
-    if (selectedProject && onNavigate) {
+  const handleProgramClick = (e: React.MouseEvent) => {
+    if (selectedProgram && onNavigate) {
       e.stopPropagation();
-      onNavigate(selectedProject.id);
+      onNavigate(selectedProgram.id);
     }
   };
 
@@ -61,12 +61,12 @@ export function ProjectCombobox({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {selectedProject ? (
+        {selectedProgram ? (
           <>
-            {/* Clickable project area - navigates */}
+            {/* Clickable program area - navigates */}
             <button
               type="button"
-              onClick={handleProjectClick}
+              onClick={handleProgramClick}
               className={cn(
                 'flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1 text-sm overflow-hidden',
                 'focus:outline-none',
@@ -75,11 +75,11 @@ export function ProjectCombobox({
             >
               <span
                 className="shrink-0 rounded px-1.5 py-0.5 text-xs font-bold text-white"
-                style={{ backgroundColor: selectedProject.color }}
+                style={{ backgroundColor: selectedProgram.color }}
               >
-                {selectedProject.prefix}
+                {selectedProgram.prefix}
               </span>
-              <span className="truncate text-foreground">{selectedProject.name}</span>
+              <span className="truncate text-foreground">{selectedProgram.name}</span>
             </button>
 
             {/* Dropdown caret - opens reassignment */}
@@ -92,7 +92,7 @@ export function ProjectCombobox({
                   'hover:bg-border/50 rounded-r focus:outline-none',
                   isHovered ? 'opacity-100' : 'opacity-0'
                 )}
-                aria-label="Change project assignment"
+                aria-label="Change program assignment"
               >
                 <ChevronIcon className="h-3 w-3 text-muted" />
               </button>
@@ -120,10 +120,10 @@ export function ProjectCombobox({
           <Command
             className="flex flex-col"
             filter={(value, search) => {
-              const project = projects.find((p) => p.id === value);
-              if (!project) return 0;
-              const name = project.name.toLowerCase();
-              const prefix = project.prefix.toLowerCase();
+              const program = programs.find((p) => p.id === value);
+              if (!program) return 0;
+              const name = program.name.toLowerCase();
+              const prefix = program.prefix.toLowerCase();
               const s = search.toLowerCase();
               if (name.includes(s) || prefix.includes(s)) return 1;
               return 0;
@@ -133,14 +133,14 @@ export function ProjectCombobox({
               <Command.Input
                 value={search}
                 onValueChange={setSearch}
-                placeholder="Search projects..."
+                placeholder="Search programs..."
                 className="w-full bg-transparent text-sm text-foreground placeholder:text-muted focus:outline-none"
               />
             </div>
 
             <Command.List className="max-h-[200px] overflow-auto p-1">
               <Command.Empty className="px-2 py-4 text-center text-sm text-muted">
-                No projects found
+                No programs found
               </Command.Empty>
 
               {/* Clear option */}
@@ -159,29 +159,29 @@ export function ProjectCombobox({
                 None
               </Command.Item>
 
-              {projects.map((project) => (
+              {programs.map((program) => (
                 <Command.Item
-                  key={project.id}
-                  value={project.id}
+                  key={program.id}
+                  value={program.id}
                   onSelect={() => {
-                    onChange(project.id);
+                    onChange(program.id);
                     setOpen(false);
                     setSearch('');
                   }}
                   className={cn(
                     'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm',
                     'data-[selected=true]:bg-border/50',
-                    value === project.id && 'text-accent'
+                    value === program.id && 'text-accent'
                   )}
                 >
                   <span
                     className="rounded px-1.5 py-0.5 text-xs font-bold text-white"
-                    style={{ backgroundColor: project.color }}
+                    style={{ backgroundColor: program.color }}
                   >
-                    {project.prefix}
+                    {program.prefix}
                   </span>
-                  <span className="truncate">{project.name}</span>
-                  {value === project.id && (
+                  <span className="truncate">{program.name}</span>
+                  {value === program.id && (
                     <CheckIcon className="ml-auto h-4 w-4 text-accent" />
                   )}
                 </Command.Item>

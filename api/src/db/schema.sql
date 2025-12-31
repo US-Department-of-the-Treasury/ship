@@ -81,10 +81,10 @@ CREATE TABLE IF NOT EXISTS documents (
   created_by UUID REFERENCES users(id) ON DELETE SET NULL
 );
 
--- Unique constraint for project prefixes within a workspace
+-- Unique constraint for program prefixes within a workspace
 CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_workspace_prefix
   ON documents(workspace_id, prefix)
-  WHERE document_type = 'project' AND prefix IS NOT NULL;
+  WHERE document_type = 'program' AND prefix IS NOT NULL;
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);

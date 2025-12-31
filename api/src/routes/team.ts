@@ -107,10 +107,10 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
     const maxDate = sprints[sprints.length - 1]?.endDate || today.toISOString().split('T')[0];
 
     const dbSprintsResult = await pool.query(
-      `SELECT d.id, d.title as name, d.start_date, d.end_date, d.project_id,
-              p.title as project_name, p.prefix as project_prefix, p.color as project_color
+      `SELECT d.id, d.title as name, d.start_date, d.end_date, d.program_id,
+              p.title as program_name, p.prefix as program_prefix, p.color as program_color
        FROM documents d
-       JOIN documents p ON d.project_id = p.id
+       JOIN documents p ON d.program_id = p.id
        WHERE d.workspace_id = $1 AND d.document_type = 'sprint'
          AND d.start_date >= $2 AND d.end_date <= $3`,
       [workspaceId, minDate, maxDate]
@@ -120,17 +120,17 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
     const issuesResult = await pool.query(
       `SELECT i.id, i.title, i.sprint_id, i.assignee_id, i.state, i.ticket_number,
               s.start_date as sprint_start, s.end_date as sprint_end,
-              p.id as project_id, p.title as project_name, p.prefix as project_prefix, p.color as project_color
+              p.id as program_id, p.title as program_name, p.prefix as program_prefix, p.color as program_color
        FROM documents i
        JOIN documents s ON i.sprint_id = s.id
-       JOIN documents p ON i.project_id = p.id
+       JOIN documents p ON i.program_id = p.id
        WHERE i.workspace_id = $1 AND i.document_type = 'issue' AND i.sprint_id IS NOT NULL AND i.assignee_id IS NOT NULL`,
       [workspaceId]
     );
 
-    // Build associations: user_id -> sprint_number -> { projects: [...], issues: [...] }
+    // Build associations: user_id -> sprint_number -> { programs: [...], issues: [...] }
     const associations: Record<string, Record<number, {
-      projects: Array<{ id: string; name: string; prefix: string; color: string; issueCount: number }>;
+      programs: Array<{ id: string; name: string; prefix: string; color: string; issueCount: number }>;
       issues: Array<{ id: string; title: string; displayId: string; state: string }>;
     }>> = {};
 
@@ -149,7 +149,7 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
         associations[userId] = {};
       }
       if (!associations[userId][sprintNumber]) {
-        associations[userId][sprintNumber] = { projects: [], issues: [] };
+        associations[userId][sprintNumber] = { programs: [], issues: [] };
       }
 
       const cell = associations[userId][sprintNumber];
@@ -158,20 +158,20 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
       cell.issues.push({
         id: issue.id,
         title: issue.title,
-        displayId: `${issue.project_prefix}-${issue.ticket_number}`,
+        displayId: `${issue.program_prefix}-${issue.ticket_number}`,
         state: issue.state,
       });
 
-      // Add project if not already there
-      const existingProject = cell.projects.find(p => p.id === issue.project_id);
-      if (existingProject) {
-        existingProject.issueCount++;
+      // Add program if not already there
+      const existingProgram = cell.programs.find(p => p.id === issue.program_id);
+      if (existingProgram) {
+        existingProgram.issueCount++;
       } else {
-        cell.projects.push({
-          id: issue.project_id,
-          name: issue.project_name,
-          prefix: issue.project_prefix,
-          color: issue.project_color,
+        cell.programs.push({
+          id: issue.program_id,
+          name: issue.program_name,
+          prefix: issue.program_prefix,
+          color: issue.program_color,
           issueCount: 1,
         });
       }
@@ -189,27 +189,27 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/team/projects - Get all projects
-router.get('/projects', requireAuth, async (req: Request, res: Response) => {
+// GET /api/team/programs - Get all programs
+router.get('/programs', requireAuth, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.user!.workspaceId;
 
     const result = await pool.query(
       `SELECT id, title as name, prefix, color
        FROM documents
-       WHERE workspace_id = $1 AND document_type = 'project'
+       WHERE workspace_id = $1 AND document_type = 'program'
        ORDER BY title`,
       [workspaceId]
     );
 
     res.json(result.rows);
   } catch (err) {
-    console.error('Get projects error:', err);
+    console.error('Get programs error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// GET /api/team/assignments - Get user->sprint->project assignments
+// GET /api/team/assignments - Get user->sprint->program assignments
 router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.user!.workspaceId;
@@ -226,10 +226,10 @@ router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
     const issuesResult = await pool.query(
       `SELECT i.assignee_id, i.sprint_id,
               s.start_date as sprint_start,
-              p.id as project_id, p.title as project_name, p.prefix, p.color
+              p.id as program_id, p.title as program_name, p.prefix, p.color
        FROM documents i
        JOIN documents s ON i.sprint_id = s.id
-       JOIN documents p ON i.project_id = p.id
+       JOIN documents p ON i.program_id = p.id
        WHERE i.workspace_id = $1 AND i.document_type = 'issue'
          AND i.sprint_id IS NOT NULL AND i.assignee_id IS NOT NULL`,
       [workspaceId]
@@ -237,8 +237,8 @@ router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
 
     // Build assignments map: userId -> sprintNumber -> assignment
     const assignments: Record<string, Record<number, {
-      projectId: string;
-      projectName: string;
+      programId: string;
+      programName: string;
       prefix: string;
       color: string;
       sprintDocId: string;
@@ -256,11 +256,11 @@ router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
         assignments[userId] = {};
       }
 
-      // Only set if not already set (first project wins per user per sprint)
+      // Only set if not already set (first program wins per user per sprint)
       if (!assignments[userId][sprintNumber]) {
         assignments[userId][sprintNumber] = {
-          projectId: issue.project_id,
-          projectName: issue.project_name,
+          programId: issue.program_id,
+          programName: issue.program_name,
           prefix: issue.prefix,
           color: issue.color,
           sprintDocId: issue.sprint_id,
@@ -275,13 +275,13 @@ router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/team/assign - Assign user to project for a sprint
+// POST /api/team/assign - Assign user to program for a sprint
 router.post('/assign', requireAuth, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.user!.workspaceId;
-    const { userId, projectId, sprintNumber } = req.body;
+    const { userId, programId, sprintNumber } = req.body;
 
-    if (!userId || !projectId || !sprintNumber) {
+    if (!userId || !programId || !sprintNumber) {
       res.status(400).json({ error: 'Missing required fields' });
       return;
     }
@@ -302,12 +302,12 @@ router.post('/assign', requireAuth, async (req: Request, res: Response) => {
     const startStr = sprintStart.toISOString().split('T')[0];
     const endStr = sprintEnd.toISOString().split('T')[0];
 
-    // Find or create sprint for this project
+    // Find or create sprint for this program
     let sprintResult = await pool.query(
       `SELECT id FROM documents
        WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND project_id = $2 AND start_date = $3`,
-      [workspaceId, projectId, startStr]
+         AND program_id = $2 AND start_date = $3`,
+      [workspaceId, programId, startStr]
     );
 
     let sprintId: string;
@@ -316,63 +316,63 @@ router.post('/assign', requireAuth, async (req: Request, res: Response) => {
     } else {
       // Create the sprint
       const newSprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, project_id, start_date, end_date)
+        `INSERT INTO documents (workspace_id, document_type, title, program_id, start_date, end_date)
          VALUES ($1, 'sprint', $2, $3, $4, $5)
          RETURNING id`,
-        [workspaceId, `Sprint ${sprintNumber}`, projectId, startStr, endStr]
+        [workspaceId, `Sprint ${sprintNumber}`, programId, startStr, endStr]
       );
       sprintId = newSprintResult.rows[0].id;
     }
 
-    // Check if user already has issues in another project for this sprint period
+    // Check if user already has issues in another program for this sprint period
     const existingAssignment = await pool.query(
-      `SELECT p.id as project_id, p.title as project_name
+      `SELECT p.id as program_id, p.title as program_name
        FROM documents i
        JOIN documents s ON i.sprint_id = s.id
-       JOIN documents p ON i.project_id = p.id
+       JOIN documents p ON i.program_id = p.id
        WHERE i.workspace_id = $1 AND i.document_type = 'issue'
          AND i.assignee_id = $2
          AND s.start_date = $3
          AND p.id != $4
        LIMIT 1`,
-      [workspaceId, userId, startStr, projectId]
+      [workspaceId, userId, startStr, programId]
     );
 
     if (existingAssignment.rows[0]) {
       res.status(409).json({
-        error: 'User already assigned to another project',
-        existingProjectId: existingAssignment.rows[0].project_id,
-        existingProjectName: existingAssignment.rows[0].project_name,
+        error: 'User already assigned to another program',
+        existingProgramId: existingAssignment.rows[0].program_id,
+        existingProgramName: existingAssignment.rows[0].program_name,
       });
       return;
     }
 
-    // Check if user already has assignment to this project for this sprint
-    const existingSameProject = await pool.query(
+    // Check if user already has assignment to this program for this sprint
+    const existingSameProgram = await pool.query(
       `SELECT id FROM documents
        WHERE workspace_id = $1 AND document_type = 'issue'
          AND assignee_id = $2 AND sprint_id = $3`,
       [workspaceId, userId, sprintId]
     );
 
-    if (existingSameProject.rows[0]) {
+    if (existingSameProgram.rows[0]) {
       res.json({ success: true, sprintId, message: 'Already assigned' });
       return;
     }
 
-    // Get max ticket number for this project
+    // Get max ticket number for this program
     const maxTicketResult = await pool.query(
       `SELECT COALESCE(MAX(ticket_number), 0) as max_ticket
-       FROM documents WHERE workspace_id = $1 AND project_id = $2 AND document_type = 'issue'`,
-      [workspaceId, projectId]
+       FROM documents WHERE workspace_id = $1 AND program_id = $2 AND document_type = 'issue'`,
+      [workspaceId, programId]
     );
     const nextTicket = maxTicketResult.rows[0].max_ticket + 1;
 
     // Create a placeholder issue for this assignment
     await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, project_id, sprint_id, assignee_id, state, ticket_number)
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, assignee_id, state, ticket_number)
        VALUES ($1, 'issue', $2, $3, $4, $5, 'todo', $6)`,
-      [workspaceId, 'Sprint Assignment', projectId, sprintId, userId, nextTicket]
+      [workspaceId, 'Sprint Assignment', programId, sprintId, userId, nextTicket]
     );
 
     res.json({ success: true, sprintId });

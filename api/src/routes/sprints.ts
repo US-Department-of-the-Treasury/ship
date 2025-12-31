@@ -47,7 +47,7 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 // Validation schemas
 const createSprintSchema = z.object({
-  project_id: z.string().uuid(),
+  program_id: z.string().uuid(),
   title: z.string().min(1).max(200).optional().default('Untitled'),
   start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -66,11 +66,11 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     const { id } = req.params;
     const result = await pool.query(
       `SELECT d.id, d.title as name, d.start_date, d.end_date, d.sprint_status as status,
-              d.project_id, p.title as project_name, p.prefix as project_prefix,
+              d.program_id, p.title as program_name, p.prefix as program_prefix,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.state = 'done') as completed_count
        FROM documents d
-       JOIN documents p ON d.project_id = p.id
+       JOIN documents p ON d.program_id = p.id
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'`,
       [id, req.user!.workspaceId]
     );
@@ -96,16 +96,16 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const { project_id, title, start_date, end_date } = parsed.data;
+    const { program_id, title, start_date, end_date } = parsed.data;
 
-    // Verify project belongs to workspace
-    const projectExists = await pool.query(
-      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
-      [project_id, req.user!.workspaceId]
+    // Verify program belongs to workspace
+    const programExists = await pool.query(
+      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
+      [program_id, req.user!.workspaceId]
     );
 
-    if (projectExists.rows.length === 0) {
-      res.status(404).json({ error: 'Project not found' });
+    if (programExists.rows.length === 0) {
+      res.status(404).json({ error: 'Program not found' });
       return;
     }
 
@@ -122,10 +122,10 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, project_id, start_date, end_date, sprint_status, created_by)
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, start_date, end_date, sprint_status, created_by)
        VALUES ($1, 'sprint', $2, $3, $4, $5, 'planned', $6)
-       RETURNING id, title as name, start_date, end_date, sprint_status as status, project_id`,
-      [req.user!.workspaceId, title, project_id, finalStartDate, finalEndDate, req.user!.id]
+       RETURNING id, title as name, start_date, end_date, sprint_status as status, program_id`,
+      [req.user!.workspaceId, title, program_id, finalStartDate, finalEndDate, req.user!.id]
     );
 
     res.status(201).json({ ...result.rows[0], issue_count: 0, completed_count: 0 });
@@ -199,7 +199,7 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     const result = await pool.query(
       `UPDATE documents SET ${updates.join(', ')}
        WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'sprint'
-       RETURNING id, title as name, start_date, end_date, sprint_status as status, project_id`,
+       RETURNING id, title as name, start_date, end_date, sprint_status as status, program_id`,
       [...values, id, req.user!.workspaceId]
     );
 
@@ -249,10 +249,10 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Verify sprint exists and get project info
+    // Verify sprint exists and get program info
     const sprintResult = await pool.query(
       `SELECT d.id, p.prefix FROM documents d
-       JOIN documents p ON d.project_id = p.id
+       JOIN documents p ON d.program_id = p.id
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'`,
       [id, req.user!.workspaceId]
     );

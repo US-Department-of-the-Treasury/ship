@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
@@ -13,8 +12,6 @@ import { createSlashCommands } from './editor/SlashCommands';
 import { DocumentEmbed } from './editor/DocumentEmbed';
 import { DragHandleExtension } from './editor/DragHandle';
 import 'tippy.js/dist/tippy.css';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface EditorProps {
   documentId: string;
@@ -33,6 +30,10 @@ interface EditorProps {
   headerBadge?: React.ReactNode;
   /** Sidebar content (e.g., issue properties) */
   sidebar?: React.ReactNode;
+  /** Callback to create a sub-document (for slash commands) */
+  onCreateSubDocument?: () => Promise<{ id: string; title: string } | null>;
+  /** Callback to navigate to a document (for slash commands) */
+  onNavigateToDocument?: (id: string) => void;
   /** Callback to delete the document */
   onDelete?: () => void;
 }
@@ -61,9 +62,10 @@ export function Editor({
   placeholder = 'Start writing...',
   headerBadge,
   sidebar,
+  onCreateSubDocument,
+  onNavigateToDocument,
   onDelete,
 }: EditorProps) {
-  const navigate = useNavigate();
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -107,8 +109,9 @@ export function Editor({
 
   // Setup WebSocket provider
   useEffect(() => {
-    // WebsocketProvider appends roomName to URL, so just provide base path
-    const wsUrl = 'ws://localhost:3000/collaboration';
+    // Derive WebSocket URL from API URL (handles different ports for worktrees)
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/collaboration';
     const wsProvider = new WebsocketProvider(wsUrl, `${roomPrefix}:${documentId}`, ydoc, {
       connect: true,
     });
@@ -155,40 +158,11 @@ export function Editor({
     };
   }, [documentId, userName, color, ydoc, roomPrefix]);
 
-  // Create sub-document (wiki doc with parent_id pointing to current document)
-  const handleCreateSubDocument = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/documents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          title: 'Untitled',
-          document_type: 'wiki',
-          parent_id: documentId,
-        }),
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (err) {
-      console.error('Failed to create sub-document:', err);
-    }
-    return null;
-  }, [documentId]);
-
-  // Navigate to wiki doc (for slash commands)
-  const handleNavigateToDocument = useCallback((docId: string) => {
-    navigate(`/docs/${docId}`);
-  }, [navigate]);
-
-  // Create slash commands extension (always available)
+  // Create slash commands extension (memoized to avoid recreation)
   const slashCommandsExtension = useMemo(() => {
-    return createSlashCommands({
-      onCreateSubDocument: handleCreateSubDocument,
-      onNavigateToDocument: handleNavigateToDocument,
-    });
-  }, [handleCreateSubDocument, handleNavigateToDocument]);
+    if (!onCreateSubDocument) return null;
+    return createSlashCommands({ onCreateSubDocument, onNavigateToDocument });
+  }, [onCreateSubDocument, onNavigateToDocument]);
 
   // Build extensions - only include CollaborationCursor when provider is ready
   const baseExtensions = [
@@ -203,7 +177,7 @@ export function Editor({
     }),
     DocumentEmbed,
     DragHandleExtension,
-    slashCommandsExtension,
+    ...(slashCommandsExtension ? [slashCommandsExtension] : []),
   ];
 
   const extensions = provider
@@ -250,11 +224,6 @@ export function Editor({
                 <span className="text-xs truncate max-w-[120px]">{backLabel}</span>
               )}
             </button>
-          )}
-
-          {/* Breadcrumb separator when backLabel exists */}
-          {backLabel && (
-            <span className="text-muted/50">/</span>
           )}
 
           {/* Optional header badge (e.g., issue number) */}
@@ -321,7 +290,7 @@ export function Editor({
               value={title}
               onChange={handleTitleChange}
               placeholder="Untitled"
-              className="mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none"
+              className="mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none pl-8"
             />
             <div className="tiptap-wrapper">
               <EditorContent editor={editor} />

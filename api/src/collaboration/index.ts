@@ -19,7 +19,7 @@ const conns = new Map<WebSocket, { docName: string; awarenessClientId: number }>
 const pendingSaves = new Map<string, NodeJS.Timeout>();
 
 // Extract document ID from room name (format: "type:uuid")
-// All document types (doc, issue, project, sprint) map to the unified documents table
+// All document types (doc, issue, program, sprint) map to the unified documents table
 function parseDocId(docName: string): string {
   const parts = docName.split(':');
   return parts.length > 1 ? parts[1]! : parts[0]!;
@@ -27,13 +27,14 @@ function parseDocId(docName: string): string {
 
 async function persistDocument(docName: string, doc: Y.Doc) {
   const state = Y.encodeStateAsUpdate(doc);
-  const content = doc.getXmlFragment('default').toJSON();
   const docId = parseDocId(docName);
 
   try {
+    // Only persist yjs_state - content column is only used for seed data fallback
+    // XmlFragment.toJSON() returns XML-like strings, not TipTap JSON, so we don't update content
     await pool.query(
-      `UPDATE documents SET yjs_state = $1, content = $2, updated_at = now() WHERE id = $3`,
-      [Buffer.from(state), JSON.stringify(content), docId]
+      `UPDATE documents SET yjs_state = $1, updated_at = now() WHERE id = $2`,
+      [Buffer.from(state), docId]
     );
   } catch (err) {
     console.error('Failed to persist document:', err);
@@ -48,6 +49,73 @@ function schedulePersist(docName: string, doc: Y.Doc) {
     persistDocument(docName, doc);
     pendingSaves.delete(docName);
   }, 2000));
+}
+
+// Convert TipTap JSON content to Yjs XmlFragment
+// Must be called within a transaction for proper Yjs integration
+function jsonToYjs(doc: Y.Doc, fragment: Y.XmlFragment, content: any) {
+  if (!content || !Array.isArray(content.content)) return;
+
+  doc.transact(() => {
+    for (const node of content.content) {
+      if (node.type === 'text') {
+        // Text node - create, push to parent first, then modify
+        const text = new Y.XmlText();
+        fragment.push([text]);
+        text.insert(0, node.text || '');
+        if (node.marks) {
+          const attrs: Record<string, any> = {};
+          for (const mark of node.marks) {
+            attrs[mark.type] = mark.attrs || true;
+          }
+          text.format(0, text.length, attrs);
+        }
+      } else {
+        // Element node (paragraph, heading, bulletList, listItem, etc.)
+        const element = new Y.XmlElement(node.type);
+        fragment.push([element]);
+        // Set attributes after adding to parent
+        if (node.attrs) {
+          for (const [key, value] of Object.entries(node.attrs)) {
+            element.setAttribute(key, value as string);
+          }
+        }
+        // Recursively add children
+        if (node.content) {
+          jsonToYjsChildren(doc, element, node.content);
+        }
+      }
+    }
+  });
+}
+
+// Helper to add children without wrapping in another transaction
+function jsonToYjsChildren(doc: Y.Doc, parent: Y.XmlElement, children: any[]) {
+  for (const node of children) {
+    if (node.type === 'text') {
+      const text = new Y.XmlText();
+      parent.push([text]);
+      text.insert(0, node.text || '');
+      if (node.marks) {
+        const attrs: Record<string, any> = {};
+        for (const mark of node.marks) {
+          attrs[mark.type] = mark.attrs || true;
+        }
+        text.format(0, text.length, attrs);
+      }
+    } else {
+      const element = new Y.XmlElement(node.type);
+      parent.push([element]);
+      if (node.attrs) {
+        for (const [key, value] of Object.entries(node.attrs)) {
+          element.setAttribute(key, value as string);
+        }
+      }
+      if (node.content) {
+        jsonToYjsChildren(doc, element, node.content);
+      }
+    }
+  }
 }
 
 async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
@@ -67,7 +135,34 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
     );
 
     if (result.rows[0]?.yjs_state) {
+      // Load from binary Yjs state
       Y.applyUpdate(doc, result.rows[0].yjs_state);
+    } else if (result.rows[0]?.content) {
+      // Fallback: convert JSON content to Yjs (for seeded documents)
+      try {
+        let jsonContent = result.rows[0].content;
+
+        // Parse if it's a string (might be JSON string or XML-like from old toJSON)
+        if (typeof jsonContent === 'string') {
+          // Skip if it looks like XML from XmlFragment.toJSON() (starts with <)
+          if (jsonContent.trim().startsWith('<')) {
+            console.log('Skipping XML-like content, starting with empty document');
+            jsonContent = null;
+          } else {
+            jsonContent = JSON.parse(jsonContent);
+          }
+        }
+
+        if (jsonContent && jsonContent.type === 'doc' && Array.isArray(jsonContent.content)) {
+          const fragment = doc.getXmlFragment('default');
+          jsonToYjs(doc, fragment, jsonContent);
+          // Persist the converted state so this only happens once
+          schedulePersist(docName, doc);
+        }
+      } catch (parseErr) {
+        console.error('Failed to parse JSON content:', parseErr);
+        // Start with empty document if content is corrupted
+      }
     }
   } catch (err) {
     console.error('Failed to load document:', err);

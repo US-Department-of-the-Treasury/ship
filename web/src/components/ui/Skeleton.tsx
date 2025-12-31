@@ -54,7 +54,7 @@ export function DocumentsListSkeleton() {
   );
 }
 
-export function ProjectsListSkeleton() {
+export function ProgramsListSkeleton() {
   return (
     <div className="space-y-4 p-6">
       {/* Header skeleton */}
@@ -62,7 +62,7 @@ export function ProjectsListSkeleton() {
         <Skeleton className="h-6 w-24" />
         <Skeleton className="h-8 w-32" />
       </div>
-      {/* Projects grid skeleton */}
+      {/* Programs grid skeleton */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
           <div

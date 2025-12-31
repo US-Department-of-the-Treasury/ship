@@ -52,7 +52,7 @@ const createIssueSchema = z.object({
   state: z.enum(['backlog', 'todo', 'in_progress', 'done', 'cancelled']).optional().default('backlog'),
   priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().default('medium'),
   assignee_id: z.string().uuid().optional().nullable(),
-  project_id: z.string().uuid().optional().nullable(),
+  program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
 });
 
@@ -61,23 +61,23 @@ const updateIssueSchema = z.object({
   state: z.enum(['backlog', 'todo', 'in_progress', 'done', 'cancelled']).optional(),
   priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional(),
   assignee_id: z.string().uuid().optional().nullable(),
-  project_id: z.string().uuid().optional().nullable(),
+  program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
 });
 
 // List issues with filters
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
-    const { state, priority, assignee_id, project_id, sprint_id } = req.query;
+    const { state, priority, assignee_id, program_id, sprint_id } = req.query;
     let query = `
       SELECT d.id, d.title, d.state, d.priority, d.assignee_id, d.ticket_number,
-             d.project_id, d.sprint_id,
+             d.program_id, d.sprint_id,
              d.created_at, d.updated_at, d.created_by,
              u.name as assignee_name,
-             p.title as project_name, p.prefix as project_prefix, p.color as project_color
+             p.title as program_name, p.prefix as program_prefix, p.color as program_color
       FROM documents d
       LEFT JOIN users u ON d.assignee_id = u.id
-      LEFT JOIN documents p ON d.project_id = p.id AND p.document_type = 'project'
+      LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
       WHERE d.workspace_id = $1 AND d.document_type = 'issue'
     `;
     const params: (string | null)[] = [req.user!.workspaceId];
@@ -102,9 +102,9 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       }
     }
 
-    if (project_id) {
-      query += ` AND d.project_id = $${params.length + 1}`;
-      params.push(project_id as string);
+    if (program_id) {
+      query += ` AND d.program_id = $${params.length + 1}`;
+      params.push(program_id as string);
     }
 
     if (sprint_id) {
@@ -127,8 +127,8 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
     // Add display_id to each issue
     const issues = result.rows.map(issue => ({
       ...issue,
-      display_id: issue.project_prefix
-        ? `${issue.project_prefix}-${issue.ticket_number}`
+      display_id: issue.program_prefix
+        ? `${issue.program_prefix}-${issue.ticket_number}`
         : `#${issue.ticket_number}`
     }));
 
@@ -145,11 +145,11 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     const { id } = req.params;
     const result = await pool.query(
       `SELECT d.*, u.name as assignee_name,
-              p.title as project_name, p.prefix as project_prefix, p.color as project_color,
+              p.title as program_name, p.prefix as program_prefix, p.color as program_color,
               s.title as sprint_name
        FROM documents d
        LEFT JOIN users u ON d.assignee_id = u.id
-       LEFT JOIN documents p ON d.project_id = p.id AND p.document_type = 'project'
+       LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
        LEFT JOIN documents s ON d.sprint_id = s.id AND s.document_type = 'sprint'
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'issue'`,
       [id, req.user!.workspaceId]
@@ -163,8 +163,8 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     const issue = result.rows[0];
     res.json({
       ...issue,
-      display_id: issue.project_prefix
-        ? `${issue.project_prefix}-${issue.ticket_number}`
+      display_id: issue.program_prefix
+        ? `${issue.program_prefix}-${issue.ticket_number}`
         : `#${issue.ticket_number}`
     });
   } catch (err) {
@@ -182,7 +182,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, state, priority, assignee_id, project_id, sprint_id } = parsed.data;
+    const { title, state, priority, assignee_id, program_id, sprint_id } = parsed.data;
 
     // Get next ticket number for workspace
     const ticketResult = await pool.query(
@@ -194,21 +194,21 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     const ticketNumber = ticketResult.rows[0].next_number;
 
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, state, priority, assignee_id, project_id, sprint_id, ticket_number, created_by)
+      `INSERT INTO documents (workspace_id, document_type, title, state, priority, assignee_id, program_id, sprint_id, ticket_number, created_by)
        VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [req.user!.workspaceId, title, state, priority, assignee_id || null, project_id || null, sprint_id || null, ticketNumber, req.user!.id]
+      [req.user!.workspaceId, title, state, priority, assignee_id || null, program_id || null, sprint_id || null, ticketNumber, req.user!.id]
     );
 
-    // Get project prefix if assigned
+    // Get program prefix if assigned
     let displayId = `#${ticketNumber}`;
-    if (project_id) {
-      const projectResult = await pool.query(
-        `SELECT prefix FROM documents WHERE id = $1 AND document_type = 'project'`,
-        [project_id]
+    if (program_id) {
+      const programResult = await pool.query(
+        `SELECT prefix FROM documents WHERE id = $1 AND document_type = 'program'`,
+        [program_id]
       );
-      if (projectResult.rows[0]) {
-        displayId = `${projectResult.rows[0].prefix}-${ticketNumber}`;
+      if (programResult.rows[0]) {
+        displayId = `${programResult.rows[0].prefix}-${ticketNumber}`;
       }
     }
 
@@ -261,10 +261,10 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
       updates.push(`assignee_id = $${paramIndex++}`);
       values.push(data.assignee_id);
     }
-    if (data.project_id !== undefined) {
-      updates.push(`project_id = $${paramIndex++}`);
-      values.push(data.project_id);
-      // Clear sprint if project changes (sprint belongs to project)
+    if (data.program_id !== undefined) {
+      updates.push(`program_id = $${paramIndex++}`);
+      values.push(data.program_id);
+      // Clear sprint if program changes (sprint belongs to program)
       if (data.sprint_id === undefined) {
         updates.push(`sprint_id = NULL`);
       }
@@ -286,16 +286,16 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
       [...values, id, req.user!.workspaceId]
     );
 
-    // Get project prefix for display_id
+    // Get program prefix for display_id
     const issue = result.rows[0];
     let displayId = `#${issue.ticket_number}`;
-    if (issue.project_id) {
-      const projectResult = await pool.query(
-        `SELECT prefix FROM documents WHERE id = $1 AND document_type = 'project'`,
-        [issue.project_id]
+    if (issue.program_id) {
+      const programResult = await pool.query(
+        `SELECT prefix FROM documents WHERE id = $1 AND document_type = 'program'`,
+        [issue.program_id]
       );
-      if (projectResult.rows[0]) {
-        displayId = `${projectResult.rows[0].prefix}-${issue.ticket_number}`;
+      if (programResult.rows[0]) {
+        displayId = `${programResult.rows[0].prefix}-${issue.ticket_number}`;
       }
     }
 
