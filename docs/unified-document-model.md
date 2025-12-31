@@ -116,7 +116,7 @@ Issues maintain **multiple associations**:
 
 ## Data Model
 
-### Document Schema (Conceptual)
+### Document Schema
 
 ```typescript
 interface Document {
@@ -125,67 +125,82 @@ interface Document {
   workspace_id: string;
   document_type: DocumentType;
 
-  // Location/associations
+  // Location/associations (columns, not in properties)
   program_id: string | null; // null = workspace-level
   project_id: string | null; // for issues
   sprint_id: string | null; // when assigned to sprint
   parent_id: string | null; // document tree nesting
 
   // Content
-  name: string;
-  content: YjsDoc; // CRDT for rich text (TipTap)
+  title: string; // Always "Untitled" for new docs
+  content: TipTapJSON; // Rich text content
+  yjs_state: Uint8Array; // CRDT state for collaboration
 
-  // Properties (schema-less, type-enforced)
+  // Properties (schema-less JSONB, type-enforced in code)
   properties: Record<string, any>;
-
-  // Denormalized snapshots (for offline display)
-  _snapshot: {
-    assignee?: { id: string; name: string; avatar_url: string };
-    state?: { id: string; name: string; color: string };
-    program?: { id: string; name: string; prefix: string };
-    parent?: { id: string; name: string };
-  };
-
-  // Issue-specific (in properties, but commonly accessed)
-  ticket_number?: number; // Program-scoped: AUTH-42
-  state_id?: string;
-  assignee_ids?: string[];
 
   // Timestamps
   created_at: string;
   updated_at: string;
+  created_by: string;
 }
 ```
 
 ### Relationship Strategy
 
-**Hybrid approach** for offline performance:
-
-1. **Denormalized snapshots** (`_snapshot`): Embed display data for offline rendering
-2. **Canonical IDs** (`*_id` fields): Keep relationship IDs for navigation and sync
-3. **Sync reconciliation**: Server rebuilds snapshots, client uses them for display
+Association fields (`program_id`, `project_id`, `sprint_id`, `parent_id`) are **columns** for efficient querying. Everything else type-specific goes in `properties` JSONB.
 
 ### Properties System
 
-Properties are **schema-less JSON**, enforced via TypeScript:
+Properties are stored in a **schema-less JSONB column**, with structure enforced via TypeScript:
 
 ```typescript
-// Required properties by document type (enforced in code)
-const REQUIRED_PROPERTIES = {
-  issue: ["state_id"], // Issues must have state
-  sprint: ["sprint_number"], // Sprints must have number
-  sprint_plan: ["owner_id"], // Plans must have owner
-  sprint_retro: ["owner_id"], // Retros must have owner
-};
+// Type-specific properties (enforced in code, not database)
+interface IssueProperties {
+  state: 'backlog' | 'todo' | 'in_progress' | 'done' | string; // 4 required + custom
+  priority?: 'low' | 'medium' | 'high';
+  assignee_id?: string;
+  ticket_number?: number;
+  estimate_hours?: number;
+}
 
-// Custom properties stored in properties blob
+interface SprintProperties {
+  sprint_number: number;
+  start_date?: string;
+  end_date?: string;
+  goal?: string;
+}
+
+interface ProgramProperties {
+  prefix: string; // e.g., "AUTH" for ticket numbers
+  color?: string;
+}
+
+// Example issue properties
 document.properties = {
-  state_id: "state_123",
+  state: "in_progress",
   priority: "high",
+  assignee_id: "user_123",
+  ticket_number: 42,
   estimate_hours: 4,
-  custom_field: "any value",
+  custom_field: "any value", // user-defined
 };
 ```
+
+**Key principle:** The database stores raw JSONB. TypeScript interfaces enforce structure at the application layer. This allows custom properties without schema migrations.
+
+### Workflow States
+
+Issues have a `state` property with **4 required states** that every workspace has:
+
+| State | Description |
+|-------|-------------|
+| `backlog` | Not yet planned |
+| `todo` | Planned for current sprint |
+| `in_progress` | Actively being worked |
+| `done` | Completed |
+
+Workspaces can add **custom states** beyond these 4 (stored in workspace settings). States are string values in properties, not foreign keys to a separate table.
 
 ### Computed Properties (Roll-ups)
 
@@ -249,26 +264,30 @@ Client (IndexedDB)          Server (PostgreSQL)
 - Offline: Search locally synced documents in IndexedDB
 - UI indicates when showing "offline results only"
 
-## Configuration Entities
+## Configuration
 
-States, Labels, and IssueTypes are **not documents** - they're lightweight config:
+### Workflow States
 
-| Entity        | Purpose              | Example Values                   |
-| ------------- | -------------------- | -------------------------------- |
-| **State**     | Workflow status      | "Backlog", "In Progress", "Done" |
-| **Label**     | Categorization tags  | "bug", "feature", "urgent"       |
-| **IssueType** | Issue classification | "Bug", "Story", "Task"           |
+States are **string values** stored directly in document properties, not foreign keys to a separate table:
 
-**Why not documents:**
+```typescript
+// States are just strings in the properties JSONB
+document.properties.state = "in_progress";
+```
 
-- Small (typically <50 per type per workspace)
-- Rarely change (monthly at most)
-- Don't need versioning, comments, or rich content
-- Appear in dropdowns, not navigated to
+**4 built-in states:** `backlog`, `todo`, `in_progress`, `done`
 
-**Sync:** Fully synced on initial load and cached. Tiny payload.
+Workspaces can define **additional custom states** (stored in workspace settings JSONB). This keeps the data model simple while allowing customization.
 
-**Usage:** Referenced by ID in document properties, included in `_snapshot` for offline display.
+### Labels (Future)
+
+Labels will be stored as string arrays in properties:
+
+```typescript
+document.properties.labels = ["bug", "urgent", "frontend"];
+```
+
+Available labels per workspace stored in workspace settings. No separate labels table needed.
 
 ## File Attachments
 
@@ -370,6 +389,51 @@ Modes are **different lenses on the same data** for different personas:
 | **Docs**     | Anyone         | "Where's that document?"                        |
 
 **Key principle:** All modes query the same document graph. Mode changes grouping/filtering/layout—not the underlying data.
+
+## Current Reality vs Target Architecture
+
+> **Migration Pending:** The current database schema uses explicit columns (`state`, `priority`, `assignee_id`, etc.) instead of a `properties` JSONB column. This works but requires schema migrations for new property types. The target architecture described in this doc (pure JSONB properties) enables custom properties without migrations. Migration is planned.
+
+| Aspect | Current Implementation | Target (This Doc) |
+|--------|----------------------|-------------------|
+| Properties | Explicit columns | JSONB column |
+| States | TEXT column | String in properties |
+| Custom props | Not supported | Any key in properties |
+
+---
+
+## Roadmap
+
+Features planned but not yet implemented:
+
+### Sync API
+
+Dedicated sync endpoints for offline-first experience:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/sync/changes?since=timestamp` | Get changes since last sync |
+| `POST /api/sync/push` | Push queued offline changes |
+
+### Denormalized Snapshots
+
+`_snapshot` field on documents for offline display without joins:
+
+```typescript
+document._snapshot = {
+  assignee: { id: "user_1", name: "Jane", avatar_url: "..." },
+  program: { id: "prog_1", name: "Auth Service", prefix: "AUTH" },
+};
+```
+
+### View Documents
+
+Saved filters/queries as `document_type: 'view'`:
+- Store query parameters, filters, display options
+- Share views across team
+- Not yet in schema enum
+
+---
 
 ## References
 

@@ -19,7 +19,7 @@ This document describes the application architecture for the Ship greenfield reb
 | **API Framework**  | Express                  | Battle-tested, simple, ubiquitous         |
 | **Frontend**       | React + Vite             | Fast dev experience, TipTap/Yjs ecosystem |
 | **Database**       | PostgreSQL               | Reliable, feature-rich, direct SQL        |
-| **Query Builder**  | Kysely                   | Type-safe SQL without ORM magic           |
+| **DB Client**      | pg (raw SQL)             | Maximum simplicity, no abstraction        |
 | **Client Storage** | IndexedDB                | Offline cache, write queue                |
 | **Real-time**      | WebSocket (ws)           | Same process as API, simple               |
 | **Rich Text**      | TipTap + Yjs             | Collaborative editing (online only)       |
@@ -40,9 +40,9 @@ ship/
 ├── api/                    # Express backend
 │   ├── src/
 │   │   ├── routes/         # REST endpoints
-│   │   ├── services/       # Business logic
-│   │   ├── db/             # Kysely queries
-│   │   ├── ws/             # WebSocket handlers
+│   │   ├── db/             # Database client + schema
+│   │   ├── collaboration/  # WebSocket + Yjs handlers
+│   │   ├── middleware/     # Auth, etc.
 │   │   └── index.ts        # Entry point
 │   ├── package.json
 │   └── tsconfig.json
@@ -94,20 +94,37 @@ wss.on("connection", handleConnection);
 server.listen(3000);
 ```
 
-### Database Access (Kysely)
+### Database Access (pg)
 
-Type-safe SQL without ORM abstraction:
+Direct SQL queries for maximum simplicity:
 
 ```typescript
+// api/src/db/pool.ts
+import { Pool } from "pg";
+
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
 // api/src/db/documents.ts
-import { db } from "./connection";
+import { pool } from "./pool";
 
 export async function getDocument(id: string) {
-  return db.selectFrom("documents").where("id", "=", id).selectAll().executeTakeFirst();
+  const result = await pool.query(
+    "SELECT * FROM documents WHERE id = $1",
+    [id]
+  );
+  return result.rows[0];
 }
 
 export async function createDocument(doc: NewDocument) {
-  return db.insertInto("documents").values(doc).returningAll().executeTakeFirst();
+  const result = await pool.query(
+    `INSERT INTO documents (workspace_id, document_type, title, content, properties)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [doc.workspace_id, doc.document_type, doc.title, doc.content, doc.properties]
+  );
+  return result.rows[0];
 }
 ```
 
@@ -123,8 +140,6 @@ Simple RESTful endpoints:
 | PATCH  | `/api/documents/:id` | Update document               |
 | DELETE | `/api/documents/:id` | Delete document               |
 | GET    | `/api/programs`      | List programs                 |
-| GET    | `/api/sync/changes`  | Get changes since timestamp   |
-| POST   | `/api/sync/push`     | Push offline changes          |
 
 ### WebSocket Protocol
 
@@ -218,7 +233,9 @@ interface ShipDB {
 **Reconnect**: Flush sync queue to server
 **Conflicts**: Last-write-wins (timestamp-based)
 
-### Sync Flow
+### Sync Flow (Current)
+
+Currently using standard REST endpoints for sync:
 
 ```typescript
 // web/src/sync/syncManager.ts
@@ -243,20 +260,23 @@ class SyncManager {
   }
 
   async pullChanges() {
-    const lastSync = await localDb.syncMeta.get("lastSync");
-    const changes = await api.get(`/sync/changes?since=${lastSync}`);
-    await this.applyChanges(changes);
+    // Uses standard REST endpoints to fetch recent documents
+    const documents = await api.get("/api/documents?updated_since=...");
+    await this.applyChanges(documents);
   }
 
   async flushQueue() {
+    // Flush queued changes via standard REST endpoints
     const pending = await localDb.syncQueue.toArray();
-    if (pending.length > 0) {
-      await api.post("/sync/push", { changes: pending });
-      await localDb.syncQueue.clear();
+    for (const change of pending) {
+      await api.patch(`/api/documents/${change.id}`, change.data);
     }
+    await localDb.syncQueue.clear();
   }
 }
 ```
+
+> **Roadmap:** Dedicated sync endpoints (`/api/sync/changes`, `/api/sync/push`) planned for more efficient offline-first experience. See Roadmap section.
 
 ## Real-Time Collaboration
 
@@ -536,43 +556,60 @@ const logger = {
 
 ## Database Migrations
 
-**Manual + reviewed** - safe for government deployments.
+**Manual SQL + reviewed** - safe for government deployments.
 
 ### Migration Workflow
 
 ```bash
-# 1. Generate migration
-pnpm db:generate migration_name
+# 1. Create migration file
+touch api/src/db/migrations/YYYYMMDD_migration_name.sql
 
-# 2. Review generated SQL
-cat api/src/db/migrations/YYYYMMDD_migration_name.ts
+# 2. Write SQL migration
+cat api/src/db/migrations/20241230_add_sprint_number.sql
 
 # 3. Test locally
-pnpm db:migrate
+psql $DATABASE_URL -f api/src/db/migrations/20241230_add_sprint_number.sql
 
 # 4. PR review includes migration review
 
 # 5. Run in production (manually or via deploy script)
 ```
 
-### Kysely Migrations
+### SQL Migration Example
+
+```sql
+-- api/src/db/migrations/20241230_add_sprint_number.sql
+
+-- UP
+ALTER TABLE documents ADD COLUMN sprint_number INTEGER;
+
+-- DOWN (in separate rollback file or commented)
+-- ALTER TABLE documents DROP COLUMN sprint_number;
+```
+
+For complex migrations, use a simple runner:
 
 ```typescript
-// api/src/db/migrations/20241230_add_sprint_number.ts
-import { Kysely } from "kysely";
+// api/src/db/migrate.ts
+import { pool } from "./pool";
+import fs from "fs";
+import path from "path";
 
-export async function up(db: Kysely<any>): Promise<void> {
-  await db.schema.alterTable("documents").addColumn("sprint_number", "integer").execute();
-}
+async function migrate() {
+  const migrationsDir = path.join(__dirname, "migrations");
+  const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith(".sql")).sort();
 
-export async function down(db: Kysely<any>): Promise<void> {
-  await db.schema.alterTable("documents").dropColumn("sprint_number").execute();
+  for (const file of files) {
+    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf-8");
+    await pool.query(sql);
+    console.log(`Applied: ${file}`);
+  }
 }
 ```
 
 ### Safety Rules
 
-- Always write `down` migrations
+- Write rollback SQL for every migration
 - Test rollback locally before deploy
 - No destructive changes without data backup
 - Large data migrations run separately from schema changes
@@ -625,7 +662,7 @@ pnpm dev
 
 1. **Backend**: Node.js + Express (simple, ubiquitous)
 2. **Frontend**: React + Vite (ecosystem support for TipTap/Yjs)
-3. **Database access**: Kysely (type-safe SQL, not ORM)
+3. **Database access**: pg (raw SQL, not ORM)
 4. **Repo structure**: Single repo, separate builds (web/, api/, shared/)
 5. **Deployment**: Single container (EB or ECS) + S3/CloudFront
 6. **Real-time**: WebSocket on same Express process
@@ -637,7 +674,7 @@ pnpm dev
 **Rationale for Key Choices:**
 
 - **Express over Fastify**: More ubiquitous, "boring technology"
-- **Kysely over raw pg**: Type safety without ORM complexity
+- **pg over Kysely/ORM**: Maximum simplicity, full SQL control, no abstraction overhead
 - **Offline-tolerant over offline-first**: Much simpler, meets "works on plane" requirement
 - **Single container**: Simplest deployment, no microservices
 - **WebSocket same process**: Avoids separate service, sticky sessions if scaling
@@ -727,6 +764,41 @@ pnpm dev
 - **Session timeout**: Cookie expiry + server-side session validation
 - **Idle timeout**: Warn at 14 min, auto-logout at 15 min
 - **Re-auth for sensitive actions**: Consider requiring fresh auth for destructive operations
+
+---
+
+## Roadmap
+
+Features planned but not yet implemented:
+
+### Dedicated Sync API
+
+Optimized endpoints for offline-first sync:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/sync/changes?since=timestamp` | Get all changes since last sync |
+| `POST /api/sync/push` | Batch push queued offline changes |
+
+**Why:** Current REST endpoints work but require multiple requests. Dedicated sync endpoints enable more efficient bulk sync operations.
+
+### Type-Safe Query Builder
+
+Consider adding Kysely or similar for complex queries:
+
+```typescript
+// Future: Type-safe queries for complex operations
+const results = await db
+  .selectFrom("documents")
+  .where("document_type", "=", "issue")
+  .where("properties", "@>", '{"state": "in_progress"}')
+  .selectAll()
+  .execute();
+```
+
+**Why:** Raw SQL is sufficient for simple CRUD. Type-safe builder may help with complex filtering/reporting queries.
+
+---
 
 ## References
 
