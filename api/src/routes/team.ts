@@ -435,4 +435,26 @@ router.delete('/assign', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/team/people - Get all people (person documents)
+router.get('/people', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.user!.workspaceId;
+
+    // Get person documents joined with user info by matching name/title
+    const result = await pool.query(
+      `SELECT d.id, d.title as name, u.email
+       FROM documents d
+       LEFT JOIN users u ON d.title = u.name AND u.workspace_id = d.workspace_id
+       WHERE d.workspace_id = $1 AND d.document_type = 'person'
+       ORDER BY d.title`,
+      [workspaceId]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get people error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

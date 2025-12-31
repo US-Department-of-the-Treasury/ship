@@ -101,6 +101,31 @@ async function seed() {
     );
     const allUsers = allUsersResult.rows;
 
+    // Create person documents for each team member
+    let peopleCreated = 0;
+
+    for (const user of allUsers) {
+      const existingPerson = await pool.query(
+        `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'person' AND title = $2`,
+        [workspaceId, user.name]
+      );
+
+      if (!existingPerson.rows[0]) {
+        await pool.query(
+          `INSERT INTO documents (workspace_id, document_type, title, created_by)
+           VALUES ($1, 'person', $2, $3)`,
+          [workspaceId, user.name, user.id]
+        );
+        peopleCreated++;
+      }
+    }
+
+    if (peopleCreated > 0) {
+      console.log(`✅ Created ${peopleCreated} person documents`);
+    } else {
+      console.log('ℹ️  All person documents already exist');
+    }
+
     // Projects to seed
     const projectsToSeed = [
       { prefix: 'SHIP', name: 'Ship Core', color: '#3B82F6' },

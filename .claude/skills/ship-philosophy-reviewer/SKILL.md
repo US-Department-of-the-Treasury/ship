@@ -1,51 +1,52 @@
 # Ship Philosophy Reviewer
 
-Reviews code changes against Ship's core philosophy: **everything is a document, maximize simplicity, reuse components**.
+Reviews code changes against Ship's core philosophy.
 
 ## When to Use
 
-**Proactive triggers** (auto-invoke after these changes):
-- New database tables or schema changes
-- New React components in `web/src/`
-- New API routes in `api/src/routes/`
-- Changes to document types or properties
+**Proactive triggers:**
+- Schema changes or new tables
+- New React components
+- New API routes
+- Changes to Editor or document handling
 
-**On-demand**: Invoke `/ship-philosophy-reviewer` anytime to audit current changes.
+**On-demand**: Invoke `/ship-philosophy-reviewer` to audit current changes.
 
 ## Authority Model
 
-- **Autonomous contexts** (ralph-loop, etc.): Authoritative. Implement fixes directly.
-- **Interactive contexts**: Advisory. Flag concerns, explain why, suggest alternatives.
+- **Autonomous contexts** (ralph-loop, etc.): Fix violations directly.
+- **Interactive contexts**: Flag concerns, explain why, suggest alternatives.
 
-## Core Principles to Enforce
+## The Philosophy
 
 ### 1. Everything is a Document
 
-The unified document model is sacred. One `documents` table with `document_type` field.
+The unified document model is the heart of Ship. One `documents` table, one `document_type` field.
 
-**Anti-patterns to catch:**
-- Creating new tables for content that should be documents
-- Adding `comments` table → should be `document_type: 'comment'` with `parent_id`
-- Adding `notes` table → should be wiki documents
-- Any table that stores user-created content with title/body
+If something has a name and content that users create and navigate to, it's a document. Comments? Documents with a parent_id. Notes? Wiki documents. Project descriptions? The project document's content field.
 
-**Questions to ask:**
-- "Does this have a name and content?"
-- "Would users navigate to it?"
-- "Could it benefit from comments, linking, versioning?"
+**The question to ask:** "Could this be a document?" If yes, it should be.
 
-**Exception:** Config entities (State, Label, IssueType) stay as tables because they appear in dropdowns, not as navigable pages.
+**Exception:** Config entities (states, labels, issue types) are not documents because users don't navigate to them - they appear in dropdowns.
 
-### 2. Reuse Components
+### 2. The Editor is the Editor
 
-The `Editor` component is the canonical editor for ALL document types.
+This is the most commonly violated principle. The `Editor` component is the canonical editor for ALL document types. It must be complete in itself.
 
-**Anti-patterns to catch:**
-- Creating `IssueEditor.tsx` when `Editor.tsx` exists
-- Creating `ProjectEditor.tsx` instead of using `Editor` with different props
-- Duplicating the 4-panel layout instead of extending it
+**The principle:** If it's editor functionality, it lives in Editor. Period.
 
-**The 4-panel layout is canonical:**
+Pages that use Editor should only provide:
+- What makes their document type *different* (sidebar content, badges)
+- Not what makes editing *work* (that's Editor's job)
+
+When you find yourself adding a callback prop to Editor that every page would implement identically, you've violated this principle. That logic belongs inside Editor.
+
+When you find yourself writing the same handler in multiple editor pages, you've violated this principle. That code belongs inside Editor.
+
+**Think of it this way:** Could you delete an editor page and replace it with just `<Editor documentId={id} sidebar={<TypeSpecificSidebar />} />`? If not, why not? Whatever's preventing that should probably move into Editor.
+
+### 3. The 4-Panel Layout is Sacred
+
 ```
 ┌──────┬────────────────┬─────────────────────────────────┬────────────────┐
 │ Icon │   Contextual   │         Main Content            │   Properties   │
@@ -54,95 +55,46 @@ The `Editor` component is the canonical editor for ALL document types.
 └──────┴────────────────┴─────────────────────────────────┴────────────────┘
 ```
 
-All four panels always visible. Document types differ by sidebar content and props, NOT by having separate components.
+All panels always visible. Document types differ by what's *in* the panels, not by having different layouts.
 
-### 3. Consistent Conventions
+### 4. Consistency Over Specialization
 
-**Title convention:**
-- All new documents use `"Untitled"` - never "Untitled Issue", "Untitled Project", etc.
-- The Editor shows placeholder styling when title equals "Untitled"
+All document types get the same capabilities. If wiki docs can do something, issues and persons and projects can too.
 
-**Check for:**
-- Default titles that include document type name
-- Type-specific editor components
-- Inconsistent placeholder text patterns
+When building a new feature, ask: "Does this work for every document type?" If not, either generalize it or question whether it belongs.
 
-### 4. YAGNI & Boring Technology
+Never create type-specific variants of shared components. No `IssueEditor.tsx`. No `ProjectSidebar.tsx` when the regular sidebar with different content would work.
 
-**Anti-patterns:**
-- Adding features not explicitly requested
-- Using cutting-edge libraries when boring alternatives exist
-- Precomputing/caching values that can be computed on-demand
-- Adding abstraction layers for single-use code
+### 5. YAGNI and Boring Technology
 
-**Questions to ask:**
-- "Is this complexity necessary right now?"
-- "Is there a simpler, more boring way to do this?"
+Don't build what wasn't asked for. Don't use fancy libraries when simple ones work. Don't abstract until you have three concrete uses.
 
-### 5. Schema Simplicity
+**The question to ask:** "Is this the simplest thing that could work?"
 
-**The schema should be minimal:**
-- `documents` - all content
-- `users` - authentication/identity
-- `workspaces` - multi-tenancy
-- Config tables: `states`, `labels`, `issue_types`
+### 6. Untitled is Untitled
 
-**Anti-patterns:**
-- Junction tables when a simple `*_id` column suffices
-- Separate tables for things that are documents
-- Denormalized columns that duplicate document data
+All new documents are titled "Untitled". Not "Untitled Issue". Not "New Project". Just "Untitled".
 
-## Review Checklist
-
-When reviewing changes, verify:
-
-1. [ ] No new tables that should be documents
-2. [ ] No new editor components (use `Editor` with props)
-3. [ ] 4-panel layout preserved
-4. [ ] "Untitled" used for all new documents (not type-specific)
-5. [ ] No unnecessary abstractions or premature optimization
-6. [ ] Changes align with docs/* philosophy
+This seems small but it's a symptom of the deeper principle: document types are just a property, not a fundamental difference in nature.
 
 ## How to Review
 
-1. **Read the change** - What files were modified/added?
-2. **Check against principles** - Does this violate any core philosophy?
-3. **Reference the docs** - Cite specific sections from `docs/*.md` when flagging issues
-4. **Provide alternatives** - Don't just say "wrong", show the right way
+1. **Understand the change** - What's being added or modified?
+2. **Apply the philosophy** - Does this align with how Ship thinks about things?
+3. **Question complexity** - Is there a simpler way?
+4. **Check for drift** - Are we creating special cases where uniformity should exist?
 
-## Output Format
+When flagging issues, don't just say what's wrong - explain which principle it violates and show what the Ship way would look like.
 
-### When flagging issues:
+## The Smell Test
 
-```markdown
-## Philosophy Violation Found
+These patterns usually indicate a philosophy violation:
 
-**Principle violated:** [which principle]
-**Location:** [file:line]
-**Issue:** [what's wrong]
-**Reference:** [docs/file.md section]
+- A new table that stores user content with title/body fields
+- Callback props on Editor that every page implements the same way
+- A feature that only works on some document types
+- Type-specific component variants
+- Code duplicated across multiple editor pages
+- Abstractions with only one use
 
-**Current approach:**
-[code or description]
-
-**Recommended approach:**
-[code or description showing the Ship way]
-```
-
-### When approving:
-
-```markdown
-## Philosophy Review: Approved
-
-Changes align with Ship philosophy:
-- [specific positive observations]
-```
-
-## Integration with Other Agents
-
-This reviewer should be invoked:
-- By `kieran-*-reviewer` agents after code quality review
-- By `ralph-loop` before completing iterations
-- Before PR creation to catch philosophy drift
-
-When invoked in autonomous contexts, don't just flag - **fix the violations** and explain what you changed.
+When you see these, dig deeper. The fix is usually to consolidate, not to add more.

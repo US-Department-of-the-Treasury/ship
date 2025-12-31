@@ -197,7 +197,7 @@ export function AppLayout() {
               />
             )}
             {activeMode === 'team' && (
-              <div className="px-3 py-2 text-sm text-muted">Team grid view</div>
+              <TeamSidebar />
             )}
             {activeMode === 'settings' && (
               <div className="px-3 py-2 text-sm text-muted">Settings</div>
@@ -411,6 +411,63 @@ function ProjectsList({ projects, activeId, onSelect }: { projects: Project[]; a
         </li>
       ))}
     </ul>
+  );
+}
+
+function TeamSidebar() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const isAllocation = location.pathname === '/team/allocation' || location.pathname === '/team';
+  const isDirectory = location.pathname === '/team/directory';
+
+  return (
+    <ul className="space-y-0.5 px-2">
+      <li>
+        <button
+          onClick={() => navigate('/team/allocation')}
+          className={cn(
+            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+            isAllocation
+              ? 'bg-border/50 text-foreground'
+              : 'text-muted hover:bg-border/30 hover:text-foreground'
+          )}
+        >
+          <GridIcon />
+          <span>Allocation</span>
+        </button>
+      </li>
+      <li>
+        <button
+          onClick={() => navigate('/team/directory')}
+          className={cn(
+            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+            isDirectory
+              ? 'bg-border/50 text-foreground'
+              : 'text-muted hover:bg-border/30 hover:text-foreground'
+          )}
+        >
+          <PeopleIcon />
+          <span>Directory</span>
+        </button>
+      </li>
+    </ul>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+    </svg>
+  );
+}
+
+function PeopleIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
   );
 }
 

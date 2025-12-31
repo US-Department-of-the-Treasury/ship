@@ -697,25 +697,39 @@ Each phase is complete when:
 
 ---
 
-## Session State (Auto-updated: 2025-12-31T02:31:00Z)
+## Session State (Auto-updated: 2025-12-31T03:29:56Z)
 
 **Branch:** `master`
 **Project:** `/Users/corcoss/code/ship`
 
 ### Recent Commits
 ```
+7cf4aa7 Merge pull request #6 from US-Department-of-the-Treasury/project-mode
+7b11806 Add TabBar to ProjectEditor with Overview, Issues, Sprints tabs
+92613e7 Add wiki document seed data and fix editor alignment
 7aa186f Add team grid project assignment with split-click navigation
 76e5c40 Fix team grid header alignment and left-align cell contents
-55402c4 Merge pull request #4 from US-Department-of-the-Treasury/project-mode
-01f7d1d Fix drag handle drop functionality
-67c9bf2 Fix drag handle disappearing before click and type errors
 ```
 
 ### Uncommitted Changes
 ```
- M web/src/index.css
+ M api/src/db/seed.ts
+ M api/src/routes/team.ts
+ M plans/ship-mvp-greenfield.md
+ M web/src/components/Editor.tsx
+ M web/src/main.tsx
+ M web/src/pages/App.tsx
+ M web/src/pages/DocumentEditor.tsx
+?? web/src/pages/PersonEditor.tsx
+?? web/src/pages/TeamDirectory.tsx
 ```
 
 ### Modified Files
-web/src/index.css
+api/src/db/seed.ts
+api/src/routes/team.ts
+plans/ship-mvp-greenfield.md
+web/src/components/Editor.tsx
+web/src/main.tsx
+web/src/pages/App.tsx
+web/src/pages/DocumentEditor.tsx
 

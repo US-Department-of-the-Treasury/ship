@@ -10,23 +10,60 @@ export function DocumentEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { documents, loading: documentsLoading, updateDocument: contextUpdateDocument, createDocument, deleteDocument } = useDocuments();
+  const { documents, loading: documentsLoading, updateDocument: contextUpdateDocument, deleteDocument } = useDocuments();
 
-  // Get the current document from context
-  const document = documents.find(d => d.id === id) || null;
+  // State for non-wiki documents (fetched directly)
+  const [directDocument, setDirectDocument] = useState<WikiDocument | null>(null);
+  const [directLoading, setDirectLoading] = useState(false);
 
-  // Redirect if document not found after loading
+  // Get the current document from context first
+  const contextDocument = documents.find(d => d.id === id) || null;
+
+  // Fetch document directly if not in wiki context (e.g., person documents)
   useEffect(() => {
-    if (!documentsLoading && id && !document) {
-      navigate('/docs');
+    if (!documentsLoading && id && !contextDocument) {
+      setDirectLoading(true);
+      fetch(`${API_URL}/api/documents/${id}`, { credentials: 'include' })
+        .then(res => res.ok ? res.json() : null)
+        .then(doc => {
+          if (doc) {
+            setDirectDocument(doc);
+          } else {
+            navigate('/docs');
+          }
+        })
+        .catch(() => navigate('/docs'))
+        .finally(() => setDirectLoading(false));
     }
-  }, [documentsLoading, id, document, navigate]);
+  }, [documentsLoading, id, contextDocument, navigate]);
 
-  // Update handler using shared context
+  // Use context document if available, otherwise use directly fetched document
+  const document = contextDocument || directDocument;
+
+  // Update handler - uses context for wiki docs, direct API for others
   const handleUpdateDocument = useCallback(async (updates: Partial<WikiDocument>) => {
     if (!id) return;
-    await contextUpdateDocument(id, updates);
-  }, [id, contextUpdateDocument]);
+    if (contextDocument) {
+      // Wiki document - use context
+      await contextUpdateDocument(id, updates);
+    } else {
+      // Non-wiki document - use direct API call
+      try {
+        const res = await fetch(`${API_URL}/api/documents/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(updates),
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          setDirectDocument(prev => prev ? { ...prev, ...updated } : null);
+        }
+      } catch (err) {
+        console.error('Failed to update document:', err);
+      }
+    }
+  }, [id, contextDocument, contextUpdateDocument]);
 
   // Debounce title updates with cleanup on unmount
   const [titleTimeout, setTitleTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -44,18 +81,6 @@ export function DocumentEditorPage() {
     setTitleTimeout(setTimeout(() => handleUpdateDocument({ title: newTitle }), 500));
   }, [handleUpdateDocument, titleTimeout]);
 
-  // Create sub-document (child of current document)
-  const handleCreateSubDocument = useCallback(async () => {
-    if (!document) return null;
-    const newDoc = await createDocument(document.id);
-    return newDoc;
-  }, [createDocument, document]);
-
-  // Navigate to a document (for slash commands)
-  const handleNavigateToDocument = useCallback((docId: string) => {
-    navigate(`/docs/${docId}`);
-  }, [navigate]);
-
   // Delete current document
   const handleDelete = useCallback(async () => {
     if (!id || !document) return;
@@ -72,7 +97,7 @@ export function DocumentEditorPage() {
     }
   }, [id, deleteDocument, document, navigate]);
 
-  if (documentsLoading) {
+  if (documentsLoading || directLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-muted">Loading...</div>
@@ -106,8 +131,6 @@ export function DocumentEditorPage() {
       onTitleChange={debouncedTitleChange}
       onBack={handleBack}
       backLabel={parentDocument?.title || undefined}
-      onCreateSubDocument={handleCreateSubDocument}
-      onNavigateToDocument={handleNavigateToDocument}
       onDelete={handleDelete}
       sidebar={
         <div className="space-y-4 p-4">
