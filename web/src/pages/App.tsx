@@ -135,7 +135,7 @@ export function AppLayout() {
                   className="fixed inset-0 z-40"
                   onClick={() => setWorkspaceSwitcherOpen(false)}
                 />
-                <div className="absolute left-full top-0 z-50 ml-2 w-56 rounded-lg border border-border bg-surface shadow-lg">
+                <div className="absolute left-full top-0 z-50 ml-2 w-56 rounded-lg border border-border bg-background shadow-lg">
                   <div className="p-2">
                     <div className="px-2 py-1 text-xs font-medium text-muted">Workspaces</div>
                     {workspaces.map((ws) => (

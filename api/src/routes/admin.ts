@@ -331,6 +331,73 @@ router.get('/users', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// GET /api/admin/users/search - Search users by email (for adding to workspace)
+router.get('/users/search', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { q, workspaceId } = req.query;
+
+    if (!q || typeof q !== 'string' || q.length < 2) {
+      res.json({
+        success: true,
+        data: { users: [] },
+      });
+      return;
+    }
+
+    const searchTerm = `%${q.toLowerCase()}%`;
+
+    // If workspaceId provided, exclude users already in that workspace
+    let query: string;
+    let params: (string | null)[];
+
+    if (workspaceId && typeof workspaceId === 'string') {
+      query = `
+        SELECT u.id, u.email, u.name
+        FROM users u
+        WHERE LOWER(u.email) LIKE $1
+        AND NOT EXISTS (
+          SELECT 1 FROM workspace_memberships wm
+          WHERE wm.user_id = u.id AND wm.workspace_id = $2
+        )
+        ORDER BY u.email
+        LIMIT 10
+      `;
+      params = [searchTerm, workspaceId];
+    } else {
+      query = `
+        SELECT u.id, u.email, u.name
+        FROM users u
+        WHERE LOWER(u.email) LIKE $1
+        ORDER BY u.email
+        LIMIT 10
+      `;
+      params = [searchTerm];
+    }
+
+    const result = await pool.query(query, params);
+
+    const users = result.rows.map(row => ({
+      id: row.id,
+      email: row.email,
+      name: row.name,
+    }));
+
+    res.json({
+      success: true,
+      data: { users },
+    });
+  } catch (error) {
+    console.error('Search users error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to search users',
+      },
+    });
+  }
+});
+
 // PATCH /api/admin/users/:id/super-admin - Toggle super-admin status
 router.patch('/users/:id/super-admin', async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -625,6 +692,675 @@ router.delete('/impersonate', async (req: Request, res: Response): Promise<void>
       error: {
         code: ERROR_CODES.INTERNAL_ERROR,
         message: 'Failed to end impersonation',
+      },
+    });
+  }
+});
+
+// ============================================================================
+// Workspace Member Management
+// ============================================================================
+
+// GET /api/admin/workspaces/:id - Get workspace details
+router.get('/workspaces/:id', async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `SELECT id, name, sprint_start_date, archived_at, created_at, updated_at
+       FROM workspaces WHERE id = $1`,
+      [id]
+    );
+
+    if (!result.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+        },
+      });
+      return;
+    }
+
+    const workspace = result.rows[0];
+
+    res.json({
+      success: true,
+      data: {
+        workspace: {
+          id: workspace.id,
+          name: workspace.name,
+          sprintStartDate: workspace.sprint_start_date,
+          archivedAt: workspace.archived_at,
+          createdAt: workspace.created_at,
+          updatedAt: workspace.updated_at,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Get workspace error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to get workspace',
+      },
+    });
+  }
+});
+
+// GET /api/admin/workspaces/:id/members - List workspace members
+router.get('/workspaces/:id/members', async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    // Check workspace exists
+    const workspaceResult = await pool.query('SELECT id FROM workspaces WHERE id = $1', [id]);
+    if (!workspaceResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+        },
+      });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT wm.user_id, wm.role, u.email, u.name
+       FROM workspace_memberships wm
+       JOIN users u ON wm.user_id = u.id
+       WHERE wm.workspace_id = $1
+       ORDER BY u.name`,
+      [id]
+    );
+
+    const members = result.rows.map(row => ({
+      userId: row.user_id,
+      email: row.email,
+      name: row.name,
+      role: row.role,
+    }));
+
+    res.json({
+      success: true,
+      data: { members },
+    });
+  } catch (error) {
+    console.error('List workspace members error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to list workspace members',
+      },
+    });
+  }
+});
+
+// GET /api/admin/workspaces/:id/invites - List pending invites
+router.get('/workspaces/:id/invites', async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    // Check workspace exists
+    const workspaceResult = await pool.query('SELECT id FROM workspaces WHERE id = $1', [id]);
+    if (!workspaceResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+        },
+      });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT id, email, role, token, created_at
+       FROM workspace_invites
+       WHERE workspace_id = $1 AND used_at IS NULL AND expires_at > NOW()
+       ORDER BY created_at DESC`,
+      [id]
+    );
+
+    const invites = result.rows.map(row => ({
+      id: row.id,
+      email: row.email,
+      role: row.role,
+      token: row.token,
+      createdAt: row.created_at,
+    }));
+
+    res.json({
+      success: true,
+      data: { invites },
+    });
+  } catch (error) {
+    console.error('List workspace invites error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to list workspace invites',
+      },
+    });
+  }
+});
+
+// POST /api/admin/workspaces/:id/invites - Create invite
+router.post('/workspaces/:id/invites', async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { email, role = 'member' } = req.body;
+
+  if (!email || typeof email !== 'string') {
+    res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: 'Email is required',
+      },
+    });
+    return;
+  }
+
+  const emailLower = email.toLowerCase().trim();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(emailLower)) {
+    res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: 'Invalid email format',
+      },
+    });
+    return;
+  }
+
+  if (role !== 'admin' && role !== 'member') {
+    res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: 'Role must be admin or member',
+      },
+    });
+    return;
+  }
+
+  try {
+    // Check workspace exists
+    const workspaceResult = await pool.query('SELECT id, name FROM workspaces WHERE id = $1', [id]);
+    if (!workspaceResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+        },
+      });
+      return;
+    }
+
+    // Check if user is already a member
+    const memberCheck = await pool.query(
+      `SELECT wm.id FROM workspace_memberships wm
+       JOIN users u ON wm.user_id = u.id
+       WHERE wm.workspace_id = $1 AND LOWER(u.email) = $2`,
+      [id, emailLower]
+    );
+    if (memberCheck.rows[0]) {
+      res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.ALREADY_EXISTS,
+          message: 'User is already a member of this workspace',
+        },
+      });
+      return;
+    }
+
+    // Check for existing pending invite
+    const inviteCheck = await pool.query(
+      `SELECT id FROM workspace_invites
+       WHERE workspace_id = $1 AND LOWER(email) = $2 AND used_at IS NULL AND expires_at > NOW()`,
+      [id, emailLower]
+    );
+    if (inviteCheck.rows[0]) {
+      res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.ALREADY_EXISTS,
+          message: 'Invitation already pending for this email',
+        },
+      });
+      return;
+    }
+
+    // Generate token and create invite (expires in 7 days)
+    const token = crypto.randomUUID();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const result = await pool.query(
+      `INSERT INTO workspace_invites (workspace_id, email, role, token, expires_at, invited_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, email, role, token, created_at`,
+      [id, emailLower, role, token, expiresAt, req.userId]
+    );
+
+    const invite = result.rows[0];
+
+    await logAuditEvent({
+      workspaceId: id,
+      actorUserId: req.userId!,
+      action: 'workspace.invite_create',
+      resourceType: 'workspace_invite',
+      resourceId: invite.id,
+      details: { email: emailLower, role },
+      req,
+    });
+
+    res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      data: {
+        invite: {
+          id: invite.id,
+          email: invite.email,
+          role: invite.role,
+          token: invite.token,
+          createdAt: invite.created_at,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Create workspace invite error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to create workspace invite',
+      },
+    });
+  }
+});
+
+// DELETE /api/admin/workspaces/:workspaceId/invites/:inviteId - Revoke invite
+router.delete('/workspaces/:workspaceId/invites/:inviteId', async (req: Request, res: Response): Promise<void> => {
+  const { workspaceId, inviteId } = req.params;
+
+  try {
+    // Check workspace exists
+    const workspaceResult = await pool.query('SELECT id FROM workspaces WHERE id = $1', [workspaceId]);
+    if (!workspaceResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+        },
+      });
+      return;
+    }
+
+    // Delete the invite
+    const result = await pool.query(
+      `DELETE FROM workspace_invites
+       WHERE id = $1 AND workspace_id = $2 AND used_at IS NULL
+       RETURNING id, email`,
+      [inviteId, workspaceId]
+    );
+
+    if (!result.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Invite not found or already accepted',
+        },
+      });
+      return;
+    }
+
+    await logAuditEvent({
+      workspaceId,
+      actorUserId: req.userId!,
+      action: 'workspace.invite_revoke',
+      resourceType: 'workspace_invite',
+      resourceId: inviteId,
+      details: { email: result.rows[0].email },
+      req,
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Revoke workspace invite error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to revoke workspace invite',
+      },
+    });
+  }
+});
+
+// POST /api/admin/workspaces/:id/members - Add existing user directly to workspace
+router.post('/workspaces/:id/members', async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { userId, role = 'member' } = req.body;
+
+  try {
+    // Validate role
+    if (role !== 'admin' && role !== 'member') {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: 'Role must be admin or member',
+        },
+      });
+      return;
+    }
+
+    // Validate userId
+    if (!userId || typeof userId !== 'string') {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: 'userId is required',
+        },
+      });
+      return;
+    }
+
+    // Check workspace exists
+    const workspaceResult = await pool.query('SELECT id, name FROM workspaces WHERE id = $1', [id]);
+    if (!workspaceResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+        },
+      });
+      return;
+    }
+
+    // Check user exists
+    const userResult = await pool.query('SELECT id, email, name FROM users WHERE id = $1', [userId]);
+    if (!userResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'User not found',
+        },
+      });
+      return;
+    }
+
+    // Check if user is already a member
+    const existingMember = await pool.query(
+      'SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+      [id, userId]
+    );
+    if (existingMember.rows[0]) {
+      res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.ALREADY_EXISTS,
+          message: 'User is already a member of this workspace',
+        },
+      });
+      return;
+    }
+
+    // Create the membership
+    const membershipResult = await pool.query(
+      `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+       VALUES ($1, $2, $3)
+       RETURNING id, created_at`,
+      [id, userId, role]
+    );
+
+    // Audit log
+    await logAuditEvent({
+      workspaceId: id,
+      actorUserId: req.userId!,
+      action: 'workspace.member_add',
+      resourceType: 'workspace_membership',
+      resourceId: membershipResult.rows[0].id,
+      details: {
+        addedUserId: userId,
+        addedUserEmail: userResult.rows[0].email,
+        role,
+      },
+      req,
+    });
+
+    res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      data: {
+        member: {
+          userId: userResult.rows[0].id,
+          email: userResult.rows[0].email,
+          name: userResult.rows[0].name,
+          role,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Add workspace member error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to add workspace member',
+      },
+    });
+  }
+});
+
+// PATCH /api/admin/workspaces/:workspaceId/members/:userId - Update member role
+router.patch('/workspaces/:workspaceId/members/:userId', async (req: Request, res: Response): Promise<void> => {
+  const { workspaceId, userId } = req.params;
+  const { role } = req.body;
+
+  if (role !== 'admin' && role !== 'member') {
+    res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: 'Role must be admin or member',
+      },
+    });
+    return;
+  }
+
+  try {
+    // Check workspace exists
+    const workspaceResult = await pool.query('SELECT id FROM workspaces WHERE id = $1', [workspaceId]);
+    if (!workspaceResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+        },
+      });
+      return;
+    }
+
+    // Check membership exists and get current role
+    const memberResult = await pool.query(
+      `SELECT wm.role, u.email FROM workspace_memberships wm
+       JOIN users u ON wm.user_id = u.id
+       WHERE wm.workspace_id = $1 AND wm.user_id = $2`,
+      [workspaceId, userId]
+    );
+
+    if (!memberResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Member not found',
+        },
+      });
+      return;
+    }
+
+    const oldRole = memberResult.rows[0].role;
+
+    // If demoting from admin, check there's at least one other admin
+    if (oldRole === 'admin' && role === 'member') {
+      const adminCount = await pool.query(
+        `SELECT COUNT(*) FROM workspace_memberships
+         WHERE workspace_id = $1 AND role = 'admin'`,
+        [workspaceId]
+      );
+      if (parseInt(adminCount.rows[0].count) <= 1) {
+        res.status(HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: {
+            code: ERROR_CODES.VALIDATION_ERROR,
+            message: 'Workspace must have at least one admin',
+          },
+        });
+        return;
+      }
+    }
+
+    // Update role
+    await pool.query(
+      `UPDATE workspace_memberships SET role = $1, updated_at = NOW()
+       WHERE workspace_id = $2 AND user_id = $3`,
+      [role, workspaceId, userId]
+    );
+
+    await logAuditEvent({
+      workspaceId,
+      actorUserId: req.userId!,
+      action: 'workspace.member_role_update',
+      resourceType: 'workspace_membership',
+      resourceId: userId,
+      details: { email: memberResult.rows[0].email, oldRole, newRole: role },
+      req,
+    });
+
+    res.json({
+      success: true,
+      data: { role },
+    });
+  } catch (error) {
+    console.error('Update member role error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to update member role',
+      },
+    });
+  }
+});
+
+// DELETE /api/admin/workspaces/:workspaceId/members/:userId - Remove member
+router.delete('/workspaces/:workspaceId/members/:userId', async (req: Request, res: Response): Promise<void> => {
+  const { workspaceId, userId } = req.params;
+
+  try {
+    // Check workspace exists
+    const workspaceResult = await pool.query('SELECT id FROM workspaces WHERE id = $1', [workspaceId]);
+    if (!workspaceResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Workspace not found',
+        },
+      });
+      return;
+    }
+
+    // Check membership exists and get role
+    const memberResult = await pool.query(
+      `SELECT wm.role, u.email FROM workspace_memberships wm
+       JOIN users u ON wm.user_id = u.id
+       WHERE wm.workspace_id = $1 AND wm.user_id = $2`,
+      [workspaceId, userId]
+    );
+
+    if (!memberResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Member not found',
+        },
+      });
+      return;
+    }
+
+    // If removing an admin, check there's at least one other admin
+    if (memberResult.rows[0].role === 'admin') {
+      const adminCount = await pool.query(
+        `SELECT COUNT(*) FROM workspace_memberships
+         WHERE workspace_id = $1 AND role = 'admin'`,
+        [workspaceId]
+      );
+      if (parseInt(adminCount.rows[0].count) <= 1) {
+        res.status(HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: {
+            code: ERROR_CODES.VALIDATION_ERROR,
+            message: 'Workspace must have at least one admin',
+          },
+        });
+        return;
+      }
+    }
+
+    // Clear assignee fields for this user's assigned documents
+    await pool.query(
+      `UPDATE documents SET assignee_id = NULL, updated_at = NOW()
+       WHERE workspace_id = $1 AND assignee_id = $2`,
+      [workspaceId, userId]
+    );
+
+    // Delete the membership
+    await pool.query(
+      `DELETE FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2`,
+      [workspaceId, userId]
+    );
+
+    // Delete sessions for this workspace
+    await pool.query(
+      `DELETE FROM sessions WHERE workspace_id = $1 AND user_id = $2`,
+      [workspaceId, userId]
+    );
+
+    await logAuditEvent({
+      workspaceId,
+      actorUserId: req.userId!,
+      action: 'workspace.member_remove',
+      resourceType: 'workspace_membership',
+      resourceId: userId,
+      details: { email: memberResult.rows[0].email, role: memberResult.rows[0].role },
+      req,
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Remove member error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to remove member',
       },
     });
   }
