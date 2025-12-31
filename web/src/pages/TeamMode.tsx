@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ProjectCombobox, Project } from '@/components/ProjectCombobox';
 import { cn } from '@/lib/cn';
@@ -37,6 +38,7 @@ const SPRINTS_PER_LOAD = 5;
 const SCROLL_THRESHOLD = 200;
 
 export function TeamModePage() {
+  const navigate = useNavigate();
   const [data, setData] = useState<TeamGridData | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [assignments, setAssignments] = useState<Record<string, Record<number, Assignment>>>({});
@@ -488,6 +490,7 @@ export function TeamModePage() {
                           assignment || null
                         )
                       }
+                      onNavigate={(projectId) => navigate(`/projects/${projectId}`)}
                     />
                   );
                 })}
@@ -603,12 +606,14 @@ function SprintCell({
   isCurrent,
   loading,
   onChange,
+  onNavigate,
 }: {
   assignment?: Assignment;
   projects: Project[];
   isCurrent: boolean;
   loading: boolean;
   onChange: (projectId: string | null) => void;
+  onNavigate: (projectId: string) => void;
 }) {
   return (
     <div
@@ -622,6 +627,7 @@ function SprintCell({
         projects={projects}
         value={assignment?.projectId || null}
         onChange={onChange}
+        onNavigate={onNavigate}
         disabled={loading}
         placeholder=""
         triggerClassName={cn(

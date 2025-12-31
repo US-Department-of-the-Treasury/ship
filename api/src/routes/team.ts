@@ -189,4 +189,250 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/team/projects - Get all projects
+router.get('/projects', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.user!.workspaceId;
+
+    const result = await pool.query(
+      `SELECT id, title as name, prefix, color
+       FROM documents
+       WHERE workspace_id = $1 AND document_type = 'project'
+       ORDER BY title`,
+      [workspaceId]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get projects error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/team/assignments - Get user->sprint->project assignments
+router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.user!.workspaceId;
+
+    // Get workspace sprint info
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+    const sprintStartDate = new Date(workspaceResult.rows[0]?.sprint_start_date || new Date());
+    const sprintDurationDays = 14;
+
+    // Get all issues with sprint and assignee
+    const issuesResult = await pool.query(
+      `SELECT i.assignee_id, i.sprint_id,
+              s.start_date as sprint_start,
+              p.id as project_id, p.title as project_name, p.prefix, p.color
+       FROM documents i
+       JOIN documents s ON i.sprint_id = s.id
+       JOIN documents p ON i.project_id = p.id
+       WHERE i.workspace_id = $1 AND i.document_type = 'issue'
+         AND i.sprint_id IS NOT NULL AND i.assignee_id IS NOT NULL`,
+      [workspaceId]
+    );
+
+    // Build assignments map: userId -> sprintNumber -> assignment
+    const assignments: Record<string, Record<number, {
+      projectId: string;
+      projectName: string;
+      prefix: string;
+      color: string;
+      sprintDocId: string;
+    }>> = {};
+
+    for (const issue of issuesResult.rows) {
+      const userId = issue.assignee_id;
+      const sprintStart = new Date(issue.sprint_start);
+
+      // Calculate sprint number
+      const daysSinceStart = Math.floor((sprintStart.getTime() - sprintStartDate.getTime()) / (1000 * 60 * 60 * 24));
+      const sprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
+
+      if (!assignments[userId]) {
+        assignments[userId] = {};
+      }
+
+      // Only set if not already set (first project wins per user per sprint)
+      if (!assignments[userId][sprintNumber]) {
+        assignments[userId][sprintNumber] = {
+          projectId: issue.project_id,
+          projectName: issue.project_name,
+          prefix: issue.prefix,
+          color: issue.color,
+          sprintDocId: issue.sprint_id,
+        };
+      }
+    }
+
+    res.json(assignments);
+  } catch (err) {
+    console.error('Get assignments error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/team/assign - Assign user to project for a sprint
+router.post('/assign', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.user!.workspaceId;
+    const { userId, projectId, sprintNumber } = req.body;
+
+    if (!userId || !projectId || !sprintNumber) {
+      res.status(400).json({ error: 'Missing required fields' });
+      return;
+    }
+
+    // Get workspace sprint start date
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+    const sprintStartDate = new Date(workspaceResult.rows[0].sprint_start_date);
+
+    // Calculate sprint dates
+    const sprintStart = new Date(sprintStartDate);
+    sprintStart.setDate(sprintStart.getDate() + (sprintNumber - 1) * 14);
+    const sprintEnd = new Date(sprintStart);
+    sprintEnd.setDate(sprintEnd.getDate() + 13);
+
+    const startStr = sprintStart.toISOString().split('T')[0];
+    const endStr = sprintEnd.toISOString().split('T')[0];
+
+    // Find or create sprint for this project
+    let sprintResult = await pool.query(
+      `SELECT id FROM documents
+       WHERE workspace_id = $1 AND document_type = 'sprint'
+         AND project_id = $2 AND start_date = $3`,
+      [workspaceId, projectId, startStr]
+    );
+
+    let sprintId: string;
+    if (sprintResult.rows[0]) {
+      sprintId = sprintResult.rows[0].id;
+    } else {
+      // Create the sprint
+      const newSprintResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, project_id, start_date, end_date)
+         VALUES ($1, 'sprint', $2, $3, $4, $5)
+         RETURNING id`,
+        [workspaceId, `Sprint ${sprintNumber}`, projectId, startStr, endStr]
+      );
+      sprintId = newSprintResult.rows[0].id;
+    }
+
+    // Check if user already has issues in another project for this sprint period
+    const existingAssignment = await pool.query(
+      `SELECT p.id as project_id, p.title as project_name
+       FROM documents i
+       JOIN documents s ON i.sprint_id = s.id
+       JOIN documents p ON i.project_id = p.id
+       WHERE i.workspace_id = $1 AND i.document_type = 'issue'
+         AND i.assignee_id = $2
+         AND s.start_date = $3
+         AND p.id != $4
+       LIMIT 1`,
+      [workspaceId, userId, startStr, projectId]
+    );
+
+    if (existingAssignment.rows[0]) {
+      res.status(409).json({
+        error: 'User already assigned to another project',
+        existingProjectId: existingAssignment.rows[0].project_id,
+        existingProjectName: existingAssignment.rows[0].project_name,
+      });
+      return;
+    }
+
+    // Check if user already has assignment to this project for this sprint
+    const existingSameProject = await pool.query(
+      `SELECT id FROM documents
+       WHERE workspace_id = $1 AND document_type = 'issue'
+         AND assignee_id = $2 AND sprint_id = $3`,
+      [workspaceId, userId, sprintId]
+    );
+
+    if (existingSameProject.rows[0]) {
+      res.json({ success: true, sprintId, message: 'Already assigned' });
+      return;
+    }
+
+    // Get max ticket number for this project
+    const maxTicketResult = await pool.query(
+      `SELECT COALESCE(MAX(ticket_number), 0) as max_ticket
+       FROM documents WHERE workspace_id = $1 AND project_id = $2 AND document_type = 'issue'`,
+      [workspaceId, projectId]
+    );
+    const nextTicket = maxTicketResult.rows[0].max_ticket + 1;
+
+    // Create a placeholder issue for this assignment
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, project_id, sprint_id, assignee_id, state, ticket_number)
+       VALUES ($1, 'issue', $2, $3, $4, $5, 'todo', $6)`,
+      [workspaceId, 'Sprint Assignment', projectId, sprintId, userId, nextTicket]
+    );
+
+    res.json({ success: true, sprintId });
+  } catch (err) {
+    console.error('Assign error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/team/assign - Unassign user from sprint
+router.delete('/assign', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.user!.workspaceId;
+    const { userId, sprintNumber } = req.body;
+
+    if (!userId || !sprintNumber) {
+      res.status(400).json({ error: 'Missing required fields' });
+      return;
+    }
+
+    // Get workspace sprint start date
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+    const sprintStartDate = new Date(workspaceResult.rows[0].sprint_start_date);
+
+    // Calculate sprint start date
+    const sprintStart = new Date(sprintStartDate);
+    sprintStart.setDate(sprintStart.getDate() + (sprintNumber - 1) * 14);
+    const startStr = sprintStart.toISOString().split('T')[0];
+
+    // Find all issues for this user in this sprint period
+    const issuesToUpdate = await pool.query(
+      `SELECT i.id, i.title
+       FROM documents i
+       JOIN documents s ON i.sprint_id = s.id
+       WHERE i.workspace_id = $1 AND i.document_type = 'issue'
+         AND i.assignee_id = $2
+         AND s.start_date = $3`,
+      [workspaceId, userId, startStr]
+    );
+
+    // Move issues to backlog (remove sprint assignment)
+    if (issuesToUpdate.rows.length > 0) {
+      const issueIds = issuesToUpdate.rows.map((i: { id: string }) => i.id);
+      await pool.query(
+        `UPDATE documents SET sprint_id = NULL WHERE id = ANY($1)`,
+        [issueIds]
+      );
+    }
+
+    res.json({
+      success: true,
+      issuesOrphaned: issuesToUpdate.rows,
+    });
+  } catch (err) {
+    console.error('Unassign error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
