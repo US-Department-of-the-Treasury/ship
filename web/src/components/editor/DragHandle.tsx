@@ -64,15 +64,34 @@ export const DragHandleExtension = Extension.create({
     let dragHandle: HTMLButtonElement | null = null;
     let currentBlock: Element | null = null;
     let isDragging = false;
+    let isDragHandleHovered = false;
+    let hideTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const hideDragHandle = () => {
-      if (dragHandle && !isDragging) {
-        dragHandle.style.opacity = '0';
-        dragHandle.style.pointerEvents = 'none';
+      // Don't hide if mouse is over the drag handle
+      if (isDragHandleHovered) return;
+
+      // Clear any existing timeout
+      if (hideTimeout) {
+        clearTimeout(hideTimeout);
       }
+
+      // Delay hiding to allow moving cursor to drag handle
+      hideTimeout = setTimeout(() => {
+        if (!isDragHandleHovered && !isDragging && dragHandle) {
+          dragHandle.style.opacity = '0';
+          dragHandle.style.pointerEvents = 'none';
+        }
+      }, 300);
     };
 
     const showDragHandle = () => {
+      // Cancel any pending hide
+      if (hideTimeout) {
+        clearTimeout(hideTimeout);
+        hideTimeout = null;
+      }
+
       if (dragHandle) {
         dragHandle.style.opacity = '1';
         dragHandle.style.pointerEvents = 'auto';
@@ -163,8 +182,26 @@ export const DragHandleExtension = Extension.create({
             hideDragHandle();
           });
 
+          // Track hover state on drag handle itself
+          dragHandle.addEventListener('mouseenter', () => {
+            isDragHandleHovered = true;
+            // Cancel any pending hide
+            if (hideTimeout) {
+              clearTimeout(hideTimeout);
+              hideTimeout = null;
+            }
+          });
+
+          dragHandle.addEventListener('mouseleave', () => {
+            isDragHandleHovered = false;
+            hideDragHandle();
+          });
+
           return {
             destroy: () => {
+              if (hideTimeout) {
+                clearTimeout(hideTimeout);
+              }
               dragHandle?.remove();
               dragHandle = null;
             },
@@ -197,12 +234,7 @@ export const DragHandleExtension = Extension.create({
               return false;
             },
             mouseleave: () => {
-              // Delay hiding to allow moving to the drag handle
-              setTimeout(() => {
-                if (!isDragging) {
-                  hideDragHandle();
-                }
-              }, 100);
+              hideDragHandle();
               return false;
             },
             drop: (view, event) => {
