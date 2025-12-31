@@ -11,6 +11,9 @@ import feedbackRoutes from './routes/feedback.js';
 import programsRoutes from './routes/programs.js';
 import sprintsRoutes from './routes/sprints.js';
 import teamRoutes from './routes/team.js';
+import workspacesRoutes from './routes/workspaces.js';
+import adminRoutes from './routes/admin.js';
+import invitesRoutes from './routes/invites.js';
 
 // Validate SESSION_SECRET in production
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -67,6 +70,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/programs', csrfSynchronisedProtection, programsRoutes);
   app.use('/api/sprints', csrfSynchronisedProtection, sprintsRoutes);
   app.use('/api/team', csrfSynchronisedProtection, teamRoutes);
+  app.use('/api/workspaces', csrfSynchronisedProtection, workspacesRoutes);
+  app.use('/api/admin', csrfSynchronisedProtection, adminRoutes);
+  app.use('/api/invites', csrfSynchronisedProtection, invitesRoutes);
 
   return app;
 }

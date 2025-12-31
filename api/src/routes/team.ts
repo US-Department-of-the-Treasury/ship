@@ -14,7 +14,7 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 
   try {
     const result = await pool.query(
-      `SELECT s.*, u.id as user_id, u.email, u.name, u.workspace_id
+      `SELECT s.id, s.user_id, s.workspace_id, u.email, u.name
        FROM sessions s
        JOIN users u ON s.user_id = u.id
        WHERE s.id = $1 AND s.expires_at > now()`,
@@ -52,9 +52,13 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.user!.workspaceId;
 
-    // Get all users in workspace
+    // Get all users in workspace via memberships
     const usersResult = await pool.query(
-      `SELECT id, name, email FROM users WHERE workspace_id = $1 ORDER BY name`,
+      `SELECT u.id, u.name, u.email
+       FROM users u
+       JOIN workspace_memberships wm ON wm.user_id = u.id
+       WHERE wm.workspace_id = $1
+       ORDER BY u.name`,
       [workspaceId]
     );
 
@@ -440,11 +444,12 @@ router.get('/people', requireAuth, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.user!.workspaceId;
 
-    // Get person documents joined with user info by matching name/title
+    // Get person documents joined with user info via workspace_memberships
     const result = await pool.query(
       `SELECT d.id, d.title as name, u.email
        FROM documents d
-       LEFT JOIN users u ON d.title = u.name AND u.workspace_id = d.workspace_id
+       LEFT JOIN workspace_memberships wm ON wm.person_document_id = d.id
+       LEFT JOIN users u ON wm.user_id = u.id
        WHERE d.workspace_id = $1 AND d.document_type = 'person'
        ORDER BY d.title`,
       [workspaceId]
