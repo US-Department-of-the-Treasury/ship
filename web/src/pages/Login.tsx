@@ -112,13 +112,15 @@ export function LoginPage() {
           </button>
         </form>
 
-        {/* Dev credentials hint */}
-        <div className="mt-8 text-center text-xs text-muted">
-          <p>Dev credentials:</p>
-          <p className="mt-1 font-mono text-muted">
-            dev@ship.local / admin123
-          </p>
-        </div>
+        {/* Dev credentials hint - only shown in development */}
+        {import.meta.env.DEV && (
+          <div className="mt-8 text-center text-xs text-muted">
+            <p>Dev credentials:</p>
+            <p className="mt-1 font-mono text-muted">
+              dev@ship.local / admin123
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
