@@ -12,12 +12,13 @@ terraform {
     }
   }
 
-  # Uncomment for production to use S3 backend
-  # backend "s3" {
-  #   bucket = "ship-terraform-state"
-  #   key    = "ship/terraform.tfstate"
-  #   region = "us-east-1"
-  # }
+  # Backend bucket name is not committed to git (compliance requirement)
+  # Initialize with: terraform init -backend-config="bucket=$(aws ssm get-parameter --name /ship/terraform-state-bucket --query Parameter.Value --output text)"
+  backend "s3" {
+    key     = "ship/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
+  }
 }
 
 provider "aws" {

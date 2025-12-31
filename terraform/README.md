@@ -5,17 +5,20 @@ This directory contains all infrastructure as code for deploying Ship to AWS.
 ## Quick Start
 
 ```bash
-# 1. Configure variables
+# 1. Verify AWS credentials (must have access to the team's AWS account)
+aws sts get-caller-identity
+
+# 2. Configure variables
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars with your values
 
-# 2. Initialize Terraform
-terraform init
+# 3. Initialize Terraform (bucket name is fetched from SSM)
+terraform init -backend-config="bucket=$(aws ssm get-parameter --name /ship/terraform-state-bucket --query Parameter.Value --output text)"
 
-# 3. Plan changes
+# 4. Plan changes
 terraform plan -out=tfplan
 
-# 4. Apply changes
+# 5. Apply changes
 terraform apply tfplan
 ```
 
@@ -92,35 +95,88 @@ After `terraform apply`, note these outputs:
 
 ## State Management
 
-### Development
+**IMPORTANT:** Terraform state is stored in S3 to prevent data loss. The state file tracks what resources Terraform manages - without it, Terraform cannot destroy or update resources.
 
-By default, Terraform state is stored locally in `terraform.tfstate`.
+### S3 Backend (Current Setup)
 
-**Important:** Add `terraform.tfstate*` to `.gitignore` to avoid committing secrets.
+State is stored in a private S3 bucket with:
+- Versioning enabled (can recover from mistakes)
+- Encryption at rest (AES256)
+- Public access blocked
 
-### Production
+The bucket name is **not committed to git** (compliance requirement - avoids exposing AWS account ID). Instead, it's stored in SSM Parameter Store at `/ship/terraform-state-bucket`.
 
-For production, use S3 backend:
+This means:
+- State survives git worktree deletion
+- State is shared across all machines/worktrees
+- No secrets or account identifiers in git
+- Team members discover the bucket via SSM
 
-1. Create S3 bucket:
-   ```bash
-   aws s3 mb s3://ship-terraform-state --region us-east-1
-   aws s3api put-bucket-versioning --bucket ship-terraform-state --versioning-configuration Status=Enabled
-   ```
+### Initializing Terraform
 
-2. Uncomment backend configuration in `versions.tf`:
-   ```hcl
-   backend "s3" {
-     bucket = "ship-terraform-state"
-     key    = "ship/terraform.tfstate"
-     region = "us-east-1"
-   }
-   ```
+```bash
+# Fetch bucket name from SSM and initialize
+terraform init -backend-config="bucket=$(aws ssm get-parameter --name /ship/terraform-state-bucket --query Parameter.Value --output text)"
+```
 
-3. Migrate state:
-   ```bash
-   terraform init -migrate-state
-   ```
+Or create a local `.tfbackend` file (gitignored):
+
+```bash
+# Query once and save locally
+echo "bucket = \"$(aws ssm get-parameter --name /ship/terraform-state-bucket --query Parameter.Value --output text)\"" > .tfbackend
+
+# Then init is simpler
+terraform init -backend-config=.tfbackend
+```
+
+### Bootstrap Directory
+
+The `bootstrap/` directory contains Terraform that creates:
+1. The S3 bucket for state storage
+2. An SSM parameter with the bucket name (for team discovery)
+
+This solves the chicken-and-egg problem (need bucket before you can use it as backend).
+
+**If setting up from scratch (new AWS account):**
+
+```bash
+# 1. Create the S3 bucket and SSM parameter (one-time, by team lead)
+cd terraform/bootstrap
+terraform init
+terraform apply
+
+# 2. Initialize main terraform (uses SSM to find bucket)
+cd ..
+terraform init -backend-config="bucket=$(aws ssm get-parameter --name /ship/terraform-state-bucket --query Parameter.Value --output text)"
+```
+
+### Why This Matters
+
+If you deploy from a git worktree and then delete that worktree, you lose the local state file. Without state, Terraform doesn't know what resources it created, and you cannot:
+- Run `terraform destroy`
+- Update existing resources
+- See what's deployed
+
+With S3 backend, state persists regardless of which machine or worktree you use.
+
+### Recovering from Lost State
+
+If state is lost and resources exist in AWS, you have two options:
+
+1. **Import then destroy** - Import each resource into Terraform state, then destroy
+2. **Manual cleanup via AWS CLI** - Delete resources directly
+
+For manual cleanup, delete in this order (dependencies matter):
+1. Elastic Beanstalk environment
+2. RDS cluster and instances
+3. CloudFront distribution
+4. S3 buckets (empty first)
+5. NAT Gateway
+6. Security groups
+7. Subnets
+8. Internet Gateway
+9. VPC
+10. IAM roles/policies
 
 ## Cost Estimation
 

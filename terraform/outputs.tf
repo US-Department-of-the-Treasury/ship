@@ -78,33 +78,3 @@ output "eb_config_summary" {
   }
 }
 
-# Individual outputs for deploy-api.sh script
-output "eb_vpc_id" {
-  description = "VPC ID for EB environment"
-  value       = aws_vpc.main.id
-}
-
-output "eb_private_subnets" {
-  description = "Comma-separated private subnet IDs for EB instances"
-  value       = join(",", aws_subnet.private[*].id)
-}
-
-output "eb_public_subnets" {
-  description = "Comma-separated public subnet IDs for EB ALB"
-  value       = join(",", aws_subnet.public[*].id)
-}
-
-output "eb_instance_security_group" {
-  description = "Security group ID for EB instances"
-  value       = aws_security_group.eb_instance.id
-}
-
-output "eb_instance_profile" {
-  description = "IAM instance profile name for EB instances"
-  value       = aws_iam_instance_profile.eb.name
-}
-
-output "eb_service_role" {
-  description = "IAM service role ARN for EB"
-  value       = aws_iam_role.eb_service.arn
-}
