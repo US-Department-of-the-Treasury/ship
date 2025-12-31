@@ -82,9 +82,9 @@ async function seed() {
 
       if (!existingUser.rows[0]) {
         await pool.query(
-          `INSERT INTO users (workspace_id, email, password_hash, name)
+          `INSERT INTO users (email, password_hash, name, last_workspace_id)
            VALUES ($1, $2, $3, $4)`,
-          [workspaceId, member.email, passwordHash, member.name]
+          [member.email, passwordHash, member.name, workspaceId]
         );
         usersCreated++;
       }
@@ -163,9 +163,11 @@ async function seed() {
       console.log(`✅ Created ${personDocsCreated} Person documents`);
     }
 
-    // Get all user IDs for assignment
+    // Get all user IDs for assignment (join through workspace_memberships)
     const allUsersResult = await pool.query(
-      'SELECT id, name FROM users WHERE workspace_id = $1',
+      `SELECT u.id, u.name FROM users u
+       JOIN workspace_memberships wm ON wm.user_id = u.id
+       WHERE wm.workspace_id = $1`,
       [workspaceId]
     );
     const allUsers = allUsersResult.rows;
