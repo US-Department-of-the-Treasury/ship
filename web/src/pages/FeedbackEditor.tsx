@@ -9,6 +9,7 @@ interface Feedback {
   id: string;
   title: string;
   state: string;
+  feedback_status: 'draft' | 'submitted' | null;
   ticket_number: number;
   display_id: string;
   program_id: string;
@@ -151,10 +152,26 @@ export function FeedbackEditorPage() {
 
       if (res.ok) {
         const updated = await res.json();
-        setFeedback(prev => prev ? { ...prev, state: updated.state } : null);
+        setFeedback(prev => prev ? { ...prev, feedback_status: updated.feedback_status } : null);
       }
     } catch (err) {
       console.error('Failed to accept feedback:', err);
+    }
+  }, [feedback]);
+
+  // Handle submit action (draft → submitted)
+  const handleSubmit = useCallback(async () => {
+    if (!feedback) return;
+
+    try {
+      const res = await apiPost(`/api/feedback/${feedback.id}/submit`);
+
+      if (res.ok) {
+        const updated = await res.json();
+        setFeedback(prev => prev ? { ...prev, feedback_status: updated.feedback_status } : null);
+      }
+    } catch (err) {
+      console.error('Failed to submit feedback:', err);
     }
   }, [feedback]);
 
@@ -167,7 +184,7 @@ export function FeedbackEditorPage() {
 
       if (res.ok) {
         const updated = await res.json();
-        setFeedback(prev => prev ? { ...prev, state: updated.state, rejection_reason: updated.rejection_reason } : null);
+        setFeedback(prev => prev ? { ...prev, feedback_status: updated.feedback_status, rejection_reason: updated.rejection_reason } : null);
         setShowRejectModal(false);
         setRejectReason('');
       }
@@ -201,16 +218,28 @@ export function FeedbackEditorPage() {
     );
   }
 
-  const stateColors: Record<string, string> = {
-    new: 'bg-purple-500/20 text-purple-400',
-    backlog: 'bg-green-500/20 text-green-400',
-    closed: 'bg-red-500/20 text-red-400',
+  // Determine display status based on feedback_status and rejection_reason
+  const getDisplayStatus = () => {
+    if (feedback.feedback_status === 'draft') return 'draft';
+    if (feedback.feedback_status === 'submitted') return 'submitted';
+    if (feedback.rejection_reason) return 'rejected';
+    return 'accepted';
   };
 
-  const stateLabels: Record<string, string> = {
-    new: 'New',
-    backlog: 'Accepted',
-    closed: 'Rejected',
+  const displayStatus = getDisplayStatus();
+
+  const statusColors: Record<string, string> = {
+    draft: 'bg-gray-500/20 text-gray-400',
+    submitted: 'bg-purple-500/20 text-purple-400',
+    accepted: 'bg-green-500/20 text-green-400',
+    rejected: 'bg-red-500/20 text-red-400',
+  };
+
+  const statusLabels: Record<string, string> = {
+    draft: 'Draft',
+    submitted: 'Submitted',
+    accepted: 'Accepted',
+    rejected: 'Rejected',
   };
 
   return (
@@ -228,7 +257,15 @@ export function FeedbackEditorPage() {
             <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted">
               {feedback.display_id}
             </span>
-            {feedback.state === 'new' && (
+            {feedback.feedback_status === 'draft' && (
+              <button
+                onClick={handleSubmit}
+                className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent/90 transition-colors"
+              >
+                Submit Feedback
+              </button>
+            )}
+            {feedback.feedback_status === 'submitted' && (
               <>
                 <button
                   onClick={handleAccept}
@@ -249,8 +286,8 @@ export function FeedbackEditorPage() {
         sidebar={
           <div className="space-y-4 p-4">
             <PropertyRow label="Status">
-              <span className={cn('inline-block rounded px-2 py-0.5 text-xs font-medium', stateColors[feedback.state] || 'bg-gray-500/20 text-gray-400')}>
-                {stateLabels[feedback.state] || feedback.state}
+              <span className={cn('inline-block rounded px-2 py-0.5 text-xs font-medium', statusColors[displayStatus])}>
+                {statusLabels[displayStatus]}
               </span>
             </PropertyRow>
 
@@ -289,7 +326,7 @@ export function FeedbackEditorPage() {
               </span>
             </PropertyRow>
 
-            {feedback.state === 'closed' && feedback.rejection_reason && (
+            {displayStatus === 'rejected' && feedback.rejection_reason && (
               <PropertyRow label="Rejection Reason">
                 <p className="text-sm text-red-400">
                   {feedback.rejection_reason}

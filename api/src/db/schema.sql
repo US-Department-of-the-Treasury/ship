@@ -107,24 +107,16 @@ CREATE TABLE IF NOT EXISTS documents (
   project_id UUID REFERENCES documents(id) ON DELETE SET NULL,
   sprint_id UUID REFERENCES documents(id) ON DELETE SET NULL,
 
-  -- Issue-specific fields
-  ticket_number INTEGER,
-  state TEXT DEFAULT 'backlog',
-  priority TEXT DEFAULT 'medium',
-  assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  source VARCHAR(20) DEFAULT 'internal' CHECK (source IN ('internal', 'feedback')),
-  rejection_reason TEXT,
+  -- Type-specific properties stored as JSONB
+  -- Issue properties: state, priority, assignee_id, source, rejection_reason, feedback_status
+  -- Program/Project properties: prefix, color
+  -- Sprint properties: start_date, end_date, sprint_status, goal
+  -- Person properties: email, role, capacity_hours
+  properties JSONB DEFAULT '{}',
 
-  -- Project-specific fields
-  prefix TEXT,
-  color TEXT DEFAULT '#6366f1',
-  archived_at TIMESTAMPTZ,
-
-  -- Sprint-specific fields
-  start_date DATE,
-  end_date DATE,
-  sprint_status TEXT DEFAULT 'planned',
-  goal TEXT,
+  -- Keep these as columns for indexing/relationships/sequences
+  ticket_number INTEGER,  -- Auto-increment per workspace, needed for display_id
+  archived_at TIMESTAMPTZ,  -- For filtering archived items
 
   -- Timestamps
   created_at TIMESTAMPTZ DEFAULT now(),
@@ -132,10 +124,10 @@ CREATE TABLE IF NOT EXISTS documents (
   created_by UUID REFERENCES users(id) ON DELETE SET NULL
 );
 
--- Unique constraint for program prefixes within a workspace
+-- Unique constraint for program prefixes within a workspace (using properties JSONB)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_workspace_prefix
-  ON documents(workspace_id, prefix)
-  WHERE document_type = 'program' AND prefix IS NOT NULL;
+  ON documents(workspace_id, (properties->>'prefix'))
+  WHERE document_type = 'program' AND properties->>'prefix' IS NOT NULL;
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
@@ -149,9 +141,8 @@ CREATE INDEX IF NOT EXISTS idx_documents_document_type ON documents(document_typ
 CREATE INDEX IF NOT EXISTS idx_documents_program_id ON documents(program_id);
 CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id);
 CREATE INDEX IF NOT EXISTS idx_documents_sprint_id ON documents(sprint_id);
-CREATE INDEX IF NOT EXISTS idx_documents_state ON documents(state);
-CREATE INDEX IF NOT EXISTS idx_documents_assignee_id ON documents(assignee_id);
-CREATE INDEX IF NOT EXISTS idx_documents_source ON documents(source);
+-- GIN index for efficient JSONB property queries
+CREATE INDEX IF NOT EXISTS idx_documents_properties ON documents USING GIN (properties);
 
 -- Workspace membership indexes
 CREATE INDEX IF NOT EXISTS idx_workspace_memberships_workspace_id ON workspace_memberships(workspace_id);
