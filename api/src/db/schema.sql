@@ -20,14 +20,18 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Sessions with 15-minute inactivity timeout
+-- Sessions with 15-minute inactivity timeout and 12-hour absolute timeout
+-- Session ID is TEXT (hex string from crypto.randomBytes) not UUID for enhanced security
 CREATE TABLE IF NOT EXISTS sessions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id TEXT PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   expires_at TIMESTAMPTZ NOT NULL,
   last_activity TIMESTAMPTZ DEFAULT now(),
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  -- Session binding data for audit and security
+  user_agent TEXT,
+  ip_address TEXT
 );
 
 -- Document types enum

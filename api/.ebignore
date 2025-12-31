@@ -1,0 +1,33 @@
+# EB CLI will upload everything except these files
+# This improves upload speed and reduces bundle size
+
+# Development files
+node_modules
+src
+*.test.ts
+*.spec.ts
+vitest.config.ts
+tsconfig.json
+
+# Documentation
+README.md
+*.md
+
+# Environment files (use SSM Parameter Store instead)
+.env
+.env.local
+.env.*
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Logs
+*.log
+
+# Only dist/ and config files will be uploaded

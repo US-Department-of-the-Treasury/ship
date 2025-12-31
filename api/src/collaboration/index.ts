@@ -6,6 +6,8 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { pool } from '../db/client.js';
+import { SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS } from '@ship/shared';
+import cookie from 'cookie';
 
 const messageSync = 0;
 const messageAwareness = 1;
@@ -223,10 +225,59 @@ function handleMessage(ws: WebSocket, message: Uint8Array, docName: string, doc:
   }
 }
 
+// Validate session from cookie header - returns userId/workspaceId or null
+async function validateWebSocketSession(request: IncomingMessage): Promise<{ userId: string; workspaceId: string } | null> {
+  const cookieHeader = request.headers.cookie;
+  if (!cookieHeader) return null;
+
+  const cookies = cookie.parse(cookieHeader);
+  const sessionId = cookies.session_id;
+  if (!sessionId) return null;
+
+  try {
+    const result = await pool.query(
+      `SELECT user_id, workspace_id, last_activity, created_at
+       FROM sessions WHERE id = $1`,
+      [sessionId]
+    );
+
+    const session = result.rows[0];
+    if (!session) return null;
+
+    const now = new Date();
+    const lastActivity = new Date(session.last_activity);
+    const createdAt = new Date(session.created_at);
+    const inactivityMs = now.getTime() - lastActivity.getTime();
+    const sessionAgeMs = now.getTime() - createdAt.getTime();
+
+    // Check absolute timeout (12 hours)
+    if (sessionAgeMs > ABSOLUTE_SESSION_TIMEOUT_MS) {
+      await pool.query('DELETE FROM sessions WHERE id = $1', [sessionId]);
+      return null;
+    }
+
+    // Check inactivity timeout (15 minutes)
+    if (inactivityMs > SESSION_TIMEOUT_MS) {
+      await pool.query('DELETE FROM sessions WHERE id = $1', [sessionId]);
+      return null;
+    }
+
+    // Update last activity
+    await pool.query(
+      'UPDATE sessions SET last_activity = $1 WHERE id = $2',
+      [now, sessionId]
+    );
+
+    return { userId: session.user_id, workspaceId: session.workspace_id };
+  } catch {
+    return null;
+  }
+}
+
 export function setupCollaboration(server: Server) {
   const wss = new WebSocketServer({ noServer: true });
 
-  server.on('upgrade', (request, socket, head) => {
+  server.on('upgrade', async (request, socket, head) => {
     const url = new URL(request.url || '', `http://${request.headers.host}`);
 
     // Only handle /collaboration/* paths
@@ -235,14 +286,22 @@ export function setupCollaboration(server: Server) {
       return;
     }
 
+    // CRITICAL: Validate session before allowing WebSocket connection
+    const sessionData = await validateWebSocketSession(request);
+    if (!sessionData) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     const docName = url.pathname.replace('/collaboration/', '');
 
     wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request, docName);
+      wss.emit('connection', ws, request, docName, sessionData);
     });
   });
 
-  wss.on('connection', async (ws: WebSocket, _request: IncomingMessage, docName: string) => {
+  wss.on('connection', async (ws: WebSocket, _request: IncomingMessage, docName: string, _sessionData: { userId: string; workspaceId: string }) => {
     const doc = await getOrCreateDoc(docName);
     const aw = getAwareness(docName, doc);
 

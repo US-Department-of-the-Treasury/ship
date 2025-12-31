@@ -1,9 +1,10 @@
-# robots.txt for Ship
+# Robots.txt for Ship
+# For production, update this to allow crawling
+
 User-agent: *
-Allow: /
+Disallow: /
 
-# Sitemaps
-Sitemap: /sitemap.xml
-
-# Disallow admin/API routes
-Disallow: /api/
+# Uncomment for production:
+# User-agent: *
+# Allow: /
+# Sitemap: https://app.example.gov/sitemap.xml

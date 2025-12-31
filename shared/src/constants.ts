@@ -22,5 +22,8 @@ export const ERROR_CODES = {
   SESSION_EXPIRED: 'SESSION_EXPIRED',
 } as const;
 
-// Session timeout in milliseconds (15 minutes)
+// Session timeout in milliseconds (15 minutes idle timeout)
 export const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
+
+// Absolute session timeout (12 hours) - NIST SP 800-63B-4 AAL2 requirement
+export const ABSOLUTE_SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
