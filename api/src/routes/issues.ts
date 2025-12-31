@@ -68,10 +68,10 @@ const updateIssueSchema = z.object({
 // List issues with filters
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
-    const { state, priority, assignee_id, program_id, sprint_id } = req.query;
+    const { state, priority, assignee_id, program_id, sprint_id, source } = req.query;
     let query = `
       SELECT d.id, d.title, d.state, d.priority, d.assignee_id, d.ticket_number,
-             d.program_id, d.sprint_id,
+             d.program_id, d.sprint_id, d.source, d.rejection_reason,
              d.created_at, d.updated_at, d.created_by,
              u.name as assignee_name,
              p.title as program_name, p.prefix as program_prefix, p.color as program_color
@@ -81,6 +81,15 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       WHERE d.workspace_id = $1 AND d.document_type = 'issue'
     `;
     const params: (string | null)[] = [req.user!.workspaceId];
+
+    // Filter by source - defaults to 'internal' (excludes feedback from regular issues list)
+    if (source) {
+      query += ` AND d.source = $${params.length + 1}`;
+      params.push(source as string);
+    } else {
+      // By default, only show internal issues (not feedback)
+      query += ` AND (d.source = 'internal' OR d.source IS NULL)`;
+    }
 
     if (state) {
       const states = (state as string).split(',');
@@ -146,11 +155,13 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT d.*, u.name as assignee_name,
               p.title as program_name, p.prefix as program_prefix, p.color as program_color,
-              s.title as sprint_name
+              s.title as sprint_name,
+              creator.name as created_by_name
        FROM documents d
        LEFT JOIN users u ON d.assignee_id = u.id
        LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
        LEFT JOIN documents s ON d.sprint_id = s.id AND s.document_type = 'sprint'
+       LEFT JOIN users creator ON d.created_by = creator.id
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'issue'`,
       [id, req.user!.workspaceId]
     );
@@ -194,8 +205,8 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     const ticketNumber = ticketResult.rows[0].next_number;
 
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, state, priority, assignee_id, program_id, sprint_id, ticket_number, created_by)
-       VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO documents (workspace_id, document_type, title, state, priority, assignee_id, program_id, sprint_id, ticket_number, created_by, source)
+       VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7, $8, $9, 'internal')
        RETURNING *`,
       [req.user!.workspaceId, title, state, priority, assignee_id || null, program_id || null, sprint_id || null, ticketNumber, req.user!.id]
     );

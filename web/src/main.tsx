@@ -20,6 +20,7 @@ import { SprintViewPage } from '@/pages/SprintView';
 import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
 import { PersonEditorPage } from '@/pages/PersonEditor';
+import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import './index.css';
 
 function PlaceholderPage({ title, subtitle }: { title: string; subtitle: string }) {
@@ -89,6 +90,8 @@ function App() {
           <Route path="team/allocation" element={<TeamModePage />} />
           <Route path="team/directory" element={<TeamDirectoryPage />} />
           <Route path="team/:id" element={<PersonEditorPage />} />
+          <Route path="feedback/new" element={<FeedbackEditorPage />} />
+          <Route path="feedback/:id" element={<FeedbackEditorPage />} />
           <Route path="settings" element={<PlaceholderPage title="Settings" subtitle="Coming soon" />} />
         </Route>
       </Routes>

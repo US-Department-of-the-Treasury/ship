@@ -10,6 +10,48 @@ import { KanbanBoard } from '@/components/KanbanBoard';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+// CSRF token cache
+let csrfToken: string | null = null;
+
+async function getCsrfToken(): Promise<string> {
+  if (!csrfToken) {
+    const response = await fetch(`${API_URL}/api/csrf-token`, {
+      credentials: 'include',
+    });
+    const data = await response.json();
+    csrfToken = data.token;
+  }
+  return csrfToken!;
+}
+
+async function apiPost(endpoint: string, body?: object) {
+  const token = await getCsrfToken();
+  const res = await fetch(`${API_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': token,
+    },
+    credentials: 'include',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (res.status === 403) {
+    csrfToken = null;
+    const newToken = await getCsrfToken();
+    return fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': newToken,
+      },
+      credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+  return res;
+}
+
 const PROGRAM_COLORS = [
   '#6366f1', // Indigo
   '#8b5cf6', // Violet
@@ -47,7 +89,18 @@ interface Sprint {
   completed_count: number;
 }
 
-type Tab = 'overview' | 'issues' | 'sprints';
+type Tab = 'overview' | 'issues' | 'sprints' | 'feedback';
+
+interface Feedback {
+  id: string;
+  title: string;
+  state: string;
+  ticket_number: number;
+  display_id: string;
+  created_at: string;
+  created_by_name: string | null;
+  rejection_reason: string | null;
+}
 
 export function ProgramEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -58,9 +111,12 @@ export function ProgramEditorPage() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [feedback, setFeedback] = useState<Feedback[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [sprintsLoading, setSprintsLoading] = useState(false);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [feedbackFilter, setFeedbackFilter] = useState<'new' | 'backlog' | 'closed' | 'all'>('new');
   const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
 
   // Get the current program from context
@@ -97,6 +153,23 @@ export function ProgramEditorPage() {
     }
   }, [activeTab, id, sprints.length]);
 
+  // Fetch feedback when switching to feedback tab
+  const fetchFeedback = useCallback(() => {
+    if (!id) return;
+    setFeedbackLoading(true);
+    fetch(`${API_URL}/api/issues?source=feedback&program_id=${id}`, { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then(setFeedback)
+      .catch(console.error)
+      .finally(() => setFeedbackLoading(false));
+  }, [id]);
+
+  useEffect(() => {
+    if (activeTab === 'feedback' && id && feedback.length === 0) {
+      fetchFeedback();
+    }
+  }, [activeTab, id, feedback.length, fetchFeedback]);
+
   const handleUpdateProgram = useCallback(async (updates: Partial<Program>) => {
     if (!id) return;
     await contextUpdateProgram(id, updates);
@@ -109,12 +182,7 @@ export function ProgramEditorPage() {
   const createIssue = async () => {
     if (!id) return;
     try {
-      const res = await fetch(`${API_URL}/api/issues`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled', program_id: id }),
-      });
+      const res = await apiPost('/api/issues', { title: 'Untitled', program_id: id });
       if (res.ok) {
         const issue = await res.json();
         navigate(`/issues/${issue.id}`);
@@ -127,12 +195,7 @@ export function ProgramEditorPage() {
   const createSprint = async (data: { name: string; goal: string; start_date: string; end_date: string }) => {
     if (!id) return;
     try {
-      const res = await fetch(`${API_URL}/api/sprints`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: data.name, goal: data.goal, start_date: data.start_date, end_date: data.end_date, program_id: id }),
-      });
+      const res = await apiPost('/api/sprints', { title: data.name, goal: data.goal, start_date: data.start_date, end_date: data.end_date, program_id: id });
       if (res.ok) {
         const sprint = await res.json();
         setSprints(prev => [sprint, ...prev]);
@@ -176,6 +239,7 @@ export function ProgramEditorPage() {
     { id: 'overview', label: 'Overview' },
     { id: 'issues', label: 'Issues' },
     { id: 'sprints', label: 'Sprints' },
+    { id: 'feedback', label: 'Feedback' },
   ];
 
   const renderTabActions = () => {
@@ -218,6 +282,16 @@ export function ProgramEditorPage() {
           className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
         >
           New Sprint
+        </button>
+      );
+    }
+    if (activeTab === 'feedback') {
+      return (
+        <button
+          onClick={() => navigate(`/feedback/new?program_id=${id}`)}
+          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
+        >
+          Give Feedback
         </button>
       );
     }
@@ -273,6 +347,43 @@ export function ProgramEditorPage() {
               <SprintsList
                 sprints={sprints}
                 onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
+              />
+            )}
+          </div>
+        )}
+
+        {activeTab === 'feedback' && (
+          <div className="h-full overflow-auto">
+            {feedbackLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-muted">Loading feedback...</div>
+              </div>
+            ) : (
+              <FeedbackList
+                feedback={feedback}
+                filter={feedbackFilter}
+                onFilterChange={setFeedbackFilter}
+                onFeedbackClick={(feedbackId) => navigate(`/feedback/${feedbackId}`)}
+                onAccept={async (feedbackId) => {
+                  try {
+                    const res = await apiPost(`/api/feedback/${feedbackId}/accept`);
+                    if (res.ok) {
+                      fetchFeedback();
+                    }
+                  } catch (err) {
+                    console.error('Failed to accept feedback:', err);
+                  }
+                }}
+                onReject={async (feedbackId, reason) => {
+                  try {
+                    const res = await apiPost(`/api/feedback/${feedbackId}/reject`, { reason });
+                    if (res.ok) {
+                      fetchFeedback();
+                    }
+                  } catch (err) {
+                    console.error('Failed to reject feedback:', err);
+                  }
+                }}
               />
             )}
           </div>
@@ -670,6 +781,237 @@ function KanbanIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+    </svg>
+  );
+}
+
+function FeedbackList({
+  feedback,
+  filter,
+  onFilterChange,
+  onFeedbackClick,
+  onAccept,
+  onReject,
+}: {
+  feedback: Feedback[];
+  filter: 'new' | 'backlog' | 'closed' | 'all';
+  onFilterChange: (filter: 'new' | 'backlog' | 'closed' | 'all') => void;
+  onFeedbackClick: (id: string) => void;
+  onAccept: (id: string) => void;
+  onReject: (id: string, reason: string) => void;
+}) {
+  const [showRejectModal, setShowRejectModal] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const stateColors: Record<string, string> = {
+    new: 'bg-purple-500/20 text-purple-400',
+    backlog: 'bg-green-500/20 text-green-400',
+    closed: 'bg-red-500/20 text-red-400',
+  };
+
+  const stateLabels: Record<string, string> = {
+    new: 'New',
+    backlog: 'Accepted',
+    closed: 'Rejected',
+  };
+
+  const filters: { id: 'new' | 'backlog' | 'closed' | 'all'; label: string }[] = [
+    { id: 'new', label: 'New' },
+    { id: 'backlog', label: 'Accepted' },
+    { id: 'closed', label: 'Rejected' },
+    { id: 'all', label: 'All' },
+  ];
+
+  const filteredFeedback = filter === 'all'
+    ? feedback
+    : feedback.filter(f => f.state === filter);
+
+  const handleReject = () => {
+    if (showRejectModal && rejectReason.trim()) {
+      onReject(showRejectModal, rejectReason.trim());
+      setShowRejectModal(null);
+      setRejectReason('');
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Filter tabs */}
+      <div className="flex gap-1 border-b border-border px-6 py-2">
+        {filters.map((f) => (
+          <button
+            key={f.id}
+            onClick={() => onFilterChange(f.id)}
+            className={cn(
+              'rounded-md px-3 py-1.5 text-sm transition-colors',
+              filter === f.id
+                ? 'bg-border text-foreground'
+                : 'text-muted hover:text-foreground hover:bg-border/50'
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      {filteredFeedback.length === 0 ? (
+        <div className="flex h-full items-center justify-center">
+          <p className="text-muted">
+            {filter === 'new' && feedback.length > 0
+              ? 'All caught up! No new feedback to triage'
+              : 'No feedback submitted for this program'}
+          </p>
+        </div>
+      ) : (
+        <table className="w-full">
+          <thead className="sticky top-0 bg-background">
+            <tr className="border-b border-border text-left text-xs text-muted">
+              <th className="px-6 py-2 font-medium">ID</th>
+              <th className="px-6 py-2 font-medium">Title</th>
+              <th className="px-6 py-2 font-medium">Status</th>
+              <th className="px-6 py-2 font-medium">Submitted</th>
+              <th className="px-6 py-2 font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredFeedback.map((item) => (
+              <tr
+                key={item.id}
+                className="cursor-pointer border-b border-border/50 hover:bg-border/30 transition-colors"
+              >
+                <td
+                  onClick={() => onFeedbackClick(item.id)}
+                  className="px-6 py-3 text-sm font-mono text-muted"
+                >
+                  {item.display_id}
+                </td>
+                <td
+                  onClick={() => onFeedbackClick(item.id)}
+                  className="px-6 py-3 text-sm text-foreground"
+                >
+                  {item.title}
+                </td>
+                <td
+                  onClick={() => onFeedbackClick(item.id)}
+                  className="px-6 py-3"
+                >
+                  <span className={cn('rounded px-2 py-0.5 text-xs font-medium', stateColors[item.state] || 'bg-gray-500/20 text-gray-400')}>
+                    {stateLabels[item.state] || item.state}
+                  </span>
+                </td>
+                <td
+                  onClick={() => onFeedbackClick(item.id)}
+                  className="px-6 py-3 text-sm text-muted"
+                >
+                  {formatDate(item.created_at)}
+                </td>
+                <td className="px-6 py-3">
+                  {item.state === 'new' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAccept(item.id);
+                        }}
+                        className="rounded p-1 text-green-400 hover:bg-green-500/20 transition-colors"
+                        title="Accept"
+                      >
+                        <CheckIcon />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowRejectModal(item.id);
+                        }}
+                        className="rounded p-1 text-red-400 hover:bg-red-500/20 transition-colors"
+                        title="Reject"
+                      >
+                        <XIcon />
+                      </button>
+                    </div>
+                  )}
+                  {item.state === 'closed' && item.rejection_reason && (
+                    <span className="text-xs text-muted truncate max-w-[200px] block" title={item.rejection_reason}>
+                      {item.rejection_reason}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {/* Reject Modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-md rounded-lg border border-border bg-background p-6">
+            <h2 className="text-lg font-semibold text-foreground">Reject Feedback</h2>
+            <p className="mt-1 text-sm text-muted">Why are you rejecting this feedback?</p>
+
+            <div className="mt-4 space-y-2">
+              {['Duplicate', 'Out of scope', 'Already exists', 'Won\'t fix'].map((reason) => (
+                <button
+                  key={reason}
+                  onClick={() => setRejectReason(reason)}
+                  className={cn(
+                    'w-full rounded-md px-3 py-2 text-left text-sm transition-colors',
+                    rejectReason === reason
+                      ? 'bg-accent text-white'
+                      : 'bg-border/50 text-foreground hover:bg-border'
+                  )}
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
+
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Or enter a custom reason..."
+              rows={2}
+              className="mt-4 w-full rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowRejectModal(null);
+                  setRejectReason('');
+                }}
+                className="rounded-md px-4 py-2 text-sm text-muted hover:bg-border transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReject}
+                disabled={!rejectReason.trim()}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
     </svg>
   );
 }

@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS documents (
   state TEXT DEFAULT 'backlog',
   priority TEXT DEFAULT 'medium',
   assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  source VARCHAR(20) DEFAULT 'internal' CHECK (source IN ('internal', 'feedback')),
+  rejection_reason TEXT,
 
   -- Project-specific fields
   prefix TEXT,
@@ -104,6 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id);
 CREATE INDEX IF NOT EXISTS idx_documents_sprint_id ON documents(sprint_id);
 CREATE INDEX IF NOT EXISTS idx_documents_state ON documents(state);
 CREATE INDEX IF NOT EXISTS idx_documents_assignee_id ON documents(assignee_id);
+CREATE INDEX IF NOT EXISTS idx_documents_source ON documents(source);
 
 -- Drop the legacy separate tables if they exist (greenfield cleanup)
 DROP TABLE IF EXISTS sprints CASCADE;

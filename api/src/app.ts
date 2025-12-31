@@ -7,6 +7,7 @@ import { csrfSync } from 'csrf-sync';
 import authRoutes from './routes/auth.js';
 import documentsRoutes from './routes/documents.js';
 import issuesRoutes from './routes/issues.js';
+import feedbackRoutes from './routes/feedback.js';
 import programsRoutes from './routes/programs.js';
 import sprintsRoutes from './routes/sprints.js';
 import teamRoutes from './routes/team.js';
@@ -62,6 +63,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/auth', csrfSynchronisedProtection, authRoutes);
   app.use('/api/documents', csrfSynchronisedProtection, documentsRoutes);
   app.use('/api/issues', csrfSynchronisedProtection, issuesRoutes);
+  app.use('/api/feedback', csrfSynchronisedProtection, feedbackRoutes);
   app.use('/api/programs', csrfSynchronisedProtection, programsRoutes);
   app.use('/api/sprints', csrfSynchronisedProtection, sprintsRoutes);
   app.use('/api/team', csrfSynchronisedProtection, teamRoutes);

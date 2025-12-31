@@ -14,8 +14,11 @@ export interface Issue {
   program_name: string | null;
   program_prefix: string | null;
   sprint_name: string | null;
+  source: 'internal' | 'feedback';
+  rejection_reason: string | null;
   created_at?: string;
   updated_at?: string;
+  created_by?: string;
 }
 
 interface IssuesContextValue {
@@ -29,6 +32,77 @@ interface IssuesContextValue {
 const IssuesContext = createContext<IssuesContextValue | null>(null);
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+// CSRF token cache
+let csrfToken: string | null = null;
+
+async function getCsrfToken(): Promise<string> {
+  if (!csrfToken) {
+    const response = await fetch(`${API_URL}/api/csrf-token`, {
+      credentials: 'include',
+    });
+    const data = await response.json();
+    csrfToken = data.token;
+  }
+  return csrfToken!;
+}
+
+async function apiPost(endpoint: string, body?: object) {
+  const token = await getCsrfToken();
+  const res = await fetch(`${API_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': token,
+    },
+    credentials: 'include',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  // If CSRF token invalid, retry once
+  if (res.status === 403) {
+    csrfToken = null;
+    const newToken = await getCsrfToken();
+    return fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': newToken,
+      },
+      credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+  return res;
+}
+
+async function apiPatch(endpoint: string, body: object) {
+  const token = await getCsrfToken();
+  const res = await fetch(`${API_URL}${endpoint}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': token,
+    },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 403) {
+    csrfToken = null;
+    const newToken = await getCsrfToken();
+    return fetch(`${API_URL}${endpoint}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': newToken,
+      },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+  }
+  return res;
+}
 
 export function IssuesProvider({ children }: { children: ReactNode }) {
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -56,12 +130,7 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
 
   const createIssue = useCallback(async (): Promise<Issue | null> => {
     try {
-      const res = await fetch(`${API_URL}/api/issues`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled' }),
-      });
+      const res = await apiPost('/api/issues', { title: 'Untitled' });
       if (res.ok) {
         const issue = await res.json();
         setIssues(prev => [issue, ...prev]);
@@ -75,12 +144,7 @@ export function IssuesProvider({ children }: { children: ReactNode }) {
 
   const updateIssue = useCallback(async (id: string, updates: Partial<Issue>): Promise<Issue | null> => {
     try {
-      const res = await fetch(`${API_URL}/api/issues/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(updates),
-      });
+      const res = await apiPatch(`/api/issues/${id}`, updates);
       if (res.ok) {
         const updated = await res.json();
         // Update the issue in the shared state
