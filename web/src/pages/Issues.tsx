@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
+import { IssuesListSkeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/lib/cn';
 
 function useKeyboardShortcuts(shortcuts: Record<string, () => void>) {
@@ -94,11 +95,7 @@ export function IssuesPage() {
   useKeyboardShortcuts(shortcuts);
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-muted">Loading...</div>
-      </div>
-    );
+    return <IssuesListSkeleton />;
   }
 
   return (

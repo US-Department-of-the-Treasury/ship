@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { cn } from '@/lib/cn';
+import { TeamModeSkeleton } from '@/components/ui/Skeleton';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -217,11 +218,7 @@ export function TeamModePage() {
   }, [handleScroll]);
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-muted">Loading team grid...</div>
-      </div>
-    );
+    return <TeamModeSkeleton />;
   }
 
   if (error) {

@@ -4,8 +4,8 @@ test.describe('Documents', () => {
   test.beforeEach(async ({ page }) => {
     // Login before each test
     await page.goto('/login')
-    await page.getByRole('textbox', { name: /email/i }).fill('dev@ship.local')
-    await page.getByRole('textbox', { name: /password/i }).fill('admin123')
+    await page.locator('#email').fill('dev@ship.local')
+    await page.locator('#password').fill('admin123')
     await page.getByRole('button', { name: /sign in/i }).click()
 
     // Wait for app to load

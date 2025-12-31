@@ -30,6 +30,7 @@
     "postinstall": "command -v comply >/dev/null 2>&1 || echo '\\n⚠️  comply CLI not installed - pre-commit hooks require it\\n   Install with: pip install comply-cli\\n'"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.0",
     "@playwright/test": "^1.57.0",
     "@types/supertest": "^6.0.3",
     "@vitest/ui": "^4.0.16",

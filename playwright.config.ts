@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
+// Worktree-specific ports (from .env.local files)
+const API_PORT = process.env.API_PORT || '3147'
+const WEB_PORT = process.env.WEB_PORT || '5320'
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -8,7 +12,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : 4,  // Limit local parallelism to avoid database conflicts
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: `http://localhost:${WEB_PORT}`,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -21,12 +25,12 @@ export default defineConfig({
   webServer: [
     {
       command: 'pnpm dev:api',
-      url: 'http://localhost:3000/health',
+      url: `http://localhost:${API_PORT}/health`,
       reuseExistingServer: !process.env.CI,
     },
     {
       command: 'pnpm dev:web',
-      url: 'http://localhost:5173',
+      url: `http://localhost:${WEB_PORT}`,
       reuseExistingServer: !process.env.CI,
     },
   ],

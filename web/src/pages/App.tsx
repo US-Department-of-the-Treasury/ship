@@ -66,8 +66,8 @@ export function AppLayout() {
       {/* Icon Rail */}
       <div className="flex w-12 flex-col items-center border-r border-border bg-background py-3">
         {/* Workspace icon */}
-        <div className="mb-4 flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-sm font-bold text-white">
-          S
+        <div className="mb-4 flex h-8 w-8 items-center justify-center">
+          <img src="/icons/white/logo-64.png" alt="Ship" className="h-8 w-8" />
         </div>
 
         {/* Mode icons */}
@@ -273,43 +273,39 @@ function DocumentTreeItem({
   return (
     <li>
       <div
-        role="button"
-        tabIndex={0}
         className={cn(
-          'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors cursor-pointer',
+          'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
           isActive
             ? 'bg-border/50 text-foreground'
             : 'text-muted hover:bg-border/30 hover:text-foreground'
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
-        onClick={() => onSelect(document.id)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onSelect(document.id);
-          }
-        }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Icon slot: caret on hover (if has children), otherwise doc icon */}
-        <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
-          {showCaret ? (
-            <button
-              type="button"
-              className="p-0 rounded hover:bg-border/50"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsOpen(!isOpen);
-              }}
-            >
-              <ChevronIcon isOpen={isOpen} />
-            </button>
-          ) : (
+        {/* Expand/collapse button - only shown if has children and hovered */}
+        {showCaret ? (
+          <button
+            type="button"
+            className="w-4 h-4 flex-shrink-0 flex items-center justify-center p-0 rounded hover:bg-border/50"
+            onClick={() => setIsOpen(!isOpen)}
+            aria-label={isOpen ? 'Collapse' : 'Expand'}
+          >
+            <ChevronIcon isOpen={isOpen} />
+          </button>
+        ) : (
+          <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
             <DocIcon />
-          )}
-        </div>
-        <span className="truncate">{document.title || 'Untitled'}</span>
+          </div>
+        )}
+        {/* Main navigation button */}
+        <button
+          type="button"
+          className="flex-1 truncate text-left cursor-pointer bg-transparent border-none p-0"
+          onClick={() => onSelect(document.id)}
+        >
+          {document.title || 'Untitled'}
+        </button>
       </div>
 
       {/* Children (collapsible) */}

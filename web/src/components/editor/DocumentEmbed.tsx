@@ -1,11 +1,11 @@
 import { Node, mergeAttributes } from '@tiptap/core';
-import { NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
+import { NodeViewWrapper, ReactNodeViewRenderer, NodeViewProps } from '@tiptap/react';
 import { useNavigate } from 'react-router-dom';
 
 // The React component that renders the document embed
-function DocumentEmbedComponent({ node }: { node: { attrs: { documentId: string; title: string } } }) {
+function DocumentEmbedComponent({ node }: NodeViewProps) {
   const navigate = useNavigate();
-  const { documentId, title } = node.attrs;
+  const { documentId, title } = node.attrs as { documentId: string; title: string };
 
   const handleClick = () => {
     navigate(`/docs/${documentId}`);

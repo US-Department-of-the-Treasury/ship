@@ -69,44 +69,39 @@ export function DocumentTreeItem({
   return (
     <div>
       <div
-        role="button"
-        tabIndex={0}
         className={cn(
-          'group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm cursor-pointer',
+          'group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm',
           'hover:bg-border/30 transition-colors',
           isActive && 'bg-accent/10 text-accent'
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
-        onClick={() => navigate(`/docs/${document.id}`)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            navigate(`/docs/${document.id}`);
-          }
-        }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Icon slot: shows caret on hover (if has children), otherwise document icon */}
-        <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
-          {showCaret ? (
-            <button
-              type="button"
-              className="p-0 rounded hover:bg-border/50"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsOpen(!isOpen);
-              }}
-            >
-              <ChevronIcon isOpen={isOpen} className="text-muted" />
-            </button>
-          ) : (
+        {/* Expand/collapse button - only shown if has children and hovered */}
+        {showCaret ? (
+          <button
+            type="button"
+            className="w-4 h-4 flex-shrink-0 flex items-center justify-center p-0 rounded hover:bg-border/50"
+            onClick={() => setIsOpen(!isOpen)}
+            aria-label={isOpen ? 'Collapse' : 'Expand'}
+          >
+            <ChevronIcon isOpen={isOpen} className="text-muted" />
+          </button>
+        ) : (
+          <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
             <DocumentIcon className="text-muted" />
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Title */}
-        <span className="flex-1 truncate">{document.title || 'Untitled'}</span>
+        {/* Main navigation button */}
+        <button
+          type="button"
+          className="flex-1 truncate text-left cursor-pointer bg-transparent border-none p-0"
+          onClick={() => navigate(`/docs/${document.id}`)}
+        >
+          {document.title || 'Untitled'}
+        </button>
 
         {/* Add child button (shown on hover) */}
         <button
@@ -115,11 +110,8 @@ export function DocumentTreeItem({
             'flex-shrink-0 p-0.5 rounded hover:bg-border/50 transition-opacity',
             isHovered ? 'opacity-100' : 'opacity-0'
           )}
-          onClick={(e) => {
-            e.stopPropagation();
-            onCreateChild(document.id);
-          }}
-          title="Add sub-document"
+          onClick={() => onCreateChild(document.id)}
+          aria-label="Add sub-document"
         >
           <svg
             className="h-3.5 w-3.5 text-muted"

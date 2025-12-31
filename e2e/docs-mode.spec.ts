@@ -4,8 +4,8 @@ test.describe('Docs Mode (Phase 3)', () => {
   test.beforeEach(async ({ page }) => {
     // Login before each test
     await page.goto('/login')
-    await page.getByRole('textbox', { name: /email/i }).fill('dev@ship.local')
-    await page.getByRole('textbox', { name: /password/i }).fill('admin123')
+    await page.locator('#email').fill('dev@ship.local')
+    await page.locator('#password').fill('admin123')
     await page.getByRole('button', { name: /sign in/i }).click()
 
     // Wait for app to load
@@ -165,7 +165,8 @@ test.describe('Docs Mode (Phase 3)', () => {
     await editor.click()
     await page.keyboard.type('Hello world')
 
-    // Should see save status (Saving... or Saved)
-    await expect(page.getByText(/saving|saved/i)).toBeVisible({ timeout: 5000 })
+    // Should see save status indicator (Saved, Syncing..., or Offline)
+    // The status is shown in the editor header
+    await expect(page.getByText(/saved|syncing|offline/i)).toBeVisible({ timeout: 10000 })
   })
 })

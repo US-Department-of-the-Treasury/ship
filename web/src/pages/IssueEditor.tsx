@@ -4,6 +4,7 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { Combobox } from '@/components/ui/Combobox';
+import { EditorSkeleton } from '@/components/ui/Skeleton';
 
 interface TeamMember {
   id: string;
@@ -131,11 +132,7 @@ export function IssueEditorPage() {
   const loading = issuesLoading || relatedDataLoading;
 
   if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-muted">Loading...</div>
-      </div>
-    );
+    return <EditorSkeleton />;
   }
 
   if (!issue || !user) {
