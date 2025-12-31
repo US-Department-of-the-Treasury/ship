@@ -77,6 +77,24 @@ resource "aws_ssm_parameter" "cors_origin" {
   }
 }
 
+# Generate random session secret
+resource "random_password" "session_secret" {
+  length  = 64
+  special = false
+}
+
+# SSM Parameter - Session Secret (for express-session)
+resource "aws_ssm_parameter" "session_secret" {
+  name        = "/${var.project_name}/${var.environment}/SESSION_SECRET"
+  description = "Session secret for express-session cookie signing"
+  type        = "SecureString"
+  value       = random_password.session_secret.result
+
+  tags = {
+    Name = "${var.project_name}-session-secret"
+  }
+}
+
 # IAM Role for EB instances to read SSM parameters
 resource "aws_iam_role_policy" "eb_ssm_access" {
   name = "${var.project_name}-eb-ssm-access"

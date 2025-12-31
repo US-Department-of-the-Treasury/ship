@@ -14,6 +14,7 @@ import teamRoutes from './routes/team.js';
 import workspacesRoutes from './routes/workspaces.js';
 import adminRoutes from './routes/admin.js';
 import invitesRoutes from './routes/invites.js';
+import setupRoutes from './routes/setup.js';
 
 // Validate SESSION_SECRET in production
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -78,6 +79,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
+
+  // Setup routes (CSRF protected - first-time setup only)
+  app.use('/api/setup', csrfSynchronisedProtection, setupRoutes);
 
   // Apply CSRF protection to all state-changing API routes
   app.use('/api/auth', csrfSynchronisedProtection, authRoutes);

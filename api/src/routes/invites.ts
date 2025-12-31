@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import type { Router as RouterType } from 'express';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { pool } from '../db/client.js';
 import { ERROR_CODES, HTTP_STATUS, SESSION_TIMEOUT_MS } from '@ship/shared';

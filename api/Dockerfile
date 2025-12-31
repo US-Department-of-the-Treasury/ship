@@ -29,6 +29,6 @@ EXPOSE 80
 ENV NODE_ENV=production
 ENV PORT=80
 
-# Start the application (seed database first - script is idempotent)
+# Start the application (run migrations first to ensure schema exists)
 WORKDIR /app/api
-CMD ["sh", "-c", "node dist/db/seed.js && node dist/index.js"]
+CMD ["sh", "-c", "node dist/db/migrate.js && node dist/index.js"]

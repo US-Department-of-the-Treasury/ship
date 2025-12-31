@@ -78,6 +78,55 @@ router.post('/workspaces', async (req: Request, res: Response): Promise<void> =>
 
     const workspace = result.rows[0];
 
+    // Create "Welcome to Ship" document for new workspaces
+    const welcomeContent = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Welcome to Ship' }],
+        },
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'Ship is your workspace for managing projects, sprints, and issues. Here are some things you can do:' },
+          ],
+        },
+        {
+          type: 'bulletList',
+          content: [
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Create wiki pages to document your team\'s knowledge' }] }],
+            },
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Create projects to organize your work' }] }],
+            },
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Create issues and assign them to sprints' }] }],
+            },
+            {
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Collaborate in real-time with your team' }] }],
+            },
+          ],
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'Feel free to edit or delete this page. Happy shipping!' }],
+        },
+      ],
+    };
+
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, content, created_by)
+       VALUES ($1, 'wiki', 'Welcome to Ship', $2, $3)`,
+      [workspace.id, JSON.stringify(welcomeContent), req.userId]
+    );
+
     await logAuditEvent({
       workspaceId: workspace.id,
       actorUserId: req.userId!,

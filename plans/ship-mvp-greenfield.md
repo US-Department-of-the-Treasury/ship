@@ -697,43 +697,25 @@ Each phase is complete when:
 
 ---
 
-## Session State (Auto-updated: 2025-12-31T17:01:02Z)
+## Session State (Auto-updated: 2025-12-31T19:20:14Z)
 
-**Branch:** ``
-**Project:** `/Users/corcoss/code/ship/.worktrees/docs-mode`
+**Branch:** `fix/eb-environment-creation`
+**Project:** `/Users/corcoss/code/ship/.worktrees/deploy`
 
 ### Recent Commits
 ```
-824feff Add project-level MCP config for Playwright
-71dfc06 Merge pull request #10 from US-Department-of-the-Treasury/intake
-b87b781 Align docs with Ship philosophy and fix code violations
-3612f18 Merge pull request #9 from US-Department-of-the-Treasury/deploy
-29ec983 Remove .audit directory from version control
+746a911 Add automatic EB environment creation and SESSION_SECRET to Terraform
+144e1ab Merge pull request #11 from US-Department-of-the-Treasury/intake
+1eb43fa Merge origin/master into intake
+38bdd22 Merge pull request #13 from US-Department-of-the-Treasury/deploy
+5d4c946 Improve feedback submission UX with instant redirect and drafts tab
 ```
 
 ### Uncommitted Changes
 ```
-UU ATTESTATION.md
-UU api/src/app.ts
-M  api/src/db/schema.sql
-M  api/src/db/seed.ts
-UU api/src/middleware/auth.ts
-A  api/src/routes/admin.ts
-UU api/src/routes/auth.ts
-M  api/src/routes/documents.ts
-A  api/src/routes/invites.ts
-M  api/src/routes/issues.ts
+
 ```
 
 ### Modified Files
-ATTESTATION.md
-api/src/app.ts
-api/src/db/schema.sql
-api/src/db/seed.ts
-api/src/middleware/auth.ts
-api/src/routes/admin.ts
-api/src/routes/auth.ts
-api/src/routes/documents.ts
-api/src/routes/invites.ts
-api/src/routes/issues.ts
+
 
