@@ -415,11 +415,7 @@ function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (
 }
 
 function SprintsList({ sprints, onSprintClick }: { sprints: Sprint[]; onSprintClick: (id: string) => void }) {
-  const statusColors: Record<string, string> = {
-    planned: 'bg-gray-500/20 text-gray-400',
-    active: 'bg-green-500/20 text-green-400',
-    completed: 'bg-blue-500/20 text-blue-400',
-  };
+  const [completedExpanded, setCompletedExpanded] = useState(false);
 
   if (sprints.length === 0) {
     return (
@@ -429,50 +425,139 @@ function SprintsList({ sprints, onSprintClick }: { sprints: Sprint[]; onSprintCl
     );
   }
 
+  // Group sprints by status
+  const grouped = {
+    active: sprints.filter(s => s.status === 'active'),
+    upcoming: sprints
+      .filter(s => s.status === 'planned')
+      .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime()),
+    completed: sprints
+      .filter(s => s.status === 'completed')
+      .sort((a, b) => new Date(b.end_date).getTime() - new Date(a.end_date).getTime()),
+  };
+
   return (
-    <div className="p-6 space-y-4">
-      {sprints.map((sprint) => {
-        const progress = sprint.issue_count > 0
-          ? Math.round((sprint.completed_count / sprint.issue_count) * 100)
-          : 0;
+    <div className="p-6 space-y-6">
+      {/* Active Sprint - Hero Card */}
+      {grouped.active.map((sprint) => (
+        <ActiveSprintCard key={sprint.id} sprint={sprint} onClick={() => onSprintClick(sprint.id)} />
+      ))}
 
-        return (
+      {/* Upcoming Section */}
+      {grouped.upcoming.length > 0 && (
+        <div>
+          <h3 className="mb-3 text-sm font-medium text-muted">Upcoming ({grouped.upcoming.length})</h3>
+          <div className="space-y-2">
+            {grouped.upcoming.map((sprint) => (
+              <UpcomingSprintRow key={sprint.id} sprint={sprint} onClick={() => onSprintClick(sprint.id)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Completed Section - Collapsible */}
+      {grouped.completed.length > 0 && (
+        <div>
           <button
-            key={sprint.id}
-            onClick={() => onSprintClick(sprint.id)}
-            className="w-full rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-border/30"
+            onClick={() => setCompletedExpanded(!completedExpanded)}
+            className="flex w-full items-center gap-2 text-sm font-medium text-muted hover:text-foreground transition-colors"
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h3 className="font-medium text-foreground">{sprint.name}</h3>
-                <span className={cn('rounded px-2 py-0.5 text-xs font-medium capitalize', statusColors[sprint.status])}>
-                  {sprint.status}
-                </span>
-              </div>
-              <span className="text-sm text-muted">
-                {formatDate(sprint.start_date)} - {formatDate(sprint.end_date)}
-              </span>
-            </div>
-
-            {sprint.goal && (
-              <p className="mt-2 text-sm text-muted">{sprint.goal}</p>
-            )}
-
-            <div className="mt-3 flex items-center gap-3">
-              <div className="flex-1 h-2 rounded-full bg-border overflow-hidden">
-                <div
-                  className="h-full bg-accent transition-all"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <span className="text-xs text-muted">
-                {sprint.completed_count}/{sprint.issue_count} done
-              </span>
-            </div>
+            <ChevronIcon expanded={completedExpanded} />
+            Completed ({grouped.completed.length})
           </button>
-        );
-      })}
+          {completedExpanded && (
+            <div className="mt-3 space-y-2">
+              {grouped.completed.map((sprint) => (
+                <CompletedSprintRow key={sprint.id} sprint={sprint} onClick={() => onSprintClick(sprint.id)} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function ActiveSprintCard({ sprint, onClick }: { sprint: Sprint; onClick: () => void }) {
+  const progress = sprint.issue_count > 0
+    ? Math.round((sprint.completed_count / sprint.issue_count) * 100)
+    : 0;
+
+  const daysRemaining = Math.max(0, Math.ceil(
+    (new Date(sprint.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  ));
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full rounded-lg border border-border border-l-4 border-l-accent bg-background p-6 text-left transition-colors hover:bg-border/30"
+    >
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-foreground">{sprint.name}</h3>
+        <span className="text-sm text-muted">
+          {daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} remaining
+        </span>
+      </div>
+
+      {sprint.goal && (
+        <p className="mt-2 text-sm text-muted">{sprint.goal}</p>
+      )}
+
+      <div className="mt-4 flex items-center gap-3">
+        <div className="flex-1 h-3 rounded-full bg-border overflow-hidden">
+          <div
+            className="h-full bg-accent transition-all"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <span className="text-sm font-medium text-foreground">
+          {sprint.completed_count}/{sprint.issue_count} done
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function UpcomingSprintRow({ sprint, onClick }: { sprint: Sprint; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-border/30"
+    >
+      <span className="font-medium text-foreground">{sprint.name}</span>
+      <span className="mx-2 text-muted">·</span>
+      <span className="text-muted">Starts {formatDate(sprint.start_date)}</span>
+      <span className="mx-2 text-muted">·</span>
+      <span className="text-muted">{sprint.issue_count} issues</span>
+    </button>
+  );
+}
+
+function CompletedSprintRow({ sprint, onClick }: { sprint: Sprint; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full rounded-md px-3 py-2 text-left text-sm opacity-60 transition-colors hover:bg-border/30 hover:opacity-100"
+    >
+      <span className="font-medium text-foreground">{sprint.name}</span>
+      <span className="mx-2 text-muted">·</span>
+      <span className="text-muted">{formatDate(sprint.end_date)}</span>
+      <span className="mx-2 text-muted">·</span>
+      <span className="text-muted">{sprint.completed_count}/{sprint.issue_count} done</span>
+    </button>
+  );
+}
+
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={cn('h-4 w-4 transition-transform', expanded && 'rotate-90')}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
   );
 }
 
