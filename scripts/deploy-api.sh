@@ -113,18 +113,96 @@ echo "Created application version: $VERSION_LABEL"
 echo ""
 echo "Step 6: Deploying to environment..."
 echo "-----------------------------------"
-aws elasticbeanstalk update-environment \
+
+# Check if environment exists
+ENV_EXISTS=$(aws elasticbeanstalk describe-environments \
     --application-name "$APP_NAME" \
-    --environment-name "$ENV_NAME" \
-    --version-label "$VERSION_LABEL" \
-    --region "$AWS_REGION" \
-    --no-cli-pager
-echo "Deployment initiated"
+    --environment-names "$ENV_NAME" \
+    --query "Environments[?Status!='Terminated'] | length(@)" \
+    --output text \
+    --region "$AWS_REGION" 2>/dev/null || echo "0")
+
+if [ "$ENV_EXISTS" = "0" ]; then
+    echo "Environment does not exist. Creating new environment..."
+
+    # Get Terraform outputs for environment creation
+    if [ -d "$PROJECT_ROOT/terraform" ]; then
+        cd "$PROJECT_ROOT/terraform"
+
+        # Check if Terraform is initialized
+        if [ -d ".terraform" ]; then
+            VPC_ID=$(terraform output -raw eb_vpc_id 2>/dev/null || echo "")
+            PRIVATE_SUBNETS=$(terraform output -raw eb_private_subnets 2>/dev/null || echo "")
+            PUBLIC_SUBNETS=$(terraform output -raw eb_public_subnets 2>/dev/null || echo "")
+            INSTANCE_SG=$(terraform output -raw eb_instance_security_group 2>/dev/null || echo "")
+            INSTANCE_PROFILE=$(terraform output -raw eb_instance_profile 2>/dev/null || echo "")
+            SERVICE_ROLE=$(terraform output -raw eb_service_role 2>/dev/null || echo "")
+        fi
+        cd "$PROJECT_ROOT"
+    fi
+
+    # Validate we have required values
+    if [ -z "$VPC_ID" ] || [ -z "$PRIVATE_SUBNETS" ] || [ -z "$PUBLIC_SUBNETS" ]; then
+        echo "Error: Could not get infrastructure details from Terraform"
+        echo "Run ./scripts/deploy-infrastructure.sh first, or set these environment variables:"
+        echo "  EB_VPC_ID, EB_PRIVATE_SUBNETS, EB_PUBLIC_SUBNETS, EB_INSTANCE_SG, EB_INSTANCE_PROFILE, EB_SERVICE_ROLE"
+        exit 1
+    fi
+
+    # Use env vars as overrides if set
+    VPC_ID="${EB_VPC_ID:-$VPC_ID}"
+    PRIVATE_SUBNETS="${EB_PRIVATE_SUBNETS:-$PRIVATE_SUBNETS}"
+    PUBLIC_SUBNETS="${EB_PUBLIC_SUBNETS:-$PUBLIC_SUBNETS}"
+    INSTANCE_SG="${EB_INSTANCE_SG:-$INSTANCE_SG}"
+    INSTANCE_PROFILE="${EB_INSTANCE_PROFILE:-$INSTANCE_PROFILE}"
+    SERVICE_ROLE="${EB_SERVICE_ROLE:-$SERVICE_ROLE}"
+
+    echo "Creating EB environment with:"
+    echo "  VPC: $VPC_ID"
+    echo "  Private Subnets: $PRIVATE_SUBNETS"
+    echo "  Public Subnets: $PUBLIC_SUBNETS"
+
+    aws elasticbeanstalk create-environment \
+        --application-name "$APP_NAME" \
+        --environment-name "$ENV_NAME" \
+        --solution-stack-name "64bit Amazon Linux 2023 v4.4.4 running Docker" \
+        --version-label "$VERSION_LABEL" \
+        --option-settings \
+            "Namespace=aws:ec2:vpc,OptionName=VPCId,Value=$VPC_ID" \
+            "Namespace=aws:ec2:vpc,OptionName=Subnets,Value=$PRIVATE_SUBNETS" \
+            "Namespace=aws:ec2:vpc,OptionName=ELBSubnets,Value=$PUBLIC_SUBNETS" \
+            "Namespace=aws:ec2:vpc,OptionName=ELBScheme,Value=public" \
+            "Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value=$INSTANCE_PROFILE" \
+            "Namespace=aws:autoscaling:launchconfiguration,OptionName=SecurityGroups,Value=$INSTANCE_SG" \
+            "Namespace=aws:elasticbeanstalk:environment,OptionName=ServiceRole,Value=$SERVICE_ROLE" \
+            "Namespace=aws:elasticbeanstalk:environment,OptionName=LoadBalancerType,Value=application" \
+            "Namespace=aws:autoscaling:launchconfiguration,OptionName=InstanceType,Value=t3.small" \
+            "Namespace=aws:elasticbeanstalk:application:environment,OptionName=NODE_ENV,Value=production" \
+            "Namespace=aws:elasticbeanstalk:application:environment,OptionName=PORT,Value=80" \
+            "Namespace=aws:elasticbeanstalk:environment:process:default,OptionName=HealthCheckPath,Value=/health" \
+            "Namespace=aws:elasticbeanstalk:environment:process:default,OptionName=StickinessEnabled,Value=true" \
+        --region "$AWS_REGION" \
+        --no-cli-pager
+    echo "Environment creation initiated (this takes 5-10 minutes for new environments)"
+else
+    echo "Updating existing environment..."
+    aws elasticbeanstalk update-environment \
+        --application-name "$APP_NAME" \
+        --environment-name "$ENV_NAME" \
+        --version-label "$VERSION_LABEL" \
+        --region "$AWS_REGION" \
+        --no-cli-pager
+    echo "Deployment initiated"
+fi
 
 echo ""
 echo "Step 7: Waiting for deployment to complete..."
 echo "-----------------------------------"
-echo "This may take 3-5 minutes..."
+if [ "$ENV_EXISTS" = "0" ]; then
+    echo "Creating new environment - this takes 5-10 minutes..."
+else
+    echo "Updating environment - this takes 3-5 minutes..."
+fi
 
 # Wait for environment to be ready
 aws elasticbeanstalk wait environment-updated \
