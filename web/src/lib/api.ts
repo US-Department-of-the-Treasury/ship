@@ -241,6 +241,50 @@ export const api = {
         method: 'POST',
       }),
 
+    // Super-admin workspace detail and member management
+    getWorkspace: (workspaceId: string) =>
+      request<{ workspace: Workspace & { sprintStartDate: string | null } }>(`/api/admin/workspaces/${workspaceId}`),
+
+    getWorkspaceMembers: (workspaceId: string) =>
+      request<{ members: Array<{ userId: string; email: string; name: string; role: 'admin' | 'member' }> }>(`/api/admin/workspaces/${workspaceId}/members`),
+
+    getWorkspaceInvites: (workspaceId: string) =>
+      request<{ invites: Array<{ id: string; email: string; role: 'admin' | 'member'; token: string; createdAt: string }> }>(`/api/admin/workspaces/${workspaceId}/invites`),
+
+    createWorkspaceInvite: (workspaceId: string, data: { email: string; role?: 'admin' | 'member' }) =>
+      request<{ invite: { id: string; email: string; role: 'admin' | 'member'; token: string; createdAt: string } }>(`/api/admin/workspaces/${workspaceId}/invites`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    revokeWorkspaceInvite: (workspaceId: string, inviteId: string) =>
+      request(`/api/admin/workspaces/${workspaceId}/invites/${inviteId}`, {
+        method: 'DELETE',
+      }),
+
+    updateWorkspaceMember: (workspaceId: string, userId: string, data: { role: 'admin' | 'member' }) =>
+      request<{ role: 'admin' | 'member' }>(`/api/admin/workspaces/${workspaceId}/members/${userId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
+    removeWorkspaceMember: (workspaceId: string, userId: string) =>
+      request(`/api/admin/workspaces/${workspaceId}/members/${userId}`, {
+        method: 'DELETE',
+      }),
+
+    addWorkspaceMember: (workspaceId: string, data: { userId: string; role?: 'admin' | 'member' }) =>
+      request<{ member: { userId: string; email: string; name: string; role: 'admin' | 'member' } }>(`/api/admin/workspaces/${workspaceId}/members`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    // User search (for adding existing users to workspace)
+    searchUsers: (query: string, workspaceId?: string) =>
+      request<{ users: Array<{ id: string; email: string; name: string }> }>(
+        `/api/admin/users/search?q=${encodeURIComponent(query)}${workspaceId ? `&workspaceId=${workspaceId}` : ''}`
+      ),
+
     // Super-admin user management
     listUsers: () =>
       request<{ users: Array<UserInfo & { workspaces: Array<{ id: string; name: string; role: 'admin' | 'member' }> }> }>('/api/admin/users'),

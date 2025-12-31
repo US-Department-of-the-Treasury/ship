@@ -23,6 +23,7 @@ import { TeamDirectoryPage } from '@/pages/TeamDirectory';
 import { PersonEditorPage } from '@/pages/PersonEditor';
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
+import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
 import { InviteAcceptPage } from '@/pages/InviteAccept';
 import { SetupPage } from '@/pages/Setup';
@@ -103,6 +104,14 @@ function App() {
             element={
               <SuperAdminRoute>
                 <AdminDashboardPage />
+              </SuperAdminRoute>
+            }
+          />
+          <Route
+            path="/admin/workspaces/:id"
+            element={
+              <SuperAdminRoute>
+                <AdminWorkspaceDetailPage />
               </SuperAdminRoute>
             }
           />

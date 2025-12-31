@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { api, Workspace, AuditLog, UserInfo } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -290,7 +290,14 @@ function WorkspacesTab({
           <tbody className="divide-y divide-border">
             {workspaces.map((ws) => (
               <tr key={ws.id}>
-                <td className="px-4 py-3 text-sm text-foreground font-medium">{ws.name}</td>
+                <td className="px-4 py-3 text-sm font-medium">
+                  <Link
+                    to={`/admin/workspaces/${ws.id}`}
+                    className="text-accent hover:underline"
+                  >
+                    {ws.name}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 text-sm text-muted">{ws.memberCount}</td>
                 <td className="px-4 py-3 text-sm">
                   {ws.archivedAt ? (
