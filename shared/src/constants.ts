@@ -9,6 +9,7 @@ export const HTTP_STATUS = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  CONFLICT: 409,
   INTERNAL_SERVER_ERROR: 500,
 } as const;
 
@@ -20,6 +21,7 @@ export const ERROR_CODES = {
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
   SESSION_EXPIRED: 'SESSION_EXPIRED',
+  ALREADY_EXISTS: 'ALREADY_EXISTS',
 } as const;
 
 // Session timeout in milliseconds (15 minutes idle timeout)
