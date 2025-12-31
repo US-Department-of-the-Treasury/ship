@@ -6,6 +6,18 @@ import { cn } from '@/lib/cn';
 
 const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
 
+// CSRF token cache
+let csrfToken: string | null = null;
+
+async function getCsrfToken(): Promise<string> {
+  if (!csrfToken) {
+    const res = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
+    const data = await res.json();
+    csrfToken = data.token;
+  }
+  return csrfToken!;
+}
+
 interface User {
   id: string;
   name: string;
@@ -148,9 +160,10 @@ export function TeamModePage() {
     setOperationLoading(cellKey);
 
     try {
+      const token = await getCsrfToken();
       const res = await fetch(`${API_URL}/api/team/assign`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
         credentials: 'include',
         body: JSON.stringify({ userId, programId, sprintNumber }),
       });
@@ -197,9 +210,10 @@ export function TeamModePage() {
     setOperationLoading(cellKey);
 
     try {
+      const token = await getCsrfToken();
       const res = await fetch(`${API_URL}/api/team/assign`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
         credentials: 'include',
         body: JSON.stringify({ userId, sprintNumber }),
       });

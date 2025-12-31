@@ -20,6 +20,7 @@
     "@aws-sdk/client-ssm": "^3.958.0",
     "@ship/shared": "workspace:*",
     "@types/cookie": "^1.0.0",
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "cookie": "^1.1.1",
     "cookie-parser": "^1.4.7",
@@ -38,6 +39,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/cookie-parser": "^1.4.8",
     "@types/cors": "^2.8.17",

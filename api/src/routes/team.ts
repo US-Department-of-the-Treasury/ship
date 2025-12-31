@@ -111,24 +111,24 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
     const maxDate = sprints[sprints.length - 1]?.endDate || today.toISOString().split('T')[0];
 
     const dbSprintsResult = await pool.query(
-      `SELECT d.id, d.title as name, d.start_date, d.end_date, d.program_id,
-              p.title as program_name, p.prefix as program_prefix, p.color as program_color
+      `SELECT d.id, d.title as name, d.properties->>'start_date' as start_date, d.properties->>'end_date' as end_date, d.program_id,
+              p.title as program_name, p.properties->>'prefix' as program_prefix, p.properties->>'color' as program_color
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        WHERE d.workspace_id = $1 AND d.document_type = 'sprint'
-         AND d.start_date >= $2 AND d.end_date <= $3`,
+         AND (d.properties->>'start_date')::date >= $2 AND (d.properties->>'end_date')::date <= $3`,
       [workspaceId, minDate, maxDate]
     );
 
     // Get issues with sprint and assignee info
     const issuesResult = await pool.query(
-      `SELECT i.id, i.title, i.sprint_id, i.assignee_id, i.state, i.ticket_number,
-              s.start_date as sprint_start, s.end_date as sprint_end,
-              p.id as program_id, p.title as program_name, p.prefix as program_prefix, p.color as program_color
+      `SELECT i.id, i.title, i.sprint_id, i.properties->>'assignee_id' as assignee_id, i.properties->>'state' as state, i.ticket_number,
+              s.properties->>'start_date' as sprint_start, s.properties->>'end_date' as sprint_end,
+              p.id as program_id, p.title as program_name, p.properties->>'prefix' as program_prefix, p.properties->>'color' as program_color
        FROM documents i
        JOIN documents s ON i.sprint_id = s.id
        JOIN documents p ON i.program_id = p.id
-       WHERE i.workspace_id = $1 AND i.document_type = 'issue' AND i.sprint_id IS NOT NULL AND i.assignee_id IS NOT NULL`,
+       WHERE i.workspace_id = $1 AND i.document_type = 'issue' AND i.sprint_id IS NOT NULL AND i.properties->>'assignee_id' IS NOT NULL`,
       [workspaceId]
     );
 
@@ -199,7 +199,7 @@ router.get('/programs', requireAuth, async (req: Request, res: Response) => {
     const workspaceId = req.user!.workspaceId;
 
     const result = await pool.query(
-      `SELECT id, title as name, prefix, color
+      `SELECT id, title as name, properties->>'prefix' as prefix, properties->>'color' as color
        FROM documents
        WHERE workspace_id = $1 AND document_type = 'program'
        ORDER BY title`,
@@ -228,14 +228,14 @@ router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
 
     // Get all issues with sprint and assignee
     const issuesResult = await pool.query(
-      `SELECT i.assignee_id, i.sprint_id,
-              s.start_date as sprint_start,
-              p.id as program_id, p.title as program_name, p.prefix, p.color
+      `SELECT i.properties->>'assignee_id' as assignee_id, i.sprint_id,
+              s.properties->>'start_date' as sprint_start,
+              p.id as program_id, p.title as program_name, p.properties->>'prefix' as prefix, p.properties->>'color' as color
        FROM documents i
        JOIN documents s ON i.sprint_id = s.id
        JOIN documents p ON i.program_id = p.id
        WHERE i.workspace_id = $1 AND i.document_type = 'issue'
-         AND i.sprint_id IS NOT NULL AND i.assignee_id IS NOT NULL`,
+         AND i.sprint_id IS NOT NULL AND i.properties->>'assignee_id' IS NOT NULL`,
       [workspaceId]
     );
 
@@ -310,7 +310,7 @@ router.post('/assign', requireAuth, async (req: Request, res: Response) => {
     let sprintResult = await pool.query(
       `SELECT id FROM documents
        WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND program_id = $2 AND start_date = $3`,
+         AND program_id = $2 AND properties->>'start_date' = $3`,
       [workspaceId, programId, startStr]
     );
 
@@ -320,10 +320,10 @@ router.post('/assign', requireAuth, async (req: Request, res: Response) => {
     } else {
       // Create the sprint
       const newSprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, program_id, start_date, end_date)
-         VALUES ($1, 'sprint', $2, $3, $4, $5)
+        `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
+         VALUES ($1, 'sprint', $2, $3, $4)
          RETURNING id`,
-        [workspaceId, `Sprint ${sprintNumber}`, programId, startStr, endStr]
+        [workspaceId, `Sprint ${sprintNumber}`, programId, JSON.stringify({ start_date: startStr, end_date: endStr })]
       );
       sprintId = newSprintResult.rows[0].id;
     }
@@ -335,8 +335,8 @@ router.post('/assign', requireAuth, async (req: Request, res: Response) => {
        JOIN documents s ON i.sprint_id = s.id
        JOIN documents p ON i.program_id = p.id
        WHERE i.workspace_id = $1 AND i.document_type = 'issue'
-         AND i.assignee_id = $2
-         AND s.start_date = $3
+         AND i.properties->>'assignee_id' = $2
+         AND s.properties->>'start_date' = $3
          AND p.id != $4
        LIMIT 1`,
       [workspaceId, userId, startStr, programId]
@@ -355,7 +355,7 @@ router.post('/assign', requireAuth, async (req: Request, res: Response) => {
     const existingSameProgram = await pool.query(
       `SELECT id FROM documents
        WHERE workspace_id = $1 AND document_type = 'issue'
-         AND assignee_id = $2 AND sprint_id = $3`,
+         AND properties->>'assignee_id' = $2 AND sprint_id = $3`,
       [workspaceId, userId, sprintId]
     );
 
@@ -374,9 +374,9 @@ router.post('/assign', requireAuth, async (req: Request, res: Response) => {
 
     // Create a placeholder issue for this assignment
     await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, assignee_id, state, ticket_number)
-       VALUES ($1, 'issue', $2, $3, $4, $5, 'todo', $6)`,
-      [workspaceId, 'Untitled', programId, sprintId, userId, nextTicket]
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, ticket_number, properties)
+       VALUES ($1, 'issue', $2, $3, $4, $5, $6)`,
+      [workspaceId, 'Untitled', programId, sprintId, nextTicket, JSON.stringify({ assignee_id: userId, state: 'todo' })]
     );
 
     res.json({ success: true, sprintId });
@@ -415,8 +415,8 @@ router.delete('/assign', requireAuth, async (req: Request, res: Response) => {
        FROM documents i
        JOIN documents s ON i.sprint_id = s.id
        WHERE i.workspace_id = $1 AND i.document_type = 'issue'
-         AND i.assignee_id = $2
-         AND s.start_date = $3`,
+         AND i.properties->>'assignee_id' = $2
+         AND s.properties->>'start_date' = $3`,
       [workspaceId, userId, startStr]
     );
 
