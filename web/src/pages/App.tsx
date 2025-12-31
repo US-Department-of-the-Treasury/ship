@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
@@ -12,7 +13,8 @@ import { CommandPalette } from '@/components/CommandPalette';
 type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
 
 export function AppLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
+  const { currentWorkspace, workspaces, switchWorkspace } = useWorkspace();
   const location = useLocation();
   const navigate = useNavigate();
   const { documents, createDocument } = useDocuments();
@@ -22,6 +24,7 @@ export function AppLayout() {
     return localStorage.getItem('ship:leftSidebarCollapsed') === 'true';
   });
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
 
   // Accessibility: focus management on navigation
   useFocusOnNavigate();
@@ -79,8 +82,17 @@ export function AppLayout() {
     }
   };
 
+  const handleSwitchWorkspace = async (workspaceId: string) => {
+    const success = await switchWorkspace(workspaceId);
+    if (success) {
+      setWorkspaceSwitcherOpen(false);
+      // Refresh the page to reload all data for new workspace
+      window.location.href = '/docs';
+    }
+  };
+
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen flex-col bg-background">
       {/* Skip link for keyboard/screen reader users - Section 508 compliance */}
       <a
         href="#main-content"
@@ -89,155 +101,221 @@ export function AppLayout() {
         Skip to main content
       </a>
 
-      {/* Icon Rail - Navigation landmark */}
-      <nav className="flex w-12 flex-col items-center border-r border-border bg-background py-3" role="navigation" aria-label="Main navigation">
-        {/* Workspace icon */}
-        <div className="mb-4 flex h-8 w-8 items-center justify-center">
-          <img src="/icons/white/logo-64.png" alt="Ship" className="h-8 w-8" />
+      {/* Impersonation banner */}
+      {impersonating && (
+        <div className="flex h-8 items-center justify-between bg-yellow-500 px-4 text-black">
+          <span className="text-sm">
+            Impersonating <strong>{impersonating.userName}</strong>
+          </span>
+          <button
+            onClick={endImpersonation}
+            className="rounded bg-yellow-700 px-2 py-0.5 text-xs text-white hover:bg-yellow-800 transition-colors"
+          >
+            End Session
+          </button>
         </div>
+      )}
 
-        {/* Mode icons */}
-        <nav className="flex flex-1 flex-col items-center gap-1">
-          <RailIcon
-            icon={<DocsIcon />}
-            label="Docs"
-            active={activeMode === 'docs'}
-            onClick={() => handleModeClick('docs')}
-          />
-          <RailIcon
-            icon={<IssuesIcon />}
-            label="Issues"
-            active={activeMode === 'issues'}
-            onClick={() => handleModeClick('issues')}
-          />
-          <RailIcon
-            icon={<ProgramsIcon />}
-            label="Programs"
-            active={activeMode === 'programs'}
-            onClick={() => handleModeClick('programs')}
-          />
-          <RailIcon
-            icon={<TeamIcon />}
-            label="Teams"
-            active={activeMode === 'team'}
-            onClick={() => handleModeClick('team')}
-          />
+      <div className="flex flex-1 overflow-hidden">
+        {/* Icon Rail - Navigation landmark */}
+        <nav className="flex w-12 flex-col items-center border-r border-border bg-background py-3" role="navigation" aria-label="Main navigation">
+          {/* Workspace switcher */}
+          <div className="relative mb-4">
+            <button
+              onClick={() => setWorkspaceSwitcherOpen(!workspaceSwitcherOpen)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
+              title={currentWorkspace?.name || 'Select workspace'}
+            >
+              {currentWorkspace?.name?.charAt(0).toUpperCase() || 'W'}
+            </button>
+            {/* Workspace dropdown */}
+            {workspaceSwitcherOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setWorkspaceSwitcherOpen(false)}
+                />
+                <div className="absolute left-full top-0 z-50 ml-2 w-56 rounded-lg border border-border bg-surface shadow-lg">
+                  <div className="p-2">
+                    <div className="px-2 py-1 text-xs font-medium text-muted">Workspaces</div>
+                    {workspaces.map((ws) => (
+                      <button
+                        key={ws.id}
+                        onClick={() => handleSwitchWorkspace(ws.id)}
+                        className={cn(
+                          'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm transition-colors',
+                          ws.id === currentWorkspace?.id
+                            ? 'bg-accent/10 text-accent'
+                            : 'text-foreground hover:bg-border/30'
+                        )}
+                      >
+                        <span className="truncate">{ws.name}</span>
+                        <span className="text-xs text-muted capitalize">{ws.role}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {isSuperAdmin && (
+                    <div className="border-t border-border p-2">
+                      <button
+                        onClick={() => {
+                          setWorkspaceSwitcherOpen(false);
+                          navigate('/admin');
+                        }}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted hover:bg-border/30 hover:text-foreground transition-colors"
+                      >
+                        <AdminIcon />
+                        Admin Dashboard
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Mode icons */}
+          <div className="flex flex-1 flex-col items-center gap-1">
+            <RailIcon
+              icon={<DocsIcon />}
+              label="Docs"
+              active={activeMode === 'docs'}
+              onClick={() => handleModeClick('docs')}
+            />
+            <RailIcon
+              icon={<IssuesIcon />}
+              label="Issues"
+              active={activeMode === 'issues'}
+              onClick={() => handleModeClick('issues')}
+            />
+            <RailIcon
+              icon={<ProgramsIcon />}
+              label="Programs"
+              active={activeMode === 'programs'}
+              onClick={() => handleModeClick('programs')}
+            />
+            <RailIcon
+              icon={<TeamIcon />}
+              label="Teams"
+              active={activeMode === 'team'}
+              onClick={() => handleModeClick('team')}
+            />
+          </div>
+
+          {/* Expand sidebar button (shows when collapsed) */}
+          {leftSidebarCollapsed && (
+            <button
+              onClick={() => setLeftSidebarCollapsed(false)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-border/50 hover:text-foreground transition-colors"
+              title="Expand sidebar"
+            >
+              <ExpandRightIcon />
+            </button>
+          )}
+
+          {/* User avatar & settings at bottom */}
+          <div className="flex flex-col items-center gap-2">
+            <RailIcon
+              icon={<SettingsIcon />}
+              label="Settings"
+              active={activeMode === 'settings'}
+              onClick={() => handleModeClick('settings')}
+            />
+            <button
+              onClick={logout}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/80 text-xs font-medium text-white hover:bg-accent transition-colors"
+              title={`${user?.name} - Click to logout`}
+            >
+              {user?.name?.charAt(0).toUpperCase() || 'U'}
+            </button>
+          </div>
         </nav>
 
-        {/* Expand sidebar button (shows when collapsed) */}
-        {leftSidebarCollapsed && (
-          <button
-            onClick={() => setLeftSidebarCollapsed(false)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-border/50 hover:text-foreground transition-colors"
-            title="Expand sidebar"
-          >
-            <ExpandRightIcon />
-          </button>
-        )}
-
-        {/* User avatar & settings at bottom */}
-        <div className="flex flex-col items-center gap-2">
-          <RailIcon
-            icon={<SettingsIcon />}
-            label="Settings"
-            active={activeMode === 'settings'}
-            onClick={() => handleModeClick('settings')}
-          />
-          <button
-            onClick={logout}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/80 text-xs font-medium text-white hover:bg-accent transition-colors"
-            title={`${user?.name} - Click to logout`}
-          >
-            {user?.name?.charAt(0).toUpperCase() || 'U'}
-          </button>
-        </div>
-      </nav>
-
-      {/* Contextual Sidebar - Complementary landmark */}
-      <aside
-        className={cn(
-          'flex flex-col border-r border-border transition-all duration-200 overflow-hidden',
-          leftSidebarCollapsed ? 'w-0 border-r-0' : 'w-56'
-        )}
-        role="complementary"
-        aria-label={`${activeMode === 'docs' ? 'Documents' : activeMode === 'issues' ? 'Issues' : activeMode === 'programs' ? 'Programs' : activeMode === 'team' ? 'Teams' : 'Settings'} sidebar`}
-      >
-        <div className="flex w-56 flex-col h-full">
-          {/* Sidebar header */}
-          <div className="flex h-10 items-center justify-between border-b border-border px-3">
-            <span className="text-sm font-medium text-foreground">
-              {activeMode === 'docs' && 'Documents'}
-              {activeMode === 'issues' && 'Issues'}
-              {activeMode === 'programs' && 'Programs'}
-              {activeMode === 'team' && 'Teams'}
-              {activeMode === 'settings' && 'Settings'}
-            </span>
-            <div className="flex items-center gap-1">
-              {activeMode === 'docs' && (
+        {/* Contextual Sidebar - Complementary landmark */}
+        <aside
+          className={cn(
+            'flex flex-col border-r border-border transition-all duration-200 overflow-hidden',
+            leftSidebarCollapsed ? 'w-0 border-r-0' : 'w-56'
+          )}
+          role="complementary"
+          aria-label={`${activeMode === 'docs' ? 'Documents' : activeMode === 'issues' ? 'Issues' : activeMode === 'programs' ? 'Programs' : activeMode === 'team' ? 'Teams' : 'Settings'} sidebar`}
+        >
+          <div className="flex w-56 flex-col h-full">
+            {/* Sidebar header */}
+            <div className="flex h-10 items-center justify-between border-b border-border px-3">
+              <span className="text-sm font-medium text-foreground">
+                {activeMode === 'docs' && 'Documents'}
+                {activeMode === 'issues' && 'Issues'}
+                {activeMode === 'programs' && 'Programs'}
+                {activeMode === 'team' && 'Teams'}
+                {activeMode === 'settings' && 'Settings'}
+              </span>
+              <div className="flex items-center gap-1">
+                {activeMode === 'docs' && (
+                  <button
+                    onClick={handleCreateDocument}
+                    className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                    title="New document"
+                  >
+                    <PlusIcon />
+                  </button>
+                )}
+                {activeMode === 'issues' && (
+                  <button
+                    onClick={handleCreateIssue}
+                    className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                    title="New issue"
+                  >
+                    <PlusIcon />
+                  </button>
+                )}
                 <button
-                  onClick={handleCreateDocument}
+                  onClick={() => setLeftSidebarCollapsed(true)}
                   className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                  title="New document"
+                  title="Collapse sidebar"
                 >
-                  <PlusIcon />
+                  <CollapseLeftIcon />
                 </button>
+              </div>
+            </div>
+
+            {/* Sidebar content */}
+            <div className="flex-1 overflow-auto py-2">
+              {activeMode === 'docs' && (
+                <DocumentsTree
+                  documents={documents}
+                  activeId={location.pathname.split('/docs/')[1]}
+                  onSelect={(id) => navigate(`/docs/${id}`)}
+                />
               )}
               {activeMode === 'issues' && (
-                <button
-                  onClick={handleCreateIssue}
-                  className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                  title="New issue"
-                >
-                  <PlusIcon />
-                </button>
+                <IssuesList
+                  issues={issues}
+                  activeId={location.pathname.split('/issues/')[1]}
+                  onSelect={(id) => navigate(`/issues/${id}`)}
+                />
               )}
-              <button
-                onClick={() => setLeftSidebarCollapsed(true)}
-                className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                title="Collapse sidebar"
-              >
-                <CollapseLeftIcon />
-              </button>
+              {activeMode === 'programs' && (
+                <ProgramsList
+                  programs={programs}
+                  activeId={location.pathname.split('/programs/')[1]}
+                  onSelect={(id) => navigate(`/programs/${id}`)}
+                />
+              )}
+              {activeMode === 'team' && (
+                <TeamSidebar />
+              )}
+              {activeMode === 'settings' && (
+                <div className="px-3 py-2 text-sm text-muted">Settings</div>
+              )}
             </div>
           </div>
+        </aside>
 
-          {/* Sidebar content */}
-          <div className="flex-1 overflow-auto py-2">
-            {activeMode === 'docs' && (
-              <DocumentsTree
-                documents={documents}
-                activeId={location.pathname.split('/docs/')[1]}
-                onSelect={(id) => navigate(`/docs/${id}`)}
-              />
-            )}
-            {activeMode === 'issues' && (
-              <IssuesList
-                issues={issues}
-                activeId={location.pathname.split('/issues/')[1]}
-                onSelect={(id) => navigate(`/issues/${id}`)}
-              />
-            )}
-            {activeMode === 'programs' && (
-              <ProgramsList
-                programs={programs}
-                activeId={location.pathname.split('/programs/')[1]}
-                onSelect={(id) => navigate(`/programs/${id}`)}
-              />
-            )}
-            {activeMode === 'team' && (
-              <TeamSidebar />
-            )}
-            {activeMode === 'settings' && (
-              <div className="px-3 py-2 text-sm text-muted">Settings</div>
-            )}
-          </div>
-        </div>
-      </aside>
-
-      {/* Main content */}
-      <main id="main-content" className="flex flex-1 flex-col overflow-hidden" role="main" tabIndex={-1}>
-        <Outlet />
-      </main>
+        {/* Main content */}
+        <main id="main-content" className="flex flex-1 flex-col overflow-hidden" role="main" tabIndex={-1}>
+          <Outlet />
+        </main>
+      </div>
 
       {/* Command Palette (Cmd+K) */}
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
@@ -572,6 +650,14 @@ function ExpandRightIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 5l7 7-7 7M4 5v14" />
+    </svg>
+  );
+}
+
+function AdminIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
     </svg>
   );
 }

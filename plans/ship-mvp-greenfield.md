@@ -697,35 +697,43 @@ Each phase is complete when:
 
 ---
 
-## Session State (Auto-updated: 2025-12-31T14:24:24Z)
+## Session State (Auto-updated: 2025-12-31T17:01:02Z)
 
-**Branch:** `deploy`
-**Project:** `/Users/corcoss/code/ship/.worktrees/deploy`
+**Branch:** ``
+**Project:** `/Users/corcoss/code/ship/.worktrees/docs-mode`
 
 ### Recent Commits
 ```
-44edb81 Fix duplicate function declarations in collaboration server
-abfd8c2 Add Notion-style auto-redirect to last visited document
-efcb75c Add sprint planning UX improvements and Cmd+K command palette
-1957e63 Merge pull request #8 from US-Department-of-the-Treasury/project-mode
-3801162 Add persona-focused tutorial and fix Yjs content loading
+824feff Add project-level MCP config for Playwright
+71dfc06 Merge pull request #10 from US-Department-of-the-Treasury/intake
+b87b781 Align docs with Ship philosophy and fix code violations
+3612f18 Merge pull request #9 from US-Department-of-the-Treasury/deploy
+29ec983 Remove .audit directory from version control
 ```
 
 ### Uncommitted Changes
 ```
- M .gitignore
- M web/public/robots.txt
-?? .audit/
-?? DEPLOYMENT.md
-?? DEPLOYMENT_CHECKLIST.md
-?? INFRASTRUCTURE.md
-?? INFRASTRUCTURE_README.md
-?? INFRASTRUCTURE_SUMMARY.md
-?? api/.dockerignore
-?? api/.ebextensions/
+UU ATTESTATION.md
+UU api/src/app.ts
+M  api/src/db/schema.sql
+M  api/src/db/seed.ts
+UU api/src/middleware/auth.ts
+A  api/src/routes/admin.ts
+UU api/src/routes/auth.ts
+M  api/src/routes/documents.ts
+A  api/src/routes/invites.ts
+M  api/src/routes/issues.ts
 ```
 
 ### Modified Files
-.gitignore
-web/public/robots.txt
+ATTESTATION.md
+api/src/app.ts
+api/src/db/schema.sql
+api/src/db/seed.ts
+api/src/middleware/auth.ts
+api/src/routes/admin.ts
+api/src/routes/auth.ts
+api/src/routes/documents.ts
+api/src/routes/invites.ts
+api/src/routes/issues.ts
 

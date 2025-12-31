@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { pool } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { ERROR_CODES, HTTP_STATUS, SESSION_TIMEOUT_MS } from '@ship/shared';
+import { logAuditEvent } from '../services/audit.js';
 
 const router: RouterType = Router();
 
@@ -29,11 +30,11 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    // Find user
+    // Find user with their workspace memberships
     const userResult = await pool.query(
-      `SELECT id, workspace_id, email, password_hash, name
-       FROM users
-       WHERE email = $1`,
+      `SELECT u.id, u.email, u.password_hash, u.name, u.is_super_admin, u.last_workspace_id
+       FROM users u
+       WHERE u.email = $1`,
       [email]
     );
 
@@ -64,6 +65,47 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Get user's workspaces
+    const workspacesResult = await pool.query(
+      `SELECT w.id, w.name, wm.role
+       FROM workspaces w
+       JOIN workspace_memberships wm ON w.id = wm.workspace_id
+       WHERE wm.user_id = $1 AND w.archived_at IS NULL
+       ORDER BY w.name`,
+      [user.id]
+    );
+
+    const workspaces = workspacesResult.rows;
+
+    // Determine which workspace to log into
+    let workspaceId: string | null = null;
+
+    if (user.last_workspace_id) {
+      // Check if last workspace is still accessible
+      const lastWorkspaceValid = workspaces.some(w => w.id === user.last_workspace_id);
+      if (lastWorkspaceValid) {
+        workspaceId = user.last_workspace_id;
+      }
+    }
+
+    // If no valid last workspace, use first available
+    if (!workspaceId && workspaces.length > 0) {
+      workspaceId = workspaces[0].id;
+    }
+
+    // Super-admins can log in even without workspace membership
+    // They'll need to select a workspace after login
+    if (!workspaceId && !user.is_super_admin && workspaces.length === 0) {
+      res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.FORBIDDEN,
+          message: 'You do not have access to any workspaces',
+        },
+      });
+      return;
+    }
+
     // Session fixation prevention: Delete any existing session from this request
     const oldSessionId = req.cookies.session_id;
     if (oldSessionId) {
@@ -81,13 +123,28 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       [
         sessionId,
         user.id,
-        user.workspace_id,
+        workspaceId,
         expiresAt,
         new Date(),
         req.headers['user-agent'] || 'unknown',
         req.ip || req.socket.remoteAddress || 'unknown',
       ]
     );
+
+    // Update last_workspace_id
+    if (workspaceId) {
+      await pool.query(
+        'UPDATE users SET last_workspace_id = $1, updated_at = NOW() WHERE id = $2',
+        [workspaceId, user.id]
+      );
+    }
+
+    await logAuditEvent({
+      workspaceId: workspaceId || undefined,
+      actorUserId: user.id,
+      action: 'auth.login',
+      req,
+    });
 
     // Set cookie with hardened security options
     res.cookie('session_id', sessionId, {
@@ -105,7 +162,18 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
           id: user.id,
           email: user.email,
           name: user.name,
+          isSuperAdmin: user.is_super_admin,
         },
+        currentWorkspace: workspaceId ? {
+          id: workspaceId,
+          name: workspaces.find(w => w.id === workspaceId)?.name,
+          role: workspaces.find(w => w.id === workspaceId)?.role,
+        } : null,
+        workspaces: workspaces.map(w => ({
+          id: w.id,
+          name: w.name,
+          role: w.role,
+        })),
       },
     });
   } catch (error) {
@@ -123,6 +191,13 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 // POST /api/auth/logout
 router.post('/logout', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
+    await logAuditEvent({
+      workspaceId: req.workspaceId,
+      actorUserId: req.userId!,
+      action: 'auth.logout',
+      req,
+    });
+
     // Delete session from database
     await pool.query('DELETE FROM sessions WHERE id = $1', [req.sessionId]);
 
@@ -151,7 +226,7 @@ router.post('/logout', authMiddleware, async (req: Request, res: Response): Prom
 router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await pool.query(
-      `SELECT id, email, name FROM users WHERE id = $1`,
+      `SELECT id, email, name, is_super_admin FROM users WHERE id = $1`,
       [req.userId]
     );
 
@@ -168,6 +243,35 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
       return;
     }
 
+    // Get user's workspaces
+    const workspacesResult = await pool.query(
+      `SELECT w.id, w.name, wm.role
+       FROM workspaces w
+       JOIN workspace_memberships wm ON w.id = wm.workspace_id
+       WHERE wm.user_id = $1 AND w.archived_at IS NULL
+       ORDER BY w.name`,
+      [req.userId]
+    );
+
+    // Get current workspace info
+    let currentWorkspace = null;
+    if (req.workspaceId) {
+      const currentResult = await pool.query(
+        `SELECT w.id, w.name, wm.role
+         FROM workspaces w
+         LEFT JOIN workspace_memberships wm ON w.id = wm.workspace_id AND wm.user_id = $2
+         WHERE w.id = $1`,
+        [req.workspaceId, req.userId]
+      );
+      if (currentResult.rows[0]) {
+        currentWorkspace = {
+          id: currentResult.rows[0].id,
+          name: currentResult.rows[0].name,
+          role: currentResult.rows[0].role || 'admin', // Super-admin without membership
+        };
+      }
+    }
+
     res.json({
       success: true,
       data: {
@@ -175,7 +279,14 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
           id: user.id,
           email: user.email,
           name: user.name,
+          isSuperAdmin: user.is_super_admin,
         },
+        currentWorkspace,
+        workspaces: workspacesResult.rows.map(w => ({
+          id: w.id,
+          name: w.name,
+          role: w.role,
+        })),
       },
     });
   } catch (error) {
