@@ -50,7 +50,7 @@ export function AppLayout() {
   const getActiveMode = (): Mode => {
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
-    if (location.pathname.startsWith('/programs') || location.pathname.startsWith('/sprints')) return 'programs';
+    if (location.pathname.startsWith('/programs') || location.pathname.startsWith('/sprints') || location.pathname.startsWith('/feedback')) return 'programs';
     if (location.pathname.startsWith('/team')) return 'team';
     if (location.pathname.startsWith('/settings')) return 'settings';
     return 'docs';

@@ -55,6 +55,22 @@ function generatePrefix(): string {
   return result;
 }
 
+// Helper to extract program from row
+function extractProgramFromRow(row: any) {
+  const props = row.properties || {};
+  return {
+    id: row.id,
+    name: row.title,
+    prefix: props.prefix || null,
+    color: props.color || '#6366f1',
+    archived_at: row.archived_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    issue_count: row.issue_count,
+    sprint_count: row.sprint_count,
+  };
+}
+
 // Validation schemas
 const createProgramSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
@@ -73,7 +89,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const includeArchived = req.query.archived === 'true';
     let query = `
-      SELECT d.id, d.title as name, d.prefix, d.color, d.archived_at, d.created_at, d.updated_at,
+      SELECT d.id, d.title, d.properties, d.archived_at, d.created_at, d.updated_at,
              (SELECT COUNT(*) FROM documents i WHERE i.program_id = d.id AND i.document_type = 'issue') as issue_count,
              (SELECT COUNT(*) FROM documents s WHERE s.program_id = d.id AND s.document_type = 'sprint') as sprint_count
       FROM documents d
@@ -87,7 +103,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
     query += ` ORDER BY d.created_at DESC`;
 
     const result = await pool.query(query, [req.user!.workspaceId]);
-    res.json(result.rows);
+    res.json(result.rows.map(extractProgramFromRow));
   } catch (err) {
     console.error('List programs error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -99,7 +115,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
-      `SELECT d.id, d.title as name, d.prefix, d.color, d.archived_at, d.created_at, d.updated_at,
+      `SELECT d.id, d.title, d.properties, d.archived_at, d.created_at, d.updated_at,
               (SELECT COUNT(*) FROM documents i WHERE i.program_id = d.id AND i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents s WHERE s.program_id = d.id AND s.document_type = 'sprint') as sprint_count
        FROM documents d
@@ -112,7 +128,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    res.json(result.rows[0]);
+    res.json(extractProgramFromRow(result.rows[0]));
   } catch (err) {
     console.error('Get program error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -137,7 +153,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       while (attempts < 10) {
         prefix = generatePrefix();
         const existingPrefix = await pool.query(
-          `SELECT id FROM documents WHERE workspace_id = $1 AND prefix = $2 AND document_type = 'program'`,
+          `SELECT id FROM documents WHERE workspace_id = $1 AND properties->>'prefix' = $2 AND document_type = 'program'`,
           [req.user!.workspaceId, prefix]
         );
         if (existingPrefix.rows.length === 0) break;
@@ -146,7 +162,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     } else {
       // Check prefix uniqueness if explicitly provided
       const existingPrefix = await pool.query(
-        `SELECT id FROM documents WHERE workspace_id = $1 AND prefix = $2 AND document_type = 'program'`,
+        `SELECT id FROM documents WHERE workspace_id = $1 AND properties->>'prefix' = $2 AND document_type = 'program'`,
         [req.user!.workspaceId, prefix]
       );
 
@@ -156,14 +172,24 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       }
     }
 
+    // Build properties JSONB
+    const properties = {
+      prefix,
+      color: color || '#6366f1',
+    };
+
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, prefix, color, created_by)
-       VALUES ($1, 'program', $2, $3, $4, $5)
-       RETURNING id, title as name, prefix, color, archived_at, created_at, updated_at`,
-      [req.user!.workspaceId, title, prefix, color, req.user!.id]
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+       VALUES ($1, 'program', $2, $3, $4)
+       RETURNING id, title, properties, archived_at, created_at, updated_at`,
+      [req.user!.workspaceId, title, JSON.stringify(properties), req.user!.id]
     );
 
-    res.status(201).json({ ...result.rows[0], issue_count: 0, sprint_count: 0 });
+    res.status(201).json({
+      ...extractProgramFromRow(result.rows[0]),
+      issue_count: 0,
+      sprint_count: 0
+    });
   } catch (err) {
     console.error('Create program error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -182,7 +208,7 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 
     // Verify program exists and belongs to workspace
     const existing = await pool.query(
-      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
+      `SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
       [id, req.user!.workspaceId]
     );
 
@@ -191,19 +217,34 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
+    const currentProps = existing.rows[0].properties || {};
     const updates: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
 
     const data = parsed.data;
+
+    // Handle title update (regular column)
     if (data.title !== undefined) {
       updates.push(`title = $${paramIndex++}`);
       values.push(data.title);
     }
+
+    // Handle properties updates
+    const newProps = { ...currentProps };
+    let propsChanged = false;
+
     if (data.color !== undefined) {
-      updates.push(`color = $${paramIndex++}`);
-      values.push(data.color);
+      newProps.color = data.color;
+      propsChanged = true;
     }
+
+    if (propsChanged) {
+      updates.push(`properties = $${paramIndex++}`);
+      values.push(JSON.stringify(newProps));
+    }
+
+    // Handle archived_at (regular column)
     if (data.archived_at !== undefined) {
       updates.push(`archived_at = $${paramIndex++}`);
       values.push(data.archived_at);
@@ -219,11 +260,11 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     const result = await pool.query(
       `UPDATE documents SET ${updates.join(', ')}
        WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'program'
-       RETURNING id, title as name, prefix, color, archived_at, created_at, updated_at`,
+       RETURNING id, title, properties, archived_at, created_at, updated_at`,
       [...values, id, req.user!.workspaceId]
     );
 
-    res.json(result.rows[0]);
+    res.json(extractProgramFromRow(result.rows[0]));
   } catch (err) {
     console.error('Update program error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -265,7 +306,7 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
 
     // Verify program exists and get prefix
     const programExists = await pool.query(
-      `SELECT id, prefix FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
+      `SELECT id, properties->>'prefix' as prefix FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
       [id, req.user!.workspaceId]
     );
 
@@ -277,14 +318,14 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
     const prefix = programExists.rows[0].prefix;
 
     const result = await pool.query(
-      `SELECT d.id, d.title, d.state, d.priority, d.assignee_id, d.ticket_number,
+      `SELECT d.id, d.title, d.properties, d.ticket_number,
               d.sprint_id, d.created_at, d.updated_at, d.created_by,
               u.name as assignee_name
        FROM documents d
-       LEFT JOIN users u ON d.assignee_id = u.id
+       LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
        WHERE d.program_id = $1 AND d.document_type = 'issue'
        ORDER BY
-         CASE d.priority
+         CASE d.properties->>'priority'
            WHEN 'urgent' THEN 1
            WHEN 'high' THEN 2
            WHEN 'medium' THEN 3
@@ -295,11 +336,24 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
       [id]
     );
 
-    // Add display_id to each issue
-    const issues = result.rows.map(issue => ({
-      ...issue,
-      display_id: `${prefix}-${issue.ticket_number}`
-    }));
+    // Add display_id to each issue and extract properties
+    const issues = result.rows.map(row => {
+      const props = row.properties || {};
+      return {
+        id: row.id,
+        title: row.title,
+        state: props.state || 'backlog',
+        priority: props.priority || 'medium',
+        assignee_id: props.assignee_id || null,
+        ticket_number: row.ticket_number,
+        sprint_id: row.sprint_id,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        created_by: row.created_by,
+        assignee_name: row.assignee_name,
+        display_id: `${prefix}-${row.ticket_number}`
+      };
+    });
 
     res.json(issues);
   } catch (err) {
@@ -325,16 +379,30 @@ router.get('/:id/sprints', requireAuth, async (req: Request, res: Response) => {
     }
 
     const result = await pool.query(
-      `SELECT d.id, d.title as name, d.start_date, d.end_date, d.sprint_status as status,
+      `SELECT d.id, d.title as name, d.properties,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.state = 'done') as completed_count
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count
        FROM documents d
        WHERE d.program_id = $1 AND d.document_type = 'sprint'
-       ORDER BY d.start_date DESC`,
+       ORDER BY d.properties->>'start_date' DESC NULLS LAST`,
       [id]
     );
 
-    res.json(result.rows);
+    // Extract sprint properties
+    const sprints = result.rows.map(row => {
+      const props = row.properties || {};
+      return {
+        id: row.id,
+        name: row.name,
+        start_date: props.start_date || null,
+        end_date: props.end_date || null,
+        status: props.sprint_status || 'planned',
+        issue_count: row.issue_count,
+        completed_count: row.completed_count
+      };
+    });
+
+    res.json(sprints);
   } catch (err) {
     console.error('Get program sprints error:', err);
     res.status(500).json({ error: 'Internal server error' });

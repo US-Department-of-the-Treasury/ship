@@ -21,6 +21,7 @@ import { SprintViewPage } from '@/pages/SprintView';
 import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
 import { PersonEditorPage } from '@/pages/PersonEditor';
+import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
 import { InviteAcceptPage } from '@/pages/InviteAccept';
@@ -128,6 +129,7 @@ function App() {
             <Route path="team/allocation" element={<TeamModePage />} />
             <Route path="team/directory" element={<TeamDirectoryPage />} />
             <Route path="team/:id" element={<PersonEditorPage />} />
+            <Route path="feedback/:id" element={<FeedbackEditorPage />} />
             <Route path="settings" element={<WorkspaceSettingsPage />} />
           </Route>
         </Routes>

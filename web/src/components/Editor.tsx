@@ -36,6 +36,8 @@ interface EditorProps {
   onNavigateToDocument?: (id: string) => void;
   /** Callback to delete the document */
   onDelete?: () => void;
+  /** Secondary header content (e.g., action buttons) - displayed below breadcrumb header */
+  secondaryHeader?: React.ReactNode;
 }
 
 type SyncStatus = 'connecting' | 'synced' | 'disconnected';
@@ -65,6 +67,7 @@ export function Editor({
   onCreateSubDocument,
   onNavigateToDocument,
   onDelete,
+  secondaryHeader,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -280,6 +283,13 @@ export function Editor({
           ))}
         </div>
       </div>
+
+      {/* Secondary header for actions (e.g., Submit, Accept, Reject buttons) */}
+      {secondaryHeader && (
+        <div className="flex items-center justify-center border-b border-border px-4 py-2">
+          {secondaryHeader}
+        </div>
+      )}
 
       {/* Content area with optional sidebar */}
       <div className="flex flex-1 overflow-hidden">

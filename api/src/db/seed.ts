@@ -190,18 +190,19 @@ async function seed() {
 
     for (const prog of programsToSeed) {
       const existingProgram = await pool.query(
-        'SELECT id FROM documents WHERE workspace_id = $1 AND document_type = $2 AND prefix = $3',
+        `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = $2 AND properties->>'prefix' = $3`,
         [workspaceId, 'program', prog.prefix]
       );
 
       if (existingProgram.rows[0]) {
         programs.push({ id: existingProgram.rows[0].id, ...prog });
       } else {
+        const properties = { prefix: prog.prefix, color: prog.color };
         const programResult = await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, prefix, color)
-           VALUES ($1, 'program', $2, $3, $4)
+          `INSERT INTO documents (workspace_id, document_type, title, properties)
+           VALUES ($1, 'program', $2, $3)
            RETURNING id`,
-          [workspaceId, prog.name, prog.prefix, prog.color]
+          [workspaceId, prog.name, JSON.stringify(properties)]
         );
         programs.push({ id: programResult.rows[0].id, ...prog });
         programsCreated++;
@@ -248,7 +249,7 @@ async function seed() {
 
       const existingSprint = await pool.query(
         `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND program_id = $2 AND start_date = $3`,
+         AND program_id = $2 AND properties->>'start_date' = $3`,
         [workspaceId, sprint.programId, startStr]
       );
 
@@ -261,11 +262,17 @@ async function seed() {
           endDate: endStr,
         });
       } else {
+        const sprintProperties = {
+          start_date: startStr,
+          end_date: endStr,
+          sprint_status: 'planned',
+          goal: null,
+        };
         const sprintResult = await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, program_id, start_date, end_date)
-           VALUES ($1, 'sprint', $2, $3, $4, $5)
+          `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
+           VALUES ($1, 'sprint', $2, $3, $4)
            RETURNING id`,
-          [workspaceId, `Sprint ${sprint.number}`, sprint.programId, startStr, endStr]
+          [workspaceId, `Sprint ${sprint.number}`, sprint.programId, JSON.stringify(sprintProperties)]
         );
         sprints.push({
           id: sprintResult.rows[0].id,
@@ -353,10 +360,18 @@ async function seed() {
 
       if (!existingIssue.rows[0]) {
         maxTickets[program.id]!++;
+        const issueProperties = {
+          state: template.state,
+          priority: 'medium',
+          source: 'internal',
+          assignee_id: assignee.id,
+          feedback_status: null,
+          rejection_reason: null,
+        };
         await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, assignee_id, state, ticket_number)
-           VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7)`,
-          [workspaceId, template.title, program.id, sprintId, assignee.id, template.state, maxTickets[program.id]]
+          `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number)
+           VALUES ($1, 'issue', $2, $3, $4, $5, $6)`,
+          [workspaceId, template.title, program.id, sprintId, JSON.stringify(issueProperties), maxTickets[program.id]]
         );
         issuesCreated++;
       }

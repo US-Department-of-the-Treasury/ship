@@ -52,6 +52,7 @@ const createDocumentSchema = z.object({
   document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'sprint_plan', 'sprint_retro']).optional().default('wiki'),
   parent_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
+  properties: z.record(z.unknown()).optional(),
 });
 
 const updateDocumentSchema = z.object({
@@ -59,6 +60,7 @@ const updateDocumentSchema = z.object({
   content: z.any().optional(),
   parent_id: z.string().uuid().optional().nullable(),
   position: z.number().int().min(0).optional(),
+  properties: z.record(z.unknown()).optional(),
 });
 
 // List documents
@@ -67,8 +69,8 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
     const { type, parent_id } = req.query;
     let query = `
       SELECT id, workspace_id, document_type, title, parent_id, position,
-             program_id, project_id, sprint_id, ticket_number, state,
-             assignee_id, prefix, created_at, updated_at, created_by
+             program_id, project_id, sprint_id, ticket_number, properties,
+             created_at, updated_at, created_by
       FROM documents
       WHERE workspace_id = $1
     `;
@@ -91,7 +93,23 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
     query += ` ORDER BY position ASC, created_at DESC`;
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+
+    // Extract properties into flat fields for backwards compatibility
+    const documents = result.rows.map(row => {
+      const props = row.properties || {};
+      return {
+        ...row,
+        // Flatten common properties for backwards compatibility
+        state: props.state,
+        priority: props.priority,
+        assignee_id: props.assignee_id,
+        source: props.source,
+        prefix: props.prefix,
+        color: props.color,
+      };
+    });
+
+    res.json(documents);
   } catch (err) {
     console.error('List documents error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -112,7 +130,23 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    res.json(result.rows[0]);
+    const row = result.rows[0];
+    const props = row.properties || {};
+
+    // Return with flattened properties for backwards compatibility
+    res.json({
+      ...row,
+      state: props.state,
+      priority: props.priority,
+      assignee_id: props.assignee_id,
+      source: props.source,
+      prefix: props.prefix,
+      color: props.color,
+      start_date: props.start_date,
+      end_date: props.end_date,
+      sprint_status: props.sprint_status,
+      goal: props.goal,
+    });
   } catch (err) {
     console.error('Get document error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -128,13 +162,13 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, document_type, parent_id, sprint_id } = parsed.data;
+    const { title, document_type, parent_id, sprint_id, properties } = parsed.data;
 
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, parent_id, sprint_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO documents (workspace_id, document_type, title, parent_id, sprint_id, properties, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.user!.workspaceId, document_type, title, parent_id || null, sprint_id || null, req.user!.id]
+      [req.user!.workspaceId, document_type, title, parent_id || null, sprint_id || null, JSON.stringify(properties || {}), req.user!.id]
     );
 
     res.status(201).json(result.rows[0]);
@@ -156,7 +190,7 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 
     // Verify document exists and belongs to workspace
     const existing = await pool.query(
-      'SELECT id FROM documents WHERE id = $1 AND workspace_id = $2',
+      'SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2',
       [id, req.user!.workspaceId]
     );
 
@@ -185,6 +219,13 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     if (data.position !== undefined) {
       updates.push(`position = $${paramIndex++}`);
       values.push(data.position);
+    }
+    if (data.properties !== undefined) {
+      // Merge with existing properties
+      const currentProps = existing.rows[0].properties || {};
+      const newProps = { ...currentProps, ...data.properties };
+      updates.push(`properties = $${paramIndex++}`);
+      values.push(JSON.stringify(newProps));
     }
 
     if (updates.length === 0) {
