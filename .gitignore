@@ -50,3 +50,6 @@ test-results/
 
 # Dev server port allocation
 .ports
+
+# Audit artifacts
+.audit
