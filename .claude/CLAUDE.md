@@ -94,14 +94,23 @@ This script:
 # Deploy API to production
 ./scripts/deploy.sh
 
-# Monitor deployment
+# Monitor deployment (takes 3-5 min for rolling update)
 aws elasticbeanstalk describe-environments --environment-names ship-api-prod --query 'Environments[0].[Health,HealthStatus]'
+
+# Check instance health if issues
+aws elasticbeanstalk describe-instances-health --environment-name ship-api-prod --attribute-names All
 ```
+
+**Deployment details:**
+- Uses **RollingWithAdditionalBatch** for zero-downtime deploys
+- ALB health check hits `/health` endpoint (returns `{"status":"ok"}`)
+- Full EB environment is managed by Terraform (`terraform/elastic-beanstalk.tf`)
+- Deploys take 3-5 minutes due to rolling instance replacement
 
 **Frontend deployment** (S3 + CloudFront):
 ```bash
 pnpm build:web
-aws s3 sync web/dist/ s3://$(cd terraform && terraform output -raw frontend_bucket_name)/ --delete
+aws s3 sync web/dist/ s3://$(cd terraform && terraform output -raw s3_bucket_name)/ --delete
 aws cloudfront create-invalidation --distribution-id $(cd terraform && terraform output -raw cloudfront_distribution_id) --paths "/*"
 ```
 
