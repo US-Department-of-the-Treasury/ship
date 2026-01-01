@@ -12,7 +12,7 @@ VERSION="v$(date +%Y%m%d%H%M%S)"
 
 # Get config from Terraform outputs or environment
 if [ -d "terraform" ] && command -v terraform &> /dev/null; then
-  S3_BUCKET=$(cd terraform && terraform output -raw frontend_bucket_name 2>/dev/null || echo "")
+  S3_BUCKET=$(cd terraform && terraform output -raw s3_bucket_name 2>/dev/null || echo "")
 fi
 S3_BUCKET="${S3_BUCKET:-${DEPLOY_S3_BUCKET:-}}"
 
