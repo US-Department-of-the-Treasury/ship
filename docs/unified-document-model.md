@@ -30,6 +30,26 @@ Following Notion's paradigm: **everything is a document with properties**. The d
 - No per-program or per-document access controls
 - Roles (admin, member) are workspace-scoped
 
+### Authorization vs Content Separation
+
+**Critical architecture principle:** Authorization and content are separate layers.
+
+| Layer | Table | Purpose |
+|-------|-------|---------|
+| Authorization | `workspace_memberships` | Who can access what workspace, with what role |
+| Content | `documents (type='person')` | User profile, editable content |
+
+**How they connect:**
+- Person documents have `properties.user_id` linking to `users.id`
+- Membership table has NO reference to person documents
+- Auth checks query `workspace_memberships`
+- Display (Directory, Allocation) queries `documents WHERE document_type = 'person'`
+
+**Why separate:**
+- Security: Authorization changes are auditable, separate from content edits
+- Independence: Creating membership doesn't require creating person doc atomically
+- Clarity: No "repair logic" to keep layers in sync
+
 ### Offline-Tolerant Design
 
 The application must work offline (planes, subways, spotty connections) and sync when reconnected:
@@ -52,7 +72,7 @@ The `document_type` field describes **what kind** of document it is:
 | `sprint`       | Program's sprint container | Sprint number, program_id, contains sprint work  |
 | `sprint_plan`  | Sprint planning doc        | Child of sprint, required before sprint starts   |
 | `sprint_retro` | Sprint retrospective       | Child of sprint, required after sprint ends      |
-| `person`       | User profile page          | Links to auth user, capacity, skills             |
+| `person`       | User profile page          | `properties.user_id` links to auth user, capacity, skills |
 | `view`         | Saved filter/query         | Query, filters, display options (future)         |
 
 ## Document Location
@@ -174,6 +194,13 @@ interface SprintProperties {
 interface ProgramProperties {
   prefix: string; // e.g., "AUTH" for ticket numbers
   color?: string;
+}
+
+interface PersonProperties {
+  user_id: string; // Links to users.id (required)
+  email?: string; // Denormalized for display
+  capacity_hours?: number;
+  skills?: string[];
 }
 
 // Example issue properties

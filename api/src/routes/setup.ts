@@ -95,19 +95,18 @@ router.post('/initialize', async (req: Request, res: Response): Promise<void> =>
     );
     const user = userResult.rows[0];
 
-    // Create person document for this user
-    const personDocResult = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, created_by)
-       VALUES ($1, 'person', $2, $3)
-       RETURNING id`,
-      [workspaceId, name, user.id]
-    );
-
     // Add user to workspace as admin
     await pool.query(
-      `INSERT INTO workspace_memberships (workspace_id, user_id, person_document_id, role)
-       VALUES ($1, $2, $3, 'admin')`,
-      [workspaceId, user.id, personDocResult.rows[0].id]
+      `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+       VALUES ($1, $2, 'admin')`,
+      [workspaceId, user.id]
+    );
+
+    // Create person document for this user (links via properties.user_id)
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+       VALUES ($1, 'person', $2, $3, $4)`,
+      [workspaceId, name, JSON.stringify({ user_id: user.id, email: email.toLowerCase() }), user.id]
     );
 
     // Create welcome document (full tutorial)

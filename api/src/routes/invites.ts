@@ -191,20 +191,18 @@ router.post('/:token/accept', async (req: Request, res: Response): Promise<void>
       user = newUserResult.rows[0];
     }
 
-    // Create Person document for this user in this workspace
-    const personDocResult = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title)
-       VALUES ($1, 'person', $2)
-       RETURNING id`,
-      [invite.workspace_id, user.name]
-    );
-    const personDocumentId = personDocResult.rows[0].id;
-
     // Create membership
     await pool.query(
-      `INSERT INTO workspace_memberships (workspace_id, user_id, person_document_id, role)
-       VALUES ($1, $2, $3, $4)`,
-      [invite.workspace_id, user.id, personDocumentId, invite.role]
+      `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+       VALUES ($1, $2, $3)`,
+      [invite.workspace_id, user.id, invite.role]
+    );
+
+    // Create Person document for this user in this workspace (links via properties.user_id)
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, properties)
+       VALUES ($1, 'person', $2, $3)`,
+      [invite.workspace_id, user.name, JSON.stringify({ user_id: user.id, email: invite.email })]
     );
 
     // Mark invite as used

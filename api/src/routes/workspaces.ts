@@ -239,11 +239,16 @@ router.get('/:id/members', authMiddleware, workspaceAdminMiddleware, async (req:
   const { id: workspaceId } = req.params;
 
   try {
+    // Query memberships and join to person docs via properties.user_id
     const result = await pool.query(
-      `SELECT wm.id, wm.user_id, wm.role, wm.person_document_id, wm.created_at,
-              u.email, u.name
+      `SELECT wm.id, wm.user_id, wm.role, wm.created_at,
+              u.email, u.name,
+              d.id as person_document_id
        FROM workspace_memberships wm
        JOIN users u ON wm.user_id = u.id
+       LEFT JOIN documents d ON d.workspace_id = wm.workspace_id
+         AND d.document_type = 'person'
+         AND d.properties->>'user_id' = wm.user_id::text
        WHERE wm.workspace_id = $1
        ORDER BY u.name`,
       [workspaceId]
@@ -321,22 +326,22 @@ router.post('/:id/members', authMiddleware, workspaceAdminMiddleware, async (req
       return;
     }
 
-    // Create Person document for this user in this workspace
-    const personDocResult = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, created_by)
-       VALUES ($1, 'person', $2, $3)
-       RETURNING id`,
-      [workspaceId, userResult.rows[0].name, req.userId]
-    );
-    const personDocumentId = personDocResult.rows[0].id;
-
     // Create membership
     const membershipResult = await pool.query(
-      `INSERT INTO workspace_memberships (workspace_id, user_id, person_document_id, role)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+       VALUES ($1, $2, $3)
        RETURNING id, created_at`,
-      [workspaceId, userId, personDocumentId, role]
+      [workspaceId, userId, role]
     );
+
+    // Create Person document for this user in this workspace (links via properties.user_id)
+    const personDocResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+       VALUES ($1, 'person', $2, $3, $4)
+       RETURNING id`,
+      [workspaceId, userResult.rows[0].name, JSON.stringify({ user_id: userId, email: userResult.rows[0].email }), req.userId]
+    );
+    const personDocumentId = personDocResult.rows[0].id;
 
     await logAuditEvent({
       workspaceId,
@@ -505,9 +510,16 @@ router.delete('/:id/members/:userId', authMiddleware, workspaceAdminMiddleware, 
       }
     }
 
-    // Delete membership (Person doc remains for audit trail)
+    // Delete membership
     await pool.query(
       'DELETE FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+      [workspaceId, userId]
+    );
+
+    // Archive the person document (preserve for audit history)
+    await pool.query(
+      `UPDATE documents SET archived_at = NOW()
+       WHERE workspace_id = $1 AND document_type = 'person' AND properties->>'user_id' = $2`,
       [workspaceId, userId]
     );
 
