@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import request from 'supertest'
+import crypto from 'crypto'
 import { createApp } from '../app.js'
 import { pool } from '../db/client.js'
 
 describe('Documents API - Delete', () => {
   const app = createApp()
   let sessionCookie: string
+  let csrfToken: string
   let testDocumentId: string
   let testWorkspaceId: string
   let testUserId: string
@@ -21,21 +23,37 @@ describe('Documents API - Delete', () => {
 
     // Create test user
     const userResult = await pool.query(
-      `INSERT INTO users (email, password_hash, name, workspace_id)
-       VALUES ('test-delete@ship.local', 'test-hash', 'Test User', $1)
-       RETURNING id`,
-      [testWorkspaceId]
+      `INSERT INTO users (email, password_hash, name)
+       VALUES ('test-delete@ship.local', 'test-hash', 'Test User')
+       RETURNING id`
     )
     testUserId = userResult.rows[0].id
 
-    // Create session (sessions also need workspace_id)
-    const sessionResult = await pool.query(
-      `INSERT INTO sessions (user_id, workspace_id, expires_at)
-       VALUES ($1, $2, now() + interval '1 hour')
-       RETURNING id`,
-      [testUserId, testWorkspaceId]
+    // Create workspace membership
+    await pool.query(
+      `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+       VALUES ($1, $2, 'member')`,
+      [testWorkspaceId, testUserId]
     )
-    sessionCookie = `session_id=${sessionResult.rows[0].id}`
+
+    // Create session (sessions.id is TEXT not UUID, generated from crypto.randomBytes)
+    const sessionId = crypto.randomBytes(32).toString('hex')
+    await pool.query(
+      `INSERT INTO sessions (id, user_id, workspace_id, expires_at)
+       VALUES ($1, $2, $3, now() + interval '1 hour')`,
+      [sessionId, testUserId, testWorkspaceId]
+    )
+    sessionCookie = `session_id=${sessionId}`
+
+    // Get CSRF token
+    const csrfRes = await request(app)
+      .get('/api/csrf-token')
+      .set('Cookie', sessionCookie)
+    csrfToken = csrfRes.body.token
+    const connectSidCookie = csrfRes.headers['set-cookie']?.[0]?.split(';')[0] || ''
+    if (connectSidCookie) {
+      sessionCookie = `${sessionCookie}; ${connectSidCookie}`
+    }
   })
 
   // Cleanup after all tests
@@ -43,6 +61,7 @@ describe('Documents API - Delete', () => {
     // Clean up test data in correct order (foreign keys)
     await pool.query('DELETE FROM sessions WHERE user_id = $1', [testUserId])
     await pool.query('DELETE FROM documents WHERE workspace_id = $1', [testWorkspaceId])
+    await pool.query('DELETE FROM workspace_memberships WHERE user_id = $1', [testUserId])
     await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
     await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId])
   })
@@ -66,6 +85,7 @@ describe('Documents API - Delete', () => {
       const response = await request(app)
         .delete(`/api/documents/${testDocumentId}`)
         .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
 
       expect(response.status).toBe(204)
 
@@ -83,17 +103,18 @@ describe('Documents API - Delete', () => {
       const response = await request(app)
         .delete(`/api/documents/${fakeId}`)
         .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
 
       expect(response.status).toBe(404)
       expect(response.body.error).toBe('Document not found')
     })
 
-    it('should return 401 when not authenticated', async () => {
+    it('should return 403 when not authenticated (CSRF check runs first)', async () => {
       const response = await request(app)
         .delete(`/api/documents/${testDocumentId}`)
 
-      expect(response.status).toBe(401)
-      expect(response.body.error).toBe('Not authenticated')
+      // Without session cookie, CSRF validation fails first (403) before auth check (401)
+      expect(response.status).toBe(403)
     })
 
     it('should return 404 when trying to delete document from another workspace', async () => {
@@ -116,6 +137,7 @@ describe('Documents API - Delete', () => {
       const response = await request(app)
         .delete(`/api/documents/${otherDocumentId}`)
         .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
 
       // Should return 404 because the document doesn't belong to user's workspace
       expect(response.status).toBe(404)
@@ -137,6 +159,7 @@ describe('Documents API - Delete', () => {
       const response = await request(app)
         .delete(`/api/documents/${testDocumentId}`)
         .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
 
       expect(response.status).toBe(204)
 
@@ -148,25 +171,26 @@ describe('Documents API - Delete', () => {
       expect(checkResult.rows.length).toBe(0)
     })
 
-    it('should return 401 when session is expired', async () => {
-      // Create expired session
-      const expiredSessionResult = await pool.query(
-        `INSERT INTO sessions (user_id, workspace_id, expires_at)
-         VALUES ($1, $2, now() - interval '1 hour')
-         RETURNING id`,
-        [testUserId, testWorkspaceId]
+    it('should return 403 when session is expired (CSRF check runs first)', async () => {
+      // Create expired session (sessions.id is TEXT not UUID, generated from crypto.randomBytes)
+      const expiredSessionId = crypto.randomBytes(32).toString('hex')
+      await pool.query(
+        `INSERT INTO sessions (id, user_id, workspace_id, expires_at)
+         VALUES ($1, $2, $3, now() - interval '1 hour')`,
+        [expiredSessionId, testUserId, testWorkspaceId]
       )
-      const expiredCookie = `session_id=${expiredSessionResult.rows[0].id}`
+      const expiredCookie = `session_id=${expiredSessionId}`
 
       const response = await request(app)
         .delete(`/api/documents/${testDocumentId}`)
         .set('Cookie', expiredCookie)
+        .set('x-csrf-token', csrfToken)
 
-      expect(response.status).toBe(401)
-      expect(response.body.error).toBe('Session expired')
+      // CSRF validation fails first (403) because the CSRF token is bound to a different session
+      expect(response.status).toBe(403)
 
       // Cleanup expired session
-      await pool.query('DELETE FROM sessions WHERE id = $1', [expiredSessionResult.rows[0].id])
+      await pool.query('DELETE FROM sessions WHERE id = $1', [expiredSessionId])
     })
   })
 })

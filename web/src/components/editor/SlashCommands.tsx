@@ -11,6 +11,8 @@ import {
 } from 'react';
 import { cn } from '@/lib/cn';
 
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+
 export interface SlashCommandItem {
   title: string;
   description: string;
@@ -157,6 +159,31 @@ const icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12h16" />
     </svg>
   ),
+  image: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  ),
+  file: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+    </svg>
+  ),
+  toggle: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  ),
+  table: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+  ),
+  tableOfContents: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h12M4 14h12M4 18h8" />
+    </svg>
+  ),
 };
 
 export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument }: CreateSlashCommandsOptions) {
@@ -249,6 +276,116 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument 
       icon: icons.divider,
       command: ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).setHorizontalRule().run();
+      },
+    },
+    // Image upload
+    {
+      title: 'Image',
+      description: 'Upload an image',
+      aliases: ['img', 'picture', 'photo', 'upload'],
+      icon: icons.image,
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).run();
+        // Trigger file picker
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async () => {
+          const file = input.files?.[0];
+          if (!file) return;
+
+          // Import and use upload service
+          const { uploadFile } = await import('@/services/upload');
+
+          // Create data URL for immediate preview
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const dataUrl = reader.result as string;
+
+            // Insert image with data URL preview
+            editor.chain().focus().setImage({ src: dataUrl, alt: file.name }).run();
+
+            try {
+              // Upload and replace with CDN URL
+              const result = await uploadFile(file);
+
+              // Find and update the image node
+              const { state, view } = editor;
+              let imagePos: number | null = null;
+
+              state.doc.descendants((node: any, pos: number) => {
+                if (node.type.name === 'image' && node.attrs.src === dataUrl) {
+                  imagePos = pos;
+                  return false;
+                }
+                return true;
+              });
+
+              if (imagePos !== null) {
+                const cdnUrl = result.cdnUrl.startsWith('http')
+                  ? result.cdnUrl
+                  : `${API_URL}${result.cdnUrl}`;
+                const transaction = state.tr.setNodeMarkup(imagePos, undefined, {
+                  ...state.doc.nodeAt(imagePos)?.attrs,
+                  src: cdnUrl,
+                });
+                view.dispatch(transaction);
+              }
+            } catch (error) {
+              console.error('Image upload failed:', error);
+            }
+          };
+          reader.readAsDataURL(file);
+        };
+        input.click();
+      },
+    },
+    // File attachment
+    {
+      title: 'File',
+      description: 'Upload a file attachment',
+      aliases: ['file', 'attachment', 'attach', 'pdf', 'doc', 'document'],
+      icon: icons.file,
+      command: async ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).run();
+        // Import and trigger file upload
+        const { triggerFileUpload } = await import('./FileAttachment');
+        triggerFileUpload(editor);
+      },
+    },
+    // Toggle/Details
+    {
+      title: 'Toggle',
+      description: 'Create a collapsible section',
+      aliases: ['toggle', 'collapsible', 'details', 'expand', 'collapse', 'accordion'],
+      icon: icons.toggle,
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).setDetails().run();
+      },
+    },
+    // Table
+    {
+      title: 'Table',
+      description: 'Insert a table',
+      aliases: ['table', 'grid'],
+      icon: icons.table,
+      command: ({ editor, range }) => {
+        editor.chain().focus().deleteRange(range).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+      },
+    },
+    // Table of Contents
+    {
+      title: 'Table of Contents',
+      description: 'Insert a table of contents',
+      aliases: ['toc', 'outline', 'contents'],
+      icon: icons.tableOfContents,
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .insertContent({ type: 'tableOfContents' })
+          .run();
       },
     },
   ];

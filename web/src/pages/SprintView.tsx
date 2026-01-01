@@ -26,7 +26,7 @@ interface Issue {
   display_id: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 export function SprintViewPage() {
   const { id } = useParams<{ id: string }>();

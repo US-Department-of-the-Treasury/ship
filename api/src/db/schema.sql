@@ -161,3 +161,33 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
 -- Drop the legacy separate tables if they exist (greenfield cleanup)
 DROP TABLE IF EXISTS sprints CASCADE;
 DROP TABLE IF EXISTS projects CASCADE;
+
+-- File uploads (images, attachments)
+CREATE TABLE IF NOT EXISTS files (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  uploaded_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes BIGINT NOT NULL,
+  s3_key TEXT NOT NULL,        -- S3 object key (or local path for dev)
+  cdn_url TEXT,                -- CloudFront URL after processing
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'uploaded', 'failed')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_files_workspace ON files(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_files_status ON files(status);
+
+-- Document links (for backlinks feature)
+CREATE TABLE IF NOT EXISTS document_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  target_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(source_id, target_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_links_target ON document_links(target_id);
+CREATE INDEX IF NOT EXISTS idx_document_links_source ON document_links(source_id);

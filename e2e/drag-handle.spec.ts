@@ -452,7 +452,7 @@ test.describe('Drag Handle - Block Reordering', () => {
       const hasEmbed = await embedOption.isVisible().catch(() => false)
 
       if (!hasEmbed) {
-        test.skip()
+        expect(true).toBe(false) // Element not found, test cannot continue
         return
       }
 
@@ -467,7 +467,7 @@ test.describe('Drag Handle - Block Reordering', () => {
       const embedCount = await documentEmbed.count()
 
       if (embedCount === 0) {
-        test.skip()
+        expect(true).toBe(false) // Element not found, test cannot continue
         return
       }
 
@@ -557,7 +557,7 @@ test.describe('Drag Handle - Block Reordering', () => {
     // Skip: Yjs persistence is a separate concern from drag handle functionality.
     // The drag operation itself works (verified by other tests). This test fails
     // because the app's Yjs sync doesn't persist quickly enough for test timing.
-    test.skip('reordered content persists after page reload', async ({ page }) => {
+    test('reordered content persists after page reload', async ({ page }) => {
       await createNewDocument(page)
       await addParagraphs(page, ['ALPHA', 'BETA', 'GAMMA'])
 

@@ -1,0 +1,135 @@
+import { test, expect, Page } from '@playwright/test';
+
+/**
+ * File Upload API Tests
+ *
+ * These tests use mock/local storage for file uploads - no real S3 credentials required.
+ * In development, the API uses local file storage instead of S3.
+ */
+
+// Get API URL from environment
+const API_URL = process.env.VITE_API_URL || 'http://localhost:3147';
+
+// Helper to login and get session cookie
+async function loginAndGetCookies(page: Page): Promise<string> {
+  await page.goto('/login');
+  await page.locator('#email').fill('dev@ship.local');
+  await page.locator('#password').fill('admin123');
+  await page.getByRole('button', { name: /sign in/i }).click();
+  await expect(page).not.toHaveURL('/login', { timeout: 5000 });
+
+  // Get cookies from browser context
+  const cookies = await page.context().cookies();
+  return cookies.map(c => `${c.name}=${c.value}`).join('; ');
+}
+
+// Helper to get CSRF token
+async function getCsrfToken(page: Page): Promise<string> {
+  const response = await page.request.get(`${API_URL}/api/csrf-token`);
+  const data = await response.json();
+  return data.token;
+}
+
+test.describe('File Upload API', () => {
+  test('requires authentication for upload endpoint', async ({ page }) => {
+    // Try to access upload API without being logged in
+    // Note: Returns 403 (CSRF) or 401 (auth) depending on which check runs first
+    const response = await page.request.post(`${API_URL}/api/files/upload`, {
+      data: {
+        filename: 'test.png',
+        mimeType: 'image/png',
+        sizeBytes: 1024,
+      },
+    });
+    // Should be rejected (either 401 unauthorized or 403 CSRF invalid)
+    expect([401, 403]).toContain(response.status());
+
+    // Response might be JSON error or HTML error page
+    const text = await response.text();
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  test('returns presigned upload URL when authenticated', async ({ page }) => {
+    // Login first
+    await loginAndGetCookies(page);
+
+    // Get CSRF token
+    const csrfToken = await getCsrfToken(page);
+
+    // Request presigned URL
+    const response = await page.request.post(`${API_URL}/api/files/upload`, {
+      headers: {
+        'x-csrf-token': csrfToken,
+      },
+      data: {
+        filename: 'test-image.png',
+        mimeType: 'image/png',
+        sizeBytes: 1024,
+      },
+    });
+
+    expect(response.ok()).toBeTruthy();
+
+    const data = await response.json();
+    expect(data).toHaveProperty('fileId');
+    expect(data).toHaveProperty('uploadUrl');
+    expect(data).toHaveProperty('s3Key');
+
+    // fileId should be a UUID
+    expect(data.fileId).toMatch(/^[0-9a-f-]{36}$/);
+
+    // uploadUrl should be set (either local or S3)
+    expect(data.uploadUrl).toBeTruthy();
+  });
+
+  test('confirms upload and returns CDN URL', async ({ page }) => {
+    // Login first
+    await loginAndGetCookies(page);
+
+    // Get CSRF token
+    const csrfToken = await getCsrfToken(page);
+
+    // Step 1: Request presigned URL
+    const uploadResponse = await page.request.post(`${API_URL}/api/files/upload`, {
+      headers: {
+        'x-csrf-token': csrfToken,
+      },
+      data: {
+        filename: 'confirm-test.png',
+        mimeType: 'image/png',
+        sizeBytes: 100,
+      },
+    });
+    expect(uploadResponse.ok()).toBeTruthy();
+    const uploadData = await uploadResponse.json();
+    const { fileId, uploadUrl } = uploadData;
+
+    // Step 2: Upload file data (to local endpoint in dev)
+    const isLocalUpload = uploadUrl.startsWith('/api/files/');
+    if (isLocalUpload) {
+      // Create a minimal PNG buffer for local upload
+      const pngBuffer = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==',
+        'base64'
+      );
+
+      const localUploadResponse = await page.request.post(`${API_URL}${uploadUrl}`, {
+        headers: {
+          'Content-Type': 'image/png',
+          'x-csrf-token': csrfToken,
+        },
+        data: pngBuffer,
+      });
+      expect(localUploadResponse.ok()).toBeTruthy();
+    }
+
+    // Step 3: Get file metadata to verify cdn_url
+    const fileResponse = await page.request.get(`${API_URL}/api/files/${fileId}`);
+    expect(fileResponse.ok()).toBeTruthy();
+
+    const fileData = await fileResponse.json();
+    expect(fileData).toHaveProperty('cdn_url');
+    expect(fileData.cdn_url).toBeTruthy();
+    expect(fileData.status).toBe('uploaded');
+  });
+});

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
 
-const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 export function LoginPage() {
   const [email, setEmail] = useState(import.meta.env.DEV ? 'dev@ship.local' : '');
