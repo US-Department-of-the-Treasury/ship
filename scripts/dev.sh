@@ -12,6 +12,46 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Ensure api/.env.local exists
+if [ ! -f "$ROOT_DIR/api/.env.local" ]; then
+  # Derive database name from worktree/directory name
+  WORKTREE_NAME=$(basename "$ROOT_DIR")
+  # Convert to valid postgres db name (lowercase, replace non-alphanumeric with _)
+  DB_NAME="ship_$(echo "$WORKTREE_NAME" | tr '[:upper:]' '[:lower:]' | tr -c '[:alnum:]' '_' | sed 's/_*$//')"
+
+  echo "Creating api/.env.local with DATABASE_URL for $DB_NAME..."
+
+  # Check if database exists, create if not
+  NEEDS_SEED=false
+  if ! psql -lqt | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
+    echo "Creating database $DB_NAME..."
+    createdb "$DB_NAME" 2>/dev/null || {
+      echo "ERROR: Could not create database $DB_NAME"
+      echo "Please create it manually: createdb $DB_NAME"
+      exit 1
+    }
+    NEEDS_SEED=true
+  fi
+
+  cat > "$ROOT_DIR/api/.env.local" << EOF
+DATABASE_URL=postgresql://localhost/$DB_NAME
+SESSION_SECRET=dev-secret-change-in-production
+EOF
+  echo "Created api/.env.local"
+
+  # Run migrations and seed for new database
+  if [ "$NEEDS_SEED" = true ]; then
+    echo "Running migrations and seed for new database..."
+    cd "$ROOT_DIR"
+    pnpm build:shared 2>/dev/null || true
+    cd "$ROOT_DIR/api"
+    npx tsx src/db/migrate.ts
+    npx tsx src/db/seed.ts
+    cd "$ROOT_DIR"
+    echo "Database setup complete!"
+  fi
+fi
+
 # Base ports
 API_BASE=3000
 WEB_BASE=5173
