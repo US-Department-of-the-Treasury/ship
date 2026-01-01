@@ -63,6 +63,32 @@ PostgreSQL with direct SQL queries via `pg` (no ORM). Schema defined in `api/src
 
 Run migrations: Execute schema.sql against your database. Local dev uses `.env.local` for DB connection.
 
+## Deployment
+
+**Always use the deploy script:** `./scripts/deploy.sh`
+
+This script:
+1. Builds if needed (checks for dist directories)
+2. Creates a zip bundle with Dockerfile at root (required by EB)
+3. Uploads to S3 and deploys to Elastic Beanstalk
+
+**Works from any worktree** - the Dockerfile is at repo root, so every worktree has it.
+
+```bash
+# Deploy API to production
+./scripts/deploy.sh
+
+# Monitor deployment
+aws elasticbeanstalk describe-environments --environment-names ship-api-prod --query 'Environments[0].[Health,HealthStatus]'
+```
+
+**Frontend deployment** (S3 + CloudFront):
+```bash
+pnpm build:web
+aws s3 sync web/dist/ s3://$(cd terraform && terraform output -raw frontend_bucket_name)/ --delete
+aws cloudfront create-invalidation --distribution-id $(cd terraform && terraform output -raw cloudfront_distribution_id) --paths "/*"
+```
+
 ## Philosophy Enforcement
 
 Use `/ship-philosophy-reviewer` to audit changes against Ship's core philosophy. Auto-triggers on schema changes, new components, or route additions. In autonomous contexts (ralph-loop), violations are fixed automatically.
