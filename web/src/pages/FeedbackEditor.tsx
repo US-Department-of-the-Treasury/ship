@@ -22,7 +22,7 @@ interface Feedback {
   created_by_name: string | null;
 }
 
-const API_URL = import.meta.env.VITE_API_URL ?? '';
+const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
 
 // CSRF token cache
 let csrfToken: string | null = null;
