@@ -52,18 +52,18 @@ searchRouter.get('/mentions', requireAuth, async (req: Request, res: Response) =
     const searchQuery = (req.query.q as string) || '';
     const workspaceId = req.user!.workspaceId;
 
-    // Search for people (workspace members with their user info)
-    // Falls back to person_document_id if available, otherwise uses user id
+    // Search for people (person documents linked via properties.user_id)
     const peopleResult = await pool.query(
       `SELECT
-         COALESCE(wm.person_document_id::text, u.id::text) as id,
-         u.name,
+         d.id::text as id,
+         d.title as name,
          'person' as document_type
-       FROM workspace_memberships wm
-       JOIN users u ON u.id = wm.user_id
-       WHERE wm.workspace_id = $1
-         AND u.name ILIKE $2
-       ORDER BY u.name ASC
+       FROM documents d
+       WHERE d.workspace_id = $1
+         AND d.document_type = 'person'
+         AND d.archived_at IS NULL
+         AND d.title ILIKE $2
+       ORDER BY d.title ASC
        LIMIT 5`,
       [workspaceId, `%${searchQuery}%`]
     );
