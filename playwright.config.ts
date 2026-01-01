@@ -1,8 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// Worktree-specific ports (from .env.local files)
-const API_PORT = process.env.API_PORT || '3147'
-const WEB_PORT = process.env.WEB_PORT || '5320'
+// Dev server ports (default to standard ports)
+const API_PORT = process.env.API_PORT || '3000'
+const WEB_PORT = process.env.WEB_PORT || '5173'
 
 export default defineConfig({
   testDir: './e2e',

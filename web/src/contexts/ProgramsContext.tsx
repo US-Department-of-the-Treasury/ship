@@ -22,6 +22,78 @@ const ProgramsContext = createContext<ProgramsContextValue | null>(null);
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
+// CSRF token cache
+let csrfToken: string | null = null;
+
+async function getCsrfToken(): Promise<string> {
+  if (!csrfToken) {
+    const response = await fetch(`${API_URL}/api/csrf-token`, {
+      credentials: 'include',
+    });
+    const data = await response.json();
+    csrfToken = data.token;
+  }
+  return csrfToken!;
+}
+
+async function apiPost(endpoint: string, body?: object) {
+  const token = await getCsrfToken();
+  const res = await fetch(`${API_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': token,
+    },
+    credentials: 'include',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  // If CSRF token invalid, retry once
+  if (res.status === 403) {
+    csrfToken = null;
+    const newToken = await getCsrfToken();
+    return fetch(`${API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': newToken,
+      },
+      credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+  return res;
+}
+
+async function apiPatch(endpoint: string, body: object) {
+  const token = await getCsrfToken();
+  const res = await fetch(`${API_URL}${endpoint}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': token,
+    },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+
+  // If CSRF token invalid, retry once
+  if (res.status === 403) {
+    csrfToken = null;
+    const newToken = await getCsrfToken();
+    return fetch(`${API_URL}${endpoint}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': newToken,
+      },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+  }
+  return res;
+}
+
 export function ProgramsProvider({ children }: { children: ReactNode }) {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,12 +120,7 @@ export function ProgramsProvider({ children }: { children: ReactNode }) {
 
   const createProgram = useCallback(async (): Promise<Program | null> => {
     try {
-      const res = await fetch(`${API_URL}/api/programs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled' }),
-      });
+      const res = await apiPost('/api/programs', { title: 'Untitled' });
       if (res.ok) {
         const program = await res.json();
         setPrograms(prev => [program, ...prev]);
@@ -73,12 +140,7 @@ export function ProgramsProvider({ children }: { children: ReactNode }) {
       if (updates.color !== undefined) apiUpdates.color = updates.color;
       if (updates.archived_at !== undefined) apiUpdates.archived_at = updates.archived_at;
 
-      const res = await fetch(`${API_URL}/api/programs/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(apiUpdates),
-      });
+      const res = await apiPatch(`/api/programs/${id}`, apiUpdates);
       if (res.ok) {
         const updated = await res.json();
         // Update the program in the shared state, preserving counts from existing data
