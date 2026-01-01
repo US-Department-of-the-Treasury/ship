@@ -25,11 +25,12 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Workspace memberships (users can be in multiple workspaces with different roles)
+-- AUTHORIZATION ONLY: This table controls access. Person documents (content layer) are separate.
+-- Person docs link to users via properties.user_id, NOT via this table.
 CREATE TABLE IF NOT EXISTS workspace_memberships (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  person_document_id UUID,  -- Link to Person doc in this workspace (added after documents table)
   role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
@@ -111,7 +112,7 @@ CREATE TABLE IF NOT EXISTS documents (
   -- Issue properties: state, priority, assignee_id, source, rejection_reason, feedback_status
   -- Program/Project properties: prefix, color
   -- Sprint properties: start_date, end_date, sprint_status, goal
-  -- Person properties: email, role, capacity_hours
+  -- Person properties: user_id (links to users.id), email, capacity_hours, skills
   properties JSONB DEFAULT '{}',
 
   -- Keep these as columns for indexing/relationships/sequences

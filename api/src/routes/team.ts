@@ -52,13 +52,18 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.user!.workspaceId;
 
-    // Get all users in workspace via memberships
+    // Get all people in workspace via person documents
     const usersResult = await pool.query(
-      `SELECT u.id, u.name, u.email
-       FROM users u
-       JOIN workspace_memberships wm ON wm.user_id = u.id
-       WHERE wm.workspace_id = $1
-       ORDER BY u.name`,
+      `SELECT
+         d.properties->>'user_id' as id,
+         d.title as name,
+         COALESCE(d.properties->>'email', u.email) as email
+       FROM documents d
+       LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
+       WHERE d.workspace_id = $1
+         AND d.document_type = 'person'
+         AND d.archived_at IS NULL
+       ORDER BY d.title`,
       [workspaceId]
     );
 
@@ -481,13 +486,15 @@ router.get('/people', requireAuth, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.user!.workspaceId;
 
-    // Get person documents joined with user info via workspace_memberships
+    // Get person documents - email comes from properties or joined user
     const result = await pool.query(
-      `SELECT d.id, d.title as name, u.email
+      `SELECT d.id, d.title as name,
+              COALESCE(d.properties->>'email', u.email) as email
        FROM documents d
-       LEFT JOIN workspace_memberships wm ON wm.person_document_id = d.id
-       LEFT JOIN users u ON wm.user_id = u.id
-       WHERE d.workspace_id = $1 AND d.document_type = 'person'
+       LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
+       WHERE d.workspace_id = $1
+         AND d.document_type = 'person'
+         AND d.archived_at IS NULL
        ORDER BY d.title`,
       [workspaceId]
     );

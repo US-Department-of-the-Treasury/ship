@@ -109,6 +109,7 @@ async function seed() {
     console.log('✅ Set dev@ship.local as super-admin');
 
     // Create workspace memberships and Person documents for all users
+    // Note: These are independent - no coupling via person_document_id
     let membershipsCreated = 0;
     let personDocsCreated = 0;
     const allUsersForMembership = await pool.query(
@@ -116,45 +117,38 @@ async function seed() {
     );
 
     for (const user of allUsersForMembership.rows) {
+      // Check for existing membership
       const existingMembership = await pool.query(
-        'SELECT id, person_document_id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+        'SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
         [workspaceId, user.id]
       );
 
       if (!existingMembership.rows[0]) {
-        // Create Person document for this user in the workspace
-        const personDocResult = await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, created_by)
-           VALUES ($1, 'person', $2, $3)
-           RETURNING id`,
-          [workspaceId, user.name, user.id]
-        );
-        const personDocId = personDocResult.rows[0].id;
-        personDocsCreated++;
-
         // Make dev user an admin, others are members
         const role = user.email === 'dev@ship.local' ? 'admin' : 'member';
         await pool.query(
-          `INSERT INTO workspace_memberships (workspace_id, user_id, role, person_document_id)
-           VALUES ($1, $2, $3, $4)`,
-          [workspaceId, user.id, role, personDocId]
+          `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+           VALUES ($1, $2, $3)`,
+          [workspaceId, user.id, role]
         );
         membershipsCreated++;
-      } else if (!existingMembership.rows[0].person_document_id) {
-        // Membership exists but Person doc is missing - create and link it
-        const personDocResult = await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, created_by)
-           VALUES ($1, 'person', $2, $3)
-           RETURNING id`,
-          [workspaceId, user.name, user.id]
-        );
-        const personDocId = personDocResult.rows[0].id;
-        personDocsCreated++;
+      }
 
+      // Check for existing person document (via properties.user_id)
+      const existingPersonDoc = await pool.query(
+        `SELECT id FROM documents
+         WHERE workspace_id = $1 AND document_type = 'person' AND properties->>'user_id' = $2`,
+        [workspaceId, user.id]
+      );
+
+      if (!existingPersonDoc.rows[0]) {
+        // Create Person document with properties.user_id
         await pool.query(
-          `UPDATE workspace_memberships SET person_document_id = $1 WHERE id = $2`,
-          [personDocId, existingMembership.rows[0].id]
+          `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+           VALUES ($1, 'person', $2, $3, $4)`,
+          [workspaceId, user.name, JSON.stringify({ user_id: user.id, email: user.email }), user.id]
         );
+        personDocsCreated++;
       }
     }
 

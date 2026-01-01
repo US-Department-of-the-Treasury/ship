@@ -61,7 +61,23 @@ pnpm db:seed          # Seed database with test data
 
 PostgreSQL with direct SQL queries via `pg` (no ORM). Schema defined in `api/src/db/schema.sql`.
 
-Run migrations: Execute schema.sql against your database. Local dev uses `.env.local` for DB connection.
+**Migrations:** Schema changes MUST be in numbered migration files:
+
+```
+api/src/db/migrations/
+├── 001_properties_jsonb.sql
+├── 002_person_membership_decoupling.sql
+└── ...
+```
+
+- Name files: `NNN_description.sql` (e.g., `003_add_tags.sql`)
+- Migrations run automatically on deploy via `api/src/db/migrate.ts`
+- The `schema_migrations` table tracks which migrations have been applied
+- Each migration runs in a transaction with automatic rollback on failure
+
+**Never modify schema.sql directly for existing tables.** Schema.sql is for initial setup only. All changes to existing tables go in migration files.
+
+Local dev uses `.env.local` for DB connection.
 
 ## Deployment
 
