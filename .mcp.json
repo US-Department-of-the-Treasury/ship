@@ -4,6 +4,15 @@
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "@playwright/mcp@latest", "--headless", "--isolated"]
+    },
+    "tfmcp": {
+      "type": "stdio",
+      "command": "tfmcp",
+      "args": ["mcp"],
+      "env": {
+        "TFMCP_ALLOW_DANGEROUS_OPS": "false",
+        "TFMCP_AUDIT_ENABLED": "true"
+      }
     }
   }
 }
