@@ -53,6 +53,13 @@ input::placeholder {
   padding-left: 32px;
 }
 
+/* Prevent focus outline on editor wrapper elements */
+.tiptap-wrapper:focus-visible,
+.tiptap-wrapper > div:focus-visible,
+.ProseMirror:focus-visible {
+  outline: none;
+}
+
 .ProseMirror p {
   margin: 0.5em 0;
 }
