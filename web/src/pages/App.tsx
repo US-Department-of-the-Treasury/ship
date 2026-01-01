@@ -233,10 +233,9 @@ export function AppLayout() {
         {/* Contextual Sidebar - Complementary landmark */}
         <aside
           className={cn(
-            'flex flex-col border-r border-border transition-all duration-200 overflow-hidden',
+            'flex flex-col border-r border-border transition-all duration-200 overflow-hidden select-none',
             leftSidebarCollapsed ? 'w-0 border-r-0' : 'w-56'
           )}
-          role="complementary"
           aria-label={`${activeMode === 'docs' ? 'Documents' : activeMode === 'issues' ? 'Issues' : activeMode === 'programs' ? 'Programs' : activeMode === 'team' ? 'Teams' : 'Settings'} sidebar`}
         >
           <div className="flex w-56 flex-col h-full">
