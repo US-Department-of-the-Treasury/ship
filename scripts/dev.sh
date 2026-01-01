@@ -39,14 +39,25 @@ SESSION_SECRET=dev-secret-change-in-production
 EOF
   echo "Created api/.env.local"
 
-  # Run migrations and seed for new database
+  # Setup fresh database (schema + seed)
   if [ "$NEEDS_SEED" = true ]; then
-    echo "Running migrations and seed for new database..."
+    echo "Setting up fresh database..."
     cd "$ROOT_DIR"
-    pnpm build:shared 2>/dev/null || true
+
+    # Ensure dependencies are installed
+    if [ ! -d "node_modules" ]; then
+      echo "Installing dependencies..."
+      pnpm install
+    fi
+
+    pnpm build:shared
+
+    # Apply schema directly with psql, then seed
+    psql "$DB_NAME" -f "$ROOT_DIR/api/src/db/schema.sql"
+    echo "✅ Schema applied"
+
     cd "$ROOT_DIR/api"
-    npx tsx src/db/migrate.ts
-    npx tsx src/db/seed.ts
+    DATABASE_URL="postgresql://localhost/$DB_NAME" npx tsx src/db/seed.ts
     cd "$ROOT_DIR"
     echo "Database setup complete!"
   fi
