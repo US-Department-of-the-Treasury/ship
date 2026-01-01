@@ -20,7 +20,7 @@ export async function loadProductionSecrets(): Promise<void> {
     return; // Use .env files for local dev
   }
 
-  const environment = process.env.ENVIRONMENT || 'dev';
+  const environment = process.env.ENVIRONMENT || 'prod';
   const basePath = `/ship/${environment}`;
 
   console.log(`Loading secrets from SSM path: ${basePath}`);
