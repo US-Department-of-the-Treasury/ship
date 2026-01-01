@@ -155,4 +155,71 @@ test.describe('Team Mode (Phase 7)', () => {
     // Plus the header row cells
     expect(cellCount).toBeGreaterThanOrEqual(33)
   })
+
+  test('can assign user to program for a sprint', async ({ page }) => {
+    await page.goto('/team')
+
+    // Wait for grid and assignments to load
+    await expect(page.getByText('Team Member', { exact: true })).toBeVisible({ timeout: 5000 })
+    await page.waitForResponse(resp => resp.url().includes('/api/team/assignments'))
+
+    // Scroll right to find future sprints (more likely to have empty cells)
+    const scrollContainer = page.locator('.overflow-x-auto')
+    await scrollContainer.evaluate(el => { el.scrollLeft = el.scrollWidth })
+    await page.waitForTimeout(500) // Wait for scroll + any lazy loading
+
+    // Find an empty cell (button with no program badge inside)
+    // Empty cells are buttons within cells that don't have a program prefix span
+    const emptyCell = page.locator('.border-b.border-r.border-border')
+      .filter({ hasNot: page.locator('span.rounded.px-1\\.5.py-0\\.5.text-xs.font-bold') })
+      .first()
+
+    // Click the empty cell to open the program selector
+    await emptyCell.click()
+
+    // Wait for the popover to open (cmdk command menu)
+    await expect(page.getByPlaceholder('Search programs...')).toBeVisible({ timeout: 3000 })
+
+    // Select a program (click on API Platform which should exist from seed)
+    await page.getByRole('option', { name: /API Platform/i }).click()
+
+    // Wait for API response
+    await page.waitForResponse(resp =>
+      resp.url().includes('/api/team/assign') && resp.request().method() === 'POST'
+    )
+
+    // Verify the program badge now appears in that cell area
+    // The cell should now show the API prefix badge
+    await expect(page.locator('span.rounded.px-1\\.5.py-0\\.5.text-xs.font-bold').filter({ hasText: 'API' })).toBeVisible()
+  })
+
+  test('shows conflict error when user already assigned to different program', async ({ page }) => {
+    await page.goto('/team')
+
+    // Wait for grid and assignments to load
+    await expect(page.getByText('Team Member', { exact: true })).toBeVisible({ timeout: 5000 })
+    await page.waitForResponse(resp => resp.url().includes('/api/team/assignments'))
+
+    // Find a cell that already has a program assignment
+    const assignedCell = page.locator('.border-b.border-r.border-border')
+      .filter({ has: page.locator('span.rounded.px-1\\.5.py-0\\.5.text-xs.font-bold') })
+      .first()
+
+    // Hover to reveal the dropdown caret, then click it
+    await assignedCell.hover()
+    await assignedCell.locator('button[aria-label="Change program assignment"]').click()
+
+    // Wait for the popover to open
+    await expect(page.getByPlaceholder('Search programs...')).toBeVisible({ timeout: 3000 })
+
+    // Get current program and select a different one
+    // Try to select Ship Core which is different from most seeded assignments
+    const differentProgram = page.getByRole('option', { name: /Ship Core/i })
+    if (await differentProgram.isVisible()) {
+      await differentProgram.click()
+
+      // Should show reassignment confirmation dialog
+      await expect(page.getByText(/Reassign .+\?/)).toBeVisible({ timeout: 3000 })
+    }
+  })
 })

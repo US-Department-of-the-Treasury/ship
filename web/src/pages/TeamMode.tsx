@@ -654,13 +654,14 @@ function SprintCell({
 }
 
 function formatDateRange(startDate: string, endDate: string): string {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  // Parse as UTC to avoid timezone issues with YYYY-MM-DD format
+  const start = new Date(startDate + 'T00:00:00Z');
+  const end = new Date(endDate + 'T00:00:00Z');
 
-  const startMonth = start.toLocaleDateString('en-US', { month: 'short' });
-  const startDay = start.getDate();
-  const endMonth = end.toLocaleDateString('en-US', { month: 'short' });
-  const endDay = end.getDate();
+  const startMonth = start.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  const startDay = start.getUTCDate();
+  const endMonth = end.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  const endDay = end.getUTCDate();
 
   if (startMonth === endMonth) {
     return `${startMonth} ${startDay}-${endDay}`;

@@ -68,11 +68,24 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
       [workspaceId]
     );
 
-    const sprintStartDate = workspaceResult.rows[0]?.sprint_start_date || new Date().toISOString().split('T')[0];
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
     const sprintDurationDays = 14; // 2-week sprints
 
     const today = new Date();
-    const startDate = new Date(sprintStartDate);
+
+    // Normalize sprint start date to midnight UTC to avoid timezone issues
+    // pg driver may return DATE as a Date object with local timezone offset
+    let startDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      // Extract just the date parts and create a UTC midnight date
+      startDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      // Parse string as UTC midnight
+      startDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      // Fallback to today
+      startDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
 
     // Calculate which sprint number we're in
     const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -92,10 +105,10 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
     const sprints = [];
     for (let i = fromSprint; i <= toSprint; i++) {
       const sprintStart = new Date(startDate);
-      sprintStart.setDate(sprintStart.getDate() + (i - 1) * sprintDurationDays);
+      sprintStart.setUTCDate(sprintStart.getUTCDate() + (i - 1) * sprintDurationDays);
 
       const sprintEnd = new Date(sprintStart);
-      sprintEnd.setDate(sprintEnd.getDate() + sprintDurationDays - 1);
+      sprintEnd.setUTCDate(sprintEnd.getUTCDate() + sprintDurationDays - 1);
 
       sprints.push({
         number: i,
@@ -140,7 +153,8 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
 
     for (const issue of issuesResult.rows) {
       const userId = issue.assignee_id;
-      const sprintStart = new Date(issue.sprint_start);
+      // Parse issue's sprint start date as UTC midnight to match startDate
+      const sprintStart = new Date(issue.sprint_start + 'T00:00:00Z');
 
       // Calculate which sprint number this issue belongs to
       const daysSinceStart = Math.floor((sprintStart.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -223,8 +237,19 @@ router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
       `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
       [workspaceId]
     );
-    const sprintStartDate = new Date(workspaceResult.rows[0]?.sprint_start_date || new Date());
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
     const sprintDurationDays = 14;
+
+    // Normalize sprint start date to midnight UTC to avoid timezone issues
+    let sprintStartDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      sprintStartDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      sprintStartDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      const today = new Date();
+      sprintStartDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
 
     // Get all issues with sprint and assignee
     const issuesResult = await pool.query(
@@ -250,7 +275,8 @@ router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
 
     for (const issue of issuesResult.rows) {
       const userId = issue.assignee_id;
-      const sprintStart = new Date(issue.sprint_start);
+      // Parse issue's sprint start date as UTC midnight to match sprintStartDate
+      const sprintStart = new Date(issue.sprint_start + 'T00:00:00Z');
 
       // Calculate sprint number
       const daysSinceStart = Math.floor((sprintStart.getTime() - sprintStartDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -295,13 +321,24 @@ router.post('/assign', requireAuth, async (req: Request, res: Response) => {
       `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
       [workspaceId]
     );
-    const sprintStartDate = new Date(workspaceResult.rows[0].sprint_start_date);
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
+
+    // Normalize sprint start date to midnight UTC to avoid timezone issues
+    let sprintStartDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      sprintStartDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      sprintStartDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      const today = new Date();
+      sprintStartDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
 
     // Calculate sprint dates
     const sprintStart = new Date(sprintStartDate);
-    sprintStart.setDate(sprintStart.getDate() + (sprintNumber - 1) * 14);
+    sprintStart.setUTCDate(sprintStart.getUTCDate() + (sprintNumber - 1) * 14);
     const sprintEnd = new Date(sprintStart);
-    sprintEnd.setDate(sprintEnd.getDate() + 13);
+    sprintEnd.setUTCDate(sprintEnd.getUTCDate() + 13);
 
     const startStr = sprintStart.toISOString().split('T')[0];
     const endStr = sprintEnd.toISOString().split('T')[0];

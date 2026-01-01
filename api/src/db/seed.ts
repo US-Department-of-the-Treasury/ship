@@ -330,10 +330,18 @@ async function seed() {
       maxTickets[program.id] = maxResult.rows[0].max_ticket;
     }
 
+    // Create a stable user -> program assignment (one program per user per sprint)
+    // This ensures the team allocation constraint is respected in seed data
+    const userProgramAssignments: Record<string, string> = {};
+    allUsers.forEach((user, idx) => {
+      userProgramAssignments[user.id] = programs[idx % programs.length]!.id;
+    });
+
     for (let i = 0; i < issueTemplates.length; i++) {
       const template = issueTemplates[i]!;
-      const program = programs[i % programs.length]!;
       const assignee = allUsers[i % allUsers.length]!;
+      // Use the user's assigned program (one program per user)
+      const program = programs.find(p => p.id === userProgramAssignments[assignee.id])!;
 
       // Assign to appropriate sprint based on state
       let sprintId: string | null = null;
