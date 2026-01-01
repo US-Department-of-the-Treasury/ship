@@ -81,40 +81,32 @@ Local dev uses `.env.local` for DB connection.
 
 ## Deployment
 
-**Always use the deploy script:** `./scripts/deploy.sh`
+**"Deploy" means deploy BOTH API and frontend.** Never deploy just one - they must stay in sync.
 
-This script:
-1. Builds if needed (checks for dist directories)
-2. Creates a zip bundle with Dockerfile at root (required by EB)
-3. Uploads to S3 and deploys to Elastic Beanstalk
-
-**Works from any worktree** - the Dockerfile is at repo root, so every worktree has it.
-
+### Full deploy sequence:
 ```bash
-# Deploy API to production
+# 1. Deploy API
 ./scripts/deploy.sh
 
-# Monitor deployment (takes 3-5 min for rolling update)
-aws elasticbeanstalk describe-environments --environment-names ship-api-prod --query 'Environments[0].[Health,HealthStatus]'
+# 2. Monitor API until healthy (poll every 30s until Green/Ready)
+aws elasticbeanstalk describe-environments --environment-names ship-api-prod --query 'Environments[0].[Health,HealthStatus,Status]'
 
-# Check instance health if issues
-aws elasticbeanstalk describe-instances-health --environment-name ship-api-prod --attribute-names All
-```
-
-**Deployment details:**
-- Uses **RollingWithAdditionalBatch** for zero-downtime deploys
-- ALB health check hits `/health` endpoint (returns `{"status":"ok"}`)
-- Full EB environment is managed by Terraform (`terraform/elastic-beanstalk.tf`)
-- Deploys take 3-5 minutes due to rolling instance replacement
-
-**After deploying, monitor until complete.** Don't just report "deployment started" and leave the user with a command to run. Poll the environment status every 30 seconds until Status is `Ready` and Health is `Green`. During rolling updates, temporary `Red/Degraded` status is normal while old instances drain.
-
-**Frontend deployment** (S3 + CloudFront):
-```bash
+# 3. Deploy frontend
 pnpm build:web
 aws s3 sync web/dist/ s3://$(cd terraform && terraform output -raw s3_bucket_name)/ --delete
 aws cloudfront create-invalidation --distribution-id $(cd terraform && terraform output -raw cloudfront_distribution_id) --paths "/*"
+
+# 4. Wait for CloudFront invalidation to complete
+aws cloudfront get-invalidation --distribution-id DIST_ID --id INVALIDATION_ID --query 'Invalidation.Status'
 ```
+
+**After deploying, monitor until complete.** Poll every 30 seconds until Status is `Ready` and Health is `Green`. During rolling updates, temporary `Red/Degraded` status is normal while old instances drain. Don't report "done" until both API and frontend are fully deployed.
+
+**Deployment details:**
+- API uses **RollingWithAdditionalBatch** for zero-downtime deploys (3-5 min)
+- ALB health check hits `/health` endpoint
+- Frontend deploys to S3, served via CloudFront
+- CloudFront invalidation typically completes in 30-60 seconds
 
 ## Philosophy Enforcement
 
