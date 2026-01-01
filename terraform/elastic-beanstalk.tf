@@ -243,6 +243,13 @@ resource "aws_elastic_beanstalk_environment" "api" {
     value     = var.aws_region
   }
 
+  # Health Check Path
+  setting {
+    namespace = "aws:elasticbeanstalk:environment:process:default"
+    name      = "HealthCheckPath"
+    value     = "/health"
+  }
+
   # Health Reporting
   setting {
     namespace = "aws:elasticbeanstalk:healthreporting:system"
