@@ -557,7 +557,7 @@ router.get('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req:
 
   try {
     const result = await pool.query(
-      `SELECT wi.id, wi.email, wi.role, wi.expires_at, wi.created_at,
+      `SELECT wi.id, wi.email, wi.token, wi.role, wi.expires_at, wi.created_at,
               u.name as invited_by_name
        FROM workspace_invites wi
        JOIN users u ON wi.invited_by_user_id = u.id
@@ -569,6 +569,7 @@ router.get('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req:
     const invites = result.rows.map(row => ({
       id: row.id,
       email: row.email,
+      token: row.token,
       role: row.role,
       expiresAt: row.expires_at,
       createdAt: row.created_at,

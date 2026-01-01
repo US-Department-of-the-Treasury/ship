@@ -287,6 +287,19 @@ function InvitesTab({
   onInvite: (e: React.FormEvent) => void;
   onRevoke: (id: string) => void;
 }) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  function handleCopyLink(invite: WorkspaceInvite) {
+    if (!invite.token) {
+      console.error('Invite token is missing:', invite);
+      return;
+    }
+    const url = `${window.location.origin}/invite/${invite.token}`;
+    navigator.clipboard.writeText(url);
+    setCopiedId(invite.id);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
   return (
     <div className="space-y-6">
       {/* Invite form */}
@@ -337,7 +350,18 @@ function InvitesTab({
                   <td className="px-4 py-3 text-sm text-muted">
                     {new Date(invite.expiresAt).toLocaleDateString()}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-right space-x-3">
+                    <button
+                      onClick={() => handleCopyLink(invite)}
+                      className={cn(
+                        "text-sm transition-colors",
+                        copiedId === invite.id
+                          ? "text-green-500"
+                          : "text-accent hover:text-accent/80"
+                      )}
+                    >
+                      {copiedId === invite.id ? 'Copied!' : 'Copy Link'}
+                    </button>
                     <button
                       onClick={() => onRevoke(invite.id)}
                       className="text-sm text-red-500 hover:text-red-400 transition-colors"
