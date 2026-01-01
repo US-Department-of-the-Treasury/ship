@@ -1,5 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 
+export interface ProgramOwner {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export interface Program {
   id: string;
   name: string;
@@ -8,13 +14,14 @@ export interface Program {
   archived_at: string | null;
   issue_count?: number;
   sprint_count?: number;
+  owner: ProgramOwner | null;
 }
 
 interface ProgramsContextValue {
   programs: Program[];
   loading: boolean;
   createProgram: () => Promise<Program | null>;
-  updateProgram: (id: string, updates: Partial<Program>) => Promise<Program | null>;
+  updateProgram: (id: string, updates: Partial<Program> & { owner_id?: string | null }) => Promise<Program | null>;
   refreshPrograms: () => Promise<void>;
 }
 
@@ -132,13 +139,14 @@ export function ProgramsProvider({ children }: { children: ReactNode }) {
     return null;
   }, []);
 
-  const updateProgram = useCallback(async (id: string, updates: Partial<Program>): Promise<Program | null> => {
+  const updateProgram = useCallback(async (id: string, updates: Partial<Program> & { owner_id?: string | null }): Promise<Program | null> => {
     try {
       // Map frontend field names to API field names (API uses 'title', returns as 'name')
       const apiUpdates: Record<string, unknown> = {};
       if (updates.name !== undefined) apiUpdates.title = updates.name;
       if (updates.color !== undefined) apiUpdates.color = updates.color;
       if (updates.archived_at !== undefined) apiUpdates.archived_at = updates.archived_at;
+      if (updates.owner_id !== undefined) apiUpdates.owner_id = updates.owner_id;
 
       const res = await apiPatch(`/api/programs/${id}`, apiUpdates);
       if (res.ok) {
