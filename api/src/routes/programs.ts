@@ -68,6 +68,12 @@ function extractProgramFromRow(row: any) {
     updated_at: row.updated_at,
     issue_count: row.issue_count,
     sprint_count: row.sprint_count,
+    // owner_id in properties takes precedence over created_by
+    owner: row.owner_name ? {
+      id: row.owner_id,
+      name: row.owner_name,
+      email: row.owner_email,
+    } : null,
   };
 }
 
@@ -81,6 +87,7 @@ const createProgramSchema = z.object({
 const updateProgramSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  owner_id: z.string().uuid().optional().nullable(),
   archived_at: z.string().datetime().optional().nullable(),
 });
 
@@ -88,11 +95,15 @@ const updateProgramSchema = z.object({
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const includeArchived = req.query.archived === 'true';
+    // owner_id in properties takes precedence over created_by
     let query = `
       SELECT d.id, d.title, d.properties, d.archived_at, d.created_at, d.updated_at,
+             COALESCE((d.properties->>'owner_id')::uuid, d.created_by) as owner_id,
+             u.name as owner_name, u.email as owner_email,
              (SELECT COUNT(*) FROM documents i WHERE i.program_id = d.id AND i.document_type = 'issue') as issue_count,
              (SELECT COUNT(*) FROM documents s WHERE s.program_id = d.id AND s.document_type = 'sprint') as sprint_count
       FROM documents d
+      LEFT JOIN users u ON u.id = COALESCE((d.properties->>'owner_id')::uuid, d.created_by)
       WHERE d.workspace_id = $1 AND d.document_type = 'program'
     `;
 
@@ -114,11 +125,15 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    // owner_id in properties takes precedence over created_by
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.archived_at, d.created_at, d.updated_at,
+              COALESCE((d.properties->>'owner_id')::uuid, d.created_by) as owner_id,
+              u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i WHERE i.program_id = d.id AND i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents s WHERE s.program_id = d.id AND s.document_type = 'sprint') as sprint_count
        FROM documents d
+       LEFT JOIN users u ON u.id = COALESCE((d.properties->>'owner_id')::uuid, d.created_by)
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'`,
       [id, req.user!.workspaceId]
     );
@@ -188,7 +203,12 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     res.status(201).json({
       ...extractProgramFromRow(result.rows[0]),
       issue_count: 0,
-      sprint_count: 0
+      sprint_count: 0,
+      owner: {
+        id: req.user!.id,
+        name: req.user!.name,
+        email: req.user!.email,
+      }
     });
   } catch (err) {
     console.error('Create program error:', err);
@@ -239,6 +259,11 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    if (data.owner_id !== undefined) {
+      newProps.owner_id = data.owner_id;
+      propsChanged = true;
+    }
+
     if (propsChanged) {
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(newProps));
@@ -257,11 +282,21 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 
     updates.push(`updated_at = now()`);
 
-    const result = await pool.query(
+    await pool.query(
       `UPDATE documents SET ${updates.join(', ')}
-       WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'program'
-       RETURNING id, title, properties, archived_at, created_at, updated_at`,
+       WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'program'`,
       [...values, id, req.user!.workspaceId]
+    );
+
+    // Re-query to get full program with owner info
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.archived_at, d.created_at, d.updated_at,
+              COALESCE((d.properties->>'owner_id')::uuid, d.created_by) as owner_id,
+              u.name as owner_name, u.email as owner_email
+       FROM documents d
+       LEFT JOIN users u ON u.id = COALESCE((d.properties->>'owner_id')::uuid, d.created_by)
+       WHERE d.id = $1 AND d.document_type = 'program'`,
+      [id]
     );
 
     res.json(extractProgramFromRow(result.rows[0]));

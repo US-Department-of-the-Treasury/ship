@@ -7,6 +7,7 @@ import { cn } from '@/lib/cn';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 import { KanbanBoard } from '@/components/KanbanBoard';
+import { PersonCombobox, Person } from '@/components/PersonCombobox';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -452,8 +453,18 @@ function OverviewTab({
   program: Program;
   user: { name: string };
   onTitleChange: (title: string) => void;
-  onUpdateProgram: (updates: Partial<Program>) => void;
+  onUpdateProgram: (updates: Partial<Program> & { owner_id?: string | null }) => void;
 }) {
+  const [people, setPeople] = useState<Person[]>([]);
+
+  // Fetch team members
+  useEffect(() => {
+    fetch(`${API_URL}/api/team/people`, { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then(setPeople)
+      .catch(console.error);
+  }, []);
+
   return (
     <Editor
       documentId={program.id}
@@ -464,6 +475,15 @@ function OverviewTab({
       placeholder="Describe this program..."
       sidebar={
         <div className="space-y-4 p-4">
+          <PropertyRow label="Owner">
+            <PersonCombobox
+              people={people}
+              value={program.owner?.id || null}
+              onChange={(ownerId) => onUpdateProgram({ owner_id: ownerId })}
+              placeholder="Select owner..."
+            />
+          </PropertyRow>
+
           <PropertyRow label="Prefix">
             <input
               type="text"

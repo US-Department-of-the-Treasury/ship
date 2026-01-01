@@ -73,10 +73,16 @@ export function ProgramsPage() {
   );
 }
 
-function ProgramCard({ program, onClick }: { program: Program; onClick: () => void }) {
-  const issueCount = program.issue_count ?? 0;
-  const sprintCount = program.sprint_count ?? 0;
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .map(part => part[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
 
+function ProgramCard({ program, onClick }: { program: Program; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -95,10 +101,14 @@ function ProgramCard({ program, onClick }: { program: Program; onClick: () => vo
         </div>
       </div>
 
-      <div className="mt-4 flex gap-4 text-xs text-muted">
-        <span>{issueCount} issue{issueCount !== 1 ? 's' : ''}</span>
-        <span>{sprintCount} sprint{sprintCount !== 1 ? 's' : ''}</span>
-      </div>
+      {program.owner && (
+        <div className="mt-4 flex items-center gap-2">
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent/20 text-[10px] font-medium text-accent">
+            {getInitials(program.owner.name)}
+          </div>
+          <span className="text-xs text-muted truncate">{program.owner.name}</span>
+        </div>
+      )}
     </button>
   );
 }

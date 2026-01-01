@@ -69,9 +69,9 @@ export function IssueEditorPage() {
 
     async function fetchRelatedData() {
       try {
-        const [programsRes, userRes] = await Promise.all([
+        const [programsRes, teamRes] = await Promise.all([
           fetch(`${API_URL}/api/programs`, { credentials: 'include' }),
-          fetch(`${API_URL}/api/auth/me`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/team/people`, { credentials: 'include' }),
         ]);
 
         if (cancelled) return;
@@ -80,9 +80,8 @@ export function IssueEditorPage() {
           setPrograms(await programsRes.json());
         }
 
-        if (userRes.ok) {
-          const userData = await userRes.json();
-          setTeamMembers([{ id: userData.id, name: userData.name }]);
+        if (teamRes.ok) {
+          setTeamMembers(await teamRes.json());
         }
       } catch (err) {
         if (!cancelled) console.error('Failed to fetch related data:', err);
