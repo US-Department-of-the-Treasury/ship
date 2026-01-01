@@ -1,9 +1,20 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Command } from 'cmdk';
 import { cn } from '@/lib/cn';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+interface SearchableDocument {
+  id: string;
+  title: string;
+  document_type: string;
+  ticket_number?: number | null;
+  properties?: {
+    prefix?: string;
+    state?: string;
+  };
+}
 
 interface CommandPaletteProps {
   open: boolean;
@@ -13,6 +24,8 @@ interface CommandPaletteProps {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [documents, setDocuments] = useState<SearchableDocument[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const runCommand = useCallback((command: () => void) => {
     onOpenChange(false);
@@ -64,9 +77,81 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }
   };
 
+  // Fetch documents when palette opens
   useEffect(() => {
-    if (!open) setSearch('');
+    if (!open) {
+      setSearch('');
+      return;
+    }
+
+    const fetchDocuments = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_URL}/api/documents`, {
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDocuments(data);
+        }
+      } catch (err) {
+        console.error('Failed to fetch documents:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDocuments();
   }, [open]);
+
+  // Group documents by type for display
+  const groupedDocuments = useMemo(() => {
+    const groups: Record<string, SearchableDocument[]> = {
+      issue: [],
+      wiki: [],
+      program: [],
+      project: [],
+      sprint: [],
+      person: [],
+    };
+
+    for (const doc of documents) {
+      if (groups[doc.document_type]) {
+        groups[doc.document_type].push(doc);
+      }
+    }
+
+    return groups;
+  }, [documents]);
+
+  // Get route for document type
+  const getDocumentRoute = useCallback((doc: SearchableDocument) => {
+    switch (doc.document_type) {
+      case 'wiki':
+        return `/docs/${doc.id}`;
+      case 'issue':
+        return `/issues/${doc.id}`;
+      case 'program':
+        return `/programs/${doc.id}`;
+      case 'project':
+        return `/programs/${doc.id}`; // Projects use program routes
+      case 'sprint':
+        return `/sprints/${doc.id}`;
+      case 'person':
+        return `/team/${doc.id}`;
+      default:
+        return `/docs/${doc.id}`;
+    }
+  }, []);
+
+  // Format document title for display (includes ticket number for issues)
+  const formatDocumentTitle = useCallback((doc: SearchableDocument) => {
+    if (doc.document_type === 'issue' && doc.ticket_number) {
+      const prefix = doc.properties?.prefix || 'ISSUE';
+      return `${prefix}-${doc.ticket_number}: ${doc.title}`;
+    }
+    return doc.title;
+  }, []);
 
   if (!open) return null;
 
@@ -96,11 +181,92 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             />
           </div>
 
-          <Command.List className="max-h-[300px] overflow-auto p-2">
+          <Command.List className="max-h-[400px] overflow-auto p-2">
             <Command.Empty className="px-4 py-8 text-center text-sm text-muted">
-              No results found.
+              {loading ? 'Loading...' : 'No results found.'}
             </Command.Empty>
 
+            {/* Issues */}
+            {groupedDocuments.issue.length > 0 && (
+              <Command.Group heading="Issues" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
+                {groupedDocuments.issue.map((doc) => (
+                  <CommandItem
+                    key={doc.id}
+                    onSelect={() => runCommand(() => navigate(getDocumentRoute(doc)))}
+                    value={formatDocumentTitle(doc)}
+                  >
+                    <IssueIcon />
+                    <span className="truncate">{formatDocumentTitle(doc)}</span>
+                  </CommandItem>
+                ))}
+              </Command.Group>
+            )}
+
+            {/* Documents (Wiki) */}
+            {groupedDocuments.wiki.length > 0 && (
+              <Command.Group heading="Documents" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
+                {groupedDocuments.wiki.map((doc) => (
+                  <CommandItem
+                    key={doc.id}
+                    onSelect={() => runCommand(() => navigate(getDocumentRoute(doc)))}
+                    value={doc.title}
+                  >
+                    <DocIcon />
+                    <span className="truncate">{doc.title}</span>
+                  </CommandItem>
+                ))}
+              </Command.Group>
+            )}
+
+            {/* Programs */}
+            {groupedDocuments.program.length > 0 && (
+              <Command.Group heading="Programs" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
+                {groupedDocuments.program.map((doc) => (
+                  <CommandItem
+                    key={doc.id}
+                    onSelect={() => runCommand(() => navigate(getDocumentRoute(doc)))}
+                    value={doc.title}
+                  >
+                    <ProgramIcon />
+                    <span className="truncate">{doc.title}</span>
+                  </CommandItem>
+                ))}
+              </Command.Group>
+            )}
+
+            {/* Sprints */}
+            {groupedDocuments.sprint.length > 0 && (
+              <Command.Group heading="Sprints" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
+                {groupedDocuments.sprint.map((doc) => (
+                  <CommandItem
+                    key={doc.id}
+                    onSelect={() => runCommand(() => navigate(getDocumentRoute(doc)))}
+                    value={doc.title}
+                  >
+                    <SprintIcon />
+                    <span className="truncate">{doc.title}</span>
+                  </CommandItem>
+                ))}
+              </Command.Group>
+            )}
+
+            {/* People */}
+            {groupedDocuments.person.length > 0 && (
+              <Command.Group heading="People" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
+                {groupedDocuments.person.map((doc) => (
+                  <CommandItem
+                    key={doc.id}
+                    onSelect={() => runCommand(() => navigate(getDocumentRoute(doc)))}
+                    value={doc.title}
+                  >
+                    <PersonIcon />
+                    <span className="truncate">{doc.title}</span>
+                  </CommandItem>
+                ))}
+              </Command.Group>
+            )}
+
+            {/* Create Actions */}
             <Command.Group heading="Create" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
               <CommandItem onSelect={() => runCommand(createIssue)}>
                 <PlusIcon />
@@ -112,6 +278,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               </CommandItem>
             </Command.Group>
 
+            {/* Navigation */}
             <Command.Group heading="Navigate" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
               <CommandItem onSelect={() => runCommand(() => navigate('/docs'))}>
                 <DocIcon />
@@ -125,9 +292,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 <ProgramIcon />
                 <span>Go to Programs</span>
               </CommandItem>
-              <CommandItem onSelect={() => runCommand(() => navigate('/teams'))}>
+              <CommandItem onSelect={() => runCommand(() => navigate('/team'))}>
                 <TeamIcon />
-                <span>Go to Teams</span>
+                <span>Go to Team</span>
               </CommandItem>
             </Command.Group>
           </Command.List>
@@ -146,10 +313,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   );
 }
 
-function CommandItem({ children, onSelect }: { children: React.ReactNode; onSelect: () => void }) {
+function CommandItem({ children, onSelect, value }: { children: React.ReactNode; onSelect: () => void; value?: string }) {
   return (
     <Command.Item
       onSelect={onSelect}
+      value={value}
       className={cn(
         'flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm',
         'data-[selected=true]:bg-accent data-[selected=true]:text-white'
@@ -196,6 +364,22 @@ function TeamIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+    </svg>
+  );
+}
+
+function SprintIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  );
+}
+
+function PersonIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
     </svg>
   );
 }
