@@ -93,11 +93,188 @@ resource "aws_iam_role_policy_attachment" "eb_service_managed" {
   policy_arn = "arn:aws:iam::aws:policy/AWSElasticBeanstalkManagedUpdatesCustomerRolePolicy"
 }
 
-# Note: Environment will be created manually via EB CLI
-# This allows for faster deployments and better control
+# Elastic Beanstalk Environment
+resource "aws_elastic_beanstalk_environment" "api" {
+  name                = "${var.project_name}-api-prod"
+  application         = aws_elastic_beanstalk_application.api.name
+  solution_stack_name = "64bit Amazon Linux 2023 v4.9.0 running Docker"
+
+  # VPC Configuration
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "VPCId"
+    value     = aws_vpc.main.id
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "Subnets"
+    value     = join(",", aws_subnet.private[*].id)
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "ELBSubnets"
+    value     = join(",", aws_subnet.public[*].id)
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "ELBScheme"
+    value     = "public"
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "AssociatePublicIpAddress"
+    value     = "false"
+  }
+
+  # Instance Configuration
+  setting {
+    namespace = "aws:autoscaling:launchconfiguration"
+    name      = "IamInstanceProfile"
+    value     = aws_iam_instance_profile.eb.name
+  }
+
+  setting {
+    namespace = "aws:autoscaling:launchconfiguration"
+    name      = "InstanceType"
+    value     = "t3.small"
+  }
+
+  setting {
+    namespace = "aws:autoscaling:launchconfiguration"
+    name      = "SecurityGroups"
+    value     = aws_security_group.eb_instance.id
+  }
+
+  setting {
+    namespace = "aws:autoscaling:launchconfiguration"
+    name      = "DisableIMDSv1"
+    value     = "true"
+  }
+
+  # Auto Scaling
+  setting {
+    namespace = "aws:autoscaling:asg"
+    name      = "MinSize"
+    value     = "1"
+  }
+
+  setting {
+    namespace = "aws:autoscaling:asg"
+    name      = "MaxSize"
+    value     = "4"
+  }
+
+  # Load Balancer
+  setting {
+    namespace = "aws:elasticbeanstalk:environment"
+    name      = "EnvironmentType"
+    value     = "LoadBalanced"
+  }
+
+  setting {
+    namespace = "aws:elasticbeanstalk:environment"
+    name      = "LoadBalancerType"
+    value     = "application"
+  }
+
+  setting {
+    namespace = "aws:elasticbeanstalk:environment"
+    name      = "ServiceRole"
+    value     = aws_iam_role.eb_service.arn
+  }
+
+  setting {
+    namespace = "aws:elbv2:loadbalancer"
+    name      = "SecurityGroups"
+    value     = aws_security_group.alb.id
+  }
+
+  # Rolling Deployment with Additional Batch (zero-downtime)
+  setting {
+    namespace = "aws:elasticbeanstalk:command"
+    name      = "DeploymentPolicy"
+    value     = "RollingWithAdditionalBatch"
+  }
+
+  setting {
+    namespace = "aws:elasticbeanstalk:command"
+    name      = "BatchSizeType"
+    value     = "Fixed"
+  }
+
+  setting {
+    namespace = "aws:elasticbeanstalk:command"
+    name      = "BatchSize"
+    value     = "1"
+  }
+
+  setting {
+    namespace = "aws:elasticbeanstalk:command"
+    name      = "Timeout"
+    value     = "600"
+  }
+
+  # Environment Variables
+  setting {
+    namespace = "aws:elasticbeanstalk:application:environment"
+    name      = "NODE_ENV"
+    value     = "production"
+  }
+
+  setting {
+    namespace = "aws:elasticbeanstalk:application:environment"
+    name      = "ENVIRONMENT"
+    value     = "prod"
+  }
+
+  setting {
+    namespace = "aws:elasticbeanstalk:application:environment"
+    name      = "PORT"
+    value     = "80"
+  }
+
+  setting {
+    namespace = "aws:elasticbeanstalk:application:environment"
+    name      = "AWS_REGION"
+    value     = var.aws_region
+  }
+
+  # Health Reporting
+  setting {
+    namespace = "aws:elasticbeanstalk:healthreporting:system"
+    name      = "SystemType"
+    value     = "enhanced"
+  }
+
+  # Ignore version_label changes (managed by deploy script)
+  lifecycle {
+    ignore_changes = [
+      version_label,
+    ]
+  }
+
+  tags = {
+    Name = "${var.project_name}-api-prod"
+  }
+}
+
 output "eb_application_name" {
-  description = "Elastic Beanstalk application name (use with EB CLI)"
+  description = "Elastic Beanstalk application name"
   value       = aws_elastic_beanstalk_application.api.name
+}
+
+output "eb_environment_name" {
+  description = "Elastic Beanstalk environment name"
+  value       = aws_elastic_beanstalk_environment.api.name
+}
+
+output "eb_environment_url" {
+  description = "Elastic Beanstalk environment URL"
+  value       = aws_elastic_beanstalk_environment.api.endpoint_url
 }
 
 output "eb_instance_profile" {
