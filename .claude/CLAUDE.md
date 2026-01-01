@@ -107,6 +107,8 @@ aws elasticbeanstalk describe-instances-health --environment-name ship-api-prod 
 - Full EB environment is managed by Terraform (`terraform/elastic-beanstalk.tf`)
 - Deploys take 3-5 minutes due to rolling instance replacement
 
+**After deploying, monitor until complete.** Don't just report "deployment started" and leave the user with a command to run. Poll the environment status every 30 seconds until Status is `Ready` and Health is `Green`. During rolling updates, temporary `Red/Degraded` status is normal while old instances drain.
+
 **Frontend deployment** (S3 + CloudFront):
 ```bash
 pnpm build:web
