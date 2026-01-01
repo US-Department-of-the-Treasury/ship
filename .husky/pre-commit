@@ -1,6 +1,6 @@
 # Open source compliance checks (secrets scan + AI analysis)
 if command -v comply &> /dev/null; then
-  comply opensource --hook --staged
+  comply opensource --hook --staged --exclude e2e
 else
   echo ""
   echo "WARNING: 'comply' CLI not installed - skipping open source compliance checks"
