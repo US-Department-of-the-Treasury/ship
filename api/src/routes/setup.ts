@@ -3,6 +3,7 @@ import type { Router as RouterType } from 'express';
 import bcrypt from 'bcryptjs';
 import { pool } from '../db/client.js';
 import { ERROR_CODES, HTTP_STATUS } from '@ship/shared';
+import { WELCOME_DOCUMENT_TITLE, WELCOME_DOCUMENT_CONTENT } from '../db/welcomeDocument.js';
 
 const router: RouterType = Router();
 
@@ -109,53 +110,11 @@ router.post('/initialize', async (req: Request, res: Response): Promise<void> =>
       [workspaceId, user.id, personDocResult.rows[0].id]
     );
 
-    // Create welcome document
-    const welcomeContent = {
-      type: 'doc',
-      content: [
-        {
-          type: 'heading',
-          attrs: { level: 1 },
-          content: [{ type: 'text', text: 'Welcome to Ship' }],
-        },
-        {
-          type: 'paragraph',
-          content: [
-            { type: 'text', text: 'Ship is your workspace for managing projects, sprints, and issues. Here are some things you can do:' },
-          ],
-        },
-        {
-          type: 'bulletList',
-          content: [
-            {
-              type: 'listItem',
-              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Create wiki pages to document your team\'s knowledge' }] }],
-            },
-            {
-              type: 'listItem',
-              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Create projects to organize your work' }] }],
-            },
-            {
-              type: 'listItem',
-              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Create issues and assign them to sprints' }] }],
-            },
-            {
-              type: 'listItem',
-              content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Collaborate in real-time with your team' }] }],
-            },
-          ],
-        },
-        {
-          type: 'paragraph',
-          content: [{ type: 'text', text: 'Feel free to edit or delete this page. Happy shipping!' }],
-        },
-      ],
-    };
-
+    // Create welcome document (full tutorial)
     await pool.query(
       `INSERT INTO documents (workspace_id, document_type, title, content, created_by)
-       VALUES ($1, 'wiki', 'Welcome to Ship', $2, $3)`,
-      [workspaceId, JSON.stringify(welcomeContent), user.id]
+       VALUES ($1, 'wiki', $2, $3, $4)`,
+      [workspaceId, WELCOME_DOCUMENT_TITLE, JSON.stringify(WELCOME_DOCUMENT_CONTENT), user.id]
     );
 
     console.log(`Initial setup complete: ${email} is now super admin`);
