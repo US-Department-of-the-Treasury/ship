@@ -28,6 +28,19 @@ body {
   outline-offset: 2px;
 }
 
+/* Disable focus outline on non-interactive container elements */
+main:focus-visible,
+aside:focus-visible,
+section:focus-visible,
+nav:focus-visible,
+[role="complementary"]:focus-visible,
+.overflow-auto:focus-visible,
+.overflow-y-auto:focus-visible,
+.overflow-x-auto:focus-visible {
+  outline: none;
+}
+
+
 /* Input styles */
 input {
   font-family: inherit;
