@@ -10,5 +10,6 @@ describe('Health endpoint', () => {
 
     expect(response.status).toBe(200)
     expect(response.body).toEqual({ status: 'ok' })
+    expect(response.headers['content-type']).toMatch(/json/)
   })
 })

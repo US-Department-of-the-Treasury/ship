@@ -96,11 +96,110 @@ input::placeholder {
   border-radius: 0.375em;
   margin: 0.5em 0;
   overflow-x: auto;
+  position: relative;
 }
 
 .ProseMirror pre code {
   background: none;
   padding: 0;
+  color: #e5e7eb;
+}
+
+/* Syntax highlighting for code blocks */
+.ProseMirror .code-block-lowlight {
+  background: #1a1a1a;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+/* Token colors - GitHub Dark inspired */
+.hljs-comment,
+.hljs-quote {
+  color: #8b949e;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-subst {
+  color: #ff7b72;
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attr {
+  color: #79c0ff;
+}
+
+.hljs-string,
+.hljs-doctag {
+  color: #a5d6ff;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-selector-id {
+  color: #d2a8ff;
+  font-weight: bold;
+}
+
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #ffa657;
+}
+
+.hljs-tag,
+.hljs-name,
+.hljs-attribute {
+  color: #7ee787;
+}
+
+.hljs-regexp,
+.hljs-link {
+  color: #a5d6ff;
+}
+
+.hljs-symbol,
+.hljs-bullet {
+  color: #ffa657;
+}
+
+.hljs-built_in,
+.hljs-builtin-name {
+  color: #ffa657;
+}
+
+.hljs-meta {
+  color: #8b949e;
+}
+
+.hljs-deletion {
+  background: #ff7b72;
+  color: #1a1a1a;
+}
+
+.hljs-addition {
+  background: #7ee787;
+  color: #1a1a1a;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: bold;
+}
+
+.hljs-function .hljs-title {
+  color: #d2a8ff;
+}
+
+.hljs-params {
+  color: #e5e7eb;
 }
 
 .ProseMirror blockquote {
@@ -178,4 +277,362 @@ input::placeholder {
 .ProseMirror.dragging [data-drop-target="true"] {
   outline: 2px dashed #5e6ad2;
   outline-offset: -2px;
+}
+
+/* Mention styles */
+.mention {
+  color: #5e6ad2;
+  background: rgba(94, 106, 210, 0.1);
+  padding: 0.1em 0.3em;
+  border-radius: 0.25em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.mention:hover {
+  background: rgba(94, 106, 210, 0.2);
+  color: #7c85e0;
+}
+
+.mention-person {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.mention-person:hover {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+.mention-document {
+  color: #5e6ad2;
+  background: rgba(94, 106, 210, 0.1);
+}
+
+.mention-issue {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.mention-issue:hover {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.mention-project {
+  color: #06b6d4;
+  background: rgba(6, 182, 212, 0.1);
+}
+
+.mention-project:hover {
+  background: rgba(6, 182, 212, 0.2);
+  color: #22d3ee;
+}
+
+.mention-program {
+  color: #a855f7;
+  background: rgba(168, 85, 247, 0.1);
+}
+
+.mention-program:hover {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+}
+
+/* Broken mention (when target is deleted) */
+.mention-broken {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  text-decoration: line-through;
+}
+
+.mention-broken:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* Emoji picker styles */
+.emoji-picker {
+  z-index: 9999;
+}
+
+/* Emoji node in editor */
+span[data-emoji] {
+  user-select: all;
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+}
+
+/* Table styles */
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0.5em 0;
+  overflow: hidden;
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  min-width: 1em;
+  border: 1px solid #333;
+  padding: 0.5em 0.75em;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.ProseMirror th {
+  font-weight: 600;
+  text-align: left;
+  background-color: #1a1a1a;
+}
+
+.ProseMirror .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(94, 106, 210, 0.2);
+  pointer-events: none;
+}
+
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #5e6ad2;
+  pointer-events: none;
+}
+
+/* Toggle/Details block styles - Notion-like collapsible block */
+.ProseMirror .details-block {
+  margin: 0.5em 0;
+  border-radius: 0.375em;
+}
+
+.ProseMirror .details-block:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Summary (title) area - editable inline text */
+.ProseMirror .details-summary {
+  font-weight: 500;
+  color: #f5f5f5;
+  min-height: 1.5em;
+  line-height: 1.5;
+}
+
+.ProseMirror .details-summary:empty::before {
+  content: 'Toggle title...';
+  color: #525252;
+  pointer-events: none;
+}
+
+/* Content area - shows/hides based on open state */
+.ProseMirror .details-content {
+  padding-left: 0;
+  padding-top: 0.25em;
+  color: #f5f5f5;
+}
+
+.ProseMirror .details-content > *:first-child {
+  margin-top: 0;
+}
+
+.ProseMirror .details-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Collapse state - hide content */
+.ProseMirror .details-block.is-collapsed .details-content {
+  display: none;
+}
+
+/* Toggle arrow button styles */
+.ProseMirror .toggle-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+}
+
+.ProseMirror .toggle-arrow:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* NodeViewContent wrapper */
+.ProseMirror .details-node-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* File attachment styles */
+.file-attachment-wrapper {
+  margin: 1em 0;
+}
+
+.file-attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: #1a1a1a;
+  border: 1px solid #262626;
+  border-radius: 0.5rem;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.file-attachment:hover {
+  background: #202020;
+  border-color: #333333;
+}
+
+.file-attachment-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 1.5rem;
+  background: #262626;
+  border-radius: 0.375rem;
+  flex-shrink: 0;
+}
+
+.file-attachment-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-attachment-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #f5f5f5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-attachment-meta {
+  font-size: 0.75rem;
+  color: #8a8a8a;
+  margin-top: 0.125rem;
+}
+
+.file-attachment-progress {
+  margin-top: 0.5rem;
+  height: 4px;
+  background: #262626;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.file-attachment-progress-bar {
+  height: 100%;
+  background: #5e6ad2;
+  transition: width 0.2s ease;
+}
+
+.file-attachment-download {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  color: #8a8a8a;
+  background: transparent;
+  border-radius: 0.25rem;
+  transition: background-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+.file-attachment-download:hover {
+  background: #262626;
+  color: #f5f5f5;
+}
+
+/* Table of Contents styles */
+.table-of-contents {
+  margin: 1em 0;
+}
+
+.toc-container {
+  border: 1px solid #333;
+  border-radius: 0.5em;
+  background: #1a1a1a;
+  padding: 1em;
+}
+
+.toc-header {
+  font-size: 0.875em;
+  font-weight: 600;
+  color: #f5f5f5;
+  margin-bottom: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.toc-empty {
+  font-size: 0.875em;
+  color: #8a8a8a;
+  font-style: italic;
+}
+
+.toc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+}
+
+.toc-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0.375em 0.5em;
+  border-radius: 0.25em;
+  color: #a3a3a3;
+  font-size: 0.875em;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.toc-item:hover {
+  background: #262626;
+  color: #f5f5f5;
+}
+
+.toc-item-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Indent based on heading level */
+.toc-item-h1 {
+  padding-left: 0.5em;
+}
+
+.toc-item-h2 {
+  padding-left: 1.5em;
+  font-size: 0.8125em;
+}
+
+.toc-item-h3 {
+  padding-left: 2.5em;
+  font-size: 0.8125em;
+  color: #8a8a8a;
+}
+
+.toc-item-h3:hover {
+  color: #d4d4d4;
 }

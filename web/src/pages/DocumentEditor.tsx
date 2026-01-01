@@ -4,13 +4,13 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 
-const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 export function DocumentEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { documents, loading: documentsLoading, updateDocument: contextUpdateDocument, deleteDocument } = useDocuments();
+  const { documents, loading: documentsLoading, createDocument, updateDocument: contextUpdateDocument, deleteDocument } = useDocuments();
 
   // State for non-wiki documents (fetched directly)
   const [directDocument, setDirectDocument] = useState<WikiDocument | null>(null);
@@ -104,6 +104,20 @@ export function DocumentEditorPage() {
     }
   }, [id, deleteDocument, document, navigate]);
 
+  // Create sub-document (for slash commands)
+  const handleCreateSubDocument = useCallback(async () => {
+    const newDoc = await createDocument(id);
+    if (newDoc) {
+      return { id: newDoc.id, title: newDoc.title };
+    }
+    return null;
+  }, [createDocument, id]);
+
+  // Navigate to document (for slash commands and mentions)
+  const handleNavigateToDocument = useCallback((docId: string) => {
+    navigate(`/docs/${docId}`);
+  }, [navigate]);
+
   if (documentsLoading || directLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -139,6 +153,8 @@ export function DocumentEditorPage() {
       onBack={handleBack}
       backLabel={parentDocument?.title || undefined}
       onDelete={handleDelete}
+      onCreateSubDocument={handleCreateSubDocument}
+      onNavigateToDocument={handleNavigateToDocument}
       sidebar={
         <div className="space-y-4 p-4">
           <p className="text-xs text-muted">Todo: Permissions, Maintainer, etc.</p>

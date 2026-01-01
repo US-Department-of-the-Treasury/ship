@@ -1,6 +1,6 @@
-// In production, use relative URLs (same CloudFront domain)
-// In development, use localhost:3000
-const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
+// In development, Vite proxy handles /api routes (see vite.config.ts)
+// In production, use VITE_API_URL or relative URLs
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 interface ApiResponse<T> {
   success: boolean;

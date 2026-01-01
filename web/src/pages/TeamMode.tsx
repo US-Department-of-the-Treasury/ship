@@ -4,7 +4,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { ProgramCombobox, Program } from '@/components/ProgramCombobox';
 import { cn } from '@/lib/cn';
 
-const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
+const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 // CSRF token cache
 let csrfToken: string | null = null;

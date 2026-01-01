@@ -5,13 +5,30 @@ import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
 import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
+import { ResizableImage } from './editor/ResizableImage';
+import Dropcursor from '@tiptap/extension-dropcursor';
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { common, createLowlight } from 'lowlight';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { cn } from '@/lib/cn';
 import { createSlashCommands } from './editor/SlashCommands';
 import { DocumentEmbed } from './editor/DocumentEmbed';
 import { DragHandleExtension } from './editor/DragHandle';
+import { createMentionExtension } from './editor/MentionExtension';
+import { ImageUploadExtension } from './editor/ImageUpload';
+import { FileAttachmentExtension } from './editor/FileAttachment';
+import { DetailsExtension, DetailsSummary, DetailsContent } from './editor/DetailsExtension';
+import { EmojiExtension } from './editor/EmojiExtension';
+import { TableOfContentsExtension } from './editor/TableOfContents';
 import 'tippy.js/dist/tippy.css';
+
+// Create lowlight instance with common languages
+const lowlight = createLowlight(common);
 
 interface EditorProps {
   documentId: string;
@@ -103,21 +120,23 @@ export function Editor({
 
   const color = userColor || stringToColor(userName);
 
-  // Auto-focus title if empty (new document)
+  // Auto-focus and select title if "Untitled" (new document)
   useEffect(() => {
-    if (!title && titleInputRef.current) {
+    if (titleInputRef.current && (!title || title === 'Untitled')) {
       titleInputRef.current.focus();
+      titleInputRef.current.select();
     }
   }, []);
 
   // Setup WebSocket provider
   useEffect(() => {
     // In production, use current host with wss:// (through CloudFront)
-    // In development, use localhost:3000 with ws://
-    const apiUrl = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
+    // In development, Vite proxy handles /collaboration WebSocket (see vite.config.ts)
+    const apiUrl = import.meta.env.VITE_API_URL ?? '';
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = apiUrl
       ? apiUrl.replace(/^http/, 'ws') + '/collaboration'
-      : `wss://${window.location.host}/collaboration`;
+      : `${wsProtocol}//${window.location.host}/collaboration`;
     const wsProvider = new WebsocketProvider(wsUrl, `${roomPrefix}:${documentId}`, ydoc, {
       connect: true,
     });
@@ -170,9 +189,33 @@ export function Editor({
     return createSlashCommands({ onCreateSubDocument, onNavigateToDocument });
   }, [onCreateSubDocument, onNavigateToDocument]);
 
+  // Create mention extension (memoized to avoid recreation)
+  const mentionExtension = useMemo(() => {
+    return createMentionExtension({
+      onNavigate: (type, id) => {
+        // Navigate to the mentioned entity
+        if (type === 'person') {
+          onNavigateToDocument?.(`/people/${id}`);
+        } else {
+          onNavigateToDocument?.(id);
+        }
+      },
+    });
+  }, [onNavigateToDocument]);
+
   // Build extensions - only include CollaborationCursor when provider is ready
   const baseExtensions = [
-    StarterKit.configure({ history: false }),
+    StarterKit.configure({
+      history: false,
+      dropcursor: false,
+      codeBlock: false, // Disable default code block to use CodeBlockLowlight
+    }),
+    CodeBlockLowlight.configure({
+      lowlight,
+      HTMLAttributes: {
+        class: 'code-block-lowlight',
+      },
+    }),
     Placeholder.configure({ placeholder }),
     Collaboration.configure({ document: ydoc }),
     Link.configure({
@@ -181,8 +224,34 @@ export function Editor({
         class: 'text-accent hover:underline cursor-pointer',
       },
     }),
+    ResizableImage,
+    Dropcursor.configure({
+      color: '#3b82f6',
+      width: 2,
+    }),
+    Table.configure({
+      resizable: true,
+      HTMLAttributes: {
+        class: 'tiptap-table',
+      },
+    }),
+    TableRow,
+    TableCell,
+    TableHeader,
+    ImageUploadExtension.configure({
+      onUploadStart: (file) => console.log('Upload started:', file.name),
+      onUploadComplete: (url) => console.log('Upload complete:', url),
+      onUploadError: (error) => console.error('Upload error:', error),
+    }),
+    FileAttachmentExtension,
     DocumentEmbed,
     DragHandleExtension,
+    DetailsExtension,
+    DetailsSummary,
+    DetailsContent,
+    mentionExtension,
+    EmojiExtension,
+    TableOfContentsExtension,
     ...(slashCommandsExtension ? [slashCommandsExtension] : []),
   ];
 
@@ -302,6 +371,12 @@ export function Editor({
               type="text"
               value={title}
               onChange={handleTitleChange}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  editor?.commands.focus('start');
+                }
+              }}
               placeholder="Untitled"
               className="mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none pl-8"
             />

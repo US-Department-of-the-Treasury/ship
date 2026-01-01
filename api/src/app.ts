@@ -15,6 +15,9 @@ import workspacesRoutes from './routes/workspaces.js';
 import adminRoutes from './routes/admin.js';
 import invitesRoutes from './routes/invites.js';
 import setupRoutes from './routes/setup.js';
+import backlinksRoutes from './routes/backlinks.js';
+import { searchRouter } from './routes/search.js';
+import { filesRouter } from './routes/files.js';
 
 // Validate SESSION_SECRET in production
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -49,7 +52,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   }
 
   // Middleware
-  app.use(helmet());
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },  // Allow images to be loaded cross-origin
+  }));
   app.use(cors({
     origin: corsOrigin,
     credentials: true,
@@ -86,6 +91,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   // Apply CSRF protection to all state-changing API routes
   app.use('/api/auth', csrfSynchronisedProtection, authRoutes);
   app.use('/api/documents', csrfSynchronisedProtection, documentsRoutes);
+  app.use('/api/documents', csrfSynchronisedProtection, backlinksRoutes);
   app.use('/api/issues', csrfSynchronisedProtection, issuesRoutes);
   app.use('/api/feedback', csrfSynchronisedProtection, feedbackRoutes);
   app.use('/api/programs', csrfSynchronisedProtection, programsRoutes);
@@ -94,6 +100,12 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/workspaces', csrfSynchronisedProtection, workspacesRoutes);
   app.use('/api/admin', csrfSynchronisedProtection, adminRoutes);
   app.use('/api/invites', csrfSynchronisedProtection, invitesRoutes);
+
+  // Search routes are read-only GET endpoints - no CSRF needed
+  app.use('/api/search', searchRouter);
+
+  // File upload routes (CSRF protected for POST endpoints)
+  app.use('/api/files', csrfSynchronisedProtection, filesRouter);
 
   return app;
 }

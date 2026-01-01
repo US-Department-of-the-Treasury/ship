@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import request from 'supertest'
+import crypto from 'crypto'
 import { createApp } from '../app.js'
 import { pool } from '../db/client.js'
 
@@ -7,6 +8,8 @@ describe('Workspaces API', () => {
   const app = createApp()
   let sessionCookie: string
   let superAdminSessionCookie: string
+  let csrfToken: string
+  let superAdminCsrfToken: string
   let testWorkspaceId: string
   let testUserId: string
   let superAdminUserId: string
@@ -35,14 +38,14 @@ describe('Workspaces API', () => {
       [testWorkspaceId, testUserId]
     )
 
-    // Create session for regular user
-    const sessionResult = await pool.query(
-      `INSERT INTO sessions (user_id, workspace_id, expires_at)
-       VALUES ($1, $2, now() + interval '1 hour')
-       RETURNING id`,
-      [testUserId, testWorkspaceId]
+    // Create session for regular user (sessions.id is TEXT not UUID, generated from crypto.randomBytes)
+    const sessionId = crypto.randomBytes(32).toString('hex')
+    await pool.query(
+      `INSERT INTO sessions (id, user_id, workspace_id, expires_at)
+       VALUES ($1, $2, $3, now() + interval '1 hour')`,
+      [sessionId, testUserId, testWorkspaceId]
     )
-    sessionCookie = `session_id=${sessionResult.rows[0].id}`
+    sessionCookie = `session_id=${sessionId}`
 
     // Create super admin user
     const superAdminResult = await pool.query(
@@ -59,14 +62,34 @@ describe('Workspaces API', () => {
       [testWorkspaceId, superAdminUserId]
     )
 
-    // Create session for super admin
-    const superSessionResult = await pool.query(
-      `INSERT INTO sessions (user_id, workspace_id, expires_at)
-       VALUES ($1, $2, now() + interval '1 hour')
-       RETURNING id`,
-      [superAdminUserId, testWorkspaceId]
+    // Create session for super admin (sessions.id is TEXT not UUID, generated from crypto.randomBytes)
+    const superSessionId = crypto.randomBytes(32).toString('hex')
+    await pool.query(
+      `INSERT INTO sessions (id, user_id, workspace_id, expires_at)
+       VALUES ($1, $2, $3, now() + interval '1 hour')`,
+      [superSessionId, superAdminUserId, testWorkspaceId]
     )
-    superAdminSessionCookie = `session_id=${superSessionResult.rows[0].id}`
+    superAdminSessionCookie = `session_id=${superSessionId}`
+
+    // Get CSRF token for regular user
+    const csrfRes = await request(app)
+      .get('/api/csrf-token')
+      .set('Cookie', sessionCookie)
+    csrfToken = csrfRes.body.token
+    const connectSidCookie = csrfRes.headers['set-cookie']?.[0]?.split(';')[0] || ''
+    if (connectSidCookie) {
+      sessionCookie = `${sessionCookie}; ${connectSidCookie}`
+    }
+
+    // Get CSRF token for super admin
+    const superCsrfRes = await request(app)
+      .get('/api/csrf-token')
+      .set('Cookie', superAdminSessionCookie)
+    superAdminCsrfToken = superCsrfRes.body.token
+    const superConnectSidCookie = superCsrfRes.headers['set-cookie']?.[0]?.split(';')[0] || ''
+    if (superConnectSidCookie) {
+      superAdminSessionCookie = `${superAdminSessionCookie}; ${superConnectSidCookie}`
+    }
   })
 
   // Cleanup after all tests
@@ -120,6 +143,7 @@ describe('Workspaces API', () => {
       const response = await request(app)
         .post(`/api/workspaces/${testWorkspaceId}/switch`)
         .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
 
       expect(response.status).toBe(200)
       expect(response.body.success).toBe(true)
@@ -136,6 +160,7 @@ describe('Workspaces API', () => {
       const response = await request(app)
         .post(`/api/workspaces/${otherWorkspaceId}/switch`)
         .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
 
       expect(response.status).toBe(403)
 
@@ -173,6 +198,7 @@ describe('Workspaces API', () => {
       const response = await request(app)
         .post(`/api/workspaces/${testWorkspaceId}/invites`)
         .set('Cookie', superAdminSessionCookie)
+        .set('x-csrf-token', superAdminCsrfToken)
         .send({ email: 'new-user@test.com', role: 'member' })
 
       expect(response.status).toBe(201)
@@ -199,6 +225,7 @@ describe('Workspaces API', () => {
         const createResponse = await request(app)
           .post(`/api/workspaces/${testWorkspaceId}/invites`)
           .set('Cookie', superAdminSessionCookie)
+          .set('x-csrf-token', superAdminCsrfToken)
           .send({ email: 'revoke-test@test.com', role: 'member' })
         inviteId = createResponse.body.data.invite.id
       }
@@ -206,6 +233,7 @@ describe('Workspaces API', () => {
       const response = await request(app)
         .delete(`/api/workspaces/${testWorkspaceId}/invites/${inviteId}`)
         .set('Cookie', superAdminSessionCookie)
+        .set('x-csrf-token', superAdminCsrfToken)
 
       expect(response.status).toBe(200)
       expect(response.body.success).toBe(true)
@@ -243,6 +271,8 @@ describe('Admin API', () => {
   const app = createApp()
   let superAdminSessionCookie: string
   let regularSessionCookie: string
+  let superAdminCsrfToken: string
+  let regularCsrfToken: string
   let superAdminUserId: string
   let regularUserId: string
   let testWorkspaceId: string
@@ -268,13 +298,14 @@ describe('Admin API', () => {
       [testWorkspaceId, superAdminUserId]
     )
 
-    const superSessionResult = await pool.query(
-      `INSERT INTO sessions (user_id, workspace_id, expires_at)
-       VALUES ($1, $2, now() + interval '1 hour')
-       RETURNING id`,
-      [superAdminUserId, testWorkspaceId]
+    // sessions.id is TEXT not UUID, generated from crypto.randomBytes
+    const superSessionId = crypto.randomBytes(32).toString('hex')
+    await pool.query(
+      `INSERT INTO sessions (id, user_id, workspace_id, expires_at)
+       VALUES ($1, $2, $3, now() + interval '1 hour')`,
+      [superSessionId, superAdminUserId, testWorkspaceId]
     )
-    superAdminSessionCookie = `session_id=${superSessionResult.rows[0].id}`
+    superAdminSessionCookie = `session_id=${superSessionId}`
 
     // Create regular user
     const regularResult = await pool.query(
@@ -290,13 +321,34 @@ describe('Admin API', () => {
       [testWorkspaceId, regularUserId]
     )
 
-    const regularSessionResult = await pool.query(
-      `INSERT INTO sessions (user_id, workspace_id, expires_at)
-       VALUES ($1, $2, now() + interval '1 hour')
-       RETURNING id`,
-      [regularUserId, testWorkspaceId]
+    // sessions.id is TEXT not UUID, generated from crypto.randomBytes
+    const regularSessionId = crypto.randomBytes(32).toString('hex')
+    await pool.query(
+      `INSERT INTO sessions (id, user_id, workspace_id, expires_at)
+       VALUES ($1, $2, $3, now() + interval '1 hour')`,
+      [regularSessionId, regularUserId, testWorkspaceId]
     )
-    regularSessionCookie = `session_id=${regularSessionResult.rows[0].id}`
+    regularSessionCookie = `session_id=${regularSessionId}`
+
+    // Get CSRF token for super admin
+    const superCsrfRes = await request(app)
+      .get('/api/csrf-token')
+      .set('Cookie', superAdminSessionCookie)
+    superAdminCsrfToken = superCsrfRes.body.token
+    const superConnectSidCookie = superCsrfRes.headers['set-cookie']?.[0]?.split(';')[0] || ''
+    if (superConnectSidCookie) {
+      superAdminSessionCookie = `${superAdminSessionCookie}; ${superConnectSidCookie}`
+    }
+
+    // Get CSRF token for regular user
+    const regularCsrfRes = await request(app)
+      .get('/api/csrf-token')
+      .set('Cookie', regularSessionCookie)
+    regularCsrfToken = regularCsrfRes.body.token
+    const regularConnectSidCookie = regularCsrfRes.headers['set-cookie']?.[0]?.split(';')[0] || ''
+    if (regularConnectSidCookie) {
+      regularSessionCookie = `${regularSessionCookie}; ${regularConnectSidCookie}`
+    }
   })
 
   afterAll(async () => {
@@ -333,6 +385,7 @@ describe('Admin API', () => {
       const response = await request(app)
         .post('/api/admin/workspaces')
         .set('Cookie', superAdminSessionCookie)
+        .set('x-csrf-token', superAdminCsrfToken)
         .send({ name: 'Admin Created Workspace' })
 
       expect(response.status).toBe(201)
@@ -345,6 +398,7 @@ describe('Admin API', () => {
       const response = await request(app)
         .post('/api/admin/workspaces')
         .set('Cookie', regularSessionCookie)
+        .set('x-csrf-token', regularCsrfToken)
         .send({ name: 'Should Fail' })
 
       expect(response.status).toBe(403)
@@ -420,13 +474,14 @@ describe('Invite Validation API', () => {
       [testWorkspaceId, testUserId]
     )
 
-    const sessionResult = await pool.query(
-      `INSERT INTO sessions (user_id, workspace_id, expires_at)
-       VALUES ($1, $2, now() + interval '1 hour')
-       RETURNING id`,
-      [testUserId, testWorkspaceId]
+    // sessions.id is TEXT not UUID, generated from crypto.randomBytes
+    const sessionId = crypto.randomBytes(32).toString('hex')
+    await pool.query(
+      `INSERT INTO sessions (id, user_id, workspace_id, expires_at)
+       VALUES ($1, $2, $3, now() + interval '1 hour')`,
+      [sessionId, testUserId, testWorkspaceId]
     )
-    sessionCookie = `session_id=${sessionResult.rows[0].id}`
+    sessionCookie = `session_id=${sessionId}`
 
     // Create a valid invite
     const inviteResult = await pool.query(

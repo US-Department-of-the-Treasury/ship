@@ -21,7 +21,21 @@ interface DocumentsContextValue {
 
 const DocumentsContext = createContext<DocumentsContextValue | null>(null);
 
-const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000' : '');
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+// CSRF token for state-changing requests
+let csrfToken: string | null = null;
+
+async function ensureCsrfToken(): Promise<string> {
+  if (!csrfToken) {
+    const response = await fetch(`${API_URL}/api/csrf-token`, {
+      credentials: 'include',
+    });
+    const data = await response.json();
+    csrfToken = data.token;
+  }
+  return csrfToken!;
+}
 
 export function DocumentsProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<WikiDocument[]>([]);
@@ -49,9 +63,13 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
 
   const createDocument = useCallback(async (parentId?: string): Promise<WikiDocument | null> => {
     try {
+      const token = await ensureCsrfToken();
       const res = await fetch(`${API_URL}/api/documents`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': token,
+        },
         credentials: 'include',
         body: JSON.stringify({
           title: 'Untitled',
@@ -72,9 +90,13 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
 
   const updateDocument = useCallback(async (id: string, updates: Partial<WikiDocument>): Promise<WikiDocument | null> => {
     try {
+      const token = await ensureCsrfToken();
       const res = await fetch(`${API_URL}/api/documents/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': token,
+        },
         credentials: 'include',
         body: JSON.stringify(updates),
       });
@@ -91,8 +113,12 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
 
   const deleteDocument = useCallback(async (id: string): Promise<boolean> => {
     try {
+      const token = await ensureCsrfToken();
       const res = await fetch(`${API_URL}/api/documents/${id}`, {
         method: 'DELETE',
+        headers: {
+          'X-CSRF-Token': token,
+        },
         credentials: 'include',
       });
       if (res.ok) {
