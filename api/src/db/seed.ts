@@ -221,31 +221,29 @@ async function seed() {
     const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 14) + 1);
 
     // Create sprints for each program (current-3 to current+3)
-    const sprintsToCreate: Array<{ programId: string; number: number }> = [];
+    // Each sprint gets assigned an owner from the team (rotating assignment)
+    const sprintsToCreate: Array<{ programId: string; number: number; ownerIdx: number }> = [];
+    let ownerRotation = 0;
     for (const program of programs) {
       for (let sprintNum = currentSprintNumber - 3; sprintNum <= currentSprintNumber + 3; sprintNum++) {
         if (sprintNum > 0) {
-          sprintsToCreate.push({ programId: program.id, number: sprintNum });
+          sprintsToCreate.push({ programId: program.id, number: sprintNum, ownerIdx: ownerRotation % allUsers.length });
+          ownerRotation++;
         }
       }
     }
 
-    const sprints: Array<{ id: string; programId: string; number: number; startDate: string; endDate: string }> = [];
+    const sprints: Array<{ id: string; programId: string; number: number }> = [];
     let sprintsCreated = 0;
 
     for (const sprint of sprintsToCreate) {
-      const sprintStart = new Date(sprintStartDate);
-      sprintStart.setDate(sprintStart.getDate() + (sprint.number - 1) * 14);
-      const sprintEnd = new Date(sprintStart);
-      sprintEnd.setDate(sprintEnd.getDate() + 13);
+      const owner = allUsers[sprint.ownerIdx]!;
 
-      const startStr = sprintStart.toISOString().split('T')[0]!;
-      const endStr = sprintEnd.toISOString().split('T')[0]!;
-
+      // Check for existing sprint by sprint_number (new model)
       const existingSprint = await pool.query(
         `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND program_id = $2 AND properties->>'start_date' = $3`,
-        [workspaceId, sprint.programId, startStr]
+         AND program_id = $2 AND (properties->>'sprint_number')::int = $3`,
+        [workspaceId, sprint.programId, sprint.number]
       );
 
       if (existingSprint.rows[0]) {
@@ -253,15 +251,13 @@ async function seed() {
           id: existingSprint.rows[0].id,
           programId: sprint.programId,
           number: sprint.number,
-          startDate: startStr,
-          endDate: endStr,
         });
       } else {
+        // New sprint properties: only sprint_number and owner_id
+        // Dates and status are computed at runtime from sprint_number + workspace.sprint_start_date
         const sprintProperties = {
-          start_date: startStr,
-          end_date: endStr,
-          sprint_status: 'planned',
-          goal: null,
+          sprint_number: sprint.number,
+          owner_id: owner.id,
         };
         const sprintResult = await pool.query(
           `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
@@ -273,8 +269,6 @@ async function seed() {
           id: sprintResult.rows[0].id,
           programId: sprint.programId,
           number: sprint.number,
-          startDate: startStr,
-          endDate: endStr,
         });
         sprintsCreated++;
       }
@@ -286,30 +280,72 @@ async function seed() {
       console.log('ℹ️  All sprints already exist');
     }
 
-    // Issues to seed with different states
-    const issueTemplates = [
-      { title: 'Implement user authentication flow', state: 'done' },
-      { title: 'Add password reset functionality', state: 'done' },
-      { title: 'Create login page UI', state: 'done' },
-      { title: 'Set up OAuth integration', state: 'in_progress' },
-      { title: 'Add rate limiting to API', state: 'in_progress' },
-      { title: 'Implement document versioning', state: 'in_progress' },
-      { title: 'Create team management endpoints', state: 'todo' },
-      { title: 'Add search functionality', state: 'todo' },
-      { title: 'Implement notifications system', state: 'todo' },
-      { title: 'Create dashboard widgets', state: 'todo' },
-      { title: 'Add export to PDF feature', state: 'backlog' },
-      { title: 'Implement dark mode', state: 'backlog' },
-      { title: 'Add keyboard shortcuts', state: 'backlog' },
-      { title: 'Create mobile responsive layouts', state: 'backlog' },
-      { title: 'Set up CI/CD pipeline', state: 'done' },
-      { title: 'Configure monitoring alerts', state: 'in_progress' },
-      { title: 'Add database backups', state: 'todo' },
-      { title: 'Implement audit logging', state: 'in_progress' },
-      { title: 'Create API documentation', state: 'todo' },
-      { title: 'Add input validation', state: 'done' },
-      { title: 'Fix session timeout handling', state: 'in_progress' },
-      { title: 'Optimize database queries', state: 'todo' },
+    // Get Ship Core program for comprehensive sprint testing
+    const shipCoreProgram = programs.find(p => p.prefix === 'SHIP')!;
+
+    // Comprehensive issue templates for Ship Core covering all sprint/state combinations
+    // This gives us realistic data to test all views
+    const shipCoreIssues = [
+      // Sprint -3 (completed, older history): All done
+      { title: 'Initial project setup', state: 'done', sprintOffset: -3, priority: 'high' },
+      { title: 'Database schema design', state: 'done', sprintOffset: -3, priority: 'high' },
+      { title: 'Set up development environment', state: 'done', sprintOffset: -3, priority: 'medium' },
+      { title: 'Create basic API structure', state: 'done', sprintOffset: -3, priority: 'medium' },
+
+      // Sprint -2 (completed): All done
+      { title: 'Implement user authentication', state: 'done', sprintOffset: -2, priority: 'high' },
+      { title: 'Add password hashing', state: 'done', sprintOffset: -2, priority: 'high' },
+      { title: 'Create session management', state: 'done', sprintOffset: -2, priority: 'medium' },
+      { title: 'Build login/logout endpoints', state: 'done', sprintOffset: -2, priority: 'medium' },
+      { title: 'Add CSRF protection', state: 'done', sprintOffset: -2, priority: 'medium' },
+      { title: 'Write auth unit tests', state: 'done', sprintOffset: -2, priority: 'low' },
+
+      // Sprint -1 (completed): Mostly done, one cancelled
+      { title: 'Create document model', state: 'done', sprintOffset: -1, priority: 'high' },
+      { title: 'Implement CRUD operations', state: 'done', sprintOffset: -1, priority: 'high' },
+      { title: 'Add real-time collaboration', state: 'done', sprintOffset: -1, priority: 'high' },
+      { title: 'Build WebSocket server', state: 'done', sprintOffset: -1, priority: 'medium' },
+      { title: 'Integrate Yjs for CRDT', state: 'done', sprintOffset: -1, priority: 'medium' },
+      { title: 'Add offline support', state: 'cancelled', sprintOffset: -1, priority: 'low' },
+
+      // Current sprint: Mix of done, in_progress, todo
+      { title: 'Implement sprint management', state: 'done', sprintOffset: 0, priority: 'high' },
+      { title: 'Create sprint timeline UI', state: 'done', sprintOffset: 0, priority: 'high' },
+      { title: 'Add sprint progress chart', state: 'done', sprintOffset: 0, priority: 'medium' },
+      { title: 'Build issue assignment flow', state: 'in_progress', sprintOffset: 0, priority: 'high' },
+      { title: 'Add bulk issue operations', state: 'in_progress', sprintOffset: 0, priority: 'medium' },
+      { title: 'Create sprint retrospective view', state: 'in_progress', sprintOffset: 0, priority: 'medium' },
+      { title: 'Add sprint velocity metrics', state: 'todo', sprintOffset: 0, priority: 'medium' },
+      { title: 'Implement burndown chart', state: 'todo', sprintOffset: 0, priority: 'medium' },
+      { title: 'Add sprint completion notifications', state: 'todo', sprintOffset: 0, priority: 'low' },
+
+      // Sprint +1 (upcoming): Some planned todo items
+      { title: 'Add team workload view', state: 'todo', sprintOffset: 1, priority: 'high' },
+      { title: 'Create capacity planning', state: 'todo', sprintOffset: 1, priority: 'high' },
+      { title: 'Build resource allocation UI', state: 'todo', sprintOffset: 1, priority: 'medium' },
+      { title: 'Add team availability calendar', state: 'backlog', sprintOffset: 1, priority: 'low' },
+
+      // Sprint +2 (upcoming): Fewer planned items
+      { title: 'Implement reporting dashboard', state: 'todo', sprintOffset: 2, priority: 'medium' },
+      { title: 'Add export to PDF', state: 'backlog', sprintOffset: 2, priority: 'low' },
+
+      // Sprint +3 (upcoming): Empty - no issues assigned
+
+      // Backlog (no sprint): Ideas for future
+      { title: 'Add dark mode support', state: 'backlog', sprintOffset: null, priority: 'low' },
+      { title: 'Implement keyboard shortcuts', state: 'backlog', sprintOffset: null, priority: 'low' },
+      { title: 'Create mobile app', state: 'backlog', sprintOffset: null, priority: 'low' },
+      { title: 'Add AI-powered suggestions', state: 'backlog', sprintOffset: null, priority: 'low' },
+      { title: 'Build integration with Slack', state: 'backlog', sprintOffset: null, priority: 'medium' },
+    ];
+
+    // Generic issues for other programs (less comprehensive)
+    const genericIssueTemplates = [
+      { title: 'Set up project structure', state: 'done' },
+      { title: 'Create initial documentation', state: 'done' },
+      { title: 'Implement core features', state: 'in_progress' },
+      { title: 'Add unit tests', state: 'todo' },
+      { title: 'Performance optimization', state: 'backlog' },
     ];
 
     let issuesCreated = 0;
@@ -325,47 +361,32 @@ async function seed() {
       maxTickets[program.id] = maxResult.rows[0].max_ticket;
     }
 
-    // Create a stable user -> program assignment (one program per user per sprint)
-    // This ensures the team allocation constraint is respected in seed data
-    const userProgramAssignments: Record<string, string> = {};
-    allUsers.forEach((user, idx) => {
-      userProgramAssignments[user.id] = programs[idx % programs.length]!.id;
-    });
-
-    for (let i = 0; i < issueTemplates.length; i++) {
-      const template = issueTemplates[i]!;
+    // Seed Ship Core issues with comprehensive sprint coverage
+    for (let i = 0; i < shipCoreIssues.length; i++) {
+      const issue = shipCoreIssues[i]!;
       const assignee = allUsers[i % allUsers.length]!;
-      // Use the user's assigned program (one program per user)
-      const program = programs.find(p => p.id === userProgramAssignments[assignee.id])!;
 
-      // Assign to appropriate sprint based on state
+      // Find the sprint based on offset
       let sprintId: string | null = null;
-      if (template.state === 'done') {
-        // Past sprint
-        const pastSprint = sprints.find(
-          s => s.programId === program.id && s.number === currentSprintNumber - 1
+      if (issue.sprintOffset !== null) {
+        const targetSprintNumber = currentSprintNumber + issue.sprintOffset;
+        const sprint = sprints.find(
+          s => s.programId === shipCoreProgram.id && s.number === targetSprintNumber
         );
-        sprintId = pastSprint?.id || null;
-      } else if (template.state === 'in_progress' || template.state === 'todo') {
-        // Current sprint
-        const currentSprint = sprints.find(
-          s => s.programId === program.id && s.number === currentSprintNumber
-        );
-        sprintId = currentSprint?.id || null;
+        sprintId = sprint?.id || null;
       }
-      // backlog issues have no sprint
 
-      // Check if issue already exists (by title + program)
+      // Check if issue already exists
       const existingIssue = await pool.query(
         `SELECT id FROM documents WHERE workspace_id = $1 AND program_id = $2 AND title = $3 AND document_type = 'issue'`,
-        [workspaceId, program.id, template.title]
+        [workspaceId, shipCoreProgram.id, issue.title]
       );
 
       if (!existingIssue.rows[0]) {
-        maxTickets[program.id]!++;
+        maxTickets[shipCoreProgram.id]!++;
         const issueProperties = {
-          state: template.state,
-          priority: 'medium',
+          state: issue.state,
+          priority: issue.priority,
           source: 'internal',
           assignee_id: assignee.id,
           feedback_status: null,
@@ -374,9 +395,56 @@ async function seed() {
         await pool.query(
           `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number)
            VALUES ($1, 'issue', $2, $3, $4, $5, $6)`,
-          [workspaceId, template.title, program.id, sprintId, JSON.stringify(issueProperties), maxTickets[program.id]]
+          [workspaceId, issue.title, shipCoreProgram.id, sprintId, JSON.stringify(issueProperties), maxTickets[shipCoreProgram.id]]
         );
         issuesCreated++;
+      }
+    }
+
+    // Seed generic issues for other programs
+    const otherPrograms = programs.filter(p => p.prefix !== 'SHIP');
+    for (const program of otherPrograms) {
+      for (let i = 0; i < genericIssueTemplates.length; i++) {
+        const template = genericIssueTemplates[i]!;
+        const assignee = allUsers[(i + otherPrograms.indexOf(program)) % allUsers.length]!;
+
+        // Assign to appropriate sprint based on state
+        let sprintId: string | null = null;
+        if (template.state === 'done') {
+          const pastSprint = sprints.find(
+            s => s.programId === program.id && s.number === currentSprintNumber - 1
+          );
+          sprintId = pastSprint?.id || null;
+        } else if (template.state === 'in_progress' || template.state === 'todo') {
+          const currentSprint = sprints.find(
+            s => s.programId === program.id && s.number === currentSprintNumber
+          );
+          sprintId = currentSprint?.id || null;
+        }
+
+        // Check if issue already exists
+        const existingIssue = await pool.query(
+          `SELECT id FROM documents WHERE workspace_id = $1 AND program_id = $2 AND title = $3 AND document_type = 'issue'`,
+          [workspaceId, program.id, template.title]
+        );
+
+        if (!existingIssue.rows[0]) {
+          maxTickets[program.id]!++;
+          const issueProperties = {
+            state: template.state,
+            priority: 'medium',
+            source: 'internal',
+            assignee_id: assignee.id,
+            feedback_status: null,
+            rejection_reason: null,
+          };
+          await pool.query(
+            `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number)
+             VALUES ($1, 'issue', $2, $3, $4, $5, $6)`,
+            [workspaceId, template.title, program.id, sprintId, JSON.stringify(issueProperties), maxTickets[program.id]]
+          );
+          issuesCreated++;
+        }
       }
     }
 

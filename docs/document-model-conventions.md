@@ -135,8 +135,12 @@ What IS stored is the **Sprint document** - one per program per sprint window:
 
 - `document_type: 'sprint'`
 - `program_id`: which program
-- `sprint_number`: which 2-week window
+- `properties.sprint_number`: which 2-week window (REQUIRED)
+- `properties.owner_id`: **REQUIRED** - person accountable for this sprint
+- Document body: sprint goals, context, description (everything is a document)
 - Children: sprint plan, sprint retro, assigned issues
+
+**Creating a sprint is an intentional commitment.** By creating a sprint document, you're saying "we intend to do work on this program during this 2-week window." Programs may skip sprint windows if no work is planned.
 
 **Why this pattern:**
 
@@ -144,6 +148,88 @@ What IS stored is the **Sprint document** - one per program per sprint window:
 - Each program has its own sprint container
 - Clean parent-child relationship for navigation
 - Can query "all sprint docs for Sprint 5" or "all sprints for AUTH program"
+
+### Sprint Dates (Computed, Not Stored)
+
+**Sprint dates are computed from sprint_number + workspace start date.**
+
+```typescript
+export function computeSprintDates(sprintNumber: number, workspaceStartDate: Date) {
+  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 14);
+  const end = addDays(start, 13); // 14 days total (0-13)
+  return { start, end };
+}
+```
+
+**Why computed:**
+- YAGNI: Don't store what you can compute
+- Single source of truth: workspace `sprint_start_date` determines all sprint dates
+- No inconsistency: impossible for dates to disagree with sprint_number
+
+### Sprint Status (Computed, Not Stored)
+
+**Sprint status is computed from the computed dates.**
+
+```typescript
+export type SprintStatus = 'active' | 'upcoming' | 'completed';
+
+export function computeSprintStatus(sprintNumber: number, workspaceStartDate: Date): SprintStatus {
+  const { start, end } = computeSprintDates(sprintNumber, workspaceStartDate);
+  const today = startOfDay(new Date());
+
+  if (today < start) return 'upcoming';
+  if (today > end) return 'completed';
+  return 'active';
+}
+```
+
+**Why computed:**
+- Eliminates manual "Start Sprint" / "Complete Sprint" workflow
+- Status is always accurate based on real dates
+- No state to get out of sync
+- Minimal properties: only store `sprint_number` and `owner_id`
+
+### Sprint Goal (Document Body, Not Property)
+
+**Sprint goals and context go in the document body, not a property.**
+
+This aligns with Ship's "everything is a document" philosophy. The sprint document IS the place to describe what the sprint is about. Using the TipTap editor body for goals/context means:
+- Rich text formatting available
+- Consistent with how all other documents work
+- No artificial distinction between "the goal property" and "the document content"
+
+### Sprint Owner Constraint
+
+Each sprint has exactly **one owner** who is accountable for that sprint's success.
+
+**Constraint:** A person can only own ONE sprint per sprint window across all programs.
+
+This ensures:
+- Clear accountability (no ambiguity about who owns what)
+- Resource allocation visibility (person is committed to one program per window)
+- Prevents overallocation (can't be sprint owner for 3 programs simultaneously)
+
+When creating a sprint, the UI must show owner availability and prevent selecting someone already assigned to another program's sprint in that window.
+
+### Sprint UI in Program Mode
+
+Program mode displays sprints in **three sections**:
+
+```
+● ACTIVE (expanded by default)
+  - Shows progress bar, days remaining, owner, issue breakdown
+  - Only one sprint can be active at a time
+
+○ UPCOMING (collapsed)
+  - Future sprints sorted by start date
+  - Shows owner and issue count
+
+✓ COMPLETED (collapsed)
+  - Past sprints sorted reverse chronologically
+  - Shows owner and completion stats
+```
+
+**Empty state:** When no sprint is active (gap between windows), show "No active sprint - Next sprint starts [date]"
 
 ## Issue Lifecycle (Conveyor Belt)
 
@@ -300,6 +386,47 @@ Document types differ by:
 They do NOT differ by title handling. Keep it simple.
 
 ## Decision Log
+
+### 2025-01-01: Program Mode Sprint UX Interview
+
+**Attendees:** User + Claude
+
+**Context:** Sprint tab in Program mode was confusing - all sprints showed "Upcoming" due to seed data bug, no clear current sprint, flat list without grouping.
+
+**Key Decisions:**
+
+1. **Minimal sprint properties**: Only `sprint_number` and `owner_id`. Nothing else stored.
+
+2. **Dates computed from sprint_number**: Use `computeSprintDates(sprint_number, workspace.sprint_start_date)`. Don't store redundant `start_date`/`end_date`.
+
+3. **Status computed from computed dates**: Use `computeSprintStatus()`. No `sprint_status` property.
+
+4. **Goal = document body**: Sprint goals/context go in the TipTap document body, not a separate `goal` property. Aligns with "everything is a document" philosophy.
+
+5. **Sprint owner is REQUIRED**: Every sprint must have an `owner_id` when created. Clear accountability.
+
+6. **One owner per window constraint**: A person can only own one sprint per sprint window across all programs. Prevents overallocation.
+
+7. **Three-section UI grouping**: Active (expanded) → Upcoming (collapsed) → Completed (collapsed). Active sprint shows progress bar, days remaining, owner.
+
+8. **Sprint creation is intentional**: Creating a sprint document = committing to work on that program during that window. Programs can skip windows.
+
+9. **Sprint overlap prevented**: Cannot create two sprints for same program with same sprint_number.
+
+10. **Issues tab filtering**: Add sprint filter to help answer "which issues aren't assigned to a sprint?"
+
+11. **Cross-program separation**: Program mode is program-scoped. Team mode handles cross-program sprint views.
+
+**Ship Philosophy Alignment:**
+- YAGNI: Don't store what you can compute (dates, status)
+- Everything is a document: Sprint goal = document body, not a property
+- Boring technology: Simple derived values, not duplicated state
+- Minimal properties: Only store `sprint_number` and `owner_id`
+
+**Rationale for Owner Constraint:**
+- Accountability requires clarity (one person owns it)
+- Resource visibility (see who's committed where)
+- Prevents the "everyone and no one is responsible" anti-pattern
 
 ### 2024-12-30: Greenfield Architecture Interview
 

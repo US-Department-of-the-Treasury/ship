@@ -398,46 +398,62 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Get program sprints (documents with document_type = 'sprint' that belong to this program)
+// Returns sprints with sprint_number and owner_id - dates/status computed on frontend
 router.get('/:id/sprints', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    // Verify program exists
-    const programExists = await pool.query(
-      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
+    // Verify program exists and get workspace sprint_start_date
+    const programCheck = await pool.query(
+      `SELECT d.id, w.sprint_start_date
+       FROM documents d
+       JOIN workspaces w ON d.workspace_id = w.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'`,
       [id, req.user!.workspaceId]
     );
 
-    if (programExists.rows.length === 0) {
+    if (programCheck.rows.length === 0) {
       res.status(404).json({ error: 'Program not found' });
       return;
     }
 
+    const sprintStartDate = programCheck.rows[0].sprint_start_date;
+
     const result = await pool.query(
       `SELECT d.id, d.title as name, d.properties,
+              u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
        FROM documents d
+       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
        WHERE d.program_id = $1 AND d.document_type = 'sprint'
-       ORDER BY d.properties->>'start_date' DESC NULLS LAST`,
+       ORDER BY (d.properties->>'sprint_number')::int ASC`,
       [id]
     );
 
-    // Extract sprint properties
+    // Extract sprint properties - dates/status computed by frontend
     const sprints = result.rows.map(row => {
       const props = row.properties || {};
       return {
         id: row.id,
         name: row.name,
-        start_date: props.start_date || null,
-        end_date: props.end_date || null,
-        status: props.sprint_status || 'planned',
-        issue_count: row.issue_count,
-        completed_count: row.completed_count
+        sprint_number: props.sprint_number || 1,
+        owner: row.owner_id ? {
+          id: row.owner_id,
+          name: row.owner_name,
+          email: row.owner_email,
+        } : null,
+        issue_count: parseInt(row.issue_count) || 0,
+        completed_count: parseInt(row.completed_count) || 0,
+        started_count: parseInt(row.started_count) || 0,
       };
     });
 
-    res.json(sprints);
+    res.json({
+      workspace_sprint_start_date: sprintStartDate,
+      sprints,
+    });
   } catch (err) {
     console.error('Get program sprints error:', err);
     res.status(500).json({ error: 'Internal server error' });

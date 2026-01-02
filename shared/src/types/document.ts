@@ -23,8 +23,8 @@ export type IssueSource = 'internal' | 'feedback';
 // Feedback status - tracks lifecycle for feedback-sourced issues
 export type FeedbackStatus = 'draft' | 'submitted' | null;
 
-// Sprint status
-export type SprintStatus = 'planned' | 'active' | 'completed';
+// Sprint status - computed from dates, not stored
+export type SprintStatus = 'active' | 'upcoming' | 'completed';
 
 // Properties interfaces for each document type
 // Each includes index signature for JSONB compatibility
@@ -51,10 +51,8 @@ export interface ProjectProperties {
 }
 
 export interface SprintProperties {
-  start_date?: string | null;
-  end_date?: string | null;
-  sprint_status: SprintStatus;
-  goal?: string | null;
+  sprint_number: number;  // References implicit 2-week window, dates computed from this
+  owner_id: string;       // REQUIRED - person accountable for this sprint
   [key: string]: unknown;
 }
 
@@ -209,9 +207,47 @@ export const DEFAULT_PROGRAM_PROPERTIES: Partial<ProgramProperties> = {
   color: '#6366f1',
 };
 
-export const DEFAULT_SPRINT_PROPERTIES: SprintProperties = {
-  sprint_status: 'planned',
-  start_date: null,
-  end_date: null,
-  goal: null,
-};
+// Note: Sprint properties require sprint_number and owner_id at creation time
+// There is no sensible default - these must be provided
+
+// Helper functions for computing sprint dates and status from sprint_number
+
+/**
+ * Compute sprint start and end dates from sprint number and workspace start date.
+ * Each sprint is a 14-day window (days 0-13).
+ */
+export function computeSprintDates(sprintNumber: number, workspaceStartDate: Date): { start: Date; end: Date } {
+  const start = new Date(workspaceStartDate);
+  start.setDate(start.getDate() + (sprintNumber - 1) * 14);
+  // Reset time to start of day
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + 13); // 14 days total (0-13)
+  end.setHours(23, 59, 59, 999);
+
+  return { start, end };
+}
+
+/**
+ * Compute sprint status from sprint number and workspace start date.
+ * Status is derived from whether today falls within, before, or after the sprint window.
+ */
+export function computeSprintStatus(sprintNumber: number, workspaceStartDate: Date): SprintStatus {
+  const { start, end } = computeSprintDates(sprintNumber, workspaceStartDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Start of today for comparison
+
+  if (today < start) return 'upcoming';
+  if (today > end) return 'completed';
+  return 'active';
+}
+
+/**
+ * Get the current sprint number based on workspace start date.
+ */
+export function getCurrentSprintNumber(workspaceStartDate: Date): number {
+  const today = new Date();
+  const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.max(1, Math.floor(daysSinceStart / 14) + 1);
+}

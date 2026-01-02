@@ -46,36 +46,40 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 // Validation schemas
+// Sprint properties: only sprint_number and owner_id are stored
+// Dates and status are computed from sprint_number + workspace.sprint_start_date
 const createSprintSchema = z.object({
   program_id: z.string().uuid(),
   title: z.string().min(1).max(200).optional().default('Untitled'),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  sprint_number: z.number().int().positive(),
+  owner_id: z.string().uuid(),
 });
 
 const updateSprintSchema = z.object({
   title: z.string().min(1).max(200).optional(),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  sprint_status: z.enum(['planned', 'active', 'completed']).optional(),
-  goal: z.string().optional().nullable(),
+  owner_id: z.string().uuid().optional(),
 });
 
 // Helper to extract sprint from row
+// Dates and status are computed on frontend from sprint_number + workspace.sprint_start_date
 function extractSprintFromRow(row: any) {
   const props = row.properties || {};
   return {
     id: row.id,
     name: row.title,
-    start_date: props.start_date || null,
-    end_date: props.end_date || null,
-    status: props.sprint_status || 'planned',
-    goal: props.goal || null,
+    sprint_number: props.sprint_number || 1,
+    owner: row.owner_id ? {
+      id: row.owner_id,
+      name: row.owner_name,
+      email: row.owner_email,
+    } : null,
     program_id: row.program_id,
     program_name: row.program_name,
     program_prefix: row.program_prefix,
-    issue_count: row.issue_count,
-    completed_count: row.completed_count,
+    workspace_sprint_start_date: row.workspace_sprint_start_date,
+    issue_count: parseInt(row.issue_count) || 0,
+    completed_count: parseInt(row.completed_count) || 0,
+    started_count: parseInt(row.started_count) || 0,
   };
 }
 
@@ -86,10 +90,15 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
+              w.sprint_start_date as workspace_sprint_start_date,
+              u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
        FROM documents d
        JOIN documents p ON d.program_id = p.id
+       JOIN workspaces w ON d.workspace_id = w.id
+       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'`,
       [id, req.user!.workspaceId]
     );
@@ -107,6 +116,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Create sprint (creates a document with document_type = 'sprint')
+// Only stores sprint_number and owner_id - dates/status computed from sprint_number
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const parsed = createSprintSchema.safeParse(req.body);
@@ -115,37 +125,51 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const { program_id, title, start_date, end_date } = parsed.data;
+    const { program_id, title, sprint_number, owner_id } = parsed.data;
 
-    // Verify program belongs to workspace
-    const programExists = await pool.query(
-      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
+    // Verify program belongs to workspace and get workspace info
+    const programCheck = await pool.query(
+      `SELECT d.id, w.sprint_start_date
+       FROM documents d
+       JOIN workspaces w ON d.workspace_id = w.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'`,
       [program_id, req.user!.workspaceId]
     );
 
-    if (programExists.rows.length === 0) {
+    if (programCheck.rows.length === 0) {
       res.status(404).json({ error: 'Program not found' });
       return;
     }
 
-    // Default dates if not provided
-    const today = new Date().toISOString().split('T')[0]!;
-    const twoWeeksLater = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]!;
-    const finalStartDate = start_date ?? today;
-    const finalEndDate = end_date ?? twoWeeksLater;
+    // Verify owner exists in workspace
+    const ownerCheck = await pool.query(
+      `SELECT u.id, u.name, u.email FROM users u
+       JOIN workspace_memberships wm ON wm.user_id = u.id
+       WHERE u.id = $1 AND wm.workspace_id = $2`,
+      [owner_id, req.user!.workspaceId]
+    );
 
-    // Validate dates
-    if (new Date(finalEndDate) <= new Date(finalStartDate)) {
-      res.status(400).json({ error: 'End date must be after start date' });
+    if (ownerCheck.rows.length === 0) {
+      res.status(400).json({ error: 'Owner not found in workspace' });
       return;
     }
 
-    // Build properties JSONB
+    // Check if sprint already exists for this program + sprint_number
+    const existingCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE program_id = $1 AND document_type = 'sprint' AND (properties->>'sprint_number')::int = $2`,
+      [program_id, sprint_number]
+    );
+
+    if (existingCheck.rows.length > 0) {
+      res.status(400).json({ error: `Sprint ${sprint_number} already exists for this program` });
+      return;
+    }
+
+    // Build properties JSONB - only sprint_number and owner_id
     const properties = {
-      start_date: finalStartDate,
-      end_date: finalEndDate,
-      sprint_status: 'planned',
-      goal: null,
+      sprint_number,
+      owner_id,
     };
 
     const result = await pool.query(
@@ -155,15 +179,32 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       [req.user!.workspaceId, title, program_id, JSON.stringify(properties), req.user!.id]
     );
 
-    const sprint = extractSprintFromRow(result.rows[0]);
-    res.status(201).json({ ...sprint, issue_count: 0, completed_count: 0 });
+    const owner = ownerCheck.rows[0];
+    const sprintStartDate = programCheck.rows[0].sprint_start_date;
+
+    res.status(201).json({
+      id: result.rows[0].id,
+      name: result.rows[0].title,
+      sprint_number,
+      owner: {
+        id: owner.id,
+        name: owner.name,
+        email: owner.email,
+      },
+      program_id,
+      workspace_sprint_start_date: sprintStartDate,
+      issue_count: 0,
+      completed_count: 0,
+      started_count: 0,
+    });
   } catch (err) {
     console.error('Create sprint error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Update sprint
+// Update sprint - only title and owner_id can be updated
+// sprint_number cannot be changed (determines window), dates/status are computed
 router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -197,36 +238,26 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
       values.push(data.title);
     }
 
-    // Handle properties updates
+    // Handle owner_id update (in properties)
     const newProps = { ...currentProps };
     let propsChanged = false;
 
-    let newStartDate = currentProps.start_date;
-    let newEndDate = currentProps.end_date;
+    if (data.owner_id !== undefined) {
+      // Verify owner exists in workspace
+      const ownerCheck = await pool.query(
+        `SELECT u.id FROM users u
+         JOIN workspace_memberships wm ON wm.user_id = u.id
+         WHERE u.id = $1 AND wm.workspace_id = $2`,
+        [data.owner_id, req.user!.workspaceId]
+      );
 
-    if (data.start_date !== undefined) {
-      newProps.start_date = data.start_date;
-      newStartDate = data.start_date;
-      propsChanged = true;
-    }
-    if (data.end_date !== undefined) {
-      newProps.end_date = data.end_date;
-      newEndDate = data.end_date;
-      propsChanged = true;
-    }
-    if (data.sprint_status !== undefined) {
-      newProps.sprint_status = data.sprint_status;
-      propsChanged = true;
-    }
-    if (data.goal !== undefined) {
-      newProps.goal = data.goal;
-      propsChanged = true;
-    }
+      if (ownerCheck.rows.length === 0) {
+        res.status(400).json({ error: 'Owner not found in workspace' });
+        return;
+      }
 
-    // Validate dates if either changed
-    if (newStartDate && newEndDate && new Date(newEndDate) <= new Date(newStartDate)) {
-      res.status(400).json({ error: 'End date must be after start date' });
-      return;
+      newProps.owner_id = data.owner_id;
+      propsChanged = true;
     }
 
     if (propsChanged) {
@@ -241,11 +272,27 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 
     updates.push(`updated_at = now()`);
 
-    const result = await pool.query(
+    await pool.query(
       `UPDATE documents SET ${updates.join(', ')}
-       WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'sprint'
-       RETURNING id, title, properties, program_id`,
+       WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'sprint'`,
       [...values, id, req.user!.workspaceId]
+    );
+
+    // Re-query to get full sprint with owner info
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.program_id,
+              p.title as program_name, p.properties->>'prefix' as program_prefix,
+              w.sprint_start_date as workspace_sprint_start_date,
+              u.id as owner_id, u.name as owner_name, u.email as owner_email,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
+       FROM documents d
+       JOIN documents p ON d.program_id = p.id
+       JOIN workspaces w ON d.workspace_id = w.id
+       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       WHERE d.id = $1 AND d.document_type = 'sprint'`,
+      [id]
     );
 
     res.json(extractSprintFromRow(result.rows[0]));

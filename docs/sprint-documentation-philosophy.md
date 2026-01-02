@@ -71,9 +71,16 @@ When documentation is optional, it doesn't get done. Teams that skip retrospecti
 
 ### Accountability Model
 
-**Only people can be held accountable, not projects.** Every Sprint Plan and Sprint Retro document has an owner - the person who created it. This enables:
+**Only people can be held accountable, not projects.**
 
-- Clear responsibility for documentation completion
+**Sprint Owner:** Every sprint document has an `owner_id` - the person accountable for that sprint's success. This is REQUIRED when creating a sprint. A person can only own one sprint per sprint window (across all programs), ensuring clear commitment.
+
+**Documentation Ownership:** Every Sprint Plan and Sprint Retro document also has an owner - typically the sprint owner or their delegate.
+
+This enables:
+
+- Clear responsibility for sprint outcomes AND documentation
+- Resource visibility (who's committed to what program this sprint?)
 - Performance review integration (who consistently delivers? who doesn't?)
 - Knowledge of who to ask about a particular sprint's decisions
 
