@@ -95,6 +95,7 @@ interface Sprint {
   issue_count: number;
   completed_count: number;
   started_count: number;
+  total_estimate_hours: number;
 }
 
 interface SprintsResponse {
@@ -1417,6 +1418,12 @@ function ActiveSprintProgress({
             <div className="h-3 w-3 rounded-sm bg-accent" />
             <span className="text-muted">Completed: {sprint.completed_count}</span>
           </div>
+          {sprint.total_estimate_hours > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-muted">·</span>
+              <span className="text-muted">{sprint.total_estimate_hours}h estimated</span>
+            </div>
+          )}
         </div>
 
         {/* SVG Chart - fills remaining space */}
@@ -1757,11 +1764,13 @@ function SprintWindowCard({
         {status === 'completed' ? (
           <div className="text-xs text-muted">
             {sprint.completed_count}/{sprint.issue_count} ✓
+            {sprint.total_estimate_hours > 0 && ` · ${sprint.total_estimate_hours}h`}
           </div>
         ) : (
           <>
             <div className="text-xs text-muted mb-1">
               {sprint.completed_count}/{sprint.issue_count} done
+              {sprint.total_estimate_hours > 0 && ` · ${sprint.total_estimate_hours}h`}
             </div>
             <div className="h-1.5 rounded-full bg-border overflow-hidden">
               <div

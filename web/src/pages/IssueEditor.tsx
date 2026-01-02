@@ -51,6 +51,7 @@ export function IssueEditorPage() {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [relatedDataLoading, setRelatedDataLoading] = useState(true);
+  const [sprintError, setSprintError] = useState<string | null>(null);
 
   // Get the current issue from context
   const issue = issues.find(i => i.id === id) || null;
@@ -187,6 +188,25 @@ export function IssueEditorPage() {
               </select>
             </PropertyRow>
 
+            <PropertyRow label="Estimate">
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  placeholder="—"
+                  value={issue.estimate ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value ? parseFloat(e.target.value) : null;
+                    handleUpdateIssue({ estimate: value });
+                    if (value) setSprintError(null);
+                  }}
+                  className="w-20 rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+                />
+                <span className="text-xs text-muted">hours</span>
+              </div>
+            </PropertyRow>
+
             <PropertyRow label="Assignee">
               <Combobox
                 options={teamMembers.map((m) => ({ value: m.id, label: m.name }))}
@@ -216,12 +236,22 @@ export function IssueEditorPage() {
                 <Combobox
                   options={sprints.map((s) => ({ value: s.id, label: s.name, description: s.status }))}
                   value={issue.sprint_id}
-                  onChange={(value) => handleUpdateIssue({ sprint_id: value })}
+                  onChange={(value) => {
+                    if (value && !issue.estimate) {
+                      setSprintError('Please add an estimate before assigning to a sprint');
+                      return;
+                    }
+                    setSprintError(null);
+                    handleUpdateIssue({ sprint_id: value });
+                  }}
                   placeholder="No Sprint"
                   clearLabel="No Sprint"
                   searchPlaceholder="Search sprints..."
                   emptyText="No sprints found"
                 />
+                {sprintError && (
+                  <p className="mt-1 text-xs text-red-500">{sprintError}</p>
+                )}
               </PropertyRow>
             )}
         </div>

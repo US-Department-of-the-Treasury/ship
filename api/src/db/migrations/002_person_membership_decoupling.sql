@@ -4,16 +4,25 @@
 
 -- Step 1: Backfill existing person documents with properties.user_id
 -- This uses the old person_document_id to find the mapping, then stores user_id in properties
-UPDATE documents d
-SET properties = d.properties || jsonb_build_object(
-  'user_id', wm.user_id::text,
-  'email', u.email
-)
-FROM workspace_memberships wm
-JOIN users u ON wm.user_id = u.id
-WHERE d.id = wm.person_document_id
-  AND d.document_type = 'person'
-  AND (d.properties->>'user_id' IS NULL OR d.properties->>'user_id' = '');
+-- Only runs if the column exists (for databases that still have it)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'workspace_memberships' AND column_name = 'person_document_id'
+  ) THEN
+    UPDATE documents d
+    SET properties = d.properties || jsonb_build_object(
+      'user_id', wm.user_id::text,
+      'email', u.email
+    )
+    FROM workspace_memberships wm
+    JOIN users u ON wm.user_id = u.id
+    WHERE d.id = wm.person_document_id
+      AND d.document_type = 'person'
+      AND (d.properties->>'user_id' IS NULL OR d.properties->>'user_id' = '');
+  END IF;
+END $$;
 
 -- Step 2: Create index for efficient lookup by properties.user_id
 -- (The GIN index on properties already exists from migration 001, but this is more specific)
