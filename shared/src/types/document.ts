@@ -32,6 +32,7 @@ export interface IssueProperties {
   state: IssueState;
   priority: IssuePriority;
   assignee_id?: string | null;
+  estimate?: number | null;
   source: IssueSource;
   feedback_status?: FeedbackStatus;
   rejection_reason?: string | null;
@@ -98,6 +99,11 @@ export interface Document {
   created_at: Date;
   updated_at: Date;
   created_by?: string | null;
+  // Status timestamps (primarily for issues)
+  started_at?: Date | null;
+  completed_at?: Date | null;
+  cancelled_at?: Date | null;
+  reopened_at?: Date | null;
 }
 
 // Typed document variants for type safety in application code

@@ -63,7 +63,52 @@ const updateIssueSchema = z.object({
   assignee_id: z.string().uuid().optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
+  estimate: z.number().positive().nullable().optional(),
 });
+
+// Fields to track in document_history
+const TRACKED_FIELDS = [
+  'title', 'state', 'priority', 'assignee_id',
+  'program_id', 'sprint_id', 'estimate'
+];
+
+// Log a field change to document_history
+async function logDocumentChange(
+  documentId: string,
+  field: string,
+  oldValue: string | null,
+  newValue: string | null,
+  changedBy: string
+) {
+  await pool.query(
+    `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [documentId, field, oldValue, newValue, changedBy]
+  );
+}
+
+// Get timestamp column updates based on status change
+function getTimestampUpdates(oldState: string | null, newState: string): Record<string, string> {
+  const updates: Record<string, string> = {};
+
+  if (newState === 'in_progress' && oldState !== 'in_progress') {
+    if (oldState === 'done' || oldState === 'cancelled') {
+      // Reopening from done/cancelled
+      updates.reopened_at = 'NOW()';
+    } else {
+      // First time starting work
+      updates.started_at = 'COALESCE(started_at, NOW())';
+    }
+  }
+  if (newState === 'done' && oldState !== 'done') {
+    updates.completed_at = 'COALESCE(completed_at, NOW())';
+  }
+  if (newState === 'cancelled' && oldState !== 'cancelled') {
+    updates.cancelled_at = 'NOW()';
+  }
+
+  return updates;
+}
 
 // Helper to extract issue properties from row
 function extractIssueFromRow(row: any) {
@@ -74,6 +119,7 @@ function extractIssueFromRow(row: any) {
     state: props.state || 'backlog',
     priority: props.priority || 'medium',
     assignee_id: props.assignee_id || null,
+    estimate: props.estimate ?? null,
     source: props.source || 'internal',
     feedback_status: props.feedback_status || null,
     rejection_reason: props.rejection_reason || null,
@@ -84,6 +130,10 @@ function extractIssueFromRow(row: any) {
     created_at: row.created_at,
     updated_at: row.updated_at,
     created_by: row.created_by,
+    started_at: row.started_at || null,
+    completed_at: row.completed_at || null,
+    cancelled_at: row.cancelled_at || null,
+    reopened_at: row.reopened_at || null,
     assignee_name: row.assignee_name,
     program_name: row.program_name,
     program_prefix: row.program_prefix,
@@ -101,6 +151,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       SELECT d.id, d.title, d.properties, d.ticket_number,
              d.program_id, d.sprint_id, d.content,
              d.created_at, d.updated_at, d.created_by,
+             d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
              u.name as assignee_name,
              p.title as program_name,
              p.properties->>'prefix' as program_prefix,
@@ -189,6 +240,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
       `SELECT d.id, d.title, d.properties, d.ticket_number,
               d.program_id, d.sprint_id, d.content,
               d.created_at, d.updated_at, d.created_by,
+              d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
               u.name as assignee_name,
               p.title as program_name,
               p.properties->>'prefix' as program_prefix,
@@ -292,9 +344,10 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    // Verify issue exists and belongs to workspace
+    // Get full existing issue for history tracking
     const existing = await pool.query(
-      `SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
+      `SELECT id, title, properties, program_id, sprint_id
+       FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
       [id, req.user!.workspaceId]
     );
 
@@ -303,33 +356,61 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const currentProps = existing.rows[0].properties || {};
+    const existingIssue = existing.rows[0];
+    const currentProps = existingIssue.properties || {};
     const updates: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
 
     const data = parsed.data;
 
+    // Validate: estimate required when assigning to sprint
+    if (data.sprint_id !== undefined && data.sprint_id !== null) {
+      const effectiveEstimate = data.estimate !== undefined ? data.estimate : currentProps.estimate;
+      if (!effectiveEstimate) {
+        res.status(400).json({ error: 'Estimate is required before assigning to a sprint' });
+        return;
+      }
+    }
+
+    // Track changes for history
+    const changes: Array<{ field: string; oldValue: string | null; newValue: string | null }> = [];
+
     // Handle title update (regular column)
-    if (data.title !== undefined) {
+    if (data.title !== undefined && data.title !== existingIssue.title) {
       updates.push(`title = $${paramIndex++}`);
       values.push(data.title);
+      changes.push({ field: 'title', oldValue: existingIssue.title, newValue: data.title });
     }
 
     // Handle properties updates
     const newProps = { ...currentProps };
     let propsChanged = false;
 
-    if (data.state !== undefined) {
+    if (data.state !== undefined && data.state !== currentProps.state) {
+      changes.push({ field: 'state', oldValue: currentProps.state || null, newValue: data.state });
       newProps.state = data.state;
       propsChanged = true;
+
+      // Update status timestamps based on state change
+      const timestampUpdates = getTimestampUpdates(currentProps.state || null, data.state);
+      for (const [col, expr] of Object.entries(timestampUpdates)) {
+        updates.push(`${col} = ${expr}`);
+      }
     }
-    if (data.priority !== undefined) {
+    if (data.priority !== undefined && data.priority !== currentProps.priority) {
+      changes.push({ field: 'priority', oldValue: currentProps.priority || null, newValue: data.priority });
       newProps.priority = data.priority;
       propsChanged = true;
     }
-    if (data.assignee_id !== undefined) {
+    if (data.assignee_id !== undefined && data.assignee_id !== currentProps.assignee_id) {
+      changes.push({ field: 'assignee_id', oldValue: currentProps.assignee_id || null, newValue: data.assignee_id });
       newProps.assignee_id = data.assignee_id;
+      propsChanged = true;
+    }
+    if (data.estimate !== undefined && data.estimate !== currentProps.estimate) {
+      changes.push({ field: 'estimate', oldValue: currentProps.estimate?.toString() || null, newValue: data.estimate?.toString() || null });
+      newProps.estimate = data.estimate;
       propsChanged = true;
     }
 
@@ -339,7 +420,8 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     }
 
     // Handle association updates (regular columns)
-    if (data.program_id !== undefined) {
+    if (data.program_id !== undefined && data.program_id !== existingIssue.program_id) {
+      changes.push({ field: 'program_id', oldValue: existingIssue.program_id || null, newValue: data.program_id });
       updates.push(`program_id = $${paramIndex++}`);
       values.push(data.program_id);
       // Clear sprint if program changes (sprint belongs to program)
@@ -347,7 +429,8 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
         updates.push(`sprint_id = NULL`);
       }
     }
-    if (data.sprint_id !== undefined) {
+    if (data.sprint_id !== undefined && data.sprint_id !== existingIssue.sprint_id) {
+      changes.push({ field: 'sprint_id', oldValue: existingIssue.sprint_id || null, newValue: data.sprint_id });
       updates.push(`sprint_id = $${paramIndex++}`);
       values.push(data.sprint_id);
     }
@@ -355,6 +438,11 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     if (updates.length === 0) {
       res.status(400).json({ error: 'No fields to update' });
       return;
+    }
+
+    // Log all changes to history
+    for (const change of changes) {
+      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.user!.id!);
     }
 
     updates.push(`updated_at = now()`);
@@ -383,6 +471,49 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     res.json({ ...issue, display_id: displayId });
   } catch (err) {
     console.error('Update issue error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get issue history
+router.get('/:id/history', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Verify issue exists and belongs to workspace
+    const issueCheck = await pool.query(
+      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
+      [id, req.user!.workspaceId]
+    );
+
+    if (issueCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT h.id, h.field, h.old_value, h.new_value, h.created_at,
+              u.id as changed_by_id, u.name as changed_by_name
+       FROM document_history h
+       LEFT JOIN users u ON h.changed_by = u.id
+       WHERE h.document_id = $1
+       ORDER BY h.created_at DESC`,
+      [id]
+    );
+
+    res.json(result.rows.map(row => ({
+      id: row.id,
+      field: row.field,
+      old_value: row.old_value,
+      new_value: row.new_value,
+      created_at: row.created_at,
+      changed_by: row.changed_by_id ? {
+        id: row.changed_by_id,
+        name: row.changed_by_name,
+      } : null,
+    })));
+  } catch (err) {
+    console.error('Get issue history error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

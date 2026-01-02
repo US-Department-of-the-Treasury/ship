@@ -424,7 +424,8 @@ router.get('/:id/sprints', requireAuth, async (req: Request, res: Response) => {
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COALESCE(SUM((i.properties->>'estimate')::numeric), 0) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as total_estimate_hours
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
        WHERE d.program_id = $1 AND d.document_type = 'sprint'
@@ -447,6 +448,7 @@ router.get('/:id/sprints', requireAuth, async (req: Request, res: Response) => {
         issue_count: parseInt(row.issue_count) || 0,
         completed_count: parseInt(row.completed_count) || 0,
         started_count: parseInt(row.started_count) || 0,
+        total_estimate_hours: parseFloat(row.total_estimate_hours) || 0,
       };
     });
 
