@@ -15,6 +15,7 @@ import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import { IndexeddbPersistence } from 'y-indexeddb';
 import { cn } from '@/lib/cn';
 import { createSlashCommands } from './editor/SlashCommands';
 import { DocumentEmbed } from './editor/DocumentEmbed';
@@ -57,7 +58,7 @@ interface EditorProps {
   secondaryHeader?: React.ReactNode;
 }
 
-type SyncStatus = 'connecting' | 'synced' | 'disconnected';
+type SyncStatus = 'connecting' | 'cached' | 'synced' | 'disconnected';
 
 // Generate a consistent color from a string
 function stringToColor(str: string): string {
@@ -93,17 +94,11 @@ export function Editor({
   const hasLocalChangesRef = useRef(false);
   const lastSyncedTitleRef = useRef(initialTitle);
 
-  // Create a new Y.Doc for each documentId - must recreate when doc changes
-  const [ydoc, setYdoc] = useState(() => new Y.Doc());
-  const prevDocIdRef = useRef(documentId);
-
-  // Recreate ydoc when documentId changes
-  useEffect(() => {
-    if (prevDocIdRef.current !== documentId) {
-      prevDocIdRef.current = documentId;
-      setYdoc(new Y.Doc());
-    }
-  }, [documentId]);
+  // CRITICAL: Create a new Y.Doc for each documentId using useMemo
+  // This ensures the Y.Doc is atomically recreated when documentId changes,
+  // preventing race conditions where the WebSocket provider might use a stale Y.Doc
+  // that contains content from a different document (cross-document contamination bug)
+  const ydoc = useMemo(() => new Y.Doc(), [documentId]);
 
   // Sync title when initialTitle prop changes (e.g., from context update)
   // Only update if user hasn't made local changes (prevents stale responses from overwriting)
@@ -146,8 +141,23 @@ export function Editor({
     }
   }, []);
 
-  // Setup WebSocket provider
+  // Setup IndexedDB persistence and WebSocket provider
   useEffect(() => {
+    // Create IndexedDB persistence for content caching
+    // This loads cached content instantly while WebSocket syncs
+    const indexeddbProvider = new IndexeddbPersistence(`ship-${roomPrefix}-${documentId}`, ydoc);
+
+    // Track if we got cached content
+    let hasCachedContent = false;
+
+    indexeddbProvider.on('synced', () => {
+      // Content loaded from IndexedDB cache
+      hasCachedContent = true;
+      // Show 'cached' status if WebSocket hasn't connected yet
+      setSyncStatus((prev) => prev === 'connecting' ? 'cached' : prev);
+      console.log(`[Editor] IndexedDB synced for ${roomPrefix}:${documentId}`);
+    });
+
     // In production, use current host with wss:// (through CloudFront)
     // In development, Vite proxy handles /collaboration WebSocket (see vite.config.ts)
     const apiUrl = import.meta.env.VITE_API_URL ?? '';
@@ -160,14 +170,17 @@ export function Editor({
     });
 
     wsProvider.on('status', (event: { status: string }) => {
+      console.log(`[Editor] WebSocket status: ${event.status} for ${roomPrefix}:${documentId}`);
       if (event.status === 'connected') {
         setSyncStatus('synced');
       } else if (event.status === 'disconnected') {
-        setSyncStatus('disconnected');
+        // If we have cached content, show 'cached' instead of 'disconnected'
+        setSyncStatus(hasCachedContent ? 'cached' : 'disconnected');
       }
     });
 
     wsProvider.on('sync', (isSynced: boolean) => {
+      console.log(`[Editor] WebSocket sync: ${isSynced} for ${roomPrefix}:${documentId}`);
       if (isSynced) {
         setSyncStatus('synced');
       }
@@ -198,6 +211,7 @@ export function Editor({
     return () => {
       wsProvider.awareness.off('change', updateUsers);
       wsProvider.destroy();
+      indexeddbProvider.destroy();
     };
   }, [documentId, userName, color, ydoc, roomPrefix]);
 
@@ -334,12 +348,14 @@ export function Editor({
               className={cn(
                 'h-2 w-2 rounded-full',
                 syncStatus === 'synced' && 'bg-green-500',
+                syncStatus === 'cached' && 'bg-blue-500',
                 syncStatus === 'connecting' && 'bg-yellow-500 animate-pulse',
                 syncStatus === 'disconnected' && 'bg-red-500'
               )}
             />
             <span className="text-xs text-muted">
               {syncStatus === 'synced' && 'Saved'}
+              {syncStatus === 'cached' && 'Cached'}
               {syncStatus === 'connecting' && 'Syncing...'}
               {syncStatus === 'disconnected' && 'Offline'}
             </span>
