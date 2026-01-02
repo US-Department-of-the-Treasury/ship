@@ -17,14 +17,11 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   timeout: 30000,
+  // Only test Chromium - Firefox adds maintenance burden without meaningful coverage benefit
   projects: [
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-    },
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
     },
   ],
   webServer: [
