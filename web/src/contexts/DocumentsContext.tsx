@@ -9,6 +9,8 @@ export interface WikiDocument {
   position: number;
   created_at: string;
   updated_at: string;
+  created_by?: string | null;
+  properties?: Record<string, unknown>;
 }
 
 interface DocumentsContextValue {

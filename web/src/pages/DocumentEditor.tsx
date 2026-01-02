@@ -4,6 +4,7 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { useAutoSave } from '@/hooks/useAutoSave';
+import { PersonCombobox, Person } from '@/components/PersonCombobox';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -16,6 +17,9 @@ export function DocumentEditorPage() {
   // State for non-wiki documents (fetched directly)
   const [directDocument, setDirectDocument] = useState<WikiDocument | null>(null);
   const [directLoading, setDirectLoading] = useState(false);
+
+  // State for team members (for maintainer selection)
+  const [teamMembers, setTeamMembers] = useState<Person[]>([]);
 
   // Get the current document from context first
   const contextDocument = documents.find(d => d.id === id) || null;
@@ -47,6 +51,14 @@ export function DocumentEditorPage() {
       localStorage.setItem('ship:lastVisitedDoc', id);
     }
   }, [id, document]);
+
+  // Fetch team members for maintainer selection
+  useEffect(() => {
+    fetch(`${API_URL}/api/team/people`, { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then(setTeamMembers)
+      .catch(() => setTeamMembers([]));
+  }, []);
 
   // Update handler - uses context for wiki docs, direct API for others
   const handleUpdateDocument = useCallback(async (updates: Partial<WikiDocument>) => {
@@ -136,6 +148,35 @@ export function DocumentEditorPage() {
     ? documents.find(d => d.id === document.parent_id)
     : null;
 
+  // Get effective maintainer (explicit or fallback to creator)
+  const maintainerId = (document.properties as { maintainer_id?: string | null })?.maintainer_id || document.created_by;
+
+  // Handle maintainer change
+  const handleMaintainerChange = (userId: string | null) => {
+    handleUpdateDocument({
+      properties: { ...document.properties, maintainer_id: userId },
+    });
+  };
+
+  // Format date for display
+  const formatDate = (date: Date | string | undefined) => {
+    if (!date) return '—';
+    const d = new Date(date);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const formatDateTime = (date: Date | string | undefined) => {
+    if (!date) return '—';
+    const d = new Date(date);
+    return d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
   return (
     <Editor
       documentId={document.id}
@@ -149,9 +190,33 @@ export function DocumentEditorPage() {
       onNavigateToDocument={handleNavigateToDocument}
       sidebar={
         <div className="space-y-4 p-4">
-          <p className="text-xs text-muted">Todo: Permissions, Maintainer, etc.</p>
+          <PropertyRow label="Maintainer">
+            <PersonCombobox
+              people={teamMembers}
+              value={maintainerId || null}
+              onChange={handleMaintainerChange}
+              placeholder="Select maintainer..."
+            />
+          </PropertyRow>
+
+          <PropertyRow label="Created">
+            <p className="text-sm text-foreground">{formatDate(document.created_at)}</p>
+          </PropertyRow>
+
+          <PropertyRow label="Updated">
+            <p className="text-sm text-foreground">{formatDateTime(document.updated_at)}</p>
+          </PropertyRow>
         </div>
       }
     />
+  );
+}
+
+function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-medium text-muted">{label}</label>
+      {children}
+    </div>
   );
 }

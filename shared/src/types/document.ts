@@ -64,8 +64,11 @@ export interface PersonProperties {
   [key: string]: unknown;
 }
 
-// Wiki, sprint_plan, sprint_retro have no required properties
-export type WikiProperties = Record<string, unknown>;
+// Wiki properties - optional maintainer
+export interface WikiProperties {
+  maintainer_id?: string | null;
+  [key: string]: unknown;
+}
 export type SprintPlanProperties = Record<string, unknown>;
 export type SprintRetroProperties = Record<string, unknown>;
 
