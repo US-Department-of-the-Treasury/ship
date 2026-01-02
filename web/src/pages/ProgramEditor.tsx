@@ -986,6 +986,15 @@ function generateSprintWindows(
   return windows;
 }
 
+// Sprint issue for the issues list
+interface SprintIssue {
+  id: string;
+  title: string;
+  state: string;
+  display_id: string;
+  assignee_name: string | null;
+}
+
 // Main SprintsTab component with two-part layout
 function SprintsTab({
   sprints,
@@ -1000,8 +1009,11 @@ function SprintsTab({
   onSprintClick: (id: string) => void;
   onSprintCreated: (sprint: Sprint) => void;
 }) {
+  const navigate = useNavigate();
   const [showOwnerPrompt, setShowOwnerPrompt] = useState<number | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
+  const [sprintIssues, setSprintIssues] = useState<SprintIssue[]>([]);
+  const [issuesLoading, setIssuesLoading] = useState(false);
 
   // Fetch team members for owner selection
   useEffect(() => {
@@ -1032,6 +1044,20 @@ function SprintsTab({
     status: computeSprintStatus(selectedSprint.sprint_number, workspaceSprintStartDate),
     sprint: selectedSprint,
   } : null;
+
+  // Fetch issues when selected sprint changes
+  useEffect(() => {
+    if (selectedSprint) {
+      setIssuesLoading(true);
+      fetch(`${API_URL}/api/sprints/${selectedSprint.id}/issues`, { credentials: 'include' })
+        .then(res => res.ok ? res.json() : [])
+        .then(setSprintIssues)
+        .catch(console.error)
+        .finally(() => setIssuesLoading(false));
+    } else {
+      setSprintIssues([]);
+    }
+  }, [selectedSprint?.id]);
 
   // Generate windows for NoActiveSprintMessage (simplified range)
   const rangeStart = Math.max(1, currentSprintNumber - 3);
@@ -1079,14 +1105,27 @@ function SprintsTab({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Top Section: Sprint Progress Chart - fills remaining space */}
-      <div className="flex-1 min-h-0 p-6 overflow-auto">
+      {/* Top Section: Two-column layout - chart left, issues right */}
+      <div className="flex-1 min-h-0 p-6 overflow-hidden">
         {selectedSprint && selectedWindow ? (
-          <ActiveSprintProgress
-            sprint={selectedSprint}
-            window={selectedWindow}
-            onClick={() => onSprintClick(selectedSprint.id)}
-          />
+          <div className="flex gap-6 h-full">
+            {/* Left: Sprint Progress Chart */}
+            <div className="flex-1 min-w-0">
+              <ActiveSprintProgress
+                sprint={selectedSprint}
+                window={selectedWindow}
+                onClick={() => onSprintClick(selectedSprint.id)}
+              />
+            </div>
+            {/* Right: Sprint Issues List */}
+            <div className="w-80 flex-shrink-0">
+              <SprintIssuesList
+                issues={sprintIssues}
+                loading={issuesLoading}
+                onIssueClick={(id) => navigate(`/issues/${id}`)}
+              />
+            </div>
+          </div>
         ) : (
           <NoActiveSprintMessage
             windows={windows}
@@ -1124,6 +1163,73 @@ function SprintsTab({
   );
 }
 
+// Sprint issues list component
+function SprintIssuesList({
+  issues,
+  loading,
+  onIssueClick,
+}: {
+  issues: SprintIssue[];
+  loading: boolean;
+  onIssueClick: (id: string) => void;
+}) {
+  const stateColors: Record<string, string> = {
+    backlog: 'bg-gray-500',
+    todo: 'bg-blue-500',
+    in_progress: 'bg-yellow-500',
+    done: 'bg-green-500',
+    cancelled: 'bg-red-500',
+  };
+
+  if (loading) {
+    return (
+      <div className="h-full rounded-lg border border-border bg-background/50 p-4">
+        <h3 className="text-sm font-medium text-muted mb-3">Issues</h3>
+        <div className="text-sm text-muted">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full rounded-lg border border-border bg-background/50 p-4 flex flex-col">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium text-muted">Issues</h3>
+        <span className="text-xs text-muted">{issues.length} total</span>
+      </div>
+      {issues.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-sm text-muted">
+          No issues in this sprint
+        </div>
+      ) : (
+        <div className="flex-1 overflow-auto -mx-4 px-4">
+          <div className="space-y-1">
+            {issues.map((issue) => (
+              <button
+                key={issue.id}
+                onClick={() => onIssueClick(issue.id)}
+                className="w-full text-left rounded-md px-2 py-1.5 hover:bg-border/50 transition-colors group"
+              >
+                <div className="flex items-center gap-2">
+                  <div className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state] || 'bg-gray-500')} />
+                  <span className="text-xs text-muted font-mono">{issue.display_id}</span>
+                </div>
+                <div className="text-sm text-foreground truncate mt-0.5 group-hover:text-accent transition-colors">
+                  {issue.title}
+                </div>
+                {issue.assignee_name && (
+                  <div className="text-xs text-muted truncate mt-0.5">
+                    {issue.assignee_name}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Active sprint progress section with Linear-style graph
 function ActiveSprintProgress({
   sprint,
@@ -1154,12 +1260,17 @@ function ActiveSprintProgress({
   const isOnTrack = predictedEnd <= window.end_date;
   const daysDiff = Math.ceil((window.end_date.getTime() - predictedEnd.getTime()) / (1000 * 60 * 60 * 24));
 
+  // Get status for non-active sprints
+  const status = window.status;
+  const statusLabel = status === 'active' ? 'ACTIVE' : status === 'upcoming' ? 'UPCOMING' : 'COMPLETED';
+  const statusClass = status === 'active' ? 'bg-accent/20 text-accent' : status === 'upcoming' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400';
+
   return (
-    <div>
+    <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <span className="rounded bg-accent/20 px-2 py-0.5 text-xs font-medium text-accent">ACTIVE</span>
+          <span className={cn('rounded px-2 py-0.5 text-xs font-medium', statusClass)}>{statusLabel}</span>
           <h2 className="text-lg font-semibold text-foreground">{sprint.name}</h2>
           <span className="text-sm text-muted">·</span>
           <span className="text-sm text-muted">
@@ -1180,10 +1291,10 @@ function ActiveSprintProgress({
         </button>
       </div>
 
-      {/* Progress Graph */}
-      <div className="rounded-lg border border-border bg-background/50 p-4">
+      {/* Progress Graph - fills remaining space */}
+      <div className="rounded-lg border border-border bg-background/50 p-4 flex-1 flex flex-col min-h-0">
         {/* Stats row */}
-        <div className="flex items-center gap-6 mb-4 text-sm">
+        <div className="flex items-center gap-6 mb-4 text-sm flex-shrink-0">
           <div className="flex items-center gap-2">
             <div className="h-3 w-3 rounded-sm bg-gray-500" />
             <span className="text-muted">Scope: {sprint.issue_count}</span>
@@ -1198,8 +1309,8 @@ function ActiveSprintProgress({
           </div>
         </div>
 
-        {/* Simple progress visualization */}
-        <div className="relative h-24 mb-4">
+        {/* Progress visualization - fills remaining space */}
+        <div className="relative flex-1 min-h-[100px] mb-4">
           {/* Y-axis labels */}
           <div className="absolute left-0 top-0 bottom-0 w-8 flex flex-col justify-between text-xs text-muted">
             <span>{sprint.issue_count}</span>
@@ -1245,7 +1356,7 @@ function ActiveSprintProgress({
         </div>
 
         {/* Prediction text */}
-        <div className="flex items-center justify-between text-sm">
+        <div className="flex items-center justify-between text-sm flex-shrink-0">
           <span className="text-muted">
             {daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} left
           </span>
