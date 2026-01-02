@@ -8,6 +8,7 @@ import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
+import { useAutoSave } from '@/hooks/useAutoSave';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -230,9 +231,12 @@ export function ProgramEditorPage() {
     await contextUpdateProgram(id, updates);
   }, [id, contextUpdateProgram]);
 
-  const handleTitleChange = useCallback((newTitle: string) => {
-    handleUpdateProgram({ name: newTitle });
-  }, [handleUpdateProgram]);
+  // Throttled title save with stale response handling
+  const throttledTitleSave = useAutoSave({
+    onSave: async (name: string) => {
+      if (name) await handleUpdateProgram({ name });
+    },
+  });
 
   const createIssue = async () => {
     if (!id) return;
@@ -426,7 +430,7 @@ export function ProgramEditorPage() {
           <OverviewTab
             program={program}
             user={user}
-            onTitleChange={handleTitleChange}
+            onTitleChange={throttledTitleSave}
             onUpdateProgram={handleUpdateProgram}
           />
         )}
@@ -1867,14 +1871,14 @@ function OwnerSelectPrompt({
           <label className="mb-2 block text-sm font-medium text-muted">Who should own this sprint?</label>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {people.map((person) => {
-              const sprintCount = ownerSprintCounts.get(person.id) || 0;
+              const sprintCount = ownerSprintCounts.get(person.user_id) || 0;
               return (
                 <button
-                  key={person.id}
-                  onClick={() => setSelectedOwner(person.id)}
+                  key={person.user_id}
+                  onClick={() => setSelectedOwner(person.user_id)}
                   className={cn(
                     'w-full flex items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors',
-                    selectedOwner === person.id
+                    selectedOwner === person.user_id
                       ? 'bg-accent text-white'
                       : 'bg-border/30 text-foreground hover:bg-border/50'
                   )}
@@ -1883,14 +1887,14 @@ function OwnerSelectPrompt({
                   {sprintCount > 0 ? (
                     <span className={cn(
                       'text-xs',
-                      selectedOwner === person.id ? 'text-white/70' : 'text-yellow-400'
+                      selectedOwner === person.user_id ? 'text-white/70' : 'text-yellow-400'
                     )}>
                       ⚠ {sprintCount} sprint{sprintCount > 1 ? 's' : ''}
                     </span>
                   ) : (
                     <span className={cn(
                       'text-xs',
-                      selectedOwner === person.id ? 'text-white/70' : 'text-green-400'
+                      selectedOwner === person.user_id ? 'text-white/70' : 'text-green-400'
                     )}>
                       ✓ Available
                     </span>

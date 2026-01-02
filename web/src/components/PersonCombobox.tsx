@@ -4,7 +4,8 @@ import { Command } from 'cmdk';
 import { cn } from '@/lib/cn';
 
 export interface Person {
-  id: string;
+  id: string;       // Document ID (for navigation)
+  user_id: string;  // User ID (for assignee/owner selection)
   name: string;
   email: string;
 }
@@ -38,7 +39,7 @@ export function PersonCombobox({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  const selectedPerson = people.find((p) => p.id === value);
+  const selectedPerson = people.find((p) => p.user_id === value);
 
   return (
     <Popover.Root open={open} onOpenChange={disabled ? undefined : setOpen}>
@@ -77,7 +78,7 @@ export function PersonCombobox({
           <Command
             className="flex flex-col"
             filter={(value, search) => {
-              const person = people.find((p) => p.id === value);
+              const person = people.find((p) => p.user_id === value);
               if (!person) return 0;
               const name = person.name.toLowerCase();
               const email = person.email.toLowerCase();
@@ -102,17 +103,17 @@ export function PersonCombobox({
 
               {people.map((person) => (
                 <Command.Item
-                  key={person.id}
-                  value={person.id}
+                  key={person.user_id}
+                  value={person.user_id}
                   onSelect={() => {
-                    onChange(person.id);
+                    onChange(person.user_id);
                     setOpen(false);
                     setSearch('');
                   }}
                   className={cn(
                     'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm',
                     'data-[selected=true]:bg-border/50',
-                    value === person.id && 'text-accent'
+                    value === person.user_id && 'text-accent'
                   )}
                 >
                   <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/20 text-[10px] font-medium text-accent">
@@ -122,7 +123,7 @@ export function PersonCombobox({
                     <div className="truncate">{person.name}</div>
                     <div className="truncate text-xs text-muted">{person.email}</div>
                   </div>
-                  {value === person.id && (
+                  {value === person.user_id && (
                     <CheckIcon className="ml-auto h-4 w-4 shrink-0 text-accent" />
                   )}
                 </Command.Item>

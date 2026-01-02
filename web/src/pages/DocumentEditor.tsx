@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
+import { useAutoSave } from '@/hooks/useAutoSave';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -72,21 +73,12 @@ export function DocumentEditorPage() {
     }
   }, [id, contextDocument, contextUpdateDocument]);
 
-  // Debounce title updates with cleanup on unmount
-  const [titleTimeout, setTitleTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
-
-  // Clear timeout on unmount to prevent memory leak
-  useEffect(() => {
-    return () => {
-      if (titleTimeout) clearTimeout(titleTimeout);
-    };
-  }, [titleTimeout]);
-
-  const debouncedTitleChange = useCallback((newTitle: string) => {
-    if (!newTitle) return;
-    if (titleTimeout) clearTimeout(titleTimeout);
-    setTitleTimeout(setTimeout(() => handleUpdateDocument({ title: newTitle }), 500));
-  }, [handleUpdateDocument, titleTimeout]);
+  // Throttled title save with stale response handling
+  const throttledTitleSave = useAutoSave({
+    onSave: async (title: string) => {
+      if (title) await handleUpdateDocument({ title });
+    },
+  });
 
   // Delete current document
   const handleDelete = useCallback(async () => {
@@ -149,7 +141,7 @@ export function DocumentEditorPage() {
       documentId={document.id}
       userName={user.name}
       initialTitle={document.title}
-      onTitleChange={debouncedTitleChange}
+      onTitleChange={throttledTitleSave}
       onBack={handleBack}
       backLabel={parentDocument?.title || undefined}
       onDelete={handleDelete}

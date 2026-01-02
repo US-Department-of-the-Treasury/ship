@@ -5,9 +5,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { Combobox } from '@/components/ui/Combobox';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
+import { useAutoSave } from '@/hooks/useAutoSave';
 
 interface TeamMember {
   id: string;
+  user_id: string;
   name: string;
 }
 
@@ -125,9 +127,12 @@ export function IssueEditorPage() {
     await contextUpdateIssue(id, updates);
   }, [id, contextUpdateIssue]);
 
-  const handleTitleChange = useCallback((newTitle: string) => {
-    handleUpdateIssue({ title: newTitle });
-  }, [handleUpdateIssue]);
+  // Throttled title save with stale response handling
+  const throttledTitleSave = useAutoSave({
+    onSave: async (title: string) => {
+      if (title) await handleUpdateIssue({ title });
+    },
+  });
 
   const loading = issuesLoading || relatedDataLoading;
 
@@ -149,7 +154,7 @@ export function IssueEditorPage() {
       documentId={issue.id}
       userName={user.name}
       initialTitle={issue.title}
-      onTitleChange={handleTitleChange}
+      onTitleChange={throttledTitleSave}
       onBack={() => navigate('/issues')}
       roomPrefix="issue"
       placeholder="Add a description..."
@@ -209,7 +214,7 @@ export function IssueEditorPage() {
 
             <PropertyRow label="Assignee">
               <Combobox
-                options={teamMembers.map((m) => ({ value: m.id, label: m.name }))}
+                options={teamMembers.map((m) => ({ value: m.user_id, label: m.name }))}
                 value={issue.assignee_id}
                 onChange={(value) => handleUpdateIssue({ assignee_id: value })}
                 placeholder="Unassigned"
