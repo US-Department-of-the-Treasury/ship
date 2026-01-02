@@ -9,6 +9,7 @@ export interface Issue {
   display_id: string;
   assignee_id: string | null;
   assignee_name: string | null;
+  estimate: number | null;
   program_id: string | null;
   sprint_id: string | null;
   program_name: string | null;
@@ -19,6 +20,10 @@ export interface Issue {
   created_at?: string;
   updated_at?: string;
   created_by?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  cancelled_at?: string | null;
+  reopened_at?: string | null;
 }
 
 interface IssuesContextValue {

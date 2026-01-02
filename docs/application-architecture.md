@@ -425,7 +425,7 @@ CMD ["node", "dist/index.js"]
 
 ### Playwright E2E Tests
 
-Primary testing strategy:
+Primary testing strategy. **Chromium only** - Firefox/Safari add maintenance burden without meaningful coverage benefit for our use case.
 
 ```typescript
 // e2e/documents.spec.ts
@@ -436,6 +436,14 @@ test("create and edit document", async ({ page }) => {
   await page.click('[data-testid="save"]');
   await expect(page.locator(".document-title")).toHaveText("Test Doc");
 });
+```
+
+```bash
+# Run tests (Chromium only)
+pnpm test:e2e
+
+# Run specific test file
+pnpm test:e2e e2e/sprints.spec.ts
 ```
 
 ### Test Categories
