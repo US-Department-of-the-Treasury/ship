@@ -15,9 +15,11 @@ router.get('/:token', async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await pool.query(
       `SELECT wi.id, wi.email, wi.role, wi.expires_at, wi.used_at,
-              w.id as workspace_id, w.name as workspace_name
+              w.id as workspace_id, w.name as workspace_name,
+              u.name as invited_by_name
        FROM workspace_invites wi
        JOIN workspaces w ON wi.workspace_id = w.id
+       JOIN users u ON wi.invited_by_user_id = u.id
        WHERE wi.token = $1`,
       [token]
     );
@@ -67,15 +69,14 @@ router.get('/:token', async (req: Request, res: Response): Promise<void> => {
     res.json({
       success: true,
       data: {
-        invite: {
-          id: invite.id,
-          email: invite.email,
-          role: invite.role,
-          workspaceId: invite.workspace_id,
-          workspaceName: invite.workspace_name,
-          expiresAt: invite.expires_at,
-          userExists,
-        },
+        id: invite.id,
+        email: invite.email,
+        role: invite.role,
+        workspaceId: invite.workspace_id,
+        workspaceName: invite.workspace_name,
+        invitedBy: invite.invited_by_name,
+        expiresAt: invite.expires_at,
+        userExists,
       },
     });
   } catch (error) {
