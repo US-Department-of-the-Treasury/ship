@@ -93,6 +93,7 @@ export interface WorkspaceInvite {
   id: string;
   workspaceId: string;
   email: string;
+  token: string;
   role: 'admin' | 'member';
   expiresAt: string;
   createdAt: string;

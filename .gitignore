@@ -75,3 +75,6 @@ api/.elasticbeanstalk/
 # AWS
 .aws/
 api/uploads/
+
+# Research notes
+research/
