@@ -43,6 +43,7 @@ export function AdminWorkspaceDetailPage() {
   const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Add existing user state
   const [userSearch, setUserSearch] = useState('');
@@ -179,9 +180,11 @@ export function AdminWorkspaceDetailPage() {
     setAddingUser(false);
   }
 
-  function copyInviteLink(token: string) {
-    const url = `${window.location.origin}/invite/${token}`;
+  function copyInviteLink(invite: Invite) {
+    const url = `${window.location.origin}/invite/${invite.token}`;
     navigator.clipboard.writeText(url);
+    setCopiedId(invite.id);
+    setTimeout(() => setCopiedId(null), 2000);
   }
 
   function formatDate(dateString: string) {
@@ -318,10 +321,15 @@ export function AdminWorkspaceDetailPage() {
                       </td>
                       <td className="px-4 py-3 text-right space-x-3">
                         <button
-                          onClick={() => copyInviteLink(invite.token)}
-                          className="text-sm text-accent hover:text-accent/80 transition-colors"
+                          onClick={() => copyInviteLink(invite)}
+                          className={cn(
+                            "text-sm transition-colors",
+                            copiedId === invite.id
+                              ? "text-green-500"
+                              : "text-accent hover:text-accent/80"
+                          )}
                         >
-                          Copy Link
+                          {copiedId === invite.id ? 'Copied!' : 'Copy Link'}
                         </button>
                         <button
                           onClick={() => handleRevokeInvite(invite.id)}

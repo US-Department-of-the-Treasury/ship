@@ -29,11 +29,30 @@ ENV_NAME="${DEPLOY_ENV_NAME:-ship-api-prod}"
 echo "=== Ship API Deploy ==="
 echo "Version: $VERSION"
 
-# Build if needed
-if [ ! -d "api/dist" ] || [ ! -d "shared/dist" ]; then
-  echo "Building..."
-  pnpm build:shared && pnpm build:api
+# ALWAYS rebuild for 100% reliable deploys
+# The api/package.json build script copies SQL files automatically
+echo "Building..."
+rm -rf shared/dist shared/tsconfig.tsbuildinfo api/dist api/tsconfig.tsbuildinfo
+pnpm build:shared && pnpm build:api
+
+# Verify SQL files are present (fail fast if missing)
+if [ ! -f "api/dist/db/schema.sql" ]; then
+  echo "ERROR: schema.sql not found in api/dist/db/"
+  exit 1
 fi
+if [ ! -d "api/dist/db/migrations" ]; then
+  echo "ERROR: migrations directory not found in api/dist/db/"
+  exit 1
+fi
+
+# Verify all migrations were copied (compare counts)
+SRC_COUNT=$(ls -1 api/src/db/migrations/*.sql 2>/dev/null | wc -l | tr -d ' ')
+DIST_COUNT=$(ls -1 api/dist/db/migrations/*.sql 2>/dev/null | wc -l | tr -d ' ')
+if [ "$SRC_COUNT" != "$DIST_COUNT" ]; then
+  echo "ERROR: Migration count mismatch! src=$SRC_COUNT, dist=$DIST_COUNT"
+  exit 1
+fi
+echo "✓ SQL files verified ($DIST_COUNT migrations)"
 
 # Create deployment bundle
 # Dockerfile is at repo root, EB finds it automatically
