@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
+import { useAutoSave } from '@/hooks/useAutoSave';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -47,22 +48,19 @@ export function PersonEditorPage() {
     fetchPerson();
   }, [id, navigate]);
 
-  const handleTitleChange = useCallback(async (newTitle: string) => {
-    if (!id) return;
-    const title = newTitle || 'Untitled';
-    setPerson(prev => prev ? { ...prev, title } : null);
-
-    try {
+  // Throttled title save with stale response handling
+  const throttledTitleSave = useAutoSave({
+    onSave: async (newTitle: string) => {
+      if (!id) return;
+      const title = newTitle || 'Untitled';
       await fetch(`${API_URL}/api/documents/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ title }),
       });
-    } catch (error) {
-      console.error('Failed to update title:', error);
-    }
-  }, [id]);
+    },
+  });
 
   const handleDelete = useCallback(async () => {
     if (!id || !confirm('Delete this person? This cannot be undone.')) return;
@@ -97,7 +95,7 @@ export function PersonEditorPage() {
       documentId={id}
       userName={user?.name || 'Anonymous'}
       initialTitle={person.title}
-      onTitleChange={handleTitleChange}
+      onTitleChange={throttledTitleSave}
       onBack={() => navigate('/team/directory')}
       backLabel="Team Directory"
       roomPrefix="person"

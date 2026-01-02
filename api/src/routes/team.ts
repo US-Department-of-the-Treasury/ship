@@ -486,10 +486,11 @@ router.get('/people', requireAuth, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.user!.workspaceId;
 
-    // Get person documents - return user_id as id (for consistency with /grid endpoint)
+    // Get person documents - return document id for navigation to person editor
+    // Also include user_id for grid consistency
     // Email comes from properties or joined user
     const result = await pool.query(
-      `SELECT d.properties->>'user_id' as id, d.title as name,
+      `SELECT d.id, d.properties->>'user_id' as user_id, d.title as name,
               COALESCE(d.properties->>'email', u.email) as email
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid

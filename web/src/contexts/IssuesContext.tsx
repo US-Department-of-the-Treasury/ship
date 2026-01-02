@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { apiGet, apiPost, apiPatch } from '@/lib/api';
 
 export interface Issue {
   id: string;
@@ -36,88 +37,13 @@ interface IssuesContextValue {
 
 const IssuesContext = createContext<IssuesContextValue | null>(null);
 
-const API_URL = import.meta.env.VITE_API_URL ?? '';
-
-// CSRF token cache
-let csrfToken: string | null = null;
-
-async function getCsrfToken(): Promise<string> {
-  if (!csrfToken) {
-    const response = await fetch(`${API_URL}/api/csrf-token`, {
-      credentials: 'include',
-    });
-    const data = await response.json();
-    csrfToken = data.token;
-  }
-  return csrfToken!;
-}
-
-async function apiPost(endpoint: string, body?: object) {
-  const token = await getCsrfToken();
-  const res = await fetch(`${API_URL}${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-Token': token,
-    },
-    credentials: 'include',
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  // If CSRF token invalid, retry once
-  if (res.status === 403) {
-    csrfToken = null;
-    const newToken = await getCsrfToken();
-    return fetch(`${API_URL}${endpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': newToken,
-      },
-      credentials: 'include',
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  }
-  return res;
-}
-
-async function apiPatch(endpoint: string, body: object) {
-  const token = await getCsrfToken();
-  const res = await fetch(`${API_URL}${endpoint}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-Token': token,
-    },
-    credentials: 'include',
-    body: JSON.stringify(body),
-  });
-
-  if (res.status === 403) {
-    csrfToken = null;
-    const newToken = await getCsrfToken();
-    return fetch(`${API_URL}${endpoint}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': newToken,
-      },
-      credentials: 'include',
-      body: JSON.stringify(body),
-    });
-  }
-  return res;
-}
-
 export function IssuesProvider({ children }: { children: ReactNode }) {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refreshIssues = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/issues`, {
-        credentials: 'include',
-      });
+      const res = await apiGet('/api/issues');
       if (res.ok) {
         const data = await res.json();
         setIssues(data);

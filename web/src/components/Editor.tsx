@@ -89,6 +89,10 @@ export function Editor({
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  // Track if user has made local changes (to prevent stale server responses from overwriting)
+  const hasLocalChangesRef = useRef(false);
+  const lastSyncedTitleRef = useRef(initialTitle);
+
   // Create a new Y.Doc for each documentId - must recreate when doc changes
   const [ydoc, setYdoc] = useState(() => new Y.Doc());
   const prevDocIdRef = useRef(documentId);
@@ -102,10 +106,24 @@ export function Editor({
   }, [documentId]);
 
   // Sync title when initialTitle prop changes (e.g., from context update)
+  // Only update if user hasn't made local changes (prevents stale responses from overwriting)
   useEffect(() => {
     const newTitle = initialTitle === 'Untitled' ? '' : initialTitle;
-    setTitle(newTitle);
+    // Only update if this is a genuinely new value from server
+    // AND user hasn't made local changes since
+    if (!hasLocalChangesRef.current && initialTitle !== lastSyncedTitleRef.current) {
+      setTitle(newTitle);
+      lastSyncedTitleRef.current = initialTitle;
+    }
   }, [initialTitle]);
+
+  // Reset local changes flag after save completes (parent will update initialTitle)
+  useEffect(() => {
+    if (initialTitle === title || (initialTitle === 'Untitled' && title === '')) {
+      hasLocalChangesRef.current = false;
+      lastSyncedTitleRef.current = initialTitle;
+    }
+  }, [initialTitle, title]);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('connecting');
   const [connectedUsers, setConnectedUsers] = useState<{ name: string; color: string }[]>([]);
@@ -277,6 +295,7 @@ export function Editor({
   // Handle title changes
   const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newTitle = e.target.value;
+    hasLocalChangesRef.current = true; // Mark as having local changes to prevent stale overwrites
     setTitle(newTitle);
     onTitleChange?.(newTitle);
   }, [onTitleChange]);

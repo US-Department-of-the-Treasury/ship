@@ -30,6 +30,58 @@ export function clearCsrfToken(): void {
   csrfToken = null;
 }
 
+// Simple helpers that return Response objects (for contexts that need res.ok checks)
+async function fetchWithCsrf(
+  endpoint: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body?: object
+): Promise<Response> {
+  const token = await ensureCsrfToken();
+  const res = await fetch(`${API_URL}${endpoint}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': token,
+    },
+    credentials: 'include',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  // If CSRF token invalid, retry once
+  if (res.status === 403) {
+    clearCsrfToken();
+    const newToken = await ensureCsrfToken();
+    return fetch(`${API_URL}${endpoint}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': newToken,
+      },
+      credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+  return res;
+}
+
+export async function apiGet(endpoint: string): Promise<Response> {
+  return fetch(`${API_URL}${endpoint}`, {
+    credentials: 'include',
+  });
+}
+
+export async function apiPost(endpoint: string, body?: object): Promise<Response> {
+  return fetchWithCsrf(endpoint, 'POST', body);
+}
+
+export async function apiPatch(endpoint: string, body: object): Promise<Response> {
+  return fetchWithCsrf(endpoint, 'PATCH', body);
+}
+
+export async function apiDelete(endpoint: string): Promise<Response> {
+  return fetchWithCsrf(endpoint, 'DELETE');
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}

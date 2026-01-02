@@ -4,6 +4,7 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
+import { useAutoSave } from '@/hooks/useAutoSave';
 
 interface Sprint {
   id: string;
@@ -84,9 +85,12 @@ export function SprintEditorPage() {
     }
   }, [id]);
 
-  const handleTitleChange = useCallback((newTitle: string) => {
-    updateSprint({ title: newTitle } as any);
-  }, [updateSprint]);
+  // Throttled title save with stale response handling
+  const throttledTitleSave = useAutoSave({
+    onSave: async (name: string) => {
+      if (name) await updateSprint({ name });
+    },
+  });
 
   if (loading) {
     return <EditorSkeleton />;
@@ -105,7 +109,7 @@ export function SprintEditorPage() {
       documentId={sprint.id}
       userName={user.name}
       initialTitle={sprint.name}
-      onTitleChange={handleTitleChange}
+      onTitleChange={throttledTitleSave}
       onBack={() => navigate(sprint.program_id ? `/programs/${sprint.program_id}` : '/programs')}
       roomPrefix="sprint"
       placeholder="Add sprint goals, notes, or description..."

@@ -5,7 +5,8 @@ import { cn } from '@/lib/cn';
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 interface Person {
-  id: string;
+  id: string;       // Document ID (for navigation)
+  user_id: string;  // User ID (for backend operations)
   name: string;
   email: string;
 }

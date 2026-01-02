@@ -4,6 +4,7 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/lib/cn';
+import { useAutoSave } from '@/hooks/useAutoSave';
 
 interface Feedback {
   id: string;
@@ -129,20 +130,13 @@ export function FeedbackEditorPage() {
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
-  // Handle title change
-  const handleTitleChange = useCallback(async (newTitle: string) => {
-    if (!feedback) return;
-
-    try {
-      const res = await apiPatch(`/api/issues/${feedback.id}`, { title: newTitle });
-
-      if (res.ok) {
-        setFeedback(prev => prev ? { ...prev, title: newTitle } : null);
-      }
-    } catch (err) {
-      console.error('Failed to update title:', err);
-    }
-  }, [feedback]);
+  // Throttled title save with stale response handling
+  const throttledTitleSave = useAutoSave({
+    onSave: async (newTitle: string) => {
+      if (!feedback) return;
+      await apiPatch(`/api/issues/${feedback.id}`, { title: newTitle });
+    },
+  });
 
   // Handle accept action
   const handleAccept = useCallback(async () => {
@@ -256,7 +250,7 @@ export function FeedbackEditorPage() {
         documentId={feedback.id}
         userName={user.name}
         initialTitle={feedback.title}
-        onTitleChange={handleTitleChange}
+        onTitleChange={throttledTitleSave}
         onBack={handleBack}
         roomPrefix="issue"
         placeholder="Describe your feedback..."

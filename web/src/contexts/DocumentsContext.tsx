@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 
 export interface WikiDocument {
   id: string;
@@ -21,31 +22,13 @@ interface DocumentsContextValue {
 
 const DocumentsContext = createContext<DocumentsContextValue | null>(null);
 
-const API_URL = import.meta.env.VITE_API_URL ?? '';
-
-// CSRF token for state-changing requests
-let csrfToken: string | null = null;
-
-async function ensureCsrfToken(): Promise<string> {
-  if (!csrfToken) {
-    const response = await fetch(`${API_URL}/api/csrf-token`, {
-      credentials: 'include',
-    });
-    const data = await response.json();
-    csrfToken = data.token;
-  }
-  return csrfToken!;
-}
-
 export function DocumentsProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<WikiDocument[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refreshDocuments = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/documents?type=wiki`, {
-        credentials: 'include',
-      });
+      const res = await apiGet('/api/documents?type=wiki');
       if (res.ok) {
         const data = await res.json();
         setDocuments(data);
@@ -63,19 +46,10 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
 
   const createDocument = useCallback(async (parentId?: string): Promise<WikiDocument | null> => {
     try {
-      const token = await ensureCsrfToken();
-      const res = await fetch(`${API_URL}/api/documents`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': token,
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          title: 'Untitled',
-          document_type: 'wiki',
-          parent_id: parentId || null,
-        }),
+      const res = await apiPost('/api/documents', {
+        title: 'Untitled',
+        document_type: 'wiki',
+        parent_id: parentId || null,
       });
       if (res.ok) {
         const doc = await res.json();
@@ -90,16 +64,7 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
 
   const updateDocument = useCallback(async (id: string, updates: Partial<WikiDocument>): Promise<WikiDocument | null> => {
     try {
-      const token = await ensureCsrfToken();
-      const res = await fetch(`${API_URL}/api/documents/${id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': token,
-        },
-        credentials: 'include',
-        body: JSON.stringify(updates),
-      });
+      const res = await apiPatch(`/api/documents/${id}`, updates);
       if (res.ok) {
         const updated = await res.json();
         setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updated } : d));
@@ -113,14 +78,7 @@ export function DocumentsProvider({ children }: { children: ReactNode }) {
 
   const deleteDocument = useCallback(async (id: string): Promise<boolean> => {
     try {
-      const token = await ensureCsrfToken();
-      const res = await fetch(`${API_URL}/api/documents/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'X-CSRF-Token': token,
-        },
-        credentials: 'include',
-      });
+      const res = await apiDelete(`/api/documents/${id}`);
       if (res.ok) {
         setDocuments(prev => prev.filter(d => d.id !== id));
         return true;
