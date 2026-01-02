@@ -104,8 +104,8 @@ export function IssueEditorPage() {
     let cancelled = false;
 
     fetch(`${API_URL}/api/programs/${issue.program_id}/sprints`, { credentials: 'include' })
-      .then(res => res.ok ? res.json() : [])
-      .then(data => { if (!cancelled) setSprints(data); })
+      .then(res => res.ok ? res.json() : { sprints: [] })
+      .then(data => { if (!cancelled) setSprints(data.sprints || []); })
       .catch(() => { if (!cancelled) setSprints([]); });
 
     return () => { cancelled = true; };
