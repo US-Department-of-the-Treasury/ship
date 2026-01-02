@@ -221,31 +221,29 @@ async function seed() {
     const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 14) + 1);
 
     // Create sprints for each program (current-3 to current+3)
-    const sprintsToCreate: Array<{ programId: string; number: number }> = [];
+    // Each sprint gets assigned an owner from the team (rotating assignment)
+    const sprintsToCreate: Array<{ programId: string; number: number; ownerIdx: number }> = [];
+    let ownerRotation = 0;
     for (const program of programs) {
       for (let sprintNum = currentSprintNumber - 3; sprintNum <= currentSprintNumber + 3; sprintNum++) {
         if (sprintNum > 0) {
-          sprintsToCreate.push({ programId: program.id, number: sprintNum });
+          sprintsToCreate.push({ programId: program.id, number: sprintNum, ownerIdx: ownerRotation % allUsers.length });
+          ownerRotation++;
         }
       }
     }
 
-    const sprints: Array<{ id: string; programId: string; number: number; startDate: string; endDate: string }> = [];
+    const sprints: Array<{ id: string; programId: string; number: number }> = [];
     let sprintsCreated = 0;
 
     for (const sprint of sprintsToCreate) {
-      const sprintStart = new Date(sprintStartDate);
-      sprintStart.setDate(sprintStart.getDate() + (sprint.number - 1) * 14);
-      const sprintEnd = new Date(sprintStart);
-      sprintEnd.setDate(sprintEnd.getDate() + 13);
+      const owner = allUsers[sprint.ownerIdx]!;
 
-      const startStr = sprintStart.toISOString().split('T')[0]!;
-      const endStr = sprintEnd.toISOString().split('T')[0]!;
-
+      // Check for existing sprint by sprint_number (new model)
       const existingSprint = await pool.query(
         `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND program_id = $2 AND properties->>'start_date' = $3`,
-        [workspaceId, sprint.programId, startStr]
+         AND program_id = $2 AND (properties->>'sprint_number')::int = $3`,
+        [workspaceId, sprint.programId, sprint.number]
       );
 
       if (existingSprint.rows[0]) {
@@ -253,15 +251,13 @@ async function seed() {
           id: existingSprint.rows[0].id,
           programId: sprint.programId,
           number: sprint.number,
-          startDate: startStr,
-          endDate: endStr,
         });
       } else {
+        // New sprint properties: only sprint_number and owner_id
+        // Dates and status are computed at runtime from sprint_number + workspace.sprint_start_date
         const sprintProperties = {
-          start_date: startStr,
-          end_date: endStr,
-          sprint_status: 'planned',
-          goal: null,
+          sprint_number: sprint.number,
+          owner_id: owner.id,
         };
         const sprintResult = await pool.query(
           `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
@@ -273,8 +269,6 @@ async function seed() {
           id: sprintResult.rows[0].id,
           programId: sprint.programId,
           number: sprint.number,
-          startDate: startStr,
-          endDate: endStr,
         });
         sprintsCreated++;
       }

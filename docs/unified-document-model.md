@@ -114,8 +114,43 @@ Program (AUTH)
 Sprint documents have:
 
 - `program_id`: which program
-- `sprint_number`: which 2-week window
+- `properties.sprint_number`: which 2-week window (REQUIRED)
+- `properties.owner_id`: person accountable for this sprint (REQUIRED)
+- Document body: sprint goals, context, description (everything is a document)
 - Children: sprint plan, sprint retro, assigned issues
+
+**Creating a sprint is intentional.** It means "we commit to doing work on this program during this 2-week window." Programs may skip sprint windows if no work is planned.
+
+### Sprint Dates (Computed)
+
+Sprint dates are **computed from sprint_number + workspace start date**, not stored:
+
+```typescript
+function computeSprintDates(sprintNumber: number, workspaceStartDate: Date) {
+  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 14);
+  const end = addDays(start, 13); // 14 days total
+  return { start, end };
+}
+```
+
+### Sprint Status (Computed)
+
+Sprint status is **computed from the computed dates**, not stored:
+
+| Condition | Status |
+|-----------|--------|
+| `today < start` | `upcoming` |
+| `start <= today <= end` | `active` |
+| `today > end` | `completed` |
+
+This eliminates the need for manual "Start Sprint" / "Complete Sprint" workflows and avoids storing redundant data.
+
+### Sprint Owner Constraint
+
+Each sprint requires exactly **one owner** (`owner_id`). A person can only own one sprint per sprint window across all programs. This ensures:
+- Clear accountability
+- Resource visibility
+- No overallocation
 
 ## Issue Lifecycle
 
@@ -185,10 +220,11 @@ interface IssueProperties {
 }
 
 interface SprintProperties {
-  sprint_number: number;
-  start_date?: string;
-  end_date?: string;
-  goal?: string;
+  sprint_number: number;  // References implicit 2-week window - REQUIRED
+  owner_id: string;       // Person who owns this sprint - REQUIRED
+  // That's it. Dates computed from sprint_number + workspace start date.
+  // Goal/description goes in document body (everything is a document).
+  // Status computed from dates. See document-model-conventions.md.
 }
 
 interface ProgramProperties {
