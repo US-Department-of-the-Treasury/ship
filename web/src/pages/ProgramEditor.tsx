@@ -1110,7 +1110,7 @@ function SprintsTab({
         {selectedSprint && selectedWindow ? (
           <div className="flex gap-6 h-full">
             {/* Left: Sprint Progress Chart */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 h-full">
               <ActiveSprintProgress
                 sprint={selectedSprint}
                 window={selectedWindow}
@@ -1233,37 +1233,147 @@ function SprintIssuesList({
 // Active sprint progress section with Linear-style graph
 function ActiveSprintProgress({
   sprint,
-  window,
+  window: sprintWindow,
   onClick,
 }: {
   sprint: Sprint;
   window: SprintWindow;
   onClick: () => void;
 }) {
-  const progress = sprint.issue_count > 0
-    ? Math.round((sprint.completed_count / sprint.issue_count) * 100)
-    : 0;
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [chartSize, setChartSize] = useState({ width: 400, height: 150 }); // Start with reasonable defaults
+
+  // Measure chart container using ResizeObserver for reliable sizing
+  useEffect(() => {
+    const element = chartRef.current;
+    if (!element) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setChartSize({ width, height });
+        }
+      }
+    });
+
+    resizeObserver.observe(element);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  const totalDays = 14;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   const daysElapsed = Math.max(0, Math.floor(
-    (Date.now() - window.start_date.getTime()) / (1000 * 60 * 60 * 24)
+    (today.getTime() - sprintWindow.start_date.getTime()) / (1000 * 60 * 60 * 24)
   ));
-  const totalDays = 14;
   const daysRemaining = Math.max(0, totalDays - daysElapsed);
 
+  // For completed sprints, days elapsed is the full sprint
+  const effectiveDaysElapsed = sprintWindow.status === 'completed' ? totalDays : daysElapsed;
+
   // Calculate predicted completion
-  const completedPerDay = daysElapsed > 0 ? sprint.completed_count / daysElapsed : 0;
+  const completedPerDay = effectiveDaysElapsed > 0 ? sprint.completed_count / effectiveDaysElapsed : 0;
   const remaining = sprint.issue_count - sprint.completed_count;
   const daysToComplete = completedPerDay > 0 ? Math.ceil(remaining / completedPerDay) : Infinity;
-  const predictedEnd = new Date();
-  predictedEnd.setDate(predictedEnd.getDate() + daysToComplete);
 
-  const isOnTrack = predictedEnd <= window.end_date;
-  const daysDiff = Math.ceil((window.end_date.getTime() - predictedEnd.getTime()) / (1000 * 60 * 60 * 24));
+  // For prediction, we need to know when we'll hit scope
+  const predictedDaysFromStart = effectiveDaysElapsed + daysToComplete;
+  const isLate = predictedDaysFromStart > totalDays;
+  const daysDiff = Math.abs(predictedDaysFromStart - totalDays);
 
   // Get status for non-active sprints
-  const status = window.status;
+  const status = sprintWindow.status;
   const statusLabel = status === 'active' ? 'ACTIVE' : status === 'upcoming' ? 'UPCOMING' : 'COMPLETED';
   const statusClass = status === 'active' ? 'bg-accent/20 text-accent' : status === 'upcoming' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400';
+
+  // Chart calculations
+  const padding = { top: 20, right: 20, bottom: 30, left: 40 };
+  const chartWidth = Math.max(0, chartSize.width - padding.left - padding.right);
+  const chartHeight = Math.max(0, chartSize.height - padding.top - padding.bottom);
+
+  // Scale for Y axis (issue count)
+  const maxY = Math.max(sprint.issue_count, 1);
+  const yScale = (value: number) => chartHeight - (value / maxY) * chartHeight;
+
+  // Scale for X axis (days) - extend if prediction goes past sprint end
+  const totalXDays = isLate && remaining > 0 ? Math.min(predictedDaysFromStart, totalDays + 14) : totalDays;
+  const xScale = (day: number) => (day / totalXDays) * chartWidth;
+
+  // Generate date labels for X axis
+  const dateLabels = useMemo(() => {
+    const labels: { day: number; label: string }[] = [];
+    // Start, middle, end of sprint
+    labels.push({ day: 0, label: formatDate(sprintWindow.start_date.toISOString()) });
+    labels.push({ day: 7, label: formatDate(new Date(sprintWindow.start_date.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()) });
+    labels.push({ day: 14, label: formatDate(sprintWindow.end_date.toISOString()) });
+    return labels;
+  }, [sprintWindow.start_date, sprintWindow.end_date]);
+
+  // Y axis labels
+  const yLabels = useMemo(() => {
+    if (maxY <= 3) return Array.from({ length: maxY + 1 }, (_, i) => i);
+    return [0, Math.floor(maxY / 2), maxY];
+  }, [maxY]);
+
+  // Build the "completed" line path - rises from 0 at start to completed_count at today
+  // For a real app, this would use historical data points
+  const completedPath = useMemo(() => {
+    if (chartWidth <= 0 || chartHeight <= 0) return '';
+
+    const points: string[] = [];
+    // Start at 0
+    points.push(`M ${xScale(0)} ${yScale(0)}`);
+
+    // Linear progression to current completed (simplified - real app would have daily data)
+    if (effectiveDaysElapsed > 0) {
+      points.push(`L ${xScale(effectiveDaysElapsed)} ${yScale(sprint.completed_count)}`);
+    }
+
+    return points.join(' ');
+  }, [chartWidth, chartHeight, effectiveDaysElapsed, sprint.completed_count, xScale, yScale]);
+
+  // Build the "started" line path (completed + in_progress)
+  const startedPath = useMemo(() => {
+    if (chartWidth <= 0 || chartHeight <= 0) return '';
+
+    const startedTotal = sprint.completed_count + sprint.started_count;
+    const points: string[] = [];
+    points.push(`M ${xScale(0)} ${yScale(0)}`);
+
+    if (effectiveDaysElapsed > 0) {
+      points.push(`L ${xScale(effectiveDaysElapsed)} ${yScale(startedTotal)}`);
+    }
+
+    return points.join(' ');
+  }, [chartWidth, chartHeight, effectiveDaysElapsed, sprint.completed_count, sprint.started_count, xScale, yScale]);
+
+  // Build the filled area under completed line
+  const completedAreaPath = useMemo(() => {
+    if (chartWidth <= 0 || chartHeight <= 0 || effectiveDaysElapsed <= 0) return '';
+
+    return `
+      M ${xScale(0)} ${yScale(0)}
+      L ${xScale(effectiveDaysElapsed)} ${yScale(sprint.completed_count)}
+      L ${xScale(effectiveDaysElapsed)} ${yScale(0)}
+      L ${xScale(0)} ${yScale(0)}
+      Z
+    `;
+  }, [chartWidth, chartHeight, effectiveDaysElapsed, sprint.completed_count, xScale, yScale]);
+
+  // Prediction line (dotted, from current to projected completion)
+  const predictionPath = useMemo(() => {
+    if (chartWidth <= 0 || chartHeight <= 0) return '';
+    if (sprint.completed_count === sprint.issue_count) return ''; // Already done
+    if (completedPerDay <= 0) return ''; // No velocity
+    if (effectiveDaysElapsed <= 0) return ''; // Sprint hasn't started
+
+    const endDay = Math.min(predictedDaysFromStart, totalXDays);
+    const endValue = Math.min(sprint.issue_count, sprint.completed_count + completedPerDay * (endDay - effectiveDaysElapsed));
+
+    return `M ${xScale(effectiveDaysElapsed)} ${yScale(sprint.completed_count)} L ${xScale(endDay)} ${yScale(endValue)}`;
+  }, [chartWidth, chartHeight, effectiveDaysElapsed, sprint.completed_count, sprint.issue_count, completedPerDay, predictedDaysFromStart, totalXDays, xScale, yScale]);
 
   return (
     <div className="h-full flex flex-col">
@@ -1274,7 +1384,7 @@ function ActiveSprintProgress({
           <h2 className="text-lg font-semibold text-foreground">{sprint.name}</h2>
           <span className="text-sm text-muted">·</span>
           <span className="text-sm text-muted">
-            {formatDate(window.start_date.toISOString())} - {formatDate(window.end_date.toISOString())}
+            {formatDate(sprintWindow.start_date.toISOString())} - {formatDate(sprintWindow.end_date.toISOString())}
           </span>
           {sprint.owner && (
             <>
@@ -1309,65 +1419,161 @@ function ActiveSprintProgress({
           </div>
         </div>
 
-        {/* Progress visualization - fills remaining space */}
-        <div className="relative flex-1 min-h-[100px] mb-4">
-          {/* Y-axis labels */}
-          <div className="absolute left-0 top-0 bottom-0 w-8 flex flex-col justify-between text-xs text-muted">
-            <span>{sprint.issue_count}</span>
-            <span>{Math.floor(sprint.issue_count / 2)}</span>
-            <span>0</span>
-          </div>
+        {/* SVG Chart - fills remaining space */}
+        <div ref={chartRef} className="flex-1 min-h-[150px] mb-4">
+          <svg width="100%" height="100%" viewBox={`0 0 ${chartSize.width} ${chartSize.height}`} preserveAspectRatio="xMidYMid meet" className="overflow-visible">
+              <g transform={`translate(${padding.left}, ${padding.top})`}>
+                {/* Grid lines */}
+                {yLabels.map((value) => (
+                  <g key={value}>
+                    <line
+                      x1={0}
+                      y1={yScale(value)}
+                      x2={chartWidth}
+                      y2={yScale(value)}
+                      stroke="currentColor"
+                      strokeOpacity={0.1}
+                    />
+                    <text
+                      x={-8}
+                      y={yScale(value)}
+                      textAnchor="end"
+                      dominantBaseline="middle"
+                      className="fill-muted text-xs"
+                    >
+                      {value}
+                    </text>
+                  </g>
+                ))}
 
-          {/* Graph area */}
-          <div className="ml-10 h-full relative border-l border-b border-border">
-            {/* Scope line (gray) */}
-            <div
-              className="absolute left-0 right-0 h-0.5 bg-gray-500"
-              style={{ top: '0%' }}
-            />
+                {/* X axis labels */}
+                {dateLabels.map(({ day, label }) => (
+                  <text
+                    key={day}
+                    x={xScale(day)}
+                    y={chartHeight + 20}
+                    textAnchor="middle"
+                    className="fill-muted text-xs"
+                  >
+                    {label}
+                  </text>
+                ))}
 
-            {/* Completed fill (blue) */}
-            <div
-              className="absolute left-0 bottom-0 bg-accent/20 transition-all"
-              style={{
-                width: `${(daysElapsed / totalDays) * 100}%`,
-                height: `${progress}%`,
-              }}
-            />
+                {/* Scope line (gray, flat at top) */}
+                <line
+                  x1={0}
+                  y1={yScale(sprint.issue_count)}
+                  x2={chartWidth}
+                  y2={yScale(sprint.issue_count)}
+                  stroke="#6b7280"
+                  strokeWidth={2}
+                />
 
-            {/* Prediction line (dotted purple) */}
-            {sprint.completed_count > 0 && (
-              <div
-                className="absolute border-t-2 border-dashed border-purple-400"
-                style={{
-                  left: `${(daysElapsed / totalDays) * 100}%`,
-                  right: 0,
-                  top: `${100 - progress}%`,
-                }}
-              />
-            )}
+                {/* Completed area fill */}
+                {completedAreaPath && (
+                  <path
+                    d={completedAreaPath}
+                    fill="rgba(99, 102, 241, 0.2)"
+                  />
+                )}
 
-            {/* Today marker */}
-            <div
-              className="absolute top-0 bottom-0 w-0.5 bg-accent"
-              style={{ left: `${(daysElapsed / totalDays) * 100}%` }}
-            />
-          </div>
+                {/* Started line (yellow) */}
+                {startedPath && (
+                  <path
+                    d={startedPath}
+                    fill="none"
+                    stroke="#eab308"
+                    strokeWidth={2}
+                  />
+                )}
+
+                {/* Completed line (blue) */}
+                {completedPath && (
+                  <path
+                    d={completedPath}
+                    fill="none"
+                    stroke="#6366f1"
+                    strokeWidth={2}
+                  />
+                )}
+
+                {/* Prediction line (dotted purple) */}
+                {predictionPath && (
+                  <path
+                    d={predictionPath}
+                    fill="none"
+                    stroke="#a855f7"
+                    strokeWidth={2}
+                    strokeDasharray="6 4"
+                  />
+                )}
+
+                {/* Today marker (vertical line) - only for active sprints */}
+                {status === 'active' && effectiveDaysElapsed > 0 && effectiveDaysElapsed < totalDays && (
+                  <line
+                    x1={xScale(effectiveDaysElapsed)}
+                    y1={0}
+                    x2={xScale(effectiveDaysElapsed)}
+                    y2={chartHeight}
+                    stroke="#6366f1"
+                    strokeWidth={1}
+                  />
+                )}
+
+                {/* Sprint end marker (if prediction extends past) */}
+                {isLate && remaining > 0 && (
+                  <line
+                    x1={xScale(totalDays)}
+                    y1={0}
+                    x2={xScale(totalDays)}
+                    y2={chartHeight}
+                    stroke="#ef4444"
+                    strokeWidth={1}
+                    strokeDasharray="4 4"
+                  />
+                )}
+
+                {/* Data points */}
+                {effectiveDaysElapsed > 0 && (
+                  <>
+                    {/* Completed point */}
+                    <circle
+                      cx={xScale(effectiveDaysElapsed)}
+                      cy={yScale(sprint.completed_count)}
+                      r={4}
+                      fill="#6366f1"
+                    />
+                    {/* Started point */}
+                    <circle
+                      cx={xScale(effectiveDaysElapsed)}
+                      cy={yScale(sprint.completed_count + sprint.started_count)}
+                      r={4}
+                      fill="#eab308"
+                    />
+                  </>
+                )}
+              </g>
+            </svg>
         </div>
 
         {/* Prediction text */}
         <div className="flex items-center justify-between text-sm flex-shrink-0">
           <span className="text-muted">
-            {daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} left
+            {status === 'completed'
+              ? 'Sprint completed'
+              : status === 'upcoming'
+              ? 'Sprint not started'
+              : `${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'} left`
+            }
           </span>
-          {sprint.completed_count > 0 && sprint.issue_count > sprint.completed_count && (
-            <span className={isOnTrack ? 'text-green-400' : 'text-yellow-400'}>
-              {isOnTrack
-                ? `Estimated ${Math.abs(daysDiff)} days early`
-                : `Estimated ${Math.abs(daysDiff)} days late`}
+          {status === 'active' && sprint.completed_count > 0 && remaining > 0 && (
+            <span className={isLate ? 'text-red-400' : 'text-green-400'}>
+              {isLate
+                ? `Estimated ${daysDiff} days late`
+                : `Estimated ${daysDiff} days early`}
             </span>
           )}
-          {sprint.completed_count === sprint.issue_count && (
+          {sprint.completed_count === sprint.issue_count && sprint.issue_count > 0 && (
             <span className="text-green-400">All issues complete!</span>
           )}
         </div>
