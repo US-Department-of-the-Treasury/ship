@@ -10,6 +10,7 @@ interface InviteInfo {
   invitedBy: string;
   role: 'admin' | 'member';
   email: string;
+  userExists: boolean;
 }
 
 export function InviteAcceptPage() {
@@ -20,6 +21,8 @@ export function InviteAcceptPage() {
   const [inviteInfo, setInviteInfo] = useState<InviteInfo | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
 
   useEffect(() => {
     if (!token) {
@@ -56,7 +59,11 @@ export function InviteAcceptPage() {
     setAccepting(true);
     setError(null);
 
-    const res = await api.invites.accept(token);
+    // For new users, pass name and password to create account
+    const data = inviteInfo?.userExists === false
+      ? { name: name || undefined, password }
+      : undefined;
+    const res = await api.invites.accept(token, data);
     if (res.success) {
       // Redirect to docs - user is now a member of the workspace
       navigate('/docs', { replace: true });
@@ -184,10 +191,49 @@ export function InviteAcceptPage() {
             </div>
           )}
 
-          {!user ? (
+          {/* Case 1: New user - show registration form */}
+          {inviteInfo?.userExists === false && (
+            <div className="mt-6 space-y-4">
+              <p className="text-center text-sm text-muted">
+                Create an account to accept this invite.
+              </p>
+              <div>
+                <label htmlFor="name" className="sr-only">Name</label>
+                <input
+                  id="name"
+                  type="text"
+                  placeholder="Your name (optional)"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="password" className="sr-only">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  placeholder="Create password (8+ characters)"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none"
+                />
+              </div>
+              <button
+                onClick={handleAccept}
+                disabled={accepting || password.length < 8}
+                className="w-full px-4 py-2 bg-accent text-white rounded-md hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {accepting ? 'Creating Account...' : 'Create Account & Accept'}
+              </button>
+            </div>
+          )}
+
+          {/* Case 2: Existing user but not logged in - show login button */}
+          {inviteInfo?.userExists === true && !user && (
             <div className="mt-6 space-y-3">
               <p className="text-center text-sm text-muted">
-                Please log in or create an account to accept this invite.
+                Please log in to accept this invite.
               </p>
               <Link
                 to={`/login?redirect=/invite/${token}`}
@@ -196,7 +242,10 @@ export function InviteAcceptPage() {
                 Log In to Accept
               </Link>
             </div>
-          ) : (
+          )}
+
+          {/* Case 3: Logged in - show accept button */}
+          {user && (
             <div className="mt-6 space-y-3">
               <button
                 onClick={handleAccept}
