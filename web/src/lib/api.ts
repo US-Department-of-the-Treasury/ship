@@ -82,6 +82,17 @@ export async function apiDelete(endpoint: string): Promise<Response> {
   return fetchWithCsrf(endpoint, 'DELETE');
 }
 
+// Handle session expiration - redirect to login with returnTo URL
+function handleSessionExpired(): void {
+  // Don't redirect if already on login page
+  if (window.location.pathname === '/login') return;
+
+  const returnTo = encodeURIComponent(
+    window.location.pathname + window.location.search + window.location.hash
+  );
+  window.location.href = `/login?expired=true&returnTo=${returnTo}`;
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -103,6 +114,16 @@ async function request<T>(
     credentials: 'include',
     headers,
   });
+
+  // Handle session expiration - redirect to login
+  if (response.status === 401) {
+    const data = await response.json();
+    // Check for session expired error codes
+    if (data.error?.code === 'SESSION_EXPIRED' || data.error?.code === 'UNAUTHORIZED') {
+      handleSessionExpired();
+    }
+    return data;
+  }
 
   // If CSRF token is invalid, clear and retry once
   if (response.status === 403) {

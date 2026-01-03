@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
@@ -9,6 +9,8 @@ import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { cn } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
+import { SessionTimeoutModal } from '@/components/SessionTimeoutModal';
+import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 
 type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
 
@@ -25,6 +27,20 @@ export function AppLayout() {
   });
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
+
+  // Session timeout handling
+  const handleSessionTimeout = useCallback(() => {
+    // Redirect to login with expired flag and returnTo URL
+    const returnTo = encodeURIComponent(location.pathname + location.search + location.hash);
+    window.location.href = `/login?expired=true&returnTo=${returnTo}`;
+  }, [location]);
+
+  const {
+    showWarning: showTimeoutWarning,
+    timeRemaining,
+    warningType,
+    resetTimer: resetSessionTimer,
+  } = useSessionTimeout(handleSessionTimeout);
 
   // Accessibility: focus management on navigation
   useFocusOnNavigate();
@@ -318,6 +334,14 @@ export function AppLayout() {
 
       {/* Command Palette (Cmd+K) */}
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+
+      {/* Session Timeout Warning Modal */}
+      <SessionTimeoutModal
+        open={showTimeoutWarning}
+        timeRemaining={timeRemaining}
+        warningType={warningType}
+        onStayLoggedIn={resetSessionTimer}
+      />
     </div>
   );
 }

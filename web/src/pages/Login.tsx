@@ -1,9 +1,24 @@
-import { useState, useEffect, type FormEvent } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect, useMemo, type FormEvent } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+// Validate that returnTo URL is same-origin (security measure)
+function isValidReturnTo(url: string): boolean {
+  try {
+    // If it starts with /, it's a relative path - safe
+    if (url.startsWith('/') && !url.startsWith('//')) {
+      return true;
+    }
+    // Otherwise check if it's same origin
+    const parsed = new URL(url, window.location.origin);
+    return parsed.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
 
 export function LoginPage() {
   const [email, setEmail] = useState(import.meta.env.DEV ? 'dev@ship.local' : '');
@@ -15,8 +30,25 @@ export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
 
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+  // Check if session expired
+  const sessionExpired = searchParams.get('expired') === 'true';
+
+  // Get returnTo URL with validation
+  const returnTo = useMemo(() => {
+    const returnToParam = searchParams.get('returnTo');
+    if (returnToParam) {
+      const decoded = decodeURIComponent(returnToParam);
+      if (isValidReturnTo(decoded)) {
+        return decoded;
+      }
+    }
+    return null;
+  }, [searchParams]);
+
+  // Default redirect path from location state or returnTo param
+  const from = returnTo || (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
 
   // Check if setup is needed before showing login
   useEffect(() => {
@@ -79,6 +111,16 @@ export function LoginPage() {
 
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Session expired message */}
+          {sessionExpired && (
+            <div
+              role="alert"
+              className="rounded-md border border-yellow-500/20 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-400"
+            >
+              Your session expired due to inactivity. Please log in again.
+            </div>
+          )}
+
           {error && (
             <div
               role="alert"
