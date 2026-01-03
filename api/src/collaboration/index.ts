@@ -274,6 +274,32 @@ async function validateWebSocketSession(request: IncomingMessage): Promise<{ use
   }
 }
 
+// Check if user can access a document for collaboration (visibility check)
+async function canAccessDocumentForCollab(
+  docId: string,
+  userId: string,
+  workspaceId: string
+): Promise<boolean> {
+  try {
+    const result = await pool.query(
+      `SELECT d.id,
+              (d.visibility = 'workspace' OR d.created_by = $2 OR
+               (SELECT role FROM workspace_memberships WHERE workspace_id = $3 AND user_id = $2) = 'admin') as can_access
+       FROM documents d
+       WHERE d.id = $1 AND d.workspace_id = $3`,
+      [docId, userId, workspaceId]
+    );
+
+    if (result.rows.length === 0) {
+      return false;
+    }
+
+    return result.rows[0].can_access;
+  } catch {
+    return false;
+  }
+}
+
 export function setupCollaboration(server: Server) {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -295,6 +321,15 @@ export function setupCollaboration(server: Server) {
     }
 
     const docName = url.pathname.replace('/collaboration/', '');
+    const docId = parseDocId(docName);
+
+    // Check document access (visibility check)
+    const canAccess = await canAccessDocumentForCollab(docId, sessionData.userId, sessionData.workspaceId);
+    if (!canAccess) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
 
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request, docName, sessionData);

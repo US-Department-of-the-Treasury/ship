@@ -507,9 +507,9 @@ describe('Invite Validation API', () => {
 
       expect(response.status).toBe(200)
       expect(response.body.success).toBe(true)
-      expect(response.body.data.invite).toHaveProperty('email', 'invited@test.com')
-      expect(response.body.data.invite).toHaveProperty('workspaceName')
-      expect(response.body.data.invite).toHaveProperty('role', 'member')
+      expect(response.body.data).toHaveProperty('email', 'invited@test.com')
+      expect(response.body.data).toHaveProperty('workspaceName')
+      expect(response.body.data).toHaveProperty('role', 'member')
     })
 
     it('should return 404 for invalid token', async () => {

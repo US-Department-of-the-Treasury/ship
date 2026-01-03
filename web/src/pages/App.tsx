@@ -360,26 +360,96 @@ function RailIcon({ icon, label, active, onClick }: { icon: React.ReactNode; lab
   );
 }
 
+const SIDEBAR_ITEM_LIMIT = 10;
+
 function DocumentsTree({ documents, activeId, onSelect }: { documents: WikiDocument[]; activeId?: string; onSelect: (id: string) => void }) {
-  // Build tree structure - only roots at top level
-  const tree = useMemo(() => buildDocumentTree(documents), [documents]);
+  // Split documents by visibility and build separate trees
+  const { privateTree, workspaceTree } = useMemo(() => {
+    // Group documents by visibility (root documents determine the section)
+    const privateDocs = documents.filter(d => d.visibility === 'private');
+    const workspaceDocs = documents.filter(d => d.visibility !== 'private');
+    return {
+      privateTree: buildDocumentTree(privateDocs),
+      workspaceTree: buildDocumentTree(workspaceDocs),
+    };
+  }, [documents]);
 
   if (documents.length === 0) {
     return <div className="px-3 py-2 text-sm text-muted">No documents yet</div>;
   }
 
+  // Limit items shown
+  const workspaceToShow = workspaceTree.slice(0, SIDEBAR_ITEM_LIMIT);
+  const workspaceHiddenCount = workspaceTree.length - SIDEBAR_ITEM_LIMIT;
+
+  const privateToShow = privateTree.slice(0, SIDEBAR_ITEM_LIMIT);
+  const privateHiddenCount = privateTree.length - SIDEBAR_ITEM_LIMIT;
+
   return (
-    <ul role="tree" aria-label="Document tree" className="space-y-0.5 px-2">
-      {tree.map((doc) => (
-        <DocumentTreeItem
-          key={doc.id}
-          document={doc}
-          activeId={activeId}
-          onSelect={onSelect}
-          depth={0}
-        />
-      ))}
-    </ul>
+    <div className="space-y-2">
+      {/* Workspace section */}
+      <div>
+        <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-muted uppercase tracking-wider">
+          <GlobeIcon className="h-3 w-3" />
+          Workspace
+        </div>
+        <ul role="tree" aria-label="Workspace documents" className="space-y-0.5 px-2">
+          {workspaceToShow.length > 0 ? (
+            workspaceToShow.map((doc) => (
+              <DocumentTreeItem
+                key={doc.id}
+                document={doc}
+                activeId={activeId}
+                onSelect={onSelect}
+                depth={0}
+              />
+            ))
+          ) : (
+            <li className="px-2 py-1 text-sm text-muted">No workspace documents</li>
+          )}
+          {workspaceHiddenCount > 0 && (
+            <li>
+              <Link
+                to="/docs?filter=workspace"
+                className="block px-2 py-1.5 text-sm text-muted hover:text-foreground hover:bg-border/30 rounded-md transition-colors"
+              >
+                {workspaceHiddenCount} more...
+              </Link>
+            </li>
+          )}
+        </ul>
+      </div>
+      {/* Private section - only show if user has private docs */}
+      {privateTree.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-muted uppercase tracking-wider">
+            <LockIcon className="h-3 w-3" />
+            Private
+          </div>
+          <ul role="tree" aria-label="Private documents" className="space-y-0.5 px-2">
+            {privateToShow.map((doc) => (
+              <DocumentTreeItem
+                key={doc.id}
+                document={doc}
+                activeId={activeId}
+                onSelect={onSelect}
+                depth={0}
+              />
+            ))}
+            {privateHiddenCount > 0 && (
+              <li>
+                <Link
+                  to="/docs?filter=private"
+                  className="block px-2 py-1.5 text-sm text-muted hover:text-foreground hover:bg-border/30 rounded-md transition-colors"
+                >
+                  {privateHiddenCount} more...
+                </Link>
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -454,9 +524,12 @@ function DocumentTreeItem({
         {/* Main navigation link */}
         <Link
           to={`/docs/${document.id}`}
-          className="flex-1 truncate text-left cursor-pointer"
+          className="flex-1 truncate text-left cursor-pointer flex items-center gap-1"
         >
-          {document.title || 'Untitled'}
+          <span className="truncate">{document.title || 'Untitled'}</span>
+          {document.visibility === 'private' && (
+            <LockIcon className="h-3 w-3 flex-shrink-0 text-muted" />
+          )}
         </Link>
       </div>
 
@@ -701,6 +774,22 @@ function AdminIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+    </svg>
+  );
+}
+
+function LockIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className || "h-4 w-4"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+    </svg>
+  );
+}
+
+function GlobeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className || "h-4 w-4"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
     </svg>
   );
 }

@@ -45,14 +45,28 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+// Check if user is workspace admin
+async function isWorkspaceAdmin(userId: string, workspaceId: string): Promise<boolean> {
+  const result = await pool.query(
+    'SELECT role FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+    [workspaceId, userId]
+  );
+  return result.rows[0]?.role === 'admin';
+}
+
 // Search for mentions (people + documents)
 // GET /api/search/mentions?q=:query
 searchRouter.get('/mentions', requireAuth, async (req: Request, res: Response) => {
   try {
     const searchQuery = (req.query.q as string) || '';
     const workspaceId = req.user!.workspaceId;
+    const userId = req.user!.id;
+
+    // Check if user is admin for visibility filtering
+    const isAdmin = await isWorkspaceAdmin(userId, workspaceId);
 
     // Search for people (person documents linked via properties.user_id)
+    // Person documents are always workspace-visible, so no visibility filter needed
     const peopleResult = await pool.query(
       `SELECT
          d.id::text as id,
@@ -69,13 +83,14 @@ searchRouter.get('/mentions', requireAuth, async (req: Request, res: Response) =
     );
 
     // Search for other documents (wiki, issue, project, program)
-    // Exclude 'person' and system types like 'sprint', 'sprint_plan', 'sprint_retro'
+    // Filter by visibility: workspace docs, user's private docs, or all if admin
     const documentsResult = await pool.query(
-      `SELECT id, title, document_type
+      `SELECT id, title, document_type, visibility
        FROM documents
        WHERE workspace_id = $1
          AND document_type IN ('wiki', 'issue', 'project', 'program')
          AND title ILIKE $2
+         AND (visibility = 'workspace' OR created_by = $3 OR $4 = TRUE)
        ORDER BY
          CASE document_type
            WHEN 'issue' THEN 1
@@ -86,7 +101,7 @@ searchRouter.get('/mentions', requireAuth, async (req: Request, res: Response) =
          END,
          updated_at DESC
        LIMIT 10`,
-      [workspaceId, `%${searchQuery}%`]
+      [workspaceId, `%${searchQuery}%`, userId, isAdmin]
     );
 
     res.json({
