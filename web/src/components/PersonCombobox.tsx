@@ -57,7 +57,7 @@ export function PersonCombobox({
         >
           {selectedPerson ? (
             <>
-              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/20 text-[10px] font-medium text-accent">
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-white">
                 {getInitials(selectedPerson.name)}
               </div>
               <span className="truncate text-foreground">{selectedPerson.name}</span>
@@ -116,7 +116,7 @@ export function PersonCombobox({
                     value === person.user_id && 'text-accent'
                   )}
                 >
-                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/20 text-[10px] font-medium text-accent">
+                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-white">
                     {getInitials(person.name)}
                   </div>
                   <div className="min-w-0 flex-1">

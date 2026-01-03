@@ -15,10 +15,14 @@ interface TabBarProps {
 export function TabBar({ tabs, activeTab, onTabChange, rightContent }: TabBarProps) {
   return (
     <div className="flex items-center justify-between border-b border-border px-6">
-      <div className="flex">
+      <div className="flex" role="tablist" aria-label="Content tabs">
         {tabs.map((tab) => (
           <button
             key={tab.id}
+            role="tab"
+            id={`tab-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            aria-controls={`tabpanel-${tab.id}`}
             onClick={() => onTabChange(tab.id)}
             className={cn(
               'relative px-4 py-3 text-sm font-medium transition-colors',
@@ -29,7 +33,7 @@ export function TabBar({ tabs, activeTab, onTabChange, rightContent }: TabBarPro
           >
             {tab.label}
             {activeTab === tab.id && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent" />
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent" aria-hidden="true" />
             )}
           </button>
         ))}

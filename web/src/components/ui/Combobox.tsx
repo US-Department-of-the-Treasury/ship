@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { Command } from 'cmdk';
 import { cn } from '@/lib/cn';
@@ -18,6 +18,8 @@ interface ComboboxProps {
   emptyText?: string;
   allowClear?: boolean;
   clearLabel?: string;
+  'aria-label'?: string;
+  id?: string;
 }
 
 export function Combobox({
@@ -29,9 +31,13 @@ export function Combobox({
   emptyText = 'No results found',
   allowClear = true,
   clearLabel = 'None',
+  'aria-label': ariaLabel,
+  id: providedId,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const generatedId = useId();
+  const listboxId = providedId ? `${providedId}-listbox` : `combobox-listbox${generatedId.replace(/:/g, '-')}`;
 
   const selectedOption = options.find((opt) => opt.value === value);
 
@@ -42,6 +48,9 @@ export function Combobox({
           type="button"
           role="combobox"
           aria-expanded={open}
+          aria-controls={listboxId}
+          aria-haspopup="listbox"
+          aria-label={ariaLabel}
           className={cn(
             'flex w-full items-center justify-between rounded border border-border bg-background px-2 py-1.5 text-left text-sm transition-colors',
             'hover:bg-border/30 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent',
@@ -82,7 +91,7 @@ export function Combobox({
               />
             </div>
 
-            <Command.List className="max-h-[200px] overflow-auto p-1">
+            <Command.List id={listboxId} role="listbox" className="max-h-[200px] overflow-auto p-1">
               <Command.Empty className="px-2 py-4 text-center text-sm text-muted">
                 {emptyText}
               </Command.Empty>

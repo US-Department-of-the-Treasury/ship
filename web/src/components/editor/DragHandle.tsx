@@ -31,8 +31,9 @@ function createDragHandle(): HTMLButtonElement {
   handle.type = 'button';
   handle.className = 'editor-drag-handle';
   handle.draggable = true;
+  handle.setAttribute('aria-label', 'Drag to reorder block');
   handle.innerHTML = `
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
       <circle cx="9" cy="5" r="1.5"/>
       <circle cx="9" cy="12" r="1.5"/>
       <circle cx="9" cy="19" r="1.5"/>
