@@ -26,8 +26,8 @@ test.describe('Issues (Phase 5)', () => {
   test('shows issues list or empty state', async ({ page }) => {
     await page.goto('/issues')
 
-    // Should see New Issue button
-    await expect(page.getByRole('button', { name: 'New Issue' })).toBeVisible({ timeout: 5000 })
+    // Should see New Issue button in the main content area (exact match to avoid sidebar button)
+    await expect(page.getByRole('button', { name: 'New Issue', exact: true })).toBeVisible({ timeout: 5000 })
   })
 
   test('can create a new issue', async ({ page }) => {
@@ -60,11 +60,11 @@ test.describe('Issues (Phase 5)', () => {
   test('issue has filter tabs (All, Active, Backlog, Done)', async ({ page }) => {
     await page.goto('/issues')
 
-    // Should see filter tabs with exact names
-    await expect(page.getByRole('button', { name: 'All' })).toBeVisible({ timeout: 5000 })
-    await expect(page.getByRole('button', { name: 'Active' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Backlog' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Done' })).toBeVisible()
+    // Should see filter tabs with exact names (implemented as actual tabs, not buttons)
+    await expect(page.getByRole('tab', { name: 'All' })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('tab', { name: 'Active' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Backlog' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Done' })).toBeVisible()
   })
 
   test('can switch between list and kanban view', async ({ page }) => {
@@ -121,12 +121,8 @@ test.describe('Issues (Phase 5)', () => {
   test('issue list shows status column', async ({ page }) => {
     await page.goto('/issues')
 
-    // Create an issue first
-    await page.getByRole('button', { name: 'New Issue' }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Go back to list
-    await page.goto('/issues')
+    // Switch to list view (default is Kanban)
+    await page.getByRole('button', { name: 'List view' }).click()
 
     // Should see Status column header in the table
     await expect(page.locator('th').filter({ hasText: 'Status' })).toBeVisible({ timeout: 5000 })
@@ -135,12 +131,8 @@ test.describe('Issues (Phase 5)', () => {
   test('issue list shows priority column', async ({ page }) => {
     await page.goto('/issues')
 
-    // Create an issue first
-    await page.getByRole('button', { name: 'New Issue' }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Go back to list
-    await page.goto('/issues')
+    // Switch to list view (default is Kanban)
+    await page.getByRole('button', { name: 'List view' }).click()
 
     // Should see Priority column header
     await expect(page.locator('th').filter({ hasText: 'Priority' })).toBeVisible({ timeout: 5000 })
@@ -149,14 +141,10 @@ test.describe('Issues (Phase 5)', () => {
   test('clicking issue row opens editor', async ({ page }) => {
     await page.goto('/issues')
 
-    // Create an issue first
-    await page.getByRole('button', { name: 'New Issue' }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    // Switch to list view (default is Kanban)
+    await page.getByRole('button', { name: 'List view' }).click()
 
-    // Go back to list
-    await page.goto('/issues')
-
-    // Click on the issue row
+    // Click on an issue row (seed data has issues)
     const issueRow = page.locator('tbody tr').first()
     await expect(issueRow).toBeVisible({ timeout: 5000 })
     await issueRow.click()
@@ -169,15 +157,8 @@ test.describe('Issues (Phase 5)', () => {
   test('filter tabs filter the issues list', async ({ page }) => {
     await page.goto('/issues')
 
-    // Create an issue
-    await page.getByRole('button', { name: 'New Issue' }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Go back to list
-    await page.goto('/issues')
-
-    // Click Active filter
-    await page.getByRole('button', { name: 'Active' }).click()
+    // Click Active filter tab (seed data has issues in various states)
+    await page.getByRole('tab', { name: 'Active' }).click()
 
     // URL should update with filter
     await expect(page).toHaveURL(/state=/)

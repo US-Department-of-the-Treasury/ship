@@ -20,9 +20,28 @@ import { spawn, ChildProcess } from 'child_process';
 import { Pool } from 'pg';
 import { readdirSync, readFileSync, existsSync } from 'fs';
 import path from 'path';
-import getPort from 'get-port';
+import getPort, { portNumbers } from 'get-port';
 import bcrypt from 'bcryptjs';
 import os from 'os';
+
+/**
+ * Get port for a worker with collision avoidance.
+ *
+ * Each worker gets its own port range to avoid race conditions when
+ * multiple workers call getPort() simultaneously. Uses a base port of 50000
+ * with 100-port ranges per worker:
+ * - Worker 0: 50000-50099
+ * - Worker 1: 50100-50199
+ * - etc.
+ */
+async function getWorkerPort(workerIndex: number): Promise<number> {
+  const BASE_PORT = 50000;
+  const PORTS_PER_WORKER = 100;
+  const startPort = BASE_PORT + workerIndex * PORTS_PER_WORKER;
+  const endPort = startPort + PORTS_PER_WORKER - 1;
+
+  return getPort({ port: portNumbers(startPort, endPort) });
+}
 
 // Get project root (fixtures is at e2e/fixtures/, so go up 2 levels)
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
@@ -102,7 +121,8 @@ export const test = base.extend<
     async ({ dbContainer }, use, workerInfo) => {
       const workerTag = `[Worker ${workerInfo.workerIndex}]`;
       const debug = process.env.DEBUG === '1';
-      const port = await getPort();
+      // Use worker-specific port range to avoid collisions between parallel workers
+      const port = await getWorkerPort(workerInfo.workerIndex);
       const dbUrl = dbContainer.getConnectionUri();
 
       if (debug) console.log(`${workerTag} Starting API server on port ${port}...`);
@@ -153,7 +173,8 @@ export const test = base.extend<
     async ({ apiServer }, use, workerInfo) => {
       const workerTag = `[Worker ${workerInfo.workerIndex}]`;
       const debug = process.env.DEBUG === '1';
-      const port = await getPort();
+      // Use worker-specific port range (separate from API port)
+      const port = await getWorkerPort(workerInfo.workerIndex);
 
       // Extract API port from URL
       const apiPort = new URL(apiServer.url).port;
@@ -279,21 +300,26 @@ async function runMigrations(dbUrl: string): Promise<void> {
 }
 
 /**
- * Seed minimal data needed for tests to work:
- * - 1 workspace
+ * Seed comprehensive test data matching the full seed script:
+ * - 1 workspace with sprint_start_date 3 months ago
  * - 1 user (dev@ship.local / admin123)
- * - workspace membership
- * - person document
+ * - workspace membership + person document
+ * - 5 programs (Ship Core, Authentication, API Platform, Design System, Infrastructure)
+ * - Sprints for each program
+ * - Issues with various states
  */
 async function seedMinimalTestData(pool: Pool): Promise<void> {
   // Hash the test password
   const passwordHash = await bcrypt.hash('admin123', 10);
 
-  // Create workspace
+  // Create workspace with sprint_start_date 3 months ago (matches full seed)
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
   const workspaceResult = await pool.query(
     `INSERT INTO workspaces (name, sprint_start_date)
-     VALUES ('Test Workspace', CURRENT_DATE - INTERVAL '30 days')
-     RETURNING id`
+     VALUES ('Test Workspace', $1)
+     RETURNING id`,
+    [threeMonthsAgo.toISOString().split('T')[0]]
   );
   const workspaceId = workspaceResult.rows[0].id;
 
@@ -318,6 +344,123 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
      VALUES ($1, 'person', 'Dev User', $2, $3)`,
     [workspaceId, JSON.stringify({ user_id: userId, email: 'dev@ship.local' }), userId]
+  );
+
+  // Create programs (matching full seed)
+  const programs = [
+    { prefix: 'SHIP', name: 'Ship Core', color: '#3B82F6' },
+    { prefix: 'AUTH', name: 'Authentication', color: '#8B5CF6' },
+    { prefix: 'API', name: 'API Platform', color: '#10B981' },
+    { prefix: 'UI', name: 'Design System', color: '#F59E0B' },
+    { prefix: 'INFRA', name: 'Infrastructure', color: '#EF4444' },
+  ];
+
+  const programIds: Record<string, string> = {};
+  for (const prog of programs) {
+    const result = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+       VALUES ($1, 'program', $2, $3, $4)
+       RETURNING id`,
+      [workspaceId, prog.name, JSON.stringify({ prefix: prog.prefix, color: prog.color }), userId]
+    );
+    programIds[prog.prefix] = result.rows[0].id;
+  }
+
+  // Calculate current sprint number
+  const today = new Date();
+  const daysSinceStart = Math.floor((today.getTime() - threeMonthsAgo.getTime()) / (1000 * 60 * 60 * 24));
+  const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 14) + 1);
+
+  // Create sprints for each program (current-2 to current+2)
+  const sprintIds: Record<string, Record<number, string>> = {};
+  for (const prog of programs) {
+    sprintIds[prog.prefix] = {};
+    for (let sprintNum = currentSprintNumber - 2; sprintNum <= currentSprintNumber + 2; sprintNum++) {
+      if (sprintNum > 0) {
+        const result = await pool.query(
+          `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by)
+           VALUES ($1, 'sprint', $2, $3, $4, $5)
+           RETURNING id`,
+          [
+            workspaceId,
+            `Sprint ${sprintNum}`,
+            programIds[prog.prefix],
+            JSON.stringify({ sprint_number: sprintNum, owner_id: userId }),
+            userId,
+          ]
+        );
+        sprintIds[prog.prefix][sprintNum] = result.rows[0].id;
+      }
+    }
+  }
+
+  // Create issues for Ship Core with various states
+  const shipCoreIssues = [
+    // Done issues (past sprint)
+    { title: 'Initial project setup', state: 'done', priority: 'high', sprintOffset: -1 },
+    { title: 'Database schema design', state: 'done', priority: 'high', sprintOffset: -1 },
+    // Current sprint - mixed states
+    { title: 'Implement sprint management', state: 'done', priority: 'high', sprintOffset: 0 },
+    { title: 'Build issue assignment flow', state: 'in_progress', priority: 'high', sprintOffset: 0 },
+    { title: 'Add sprint velocity metrics', state: 'todo', priority: 'medium', sprintOffset: 0 },
+    { title: 'Implement burndown chart', state: 'todo', priority: 'medium', sprintOffset: 0 },
+    // Future sprint
+    { title: 'Add team workload view', state: 'todo', priority: 'high', sprintOffset: 1 },
+    // Backlog (no sprint)
+    { title: 'Add dark mode support', state: 'backlog', priority: 'low', sprintOffset: null },
+    { title: 'Create mobile app', state: 'backlog', priority: 'low', sprintOffset: null },
+  ];
+
+  let ticketNumber = 0;
+  for (const issue of shipCoreIssues) {
+    ticketNumber++;
+    const sprintId = issue.sprintOffset !== null
+      ? sprintIds['SHIP'][currentSprintNumber + issue.sprintOffset] || null
+      : null;
+
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number, created_by)
+       VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7)`,
+      [
+        workspaceId,
+        issue.title,
+        programIds['SHIP'],
+        sprintId,
+        JSON.stringify({
+          state: issue.state,
+          priority: issue.priority,
+          source: 'internal',
+          assignee_id: userId,
+        }),
+        ticketNumber,
+        userId,
+      ]
+    );
+  }
+
+  // Create a few issues for other programs too
+  for (const prog of programs.filter(p => p.prefix !== 'SHIP')) {
+    ticketNumber++;
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number, created_by)
+       VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7)`,
+      [
+        workspaceId,
+        `${prog.name} initial setup`,
+        programIds[prog.prefix],
+        sprintIds[prog.prefix][currentSprintNumber] || null,
+        JSON.stringify({ state: 'in_progress', priority: 'medium', source: 'internal', assignee_id: userId }),
+        ticketNumber,
+        userId,
+      ]
+    );
+  }
+
+  // Create a wiki document
+  await pool.query(
+    `INSERT INTO documents (workspace_id, document_type, title, created_by)
+     VALUES ($1, 'wiki', 'Welcome to Ship', $2)`,
+    [workspaceId, userId]
   );
 }
 
