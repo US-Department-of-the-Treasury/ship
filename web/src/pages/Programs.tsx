@@ -103,7 +103,7 @@ function ProgramCard({ program, onClick }: { program: Program; onClick: () => vo
 
       {program.owner && (
         <div className="mt-4 flex items-center gap-2">
-          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent/20 text-[10px] font-medium text-accent">
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-white">
             {getInitials(program.owner.name)}
           </div>
           <span className="text-xs text-muted truncate">{program.owner.name}</span>

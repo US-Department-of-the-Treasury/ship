@@ -169,6 +169,7 @@ export function IssueEditorPage() {
               <select
                 value={issue.state}
                 onChange={(e) => handleUpdateIssue({ state: e.target.value })}
+                aria-label="Status"
                 className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 {STATES.map((s) => (
@@ -183,6 +184,7 @@ export function IssueEditorPage() {
               <select
                 value={issue.priority}
                 onChange={(e) => handleUpdateIssue({ priority: e.target.value })}
+                aria-label="Priority"
                 className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
               >
                 {PRIORITIES.map((p) => (
@@ -200,6 +202,7 @@ export function IssueEditorPage() {
                   step="0.5"
                   min="0"
                   placeholder="—"
+                  aria-label="Estimate in hours"
                   value={issue.estimate ?? ''}
                   onChange={(e) => {
                     const value = e.target.value ? parseFloat(e.target.value) : null;
@@ -221,6 +224,7 @@ export function IssueEditorPage() {
                 clearLabel="Unassigned"
                 searchPlaceholder="Search people..."
                 emptyText="No people found"
+                aria-label="Assignee"
               />
             </PropertyRow>
 
@@ -233,6 +237,7 @@ export function IssueEditorPage() {
                 clearLabel="No Program"
                 searchPlaceholder="Search programs..."
                 emptyText="No programs found"
+                aria-label="Program"
               />
             </PropertyRow>
 
@@ -253,6 +258,7 @@ export function IssueEditorPage() {
                   clearLabel="No Sprint"
                   searchPlaceholder="Search sprints..."
                   emptyText="No sprints found"
+                  aria-label="Sprint"
                 />
                 {sprintError && (
                   <p className="mt-1 text-xs text-red-500">{sprintError}</p>

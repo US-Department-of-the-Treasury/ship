@@ -108,7 +108,12 @@ export function KanbanBoard({ issues, onUpdateIssue, onIssueClick }: KanbanBoard
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex h-full gap-4 overflow-x-auto p-4">
+      <div
+        role="application"
+        aria-label="Kanban board with keyboard navigation. Use Tab to navigate between issues, Space or Enter to pick up an issue, arrow keys to move, and Space or Enter to drop."
+        aria-roledescription="sortable kanban board"
+        className="flex h-full gap-4 overflow-x-auto p-4"
+      >
         {COLUMNS.map((column) => (
           <KanbanColumn
             key={column.id}
@@ -139,32 +144,42 @@ function KanbanColumn({
   return (
     <div className="flex w-72 flex-shrink-0 flex-col rounded-lg bg-border/30">
       <div className="flex items-center gap-2 px-3 py-2">
-        <span className={cn('h-2 w-2 rounded-full', column.color)} />
+        <span
+          data-status-indicator
+          data-status={column.id}
+          aria-label={`Status: ${column.title}`}
+          className="inline-flex items-center"
+        >
+          <ColumnStatusIcon state={column.id} color={column.color} />
+          <span className="sr-only">Status: {column.title}</span>
+        </span>
         <span className="text-sm font-medium text-foreground">{column.title}</span>
         <span className="ml-auto text-xs text-muted">{issues.length}</span>
       </div>
-      <div
+      <ul
         ref={setNodeRef}
-        className="flex flex-1 flex-col gap-2 overflow-auto p-2"
+        className="flex flex-1 flex-col gap-2 overflow-auto p-2 list-none m-0"
+        aria-label={`${column.title} issues`}
       >
         <SortableContext
           items={issues.map((i) => i.id)}
           strategy={verticalListSortingStrategy}
         >
           {issues.map((issue) => (
-            <SortableIssueCard
-              key={issue.id}
-              issue={issue}
-              onClick={() => onIssueClick(issue.id)}
-            />
+            <li key={issue.id} className="list-none">
+              <SortableIssueCard
+                issue={issue}
+                onClick={() => onIssueClick(issue.id)}
+              />
+            </li>
           ))}
         </SortableContext>
         {issues.length === 0 && (
-          <div className="flex h-20 items-center justify-center text-xs text-muted">
+          <li className="flex h-20 items-center justify-center text-xs text-muted list-none">
             Drop issues here
-          </div>
+          </li>
         )}
-      </div>
+      </ul>
     </div>
   );
 }
@@ -197,7 +212,16 @@ function SortableIssueCard({
       {...attributes}
       {...listeners}
       onClick={onClick}
-      className={cn(isDragging && 'opacity-50')}
+      draggable="true"
+      data-draggable
+      data-issue
+      data-dragging={isDragging ? 'true' : undefined}
+      aria-grabbed={isDragging ? 'true' : 'false'}
+      tabIndex={0}
+      role="button"
+      aria-roledescription="draggable issue"
+      aria-label={`Issue #${issue.ticket_number}: ${issue.title}. Press Space to pick up and move.`}
+      className={cn(isDragging && 'opacity-50', 'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background rounded-md')}
     >
       <IssueCard issue={issue} />
     </div>
@@ -225,4 +249,45 @@ function IssueCard({ issue, isDragging }: { issue: Issue; isDragging?: boolean }
       )}
     </div>
   );
+}
+
+function ColumnStatusIcon({ state, color }: { state: string; color: string }) {
+  const colorClass = color.replace('bg-', 'text-').replace('-500', '-400');
+  const iconProps = { className: cn('h-3 w-3', colorClass), 'aria-hidden': 'true' as const };
+
+  switch (state) {
+    case 'backlog':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+        </svg>
+      );
+    case 'todo':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+          <path d="M8 2 A6 6 0 0 1 8 14" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'in_progress':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+          <path d="M8 2 A6 6 0 1 1 2 8" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'done':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="currentColor">
+          <circle cx="8" cy="8" r="6" />
+          <path d="M5.5 8l2 2 3-4" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+        </svg>
+      );
+  }
 }

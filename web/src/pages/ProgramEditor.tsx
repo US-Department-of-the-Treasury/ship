@@ -360,24 +360,28 @@ export function ProgramEditorPage() {
               </optgroup>
             )}
           </select>
-          <div className="flex rounded-md border border-border">
+          <div className="flex rounded-md border border-border" role="group" aria-label="View mode">
             <button
               onClick={() => setViewMode('list')}
+              aria-label="List view"
+              aria-pressed={viewMode === 'list'}
               className={cn(
                 'px-3 py-1 text-sm transition-colors',
                 viewMode === 'list' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
               )}
             >
-              <ListIcon />
+              <ListIcon aria-hidden="true" />
             </button>
             <button
               onClick={() => setViewMode('kanban')}
+              aria-label="Kanban view"
+              aria-pressed={viewMode === 'kanban'}
               className={cn(
                 'px-3 py-1 text-sm transition-colors',
                 viewMode === 'kanban' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
               )}
             >
-              <KanbanIcon />
+              <KanbanIcon aria-hidden="true" />
             </button>
           </div>
           <button

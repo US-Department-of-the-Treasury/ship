@@ -337,13 +337,19 @@ export function Editor({
           {/* Optional header badge (e.g., issue number) */}
           {headerBadge}
 
-          {/* Title (display only - edit via large title below) */}
-          <span className="flex-1 truncate text-sm font-medium text-foreground">
+          {/* Title (display only - edit via large title below) - h1 for accessibility */}
+          {/* WCAG 1.4.12: min-w-[3rem] prevents collapse, overflow-visible shows text */}
+          <h1 className="flex-1 min-w-[3rem] overflow-visible text-sm font-medium text-foreground m-0">
             {title || 'Untitled'}
-          </span>
+          </h1>
 
-          {/* Sync status */}
-          <div className="flex items-center gap-1.5">
+          {/* Sync status - WCAG 4.1.3 aria-live for status messages */}
+          <div
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="flex items-center gap-1.5"
+          >
             <div
               className={cn(
                 'h-2 w-2 rounded-full',
@@ -352,11 +358,18 @@ export function Editor({
                 syncStatus === 'connecting' && 'bg-yellow-500 animate-pulse',
                 syncStatus === 'disconnected' && 'bg-red-500'
               )}
+              aria-hidden="true"
             />
             <span className="text-xs text-muted">
               {syncStatus === 'synced' && 'Saved'}
               {syncStatus === 'cached' && 'Cached'}
-              {syncStatus === 'connecting' && 'Syncing...'}
+              {syncStatus === 'connecting' && 'Saving'}
+              {syncStatus === 'disconnected' && 'Offline'}
+            </span>
+            <span className="sr-only">
+              {syncStatus === 'synced' && 'Saved'}
+              {syncStatus === 'cached' && 'Saved'}
+              {syncStatus === 'connecting' && 'Saving'}
               {syncStatus === 'disconnected' && 'Offline'}
             </span>
           </div>
@@ -366,7 +379,6 @@ export function Editor({
             <button
               onClick={onDelete}
               className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-red-500/10 hover:text-red-500 transition-colors"
-              title="Delete document"
               aria-label="Delete document"
             >
               <TrashIcon />
@@ -450,6 +462,7 @@ export function Editor({
               'flex flex-col border-l border-border transition-all duration-200 overflow-hidden',
               rightSidebarCollapsed ? 'w-0 border-l-0' : 'w-64'
             )}
+            aria-label="Document properties"
           >
             <div className="flex w-64 flex-col h-full">
               {/* Sidebar header with collapse button */}
@@ -458,7 +471,7 @@ export function Editor({
                 <button
                   onClick={() => setRightSidebarCollapsed(true)}
                   className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                  title="Collapse sidebar"
+                  aria-label="Collapse sidebar"
                 >
                   <CollapseRightIcon />
                 </button>
@@ -476,7 +489,7 @@ export function Editor({
           <button
             onClick={() => setRightSidebarCollapsed(false)}
             className="flex h-10 w-10 items-center justify-center border-l border-border text-muted hover:bg-border/50 hover:text-foreground transition-colors"
-            title="Expand properties sidebar"
+            aria-label="Expand properties sidebar"
           >
             <ExpandLeftIcon />
           </button>

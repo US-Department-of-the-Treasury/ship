@@ -3,7 +3,15 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { IssuesListSkeleton } from '@/components/ui/Skeleton';
+import { Combobox } from '@/components/ui/Combobox';
 import { cn } from '@/lib/cn';
+
+const SORT_OPTIONS = [
+  { value: 'updated', label: 'Updated' },
+  { value: 'created', label: 'Created' },
+  { value: 'priority', label: 'Priority' },
+  { value: 'title', label: 'Title' },
+];
 
 function useKeyboardShortcuts(shortcuts: Record<string, () => void>) {
   useEffect(() => {
@@ -56,7 +64,8 @@ export function IssuesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { issues: allIssues, loading, createIssue: contextCreateIssue, updateIssue: contextUpdateIssue } = useIssues();
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
+  const [sortBy, setSortBy] = useState<string>('updated');
 
   const stateFilter = searchParams.get('state') || '';
 
@@ -75,11 +84,14 @@ export function IssuesPage() {
   }, [contextCreateIssue, navigate]);
 
   const setFilter = (state: string) => {
-    if (state) {
-      setSearchParams({ state });
-    } else {
-      setSearchParams({});
-    }
+    setSearchParams((prev) => {
+      if (state) {
+        prev.set('state', state);
+      } else {
+        prev.delete('state');
+      }
+      return prev;
+    });
   };
 
   const handleUpdateIssue = async (id: string, updates: { state: string }) => {
@@ -104,25 +116,41 @@ export function IssuesPage() {
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <h1 className="text-xl font-semibold text-foreground">Issues</h1>
         <div className="flex items-center gap-3">
+          {/* Sort dropdown */}
+          <div className="w-32">
+            <Combobox
+              options={SORT_OPTIONS}
+              value={sortBy}
+              onChange={(v) => setSortBy(v || 'updated')}
+              placeholder="Sort by"
+              aria-label="Sort issues by"
+              id="issues-sort"
+              allowClear={false}
+            />
+          </div>
           {/* View toggle */}
-          <div className="flex rounded-md border border-border">
+          <div className="flex rounded-md border border-border" role="group" aria-label="View mode">
             <button
               onClick={() => setViewMode('list')}
+              aria-label="List view"
+              aria-pressed={viewMode === 'list'}
               className={cn(
                 'px-3 py-1 text-sm transition-colors',
                 viewMode === 'list' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
               )}
             >
-              <ListIcon />
+              <ListIcon aria-hidden="true" />
             </button>
             <button
               onClick={() => setViewMode('kanban')}
+              aria-label="Kanban view"
+              aria-pressed={viewMode === 'kanban'}
               className={cn(
                 'px-3 py-1 text-sm transition-colors',
                 viewMode === 'kanban' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
               )}
             >
-              <KanbanIcon />
+              <KanbanIcon aria-hidden="true" />
             </button>
           </div>
           <button
@@ -135,11 +163,11 @@ export function IssuesPage() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 border-b border-border px-6 py-2">
-        <FilterTab label="All" active={!stateFilter} onClick={() => setFilter('')} />
-        <FilterTab label="Active" active={stateFilter === 'todo,in_progress'} onClick={() => setFilter('todo,in_progress')} />
-        <FilterTab label="Backlog" active={stateFilter === 'backlog'} onClick={() => setFilter('backlog')} />
-        <FilterTab label="Done" active={stateFilter === 'done'} onClick={() => setFilter('done')} />
+      <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Issue filters">
+        <FilterTab label="All" active={!stateFilter} onClick={() => setFilter('')} id="filter-all" />
+        <FilterTab label="Active" active={stateFilter === 'todo,in_progress'} onClick={() => setFilter('todo,in_progress')} id="filter-active" />
+        <FilterTab label="Backlog" active={stateFilter === 'backlog'} onClick={() => setFilter('backlog')} id="filter-backlog" />
+        <FilterTab label="Done" active={stateFilter === 'done'} onClick={() => setFilter('done')} id="filter-done" />
       </div>
 
       {/* Content */}
@@ -211,9 +239,12 @@ export function IssuesPage() {
   );
 }
 
-function FilterTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function FilterTab({ label, active, onClick, id }: { label: string; active: boolean; onClick: () => void; id: string }) {
   return (
     <button
+      id={id}
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       className={cn(
         'rounded-md px-3 py-1 text-sm transition-colors',
@@ -236,11 +267,67 @@ function StatusBadge({ state }: { state: string }) {
     cancelled: 'bg-red-500/20 text-red-400',
   };
 
+  const label = STATE_LABELS[state] || state;
+
   return (
-    <span className={cn('rounded px-2 py-0.5 text-xs font-medium', colors[state] || colors.backlog)}>
-      {STATE_LABELS[state] || state}
+    <span
+      data-status-indicator
+      data-status={state}
+      aria-label={`Status: ${label}`}
+      className={cn('inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium', colors[state] || colors.backlog)}
+    >
+      <StatusIcon state={state} />
+      {label}
+      <span className="sr-only">Status: {label}</span>
     </span>
   );
+}
+
+function StatusIcon({ state }: { state: string }) {
+  const iconProps = { className: 'h-3 w-3', 'aria-hidden': 'true' as const };
+
+  switch (state) {
+    case 'backlog':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+        </svg>
+      );
+    case 'todo':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+          <path d="M8 2 A6 6 0 0 1 8 14" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'in_progress':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+          <path d="M8 2 A6 6 0 1 1 2 8" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'done':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="currentColor">
+          <circle cx="8" cy="8" r="6" />
+          <path d="M5.5 8l2 2 3-4" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case 'cancelled':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+          <path d="M5 5l6 6M11 5l-6 6" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+        </svg>
+      );
+  }
 }
 
 function PriorityBadge({ priority }: { priority: string }) {

@@ -460,16 +460,47 @@ async function seed() {
       [workspaceId, 'wiki', WELCOME_DOCUMENT_TITLE]
     );
 
+    let tutorialDocId: string;
     if (!existingTutorial.rows[0]) {
       // Insert the tutorial document with position=0 to ensure it appears first
-      await pool.query(
+      const tutorialResult = await pool.query(
         `INSERT INTO documents (workspace_id, document_type, title, content, position)
-         VALUES ($1, 'wiki', $2, $3, 0)`,
+         VALUES ($1, 'wiki', $2, $3, 0)
+         RETURNING id`,
         [workspaceId, WELCOME_DOCUMENT_TITLE, JSON.stringify(WELCOME_DOCUMENT_CONTENT)]
       );
+      tutorialDocId = tutorialResult.rows[0].id;
       console.log('✅ Created welcome tutorial document');
     } else {
+      tutorialDocId = existingTutorial.rows[0].id;
       console.log('ℹ️  Welcome tutorial already exists');
+    }
+
+    // Create nested wiki documents for tree navigation testing (Section 508 accessibility)
+    const nestedDocs = [
+      { title: 'Getting Started', parentId: tutorialDocId },
+      { title: 'Advanced Topics', parentId: tutorialDocId },
+    ];
+
+    let nestedDocsCreated = 0;
+    for (const doc of nestedDocs) {
+      const existingDoc = await pool.query(
+        'SELECT id FROM documents WHERE workspace_id = $1 AND document_type = $2 AND title = $3 AND parent_id = $4',
+        [workspaceId, 'wiki', doc.title, doc.parentId]
+      );
+
+      if (!existingDoc.rows[0]) {
+        await pool.query(
+          `INSERT INTO documents (workspace_id, document_type, title, parent_id)
+           VALUES ($1, 'wiki', $2, $3)`,
+          [workspaceId, doc.title, doc.parentId]
+        );
+        nestedDocsCreated++;
+      }
+    }
+
+    if (nestedDocsCreated > 0) {
+      console.log(`✅ Created ${nestedDocsCreated} nested wiki documents`);
     }
 
     console.log('');
