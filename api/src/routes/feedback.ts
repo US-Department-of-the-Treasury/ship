@@ -79,9 +79,7 @@ function extractFeedbackFromRow(row: any, programPrefix?: string | null) {
     program_prefix: row.program_prefix || programPrefix,
     program_color: row.program_color,
     created_by_name: row.created_by_name,
-    display_id: (row.program_prefix || programPrefix)
-      ? `${row.program_prefix || programPrefix}-${row.ticket_number}`
-      : `#${row.ticket_number}`,
+    display_id: `#${row.ticket_number}`,
   };
 }
 

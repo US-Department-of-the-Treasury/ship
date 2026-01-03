@@ -227,9 +227,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       const issue = extractIssueFromRow(row);
       return {
         ...issue,
-        display_id: issue.program_prefix
-          ? `${issue.program_prefix}-${issue.ticket_number}`
-          : `#${issue.ticket_number}`
+        display_id: `#${issue.ticket_number}`
       };
     });
 
@@ -279,9 +277,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     const issue = extractIssueFromRow(result.rows[0]);
     res.json({
       ...issue,
-      display_id: issue.program_prefix
-        ? `${issue.program_prefix}-${issue.ticket_number}`
-        : `#${issue.ticket_number}`
+      display_id: `#${issue.ticket_number}`
     });
   } catch (err) {
     console.error('Get issue error:', err);
@@ -475,22 +471,10 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
       [...values, id, req.user!.workspaceId]
     );
 
-    // Get program prefix for display_id
     const row = result.rows[0];
-    let displayId = `#${row.ticket_number}`;
-    let programPrefix = null;
-    if (row.program_id) {
-      const programResult = await pool.query(
-        `SELECT properties->>'prefix' as prefix FROM documents WHERE id = $1 AND document_type = 'program'`,
-        [row.program_id]
-      );
-      if (programResult.rows[0]) {
-        programPrefix = programResult.rows[0].prefix;
-        displayId = `${programPrefix}-${row.ticket_number}`;
-      }
-    }
+    const displayId = `#${row.ticket_number}`;
 
-    const issue = extractIssueFromRow({ ...row, program_prefix: programPrefix });
+    const issue = extractIssueFromRow(row);
     res.json({ ...issue, display_id: displayId });
   } catch (err) {
     console.error('Update issue error:', err);

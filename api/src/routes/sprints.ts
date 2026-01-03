@@ -425,7 +425,7 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
         updated_at: row.updated_at,
         created_by: row.created_by,
         assignee_name: row.assignee_name,
-        display_id: `${prefix}-${row.ticket_number}`
+        display_id: `#${row.ticket_number}`
       };
     });
 
