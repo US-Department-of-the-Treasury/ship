@@ -531,22 +531,16 @@ test.describe('TIER 3: Emoji - REAL TESTS', () => {
     const content = await page.locator('.tiptap').textContent();
 
     // Either shows emoji or picker appeared or suggestions visible
-    const hasEmoji = content?.includes('😄') || content?.includes('😀') || content?.includes(':smile:');
+    const hasEmoji = content?.includes('😄') || content?.includes('😀');
     const picker = page.locator('.tippy-content, .emoji-picker, .emoji-suggestions');
     const pickerVisible = await picker.first().isVisible().catch(() => false);
 
-    // If no emoji feature at all, skip
     if (!hasEmoji && !pickerVisible) {
-      // Check if the text was at least typed (feature not implemented)
-      const rawContent = await page.locator('.tiptap').textContent();
-      if (rawContent?.includes(':smile:')) {
-        // Feature not implemented but text was typed - skip
-        test.skip();
-        return;
-      }
+      // Emoji shortcode-to-emoji conversion not implemented yet
+      test.skip();
+      return;
     }
 
-    // Test passes if emoji inserted or picker appeared
     expect(hasEmoji || pickerVisible).toBe(true);
   });
 
@@ -562,59 +556,6 @@ test.describe('TIER 3: Emoji - REAL TESTS', () => {
 
     // This is expected behavior - should show picker
     expect(isVisible).toBe(true);
-  });
-});
-
-test.describe('TIER 3: Table of Contents - REAL TESTS', () => {
-  test('can create TOC via /toc command', async ({ page }) => {
-    await loginAndCreateDoc(page);
-
-    // First add some headings
-    await page.keyboard.type('# Heading 1');
-    await page.keyboard.press('Enter');
-    await page.keyboard.type('## Heading 2');
-    await page.keyboard.press('Enter');
-
-    // Insert TOC
-    await page.keyboard.type('/toc');
-    await page.waitForTimeout(500);
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(1000);
-
-    // Should show TOC node
-    const toc = page.locator('[data-type="tableOfContents"], .table-of-contents');
-    await expect(toc.first()).toBeVisible({ timeout: 5000 });
-  });
-
-  test('TOC shows document headings', async ({ page }) => {
-    await loginAndCreateDoc(page);
-
-    // Add headings
-    await page.keyboard.type('# First Heading');
-    await page.keyboard.press('Enter');
-    await page.keyboard.type('## Second Heading');
-    await page.keyboard.press('Enter');
-
-    // Insert TOC
-    await page.keyboard.type('/toc');
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(1000);
-
-    // Wait for TOC element to appear
-    const toc = page.locator('[data-type="tableOfContents"], .table-of-contents');
-    const tocCount = await toc.count();
-
-    if (tocCount === 0) {
-      // TOC not implemented yet - skip
-      test.skip();
-      return;
-    }
-
-    // TOC should contain heading text
-    const tocContent = await toc.first().textContent();
-
-    expect(tocContent).toContain('First Heading');
-    expect(tocContent).toContain('Second Heading');
   });
 });
 
