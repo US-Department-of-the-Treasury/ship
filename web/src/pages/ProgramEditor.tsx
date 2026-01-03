@@ -825,7 +825,7 @@ function IssuesListWithBulkActions({
         </div>
       )}
 
-      <table className="w-full flex-1">
+      <table className="w-full">
         <thead className="sticky top-0 bg-background">
           <tr className="border-b border-border text-left text-xs text-muted">
             <th className="px-3 py-2 w-10">
