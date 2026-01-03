@@ -52,11 +52,9 @@ EOF
 
     pnpm build:shared
 
-    # Apply schema directly with psql, then seed
-    psql "$DB_NAME" -f "$ROOT_DIR/api/src/db/schema.sql"
-    echo "✅ Schema applied"
-
+    # Run migrations (applies schema.sql + all migrations), then seed
     cd "$ROOT_DIR/api"
+    DATABASE_URL="postgresql://localhost/$DB_NAME" npx tsx src/db/migrate.ts
     DATABASE_URL="postgresql://localhost/$DB_NAME" npx tsx src/db/seed.ts
     cd "$ROOT_DIR"
     echo "Database setup complete!"
