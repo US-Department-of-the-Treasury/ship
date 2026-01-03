@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
+import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -55,11 +56,18 @@ const updateLinksSchema = z.object({
 router.get('/:id/backlinks', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
 
-    // Verify the document exists and belongs to workspace
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify the document exists and user can access it
     const docResult = await pool.query(
-      'SELECT id FROM documents WHERE id = $1 AND workspace_id = $2',
-      [id, req.user!.workspaceId]
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (docResult.rows.length === 0) {
@@ -67,7 +75,7 @@ router.get('/:id/backlinks', requireAuth, async (req: Request, res: Response) =>
       return;
     }
 
-    // Get all documents that link to this document
+    // Get all documents that link to this document (only visible ones)
     const result = await pool.query(
       `SELECT d.id, d.document_type, d.title, d.ticket_number, d.program_id, d.properties,
               p.properties->>'prefix' as program_prefix
@@ -75,8 +83,9 @@ router.get('/:id/backlinks', requireAuth, async (req: Request, res: Response) =>
        JOIN documents d ON dl.source_id = d.id
        LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
        WHERE dl.target_id = $1 AND d.workspace_id = $2
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
        ORDER BY dl.created_at DESC`,
-      [id, req.user!.workspaceId]
+      [id, workspaceId, userId, isAdmin]
     );
 
     // Format the response with display_id for issues
@@ -100,6 +109,9 @@ router.get('/:id/backlinks', requireAuth, async (req: Request, res: Response) =>
 router.post('/:id/links', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
     const parsed = updateLinksSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
@@ -108,10 +120,15 @@ router.post('/:id/links', requireAuth, async (req: Request, res: Response) => {
 
     const { target_ids } = parsed.data;
 
-    // Verify the source document exists and belongs to workspace
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify the source document exists and user can access it
     const docResult = await pool.query(
-      'SELECT id FROM documents WHERE id = $1 AND workspace_id = $2',
-      [id, req.user!.workspaceId]
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (docResult.rows.length === 0) {
@@ -119,11 +136,13 @@ router.post('/:id/links', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    // Verify all target documents exist and belong to workspace
+    // Verify all target documents exist and user can access them
     if (target_ids.length > 0) {
       const targetResult = await pool.query(
-        'SELECT id FROM documents WHERE id = ANY($1) AND workspace_id = $2',
-        [target_ids, req.user!.workspaceId]
+        `SELECT id FROM documents
+         WHERE id = ANY($1) AND workspace_id = $2
+           AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+        [target_ids, workspaceId, userId, isAdmin]
       );
 
       if (targetResult.rows.length !== target_ids.length) {

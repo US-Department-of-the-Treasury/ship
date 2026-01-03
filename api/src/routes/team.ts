@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../db/client.js';
+import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -50,9 +51,13 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
 //   toSprint: number - end of range (default: current + 7)
 router.get('/grid', requireAuth, async (req: Request, res: Response) => {
   try {
+    const userId = req.user!.id;
     const workspaceId = req.user!.workspaceId;
 
-    // Get all people in workspace via person documents
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Get all people in workspace via person documents (only visible ones)
     const usersResult = await pool.query(
       `SELECT
          d.properties->>'user_id' as id,
@@ -63,8 +68,9 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
        WHERE d.workspace_id = $1
          AND d.document_type = 'person'
          AND d.archived_at IS NULL
+         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY d.title`,
-      [workspaceId]
+      [workspaceId, userId, isAdmin]
     );
 
     // Get workspace sprint start date
@@ -134,11 +140,12 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        WHERE d.workspace_id = $1 AND d.document_type = 'sprint'
-         AND (d.properties->>'start_date')::date >= $2 AND (d.properties->>'end_date')::date <= $3`,
-      [workspaceId, minDate, maxDate]
+         AND (d.properties->>'start_date')::date >= $2 AND (d.properties->>'end_date')::date <= $3
+         AND ${VISIBILITY_FILTER_SQL('d', '$4', '$5')}`,
+      [workspaceId, minDate, maxDate, userId, isAdmin]
     );
 
-    // Get issues with sprint and assignee info
+    // Get issues with sprint and assignee info (only visible issues)
     const issuesResult = await pool.query(
       `SELECT i.id, i.title, i.sprint_id, i.properties->>'assignee_id' as assignee_id, i.properties->>'state' as state, i.ticket_number,
               s.properties->>'start_date' as sprint_start, s.properties->>'end_date' as sprint_end,
@@ -146,8 +153,9 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
        FROM documents i
        JOIN documents s ON i.sprint_id = s.id
        JOIN documents p ON i.program_id = p.id
-       WHERE i.workspace_id = $1 AND i.document_type = 'issue' AND i.sprint_id IS NOT NULL AND i.properties->>'assignee_id' IS NOT NULL`,
-      [workspaceId]
+       WHERE i.workspace_id = $1 AND i.document_type = 'issue' AND i.sprint_id IS NOT NULL AND i.properties->>'assignee_id' IS NOT NULL
+         AND ${VISIBILITY_FILTER_SQL('i', '$2', '$3')}`,
+      [workspaceId, userId, isAdmin]
     );
 
     // Build associations: user_id -> sprint_number -> { programs: [...], issues: [...] }
@@ -215,14 +223,19 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
 // GET /api/team/programs - Get all programs
 router.get('/programs', requireAuth, async (req: Request, res: Response) => {
   try {
+    const userId = req.user!.id;
     const workspaceId = req.user!.workspaceId;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     const result = await pool.query(
       `SELECT id, title as name, properties->>'prefix' as prefix, properties->>'color' as color
        FROM documents
        WHERE workspace_id = $1 AND document_type = 'program'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$2', '$3')}
        ORDER BY title`,
-      [workspaceId]
+      [workspaceId, userId, isAdmin]
     );
 
     res.json(result.rows);
@@ -235,7 +248,11 @@ router.get('/programs', requireAuth, async (req: Request, res: Response) => {
 // GET /api/team/assignments - Get user->sprint->program assignments
 router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
   try {
+    const userId = req.user!.id;
     const workspaceId = req.user!.workspaceId;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     // Get workspace sprint info
     const workspaceResult = await pool.query(
@@ -256,7 +273,7 @@ router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
       sprintStartDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
     }
 
-    // Get all issues with sprint and assignee
+    // Get all issues with sprint and assignee (only visible issues)
     const issuesResult = await pool.query(
       `SELECT i.properties->>'assignee_id' as assignee_id, i.sprint_id,
               s.properties->>'start_date' as sprint_start,
@@ -265,8 +282,9 @@ router.get('/assignments', requireAuth, async (req: Request, res: Response) => {
        JOIN documents s ON i.sprint_id = s.id
        JOIN documents p ON i.program_id = p.id
        WHERE i.workspace_id = $1 AND i.document_type = 'issue'
-         AND i.sprint_id IS NOT NULL AND i.properties->>'assignee_id' IS NOT NULL`,
-      [workspaceId]
+         AND i.sprint_id IS NOT NULL AND i.properties->>'assignee_id' IS NOT NULL
+         AND ${VISIBILITY_FILTER_SQL('i', '$2', '$3')}`,
+      [workspaceId, userId, isAdmin]
     );
 
     // Build assignments map: userId -> sprintNumber -> assignment
@@ -431,8 +449,12 @@ router.post('/assign', requireAuth, async (req: Request, res: Response) => {
 // DELETE /api/team/assign - Unassign user from sprint
 router.delete('/assign', requireAuth, async (req: Request, res: Response) => {
   try {
+    const currentUserId = req.user!.id;
     const workspaceId = req.user!.workspaceId;
     const { userId, sprintNumber } = req.body;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(currentUserId, workspaceId);
 
     if (!userId || !sprintNumber) {
       res.status(400).json({ error: 'Missing required fields' });
@@ -451,15 +473,16 @@ router.delete('/assign', requireAuth, async (req: Request, res: Response) => {
     sprintStart.setDate(sprintStart.getDate() + (sprintNumber - 1) * 14);
     const startStr = sprintStart.toISOString().split('T')[0];
 
-    // Find all issues for this user in this sprint period
+    // Find all issues for this user in this sprint period (only visible issues)
     const issuesToUpdate = await pool.query(
       `SELECT i.id, i.title
        FROM documents i
        JOIN documents s ON i.sprint_id = s.id
        WHERE i.workspace_id = $1 AND i.document_type = 'issue'
          AND i.properties->>'assignee_id' = $2
-         AND s.properties->>'start_date' = $3`,
-      [workspaceId, userId, startStr]
+         AND s.properties->>'start_date' = $3
+         AND ${VISIBILITY_FILTER_SQL('i', '$4', '$5')}`,
+      [workspaceId, userId, startStr, currentUserId, isAdmin]
     );
 
     // Move issues to backlog (remove sprint assignment)
@@ -484,7 +507,11 @@ router.delete('/assign', requireAuth, async (req: Request, res: Response) => {
 // GET /api/team/people - Get all people (person documents)
 router.get('/people', requireAuth, async (req: Request, res: Response) => {
   try {
+    const userId = req.user!.id;
     const workspaceId = req.user!.workspaceId;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     // Get person documents - return document id for navigation to person editor
     // Also include user_id for grid consistency
@@ -497,8 +524,9 @@ router.get('/people', requireAuth, async (req: Request, res: Response) => {
        WHERE d.workspace_id = $1
          AND d.document_type = 'person'
          AND d.archived_at IS NULL
+         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY d.title`,
-      [workspaceId]
+      [workspaceId, userId, isAdmin]
     );
 
     res.json(result.rows);

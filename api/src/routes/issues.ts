@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
+import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -147,6 +148,12 @@ function extractIssueFromRow(row: any) {
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const { state, priority, assignee_id, program_id, sprint_id, source } = req.query;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
     let query = `
       SELECT d.id, d.title, d.properties, d.ticket_number,
              d.program_id, d.sprint_id, d.content,
@@ -160,8 +167,9 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
       LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
       WHERE d.workspace_id = $1 AND d.document_type = 'issue'
+        AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
     `;
-    const params: (string | null)[] = [req.user!.workspaceId];
+    const params: (string | boolean | null)[] = [workspaceId, userId, isAdmin];
 
     // Filter by source - defaults to 'internal' (excludes feedback from regular issues list)
     if (source) {
@@ -236,6 +244,12 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.ticket_number,
               d.program_id, d.sprint_id, d.content,
@@ -252,8 +266,9 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
        LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
        LEFT JOIN documents s ON d.sprint_id = s.id AND s.document_type = 'sprint'
        LEFT JOIN users creator ON d.created_by = creator.id
-       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'issue'`,
-      [id, req.user!.workspaceId]
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (result.rows.length === 0) {
@@ -338,17 +353,25 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
     const parsed = updateIssueSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
       return;
     }
 
-    // Get full existing issue for history tracking
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Get full existing issue for history tracking (with visibility check)
     const existing = await pool.query(
       `SELECT id, title, properties, program_id, sprint_id
-       FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
-      [id, req.user!.workspaceId]
+       FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (existing.rows.length === 0) {
@@ -479,11 +502,18 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 router.get('/:id/history', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
 
-    // Verify issue exists and belongs to workspace
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify issue exists and user can access it
     const issueCheck = await pool.query(
-      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
-      [id, req.user!.workspaceId]
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (issueCheck.rows.length === 0) {
@@ -522,16 +552,30 @@ router.get('/:id/history', requireAuth, async (req: Request, res: Response) => {
 router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
 
-    const result = await pool.query(
-      `DELETE FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue' RETURNING id`,
-      [id, req.user!.workspaceId]
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // First verify user can access the issue
+    const accessCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
-    if (result.rows.length === 0) {
+    if (accessCheck.rows.length === 0) {
       res.status(404).json({ error: 'Issue not found' });
       return;
     }
+
+    // Now delete it
+    await pool.query(
+      'DELETE FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = \'issue\'',
+      [id, workspaceId]
+    );
 
     res.status(204).send();
   } catch (err) {
