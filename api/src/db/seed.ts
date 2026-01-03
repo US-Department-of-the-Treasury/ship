@@ -503,6 +503,41 @@ async function seed() {
       console.log(`✅ Created ${nestedDocsCreated} nested wiki documents`);
     }
 
+    // Create additional standalone wiki documents for e2e testing
+    // These ensure tests that require multiple documents don't skip
+    const standaloneWikiDocs = [
+      { title: 'Project Overview', content: 'Overview of the Ship project and its goals.' },
+      { title: 'Architecture Guide', content: 'Technical architecture and design decisions.' },
+      { title: 'API Reference', content: 'API endpoints and usage documentation.' },
+      { title: 'Development Setup', content: 'How to set up your local development environment.' },
+    ];
+
+    let standaloneDocsCreated = 0;
+    for (let i = 0; i < standaloneWikiDocs.length; i++) {
+      const doc = standaloneWikiDocs[i]!;
+      const existingDoc = await pool.query(
+        'SELECT id FROM documents WHERE workspace_id = $1 AND document_type = $2 AND title = $3 AND parent_id IS NULL',
+        [workspaceId, 'wiki', doc.title]
+      );
+
+      if (!existingDoc.rows[0]) {
+        const contentJson = {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.content }] }]
+        };
+        await pool.query(
+          `INSERT INTO documents (workspace_id, document_type, title, content, position)
+           VALUES ($1, 'wiki', $2, $3, $4)`,
+          [workspaceId, doc.title, JSON.stringify(contentJson), i + 1]
+        );
+        standaloneDocsCreated++;
+      }
+    }
+
+    if (standaloneDocsCreated > 0) {
+      console.log(`✅ Created ${standaloneDocsCreated} standalone wiki documents`);
+    }
+
     console.log('');
     console.log('🎉 Seed complete!');
     console.log('');
