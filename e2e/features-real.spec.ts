@@ -8,9 +8,9 @@ import fs from 'fs';
  */
 
 // Get API URL from environment
-const API_URL = process.env.API_PORT
-  ? `http://localhost:${process.env.API_PORT}`
-  : 'http://localhost:3147';
+const API_URL = process.env.API_URL
+  ? process.env.API_URL
+  : 'http://localhost:3000';
 
 // Helper to login
 async function login(page: Page) {
@@ -120,22 +120,18 @@ test.describe('TIER 1: @Mentions - REAL TESTS', () => {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
 
+    // Verify seed data provides users for mentions
+    const apiResponse = await page.request.get(`${API_URL}/api/search/mentions?q=`);
+    const data = await apiResponse.json();
+    expect(data.people?.length, 'Seed data should provide users for mentions. Run: pnpm db:seed').toBeGreaterThan(0);
+
     // Should have inserted a mention node - check multiple possible selectors
     const mention = page.locator('[data-type="mention"], .mention-node, .mention, a[data-mention], span[data-mention]');
     const count = await mention.count();
 
-    // If no users in system or mention not implemented, check API
+    // If mention count is 0 but users exist, check if content contains selected text
+    // (different implementations may not use data attributes)
     if (count === 0) {
-      const apiResponse = await page.request.get(`${API_URL}/api/search/mentions?q=`);
-      const data = await apiResponse.json();
-      if (data.people?.length === 0) {
-        // No users to mention - skip test
-        test.skip();
-        return;
-      }
-      // Users exist but mention selection didn't create a node
-      // This could be a timing issue or different implementation
-      // Check if content contains the selected text
       const content = await page.locator('.tiptap').textContent();
       expect(content?.length).toBeGreaterThan(0);
     } else {
