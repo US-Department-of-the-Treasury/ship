@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { pool } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { ERROR_CODES, HTTP_STATUS, SESSION_TIMEOUT_MS } from '@ship/shared';
+import { ERROR_CODES, HTTP_STATUS, SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS } from '@ship/shared';
 import { logAuditEvent } from '../services/audit.js';
 
 const router: RouterType = Router();
@@ -296,6 +296,52 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
       error: {
         code: ERROR_CODES.INTERNAL_ERROR,
         message: 'Failed to get user info',
+      },
+    });
+  }
+});
+
+// GET /api/auth/session - Get session info for timeout tracking
+router.get('/session', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      `SELECT id, created_at, expires_at, last_activity FROM sessions WHERE id = $1`,
+      [req.sessionId]
+    );
+
+    const session = result.rows[0];
+
+    if (!session) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Session not found',
+        },
+      });
+      return;
+    }
+
+    // Calculate absolute expiry based on session creation time
+    const createdAt = new Date(session.created_at);
+    const absoluteExpiresAt = new Date(createdAt.getTime() + ABSOLUTE_SESSION_TIMEOUT_MS);
+
+    res.json({
+      success: true,
+      data: {
+        createdAt: session.created_at,
+        expiresAt: session.expires_at, // Inactivity-based expiry
+        absoluteExpiresAt: absoluteExpiresAt.toISOString(),
+        lastActivity: session.last_activity,
+      },
+    });
+  } catch (error) {
+    console.error('Get session error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to get session info',
       },
     });
   }

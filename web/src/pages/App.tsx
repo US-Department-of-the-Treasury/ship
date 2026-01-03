@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -9,6 +9,8 @@ import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { cn } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
+import { SessionTimeoutModal } from '@/components/SessionTimeoutModal';
+import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 
 type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
 
@@ -25,6 +27,20 @@ export function AppLayout() {
   });
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
+
+  // Session timeout handling
+  const handleSessionTimeout = useCallback(() => {
+    // Redirect to login with expired flag and returnTo URL
+    const returnTo = encodeURIComponent(location.pathname + location.search + location.hash);
+    window.location.href = `/login?expired=true&returnTo=${returnTo}`;
+  }, [location]);
+
+  const {
+    showWarning: showTimeoutWarning,
+    timeRemaining,
+    warningType,
+    resetTimer: resetSessionTimer,
+  } = useSessionTimeout(handleSessionTimeout);
 
   // Accessibility: focus management on navigation
   useFocusOnNavigate();
@@ -118,7 +134,7 @@ export function AppLayout() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Icon Rail - Navigation landmark */}
-        <nav className="flex w-12 flex-col items-center border-r border-border bg-background py-3" role="navigation" aria-label="Main navigation">
+        <nav className="flex w-12 flex-col items-center border-r border-border bg-background py-3" role="navigation" aria-label="Primary navigation">
           {/* Workspace switcher */}
           <div className="relative mb-4">
             <button
@@ -206,7 +222,7 @@ export function AppLayout() {
             <button
               onClick={() => setLeftSidebarCollapsed(false)}
               className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-border/50 hover:text-foreground transition-colors"
-              title="Expand sidebar"
+              aria-label="Expand sidebar"
             >
               <ExpandRightIcon />
             </button>
@@ -236,24 +252,24 @@ export function AppLayout() {
             'flex flex-col border-r border-border transition-all duration-200 overflow-hidden select-none',
             leftSidebarCollapsed ? 'w-0 border-r-0' : 'w-56'
           )}
-          aria-label={`${activeMode === 'docs' ? 'Documents' : activeMode === 'issues' ? 'Issues' : activeMode === 'programs' ? 'Programs' : activeMode === 'team' ? 'Teams' : 'Settings'} sidebar`}
+          aria-label="Document list"
         >
           <div className="flex w-56 flex-col h-full">
             {/* Sidebar header */}
             <div className="flex h-10 items-center justify-between border-b border-border px-3">
-              <span className="text-sm font-medium text-foreground">
+              <h2 className="text-sm font-medium text-foreground m-0">
                 {activeMode === 'docs' && 'Documents'}
                 {activeMode === 'issues' && 'Issues'}
                 {activeMode === 'programs' && 'Programs'}
                 {activeMode === 'team' && 'Teams'}
                 {activeMode === 'settings' && 'Settings'}
-              </span>
+              </h2>
               <div className="flex items-center gap-1">
                 {activeMode === 'docs' && (
                   <button
                     onClick={handleCreateDocument}
                     className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                    title="New document"
+                    aria-label="New document"
                   >
                     <PlusIcon />
                   </button>
@@ -262,7 +278,7 @@ export function AppLayout() {
                   <button
                     onClick={handleCreateIssue}
                     className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                    title="New issue"
+                    aria-label="New issue"
                   >
                     <PlusIcon />
                   </button>
@@ -270,7 +286,7 @@ export function AppLayout() {
                 <button
                   onClick={() => setLeftSidebarCollapsed(true)}
                   className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                  title="Collapse sidebar"
+                  aria-label="Collapse sidebar"
                 >
                   <CollapseLeftIcon />
                 </button>
@@ -290,7 +306,6 @@ export function AppLayout() {
                 <IssuesList
                   issues={issues}
                   activeId={location.pathname.split('/issues/')[1]}
-                  onSelect={(id) => navigate(`/issues/${id}`)}
                 />
               )}
               {activeMode === 'programs' && (
@@ -318,6 +333,14 @@ export function AppLayout() {
 
       {/* Command Palette (Cmd+K) */}
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+
+      {/* Session Timeout Warning Modal */}
+      <SessionTimeoutModal
+        open={showTimeoutWarning}
+        timeRemaining={timeRemaining}
+        warningType={warningType}
+        onStayLoggedIn={resetSessionTimer}
+      />
     </div>
   );
 }
@@ -330,7 +353,7 @@ function RailIcon({ icon, label, active, onClick }: { icon: React.ReactNode; lab
         'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
         active ? 'bg-border text-foreground' : 'text-muted hover:bg-border/50 hover:text-foreground'
       )}
-      title={label}
+      aria-label={label}
     >
       {icon}
     </button>
@@ -346,7 +369,7 @@ function DocumentsTree({ documents, activeId, onSelect }: { documents: WikiDocum
   }
 
   return (
-    <ul className="space-y-0.5 px-2">
+    <ul role="tree" aria-label="Document tree" className="space-y-0.5 px-2">
       {tree.map((doc) => (
         <DocumentTreeItem
           key={doc.id}
@@ -360,6 +383,17 @@ function DocumentsTree({ documents, activeId, onSelect }: { documents: WikiDocum
   );
 }
 
+// Check if any descendant node matches the activeId
+function hasActiveDescendant(node: DocumentTreeNode, activeId?: string): boolean {
+  if (!activeId) return false;
+  for (const child of node.children) {
+    if (child.id === activeId || hasActiveDescendant(child, activeId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function DocumentTreeItem({
   document,
   activeId,
@@ -371,28 +405,39 @@ function DocumentTreeItem({
   onSelect: (id: string) => void;
   depth: number;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
+  // Auto-expand if this node or any descendant is active
+  const shouldAutoExpand = hasActiveDescendant(document, activeId);
+  const [isOpen, setIsOpen] = useState(shouldAutoExpand);
+
+  // Update isOpen when activeId changes (for navigation)
+  useEffect(() => {
+    if (shouldAutoExpand && !isOpen) {
+      setIsOpen(true);
+    }
+  }, [shouldAutoExpand, isOpen]);
 
   const isActive = activeId === document.id;
   const hasChildren = document.children.length > 0;
-  const showCaret = hasChildren && isHovered;
 
   return (
-    <li>
+    <li
+      role="treeitem"
+      aria-expanded={hasChildren ? isOpen : undefined}
+      aria-selected={isActive}
+      data-tree-item
+    >
       <div
         className={cn(
-          'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+          'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors group',
           isActive
             ? 'bg-border/50 text-foreground'
-            : 'text-muted hover:bg-border/30 hover:text-foreground'
+            : 'text-muted hover:bg-border/30 hover:text-foreground',
+          'focus-within:bg-border/30 focus-within:text-foreground'
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Expand/collapse button - only shown if has children and hovered */}
-        {showCaret ? (
+        {/* Expand/collapse button - always visible for accessibility */}
+        {hasChildren ? (
           <button
             type="button"
             className="w-4 h-4 flex-shrink-0 flex items-center justify-center p-0 rounded hover:bg-border/50"
@@ -406,19 +451,18 @@ function DocumentTreeItem({
             <DocIcon />
           </div>
         )}
-        {/* Main navigation button */}
-        <button
-          type="button"
-          className="flex-1 truncate text-left cursor-pointer bg-transparent border-none p-0"
-          onClick={() => onSelect(document.id)}
+        {/* Main navigation link */}
+        <Link
+          to={`/docs/${document.id}`}
+          className="flex-1 truncate text-left cursor-pointer"
         >
           {document.title || 'Untitled'}
-        </button>
+        </Link>
       </div>
 
       {/* Children (collapsible) */}
       {hasChildren && isOpen && (
-        <ul className="space-y-0.5">
+        <ul role="group" className="space-y-0.5">
           {document.children.map((child) => (
             <DocumentTreeItem
               key={child.id}
@@ -455,7 +499,7 @@ function ChevronIcon({ isOpen }: { isOpen: boolean }) {
   );
 }
 
-function IssuesList({ issues, activeId, onSelect }: { issues: Issue[]; activeId?: string; onSelect: (id: string) => void }) {
+function IssuesList({ issues, activeId }: { issues: Issue[]; activeId?: string }) {
   if (issues.length === 0) {
     return <div className="px-3 py-2 text-sm text-muted">No issues yet</div>;
   }
@@ -472,8 +516,8 @@ function IssuesList({ issues, activeId, onSelect }: { issues: Issue[]; activeId?
     <ul className="space-y-0.5 px-2">
       {issues.map((issue) => (
         <li key={issue.id}>
-          <button
-            onClick={() => onSelect(issue.id)}
+          <Link
+            to={`/issues/${issue.id}`}
             className={cn(
               'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
               activeId === issue.id
@@ -483,7 +527,7 @@ function IssuesList({ issues, activeId, onSelect }: { issues: Issue[]; activeId?
           >
             <span className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state] || stateColors.backlog)} />
             <span className="truncate">{issue.title || 'Untitled'}</span>
-          </button>
+          </Link>
         </li>
       ))}
     </ul>

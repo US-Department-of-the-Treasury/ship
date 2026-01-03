@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Command } from 'cmdk';
 import { cn } from '@/lib/cn';
@@ -26,6 +26,69 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const [search, setSearch] = useState('');
   const [documents, setDocuments] = useState<SearchableDocument[]>([]);
   const [loading, setLoading] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Focus trap implementation for WCAG 2.4.3 Focus Order
+  useEffect(() => {
+    if (!open) return;
+
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    // Get focusable elements within dialog
+    const getFocusableElements = () => {
+      // Query for all focusable elements, including cmdk items
+      const elements = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'input:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"]), a[href], [role="option"]'
+      )).filter(el => {
+        // Filter out hidden elements
+        const style = window.getComputedStyle(el);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+      });
+      return elements;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+
+      // ALWAYS prevent default Tab behavior and manually handle focus
+      e.preventDefault();
+
+      const focusableElements = getFocusableElements();
+      if (focusableElements.length === 0) return;
+
+      const currentIndex = focusableElements.findIndex(el => el === document.activeElement);
+
+      let nextIndex: number;
+      if (e.shiftKey) {
+        // Shift+Tab - go backwards
+        nextIndex = currentIndex <= 0 ? focusableElements.length - 1 : currentIndex - 1;
+      } else {
+        // Tab - go forwards
+        nextIndex = currentIndex >= focusableElements.length - 1 ? 0 : currentIndex + 1;
+      }
+
+      focusableElements[nextIndex].focus();
+    };
+
+    // Fallback: if focus escapes to anywhere outside dialog, bring it back immediately
+    const handleFocusIn = (e: FocusEvent) => {
+      if (!dialog.contains(e.target as Node)) {
+        const focusableElements = getFocusableElements();
+        if (focusableElements.length > 0) {
+          focusableElements[0].focus();
+        }
+      }
+    };
+
+    // Use capture phase to intercept Tab before it can do anything
+    document.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('focusin', handleFocusIn);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('focusin', handleFocusIn);
+    };
+  }, [open]);
 
   const runCommand = useCallback((command: () => void) => {
     onOpenChange(false);
@@ -163,7 +226,24 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       />
 
       {/* Command dialog */}
-      <div className="absolute left-1/2 top-[20%] w-full max-w-lg -translate-x-1/2">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        className="absolute left-1/2 top-[20%] w-full max-w-lg -translate-x-1/2"
+      >
+        {/* Close button for accessibility */}
+        <button
+          type="button"
+          onClick={() => onOpenChange(false)}
+          aria-label="Close dialog"
+          className="absolute right-2 top-2 z-10 rounded p-1 text-muted hover:bg-border hover:text-foreground transition-colors"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
         <Command
           className="rounded-lg border border-border bg-background shadow-2xl"
           onKeyDown={(e) => {

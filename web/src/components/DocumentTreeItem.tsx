@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import type { DocumentTreeNode } from '@/lib/documentTree';
 
@@ -56,18 +56,17 @@ export function DocumentTreeItem({
   depth = 0,
   onCreateChild,
 }: DocumentTreeItemProps) {
-  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
   const isActive = activeDocumentId === document.id;
   const hasChildren = document.children.length > 0;
 
-  // Show caret on hover if document has children, otherwise show icon
-  const showCaret = hasChildren && isHovered;
-
   return (
-    <div>
+    <div
+      role="treeitem"
+      aria-expanded={isOpen}
+    >
       <div
         className={cn(
           'group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm',
@@ -78,8 +77,8 @@ export function DocumentTreeItem({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
-        {/* Expand/collapse button - only shown if has children and hovered */}
-        {showCaret ? (
+        {/* Expand/collapse button - always visible for accessibility */}
+        {hasChildren ? (
           <button
             type="button"
             className="w-4 h-4 flex-shrink-0 flex items-center justify-center p-0 rounded hover:bg-border/50"
@@ -94,21 +93,20 @@ export function DocumentTreeItem({
           </div>
         )}
 
-        {/* Main navigation button */}
-        <button
-          type="button"
-          className="flex-1 truncate text-left cursor-pointer bg-transparent border-none p-0"
-          onClick={() => navigate(`/docs/${document.id}`)}
+        {/* Main navigation link - uses <a> for accessibility and proper href detection */}
+        <Link
+          to={`/docs/${document.id}`}
+          className="flex-1 truncate text-left cursor-pointer"
         >
           {document.title || 'Untitled'}
-        </button>
+        </Link>
 
-        {/* Add child button (shown on hover) */}
+        {/* Add child button - always visible for keyboard users, enhanced on hover */}
         <button
           type="button"
           className={cn(
             'flex-shrink-0 p-0.5 rounded hover:bg-border/50 transition-opacity',
-            isHovered ? 'opacity-100' : 'opacity-0'
+            isHovered ? 'opacity-100' : 'opacity-50'
           )}
           onClick={() => onCreateChild(document.id)}
           aria-label="Add sub-document"
