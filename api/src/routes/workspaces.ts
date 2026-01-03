@@ -261,7 +261,7 @@ router.get('/:id/members', authMiddleware, workspaceAdminMiddleware, async (req:
       name: row.name,
       role: row.role,
       personDocumentId: row.person_document_id,
-      createdAt: row.created_at,
+      joinedAt: row.created_at,
     }));
 
     res.json({
