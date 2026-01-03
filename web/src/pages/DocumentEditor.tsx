@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
+import { VisibilityDropdown } from '@/components/VisibilityDropdown';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -158,6 +159,14 @@ export function DocumentEditorPage() {
     });
   };
 
+  // Handle visibility change
+  const handleVisibilityChange = (visibility: 'private' | 'workspace') => {
+    handleUpdateDocument({ visibility });
+  };
+
+  // Check if user can change visibility (creator or admin)
+  const canChangeVisibility = document.created_by === user?.id;
+
   // Format date for display
   const formatDate = (date: Date | string | undefined) => {
     if (!date) return '—';
@@ -196,6 +205,14 @@ export function DocumentEditorPage() {
               value={maintainerId || null}
               onChange={handleMaintainerChange}
               placeholder="Select maintainer..."
+            />
+          </PropertyRow>
+
+          <PropertyRow label="Visibility">
+            <VisibilityDropdown
+              value={document.visibility || 'workspace'}
+              onChange={handleVisibilityChange}
+              disabled={!canChangeVisibility}
             />
           </PropertyRow>
 

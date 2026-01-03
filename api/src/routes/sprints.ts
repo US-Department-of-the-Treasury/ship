@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
+import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -87,6 +88,12 @@ function extractSprintFromRow(row: any) {
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
@@ -99,8 +106,9 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
        LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
-       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'`,
-      [id, req.user!.workspaceId]
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (result.rows.length === 0) {
@@ -119,6 +127,9 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
 // Only stores sprint_number and owner_id - dates/status computed from sprint_number
 router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
     const parsed = createSprintSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
@@ -127,13 +138,17 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 
     const { program_id, title, sprint_number, owner_id } = parsed.data;
 
-    // Verify program belongs to workspace and get workspace info
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify program belongs to workspace, user can access it, and get workspace info
     const programCheck = await pool.query(
       `SELECT d.id, w.sprint_start_date
        FROM documents d
        JOIN workspaces w ON d.workspace_id = w.id
-       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'`,
-      [program_id, req.user!.workspaceId]
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [program_id, workspaceId, userId, isAdmin]
     );
 
     if (programCheck.rows.length === 0) {
@@ -208,16 +223,24 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
     const parsed = updateSprintSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
       return;
     }
 
-    // Verify sprint exists and belongs to workspace
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists and user can access it
     const existing = await pool.query(
-      `SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint'`,
-      [id, req.user!.workspaceId]
+      `SELECT id, properties FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (existing.rows.length === 0) {
@@ -306,11 +329,18 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
 
-    // Verify sprint exists and belongs to workspace
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists and user can access it
     const existing = await pool.query(
-      `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint'`,
-      [id, req.user!.workspaceId]
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (existing.rows.length === 0) {
@@ -340,13 +370,19 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
 router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
 
-    // Verify sprint exists and get program info
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists, user can access it, and get program info
     const sprintResult = await pool.query(
       `SELECT d.id, p.properties->>'prefix' as prefix FROM documents d
        JOIN documents p ON d.program_id = p.id
-       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'`,
-      [id, req.user!.workspaceId]
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (sprintResult.rows.length === 0) {
@@ -363,6 +399,7 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
        WHERE d.sprint_id = $1 AND d.document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY
          CASE d.properties->>'priority'
            WHEN 'urgent' THEN 1
@@ -372,7 +409,7 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
            ELSE 5
          END,
          d.updated_at DESC`,
-      [id]
+      [id, userId, isAdmin]
     );
 
     const issues = result.rows.map(row => {
