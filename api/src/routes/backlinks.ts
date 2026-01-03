@@ -85,7 +85,7 @@ router.get('/:id/backlinks', requireAuth, async (req: Request, res: Response) =>
       document_type: row.document_type,
       title: row.title,
       display_id: row.ticket_number && row.document_type === 'issue'
-        ? (row.program_prefix ? `${row.program_prefix}-${row.ticket_number}` : `#${row.ticket_number}`)
+        ? `#${row.ticket_number}`
         : undefined,
     }));
 

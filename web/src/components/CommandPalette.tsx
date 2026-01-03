@@ -147,8 +147,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   // Format document title for display (includes ticket number for issues)
   const formatDocumentTitle = useCallback((doc: SearchableDocument) => {
     if (doc.document_type === 'issue' && doc.ticket_number) {
-      const prefix = doc.properties?.prefix || 'ISSUE';
-      return `${prefix}-${doc.ticket_number}: ${doc.title}`;
+      return `#${doc.ticket_number}: ${doc.title}`;
     }
     return doc.title;
   }, []);

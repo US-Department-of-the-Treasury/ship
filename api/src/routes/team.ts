@@ -181,7 +181,7 @@ router.get('/grid', requireAuth, async (req: Request, res: Response) => {
       cell.issues.push({
         id: issue.id,
         title: issue.title,
-        displayId: `${issue.program_prefix}-${issue.ticket_number}`,
+        displayId: `#${issue.ticket_number}`,
         state: issue.state,
       });
 

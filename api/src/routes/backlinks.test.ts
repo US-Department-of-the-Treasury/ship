@@ -223,7 +223,7 @@ describe('Backlinks API', () => {
 
       const backlink = response.body[0];
       expect(backlink.document_type).toBe('issue');
-      expect(backlink.display_id).toBe('TST-42');
+      expect(backlink.display_id).toBe('#42');
 
       // Cleanup
       await pool.query('DELETE FROM document_links WHERE source_id = $1', [issueId]);
