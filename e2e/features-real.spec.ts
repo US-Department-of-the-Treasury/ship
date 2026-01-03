@@ -523,25 +523,17 @@ test.describe('TIER 3: Emoji - REAL TESTS', () => {
   test(':emoji: syntax inserts emoji', async ({ page }) => {
     await loginAndCreateDoc(page);
 
-    // Type emoji shortcode
+    // Ensure editor is focused and ready
+    await page.locator('.ProseMirror').click();
+    await page.waitForTimeout(300);
+
+    // Type emoji shortcode - :smile: maps to 😊 in our emoji list
     await page.keyboard.type(':smile:');
     await page.waitForTimeout(500);
 
-    // Should show emoji picker or insert emoji
-    const content = await page.locator('.tiptap').textContent();
-
-    // Either shows emoji or picker appeared or suggestions visible
-    const hasEmoji = content?.includes('😄') || content?.includes('😀');
-    const picker = page.locator('.tippy-content, .emoji-picker, .emoji-suggestions');
-    const pickerVisible = await picker.first().isVisible().catch(() => false);
-
-    if (!hasEmoji && !pickerVisible) {
-      // Emoji shortcode-to-emoji conversion not implemented yet
-      test.skip();
-      return;
-    }
-
-    expect(hasEmoji || pickerVisible).toBe(true);
+    // Should insert the emoji (😊 for :smile:)
+    const content = await page.locator('.ProseMirror').textContent();
+    expect(content).toContain('😊');
   });
 
   test('emoji picker shows when typing :', async ({ page }) => {
