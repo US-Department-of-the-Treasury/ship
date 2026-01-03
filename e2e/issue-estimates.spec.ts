@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures/isolated-env'
 
 /**
  * Issue Estimates & Status Tracking - E2E Tests

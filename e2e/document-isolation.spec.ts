@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/isolated-env';
 
 // Helper to create a new document and return its URL
 // CRITICAL: Must track current URL and wait for it to CHANGE

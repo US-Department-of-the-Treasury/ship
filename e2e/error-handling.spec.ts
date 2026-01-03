@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test'
+import { test, expect, Page } from './fixtures/isolated-env'
 
 // Get API URL from environment
 const API_URL = process.env.VITE_API_URL || 'http://localhost:3147'

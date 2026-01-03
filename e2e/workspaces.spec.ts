@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test'
+import { test, expect, Page } from './fixtures/isolated-env'
 
 // Helper to login as a specific user
 async function login(page: Page, email: string, password: string) {

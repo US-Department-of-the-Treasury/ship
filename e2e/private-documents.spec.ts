@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page } from './fixtures/isolated-env';
 
 const API_URL = 'http://localhost:3000';
 

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures/isolated-env'
 
 test.describe('Issues (Phase 5)', () => {
   test.beforeEach(async ({ page }) => {

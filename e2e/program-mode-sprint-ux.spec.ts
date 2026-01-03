@@ -11,7 +11,7 @@
  * - Phase 4: Issues Tab Filtering
  */
 
-import { test, expect, Page } from '@playwright/test'
+import { test, expect, Page } from './fixtures/isolated-env'
 
 // Make tests run serially to prevent race conditions with sprint creation
 test.describe.configure({ mode: 'serial' })

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures/isolated-env'
 
 test.describe('Authentication', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,8 +9,8 @@ test.describe('Authentication', () => {
   test('shows login page when not authenticated', async ({ page }) => {
     await page.goto('/')
 
-    // Should redirect to login
-    await expect(page).toHaveURL('/login')
+    // Should redirect to login (may have query params like ?expired=true&returnTo=...)
+    await expect(page).toHaveURL(/\/login/)
 
     // Should show login form
     await expect(page.locator('#email')).toBeVisible()
@@ -52,8 +52,8 @@ test.describe('Authentication', () => {
     // Should redirect to app (not /login)
     await expect(page).not.toHaveURL('/login', { timeout: 5000 })
 
-    // Should show app shell - verify icon rail is visible
-    await expect(page.locator('img[alt="Ship"]')).toBeVisible({ timeout: 5000 })
+    // Should show Documents page (default landing after login)
+    await expect(page.locator('h1', { hasText: 'Documents' })).toBeVisible({ timeout: 5000 })
   })
 
   test('logout returns to login page', async ({ page }) => {
@@ -78,7 +78,7 @@ test.describe('Authentication', () => {
     // Try to access protected route directly
     await page.goto('/docs')
 
-    // Should redirect to login
-    await expect(page).toHaveURL('/login')
+    // Should redirect to login (may have query params like ?expired=true&returnTo=...)
+    await expect(page).toHaveURL(/\/login/)
   })
 })
