@@ -5,6 +5,37 @@ import { z } from 'zod';
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
+// Check if user is workspace admin
+async function isWorkspaceAdmin(userId: string, workspaceId: string): Promise<boolean> {
+  const result = await pool.query(
+    'SELECT role FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+    [workspaceId, userId]
+  );
+  return result.rows[0]?.role === 'admin';
+}
+
+// Check if user can access a document (visibility check)
+async function canAccessDocument(
+  docId: string,
+  userId: string,
+  workspaceId: string
+): Promise<{ canAccess: boolean; doc: any | null }> {
+  const result = await pool.query(
+    `SELECT d.*,
+            (d.visibility = 'workspace' OR d.created_by = $2 OR
+             (SELECT role FROM workspace_memberships WHERE workspace_id = $3 AND user_id = $2) = 'admin') as can_access
+     FROM documents d
+     WHERE d.id = $1 AND d.workspace_id = $3`,
+    [docId, userId, workspaceId]
+  );
+
+  if (result.rows.length === 0) {
+    return { canAccess: false, doc: null };
+  }
+
+  return { canAccess: result.rows[0].can_access, doc: result.rows[0] };
+}
+
 // Auth middleware - check session cookie
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const sessionId = req.cookies?.session_id;
@@ -53,6 +84,7 @@ const createDocumentSchema = z.object({
   parent_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
   properties: z.record(z.unknown()).optional(),
+  visibility: z.enum(['private', 'workspace']).optional(),
 });
 
 const updateDocumentSchema = z.object({
@@ -61,20 +93,28 @@ const updateDocumentSchema = z.object({
   parent_id: z.string().uuid().optional().nullable(),
   position: z.number().int().min(0).optional(),
   properties: z.record(z.unknown()).optional(),
+  visibility: z.enum(['private', 'workspace']).optional(),
 });
 
 // List documents
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const { type, parent_id } = req.query;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
+    // Check if user is admin (admins can see all documents)
+    const isAdmin = await isWorkspaceAdmin(userId, workspaceId);
+
     let query = `
       SELECT id, workspace_id, document_type, title, parent_id, position,
              program_id, project_id, sprint_id, ticket_number, properties,
-             created_at, updated_at, created_by
+             created_at, updated_at, created_by, visibility
       FROM documents
       WHERE workspace_id = $1
+        AND (visibility = 'workspace' OR created_by = $2 OR $3 = TRUE)
     `;
-    const params: (string | null)[] = [req.user!.workspaceId];
+    const params: (string | boolean | null)[] = [workspaceId, userId, isAdmin];
 
     if (type) {
       query += ` AND document_type = $${params.length + 1}`;
@@ -119,23 +159,28 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 // Get single document
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const result = await pool.query(
-      `SELECT * FROM documents WHERE id = $1 AND workspace_id = $2`,
-      [id, req.user!.workspaceId]
-    );
+    const id = req.params.id!;
+    const userId = String(req.user!.id);
+    const workspaceId = String(req.user!.workspaceId);
 
-    if (result.rows.length === 0) {
+    const { canAccess, doc } = await canAccessDocument(id, userId, workspaceId);
+
+    if (!doc) {
       res.status(404).json({ error: 'Document not found' });
       return;
     }
 
-    const row = result.rows[0];
-    const props = row.properties || {};
+    if (!canAccess) {
+      // Return 404 for private docs user can't access (to not reveal existence)
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    const props = doc.properties || {};
 
     // Return with flattened properties for backwards compatibility
     res.json({
-      ...row,
+      ...doc,
       state: props.state,
       priority: props.priority,
       assignee_id: props.assignee_id,
@@ -163,12 +208,27 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     const { title, document_type, parent_id, sprint_id, properties } = parsed.data;
+    let { visibility } = parsed.data;
+
+    // If parent_id is provided and visibility is not specified, inherit from parent
+    if (parent_id && !visibility) {
+      const parentResult = await pool.query(
+        'SELECT visibility FROM documents WHERE id = $1 AND workspace_id = $2',
+        [parent_id, req.user!.workspaceId]
+      );
+      if (parentResult.rows[0]) {
+        visibility = parentResult.rows[0].visibility;
+      }
+    }
+
+    // Default to 'workspace' visibility if not specified
+    visibility = visibility || 'workspace';
 
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, parent_id, sprint_id, properties, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO documents (workspace_id, document_type, title, parent_id, sprint_id, properties, created_by, visibility)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [req.user!.workspaceId, document_type, title, parent_id || null, sprint_id || null, JSON.stringify(properties || {}), req.user!.id]
+      [req.user!.workspaceId, document_type, title, parent_id || null, sprint_id || null, JSON.stringify(properties || {}), req.user!.id, visibility]
     );
 
     res.status(201).json(result.rows[0]);
@@ -181,29 +241,58 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 // Update document
 router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id!;
+    const userId = String(req.user!.id);
+    const workspaceId = String(req.user!.workspaceId);
+
     const parsed = updateDocumentSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
       return;
     }
 
-    // Verify document exists and belongs to workspace
-    const existing = await pool.query(
-      'SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2',
-      [id, req.user!.workspaceId]
-    );
+    // Verify document exists and user can access it
+    const { canAccess, doc: existing } = await canAccessDocument(id, userId, workspaceId);
 
-    if (existing.rows.length === 0) {
+    if (!existing) {
       res.status(404).json({ error: 'Document not found' });
       return;
+    }
+
+    if (!canAccess) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    const data = parsed.data;
+
+    // Check permission for visibility changes
+    if (data.visibility !== undefined && data.visibility !== existing.visibility) {
+      const isCreator = existing.created_by === userId;
+      const isAdmin = await isWorkspaceAdmin(userId, workspaceId);
+
+      if (!isCreator && !isAdmin) {
+        res.status(403).json({ error: 'Only the creator or admin can change document visibility' });
+        return;
+      }
+    }
+
+    // Handle moving private doc to workspace parent (changes visibility to workspace)
+    if (data.parent_id !== undefined && data.parent_id !== null && data.visibility === undefined) {
+      const parentResult = await pool.query(
+        'SELECT visibility FROM documents WHERE id = $1 AND workspace_id = $2',
+        [data.parent_id, workspaceId]
+      );
+      if (parentResult.rows[0]?.visibility === 'workspace' && existing.visibility === 'private') {
+        // Moving private doc under workspace parent makes it workspace-visible
+        data.visibility = 'workspace';
+      }
     }
 
     const updates: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
 
-    const data = parsed.data;
     if (data.title !== undefined) {
       updates.push(`title = $${paramIndex++}`);
       values.push(data.title);
@@ -222,10 +311,14 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     }
     if (data.properties !== undefined) {
       // Merge with existing properties
-      const currentProps = existing.rows[0].properties || {};
+      const currentProps = existing.properties || {};
       const newProps = { ...currentProps, ...data.properties };
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(newProps));
+    }
+    if (data.visibility !== undefined) {
+      updates.push(`visibility = $${paramIndex++}`);
+      values.push(data.visibility);
     }
 
     if (updates.length === 0) {
@@ -237,8 +330,23 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 
     const result = await pool.query(
       `UPDATE documents SET ${updates.join(', ')} WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} RETURNING *`,
-      [...values, id, req.user!.workspaceId]
+      [...values, id, workspaceId]
     );
+
+    // Cascade visibility changes to child documents
+    if (data.visibility !== undefined && data.visibility !== existing.visibility) {
+      await pool.query(
+        `WITH RECURSIVE descendants AS (
+          SELECT id FROM documents WHERE parent_id = $1
+          UNION ALL
+          SELECT d.id FROM documents d
+          INNER JOIN descendants descendant ON d.parent_id = descendant.id
+        )
+        UPDATE documents SET visibility = $2, updated_at = now()
+        WHERE id IN (SELECT id FROM descendants)`,
+        [id, data.visibility]
+      );
+    }
 
     res.json(result.rows[0]);
   } catch (err) {
@@ -250,11 +358,26 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 // Delete document
 router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id!;
+    const userId = String(req.user!.id);
+    const workspaceId = String(req.user!.workspaceId);
+
+    // Check if user can access the document
+    const { canAccess, doc } = await canAccessDocument(id, userId, workspaceId);
+
+    if (!doc) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    if (!canAccess) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
 
     const result = await pool.query(
       'DELETE FROM documents WHERE id = $1 AND workspace_id = $2 RETURNING id',
-      [id, req.user!.workspaceId]
+      [id, workspaceId]
     );
 
     if (result.rows.length === 0) {

@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
+import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -95,6 +96,12 @@ const updateProgramSchema = z.object({
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const includeArchived = req.query.archived === 'true';
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
     // owner_id in properties takes precedence over created_by
     let query = `
       SELECT d.id, d.title, d.properties, d.archived_at, d.created_at, d.updated_at,
@@ -105,7 +112,9 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       FROM documents d
       LEFT JOIN users u ON u.id = COALESCE((d.properties->>'owner_id')::uuid, d.created_by)
       WHERE d.workspace_id = $1 AND d.document_type = 'program'
+        AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
     `;
+    const params: (string | boolean)[] = [workspaceId, userId, isAdmin];
 
     if (!includeArchived) {
       query += ` AND d.archived_at IS NULL`;
@@ -113,7 +122,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 
     query += ` ORDER BY d.created_at DESC`;
 
-    const result = await pool.query(query, [req.user!.workspaceId]);
+    const result = await pool.query(query, params);
     res.json(result.rows.map(extractProgramFromRow));
   } catch (err) {
     console.error('List programs error:', err);
@@ -125,6 +134,12 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
     // owner_id in properties takes precedence over created_by
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.archived_at, d.created_at, d.updated_at,
@@ -134,8 +149,9 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
               (SELECT COUNT(*) FROM documents s WHERE s.program_id = d.id AND s.document_type = 'sprint') as sprint_count
        FROM documents d
        LEFT JOIN users u ON u.id = COALESCE((d.properties->>'owner_id')::uuid, d.created_by)
-       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'`,
-      [id, req.user!.workspaceId]
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (result.rows.length === 0) {
@@ -220,16 +236,24 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
     const parsed = updateProgramSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
       return;
     }
 
-    // Verify program exists and belongs to workspace
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify program exists and user can access it
     const existing = await pool.query(
-      `SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
-      [id, req.user!.workspaceId]
+      `SELECT id, properties FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (existing.rows.length === 0) {
@@ -310,6 +334,24 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // First verify user can access the program
+    const accessCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (accessCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Program not found' });
+      return;
+    }
 
     // Remove program_id from child documents first
     await pool.query(
@@ -317,15 +359,11 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
       [id]
     );
 
-    const result = await pool.query(
-      `DELETE FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program' RETURNING id`,
-      [id, req.user!.workspaceId]
+    // Now delete it
+    await pool.query(
+      `DELETE FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
+      [id, workspaceId]
     );
-
-    if (result.rows.length === 0) {
-      res.status(404).json({ error: 'Program not found' });
-      return;
-    }
 
     res.status(204).send();
   } catch (err) {
@@ -338,11 +376,18 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
 router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
 
-    // Verify program exists and get prefix
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify program exists and user can access it
     const programExists = await pool.query(
-      `SELECT id, properties->>'prefix' as prefix FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
-      [id, req.user!.workspaceId]
+      `SELECT id, properties->>'prefix' as prefix FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (programExists.rows.length === 0) {
@@ -352,6 +397,7 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
 
     const prefix = programExists.rows[0].prefix;
 
+    // Also filter the issues by visibility
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.ticket_number,
               d.sprint_id, d.created_at, d.updated_at, d.created_by,
@@ -359,6 +405,7 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
        WHERE d.program_id = $1 AND d.document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY
          CASE d.properties->>'priority'
            WHEN 'urgent' THEN 1
@@ -368,7 +415,7 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
            ELSE 5
          END,
          d.updated_at DESC`,
-      [id]
+      [id, userId, isAdmin]
     );
 
     // Add display_id to each issue and extract properties
@@ -402,14 +449,20 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
 router.get('/:id/sprints', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
 
-    // Verify program exists and get workspace sprint_start_date
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify program exists and user can access it
     const programCheck = await pool.query(
       `SELECT d.id, w.sprint_start_date
        FROM documents d
        JOIN workspaces w ON d.workspace_id = w.id
-       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'`,
-      [id, req.user!.workspaceId]
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
     );
 
     if (programCheck.rows.length === 0) {
@@ -419,6 +472,7 @@ router.get('/:id/sprints', requireAuth, async (req: Request, res: Response) => {
 
     const sprintStartDate = programCheck.rows[0].sprint_start_date;
 
+    // Also filter sprints by visibility
     const result = await pool.query(
       `SELECT d.id, d.title as name, d.properties,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
@@ -429,8 +483,9 @@ router.get('/:id/sprints', requireAuth, async (req: Request, res: Response) => {
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
        WHERE d.program_id = $1 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY (d.properties->>'sprint_number')::int ASC`,
-      [id]
+      [id, userId, isAdmin]
     );
 
     // Extract sprint properties - dates/status computed by frontend
