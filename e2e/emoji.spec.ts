@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test'
+import { test, expect, Page } from './fixtures/isolated-env'
 
 /**
  * Emoji Picker E2E Tests

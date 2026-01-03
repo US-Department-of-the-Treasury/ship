@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures/isolated-env'
 
 /**
  * Sprint tests that complement program-mode-sprint-ux.spec.ts
