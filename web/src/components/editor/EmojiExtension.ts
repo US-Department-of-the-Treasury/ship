@@ -1,4 +1,4 @@
-import { Node, mergeAttributes } from '@tiptap/core';
+import { Node, mergeAttributes, InputRule } from '@tiptap/core';
 import { ReactRenderer } from '@tiptap/react';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
 import { EmojiList } from './EmojiList';
@@ -84,6 +84,12 @@ function filterEmojis(query: string): EmojiItem[] {
   }).slice(0, 20); // Limit to 20 results
 }
 
+// Find emoji by exact shortcode match
+function findEmojiByShortcode(shortcode: string): EmojiItem | undefined {
+  const lowerShortcode = shortcode.toLowerCase();
+  return EMOJI_LIST.find((item) => item.shortcode.toLowerCase() === lowerShortcode);
+}
+
 export const EmojiExtension = Node.create({
   name: 'emoji',
 
@@ -134,6 +140,33 @@ export const EmojiExtension = Node.create({
     return node.attrs.emoji;
   },
 
+  addInputRules() {
+    // Match :shortcode: pattern and convert to emoji
+    // Regex: colon, then word characters/underscores/hyphens, then colon
+    const emojiInputRule = new InputRule({
+      find: /:([a-zA-Z0-9_+-]+):$/,
+      handler: ({ state, range, match }) => {
+        const shortcode = match[1];
+        if (!shortcode) {
+          return null;
+        }
+
+        const emoji = findEmojiByShortcode(shortcode);
+        if (!emoji) {
+          // No matching emoji, don't transform
+          return null;
+        }
+
+        // Replace the :shortcode: with the emoji character
+        // Modifying state.tr in place applies the transformation
+        const textNode = state.schema.text(emoji.emoji + ' ');
+        state.tr.replaceWith(range.from, range.to, textNode);
+      },
+    });
+
+    return [emojiInputRule];
+  },
+
   addProseMirrorPlugins() {
     return [
       Suggestion<EmojiItem>({
@@ -142,6 +175,14 @@ export const EmojiExtension = Node.create({
         allowSpaces: false,
         pluginKey: new PluginKey('emoji'),
         items: ({ query }) => {
+          // If query ends with ':', check for exact shortcode match (auto-complete pattern)
+          // This is handled by onUpdate below
+          if (query.endsWith(':')) {
+            const shortcode = query.slice(0, -1);
+            const exactMatch = findEmojiByShortcode(shortcode);
+            // Return just the exact match for auto-selection
+            return exactMatch ? [exactMatch] : [];
+          }
           return filterEmojis(query);
         },
         command: ({ editor, range, props }) => {
@@ -157,9 +198,14 @@ export const EmojiExtension = Node.create({
         render: () => {
           let component: ReactRenderer<EmojiListRef> | null = null;
           let popup: TippyInstance[] | null = null;
+          let currentCommand: ((item: EmojiItem) => void) | null = null;
+          let currentQuery = '';
 
           return {
             onStart: (props) => {
+              currentCommand = props.command;
+              currentQuery = props.query;
+
               component = new ReactRenderer(EmojiList, {
                 props: {
                   items: props.items,
@@ -185,6 +231,16 @@ export const EmojiExtension = Node.create({
             },
 
             onUpdate(props) {
+              currentCommand = props.command;
+              currentQuery = props.query;
+
+              // Auto-convert :shortcode: pattern when query ends with ':'
+              if (props.query.endsWith(':') && props.items.length === 1) {
+                // Exact match found - auto-execute the command
+                props.command(props.items[0]);
+                return;
+              }
+
               component?.updateProps({
                 items: props.items,
                 command: props.command,
@@ -204,6 +260,16 @@ export const EmojiExtension = Node.create({
               if (props.event.key === 'Escape') {
                 popup?.[0]?.hide();
                 return true;
+              }
+
+              // Intercept ':' key for auto-complete pattern :shortcode:
+              if (props.event.key === ':' && currentCommand) {
+                const exactMatch = findEmojiByShortcode(currentQuery);
+                if (exactMatch) {
+                  // Found exact match - auto-insert the emoji
+                  currentCommand(exactMatch);
+                  return true; // Prevent the ':' from being typed
+                }
               }
 
               return component?.ref?.onKeyDown(props) ?? false;

@@ -17,7 +17,7 @@ test.describe('Content Caching - High Performance Navigation', () => {
     await page.waitForTimeout(1000);
 
     // Click on first document
-    const firstDoc = page.locator('aside ul li button').first();
+    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
     await firstDoc.click();
     await page.waitForURL(/\/docs\/.+/);
 
@@ -50,14 +50,15 @@ test.describe('Content Caching - High Performance Navigation', () => {
   test('toggling between two documents shows no blank flash', async ({ page }) => {
     await page.goto('/docs');
 
-    // Get first two document links
-    const docLinks = page.locator('aside ul li button');
+    // Wait for the document tree to load
+    await page.getByRole('tree', { name: 'Document tree' }).waitFor({ timeout: 10000 });
+
+    // Get first two document links from sidebar tree (seed data provides these)
+    const docLinks = page.getByRole('tree', { name: 'Document tree' }).getByRole('link');
     const count = await docLinks.count();
 
-    if (count < 2) {
-      test.skip();
-      return;
-    }
+    // Seed data should provide at least 2 wiki documents
+    expect(count, 'Seed data should provide at least 2 wiki documents. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
     // Visit first document
     await docLinks.first().click();
@@ -99,7 +100,7 @@ test.describe('Content Caching - High Performance Navigation', () => {
     await page.goto('/docs');
 
     // Visit a document
-    const firstDoc = page.locator('aside ul li button').first();
+    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
     await firstDoc.click();
     await page.waitForURL(/\/docs\/.+/);
 
@@ -133,7 +134,7 @@ test.describe('Content Caching - High Performance Navigation', () => {
     await page.goto('/docs');
 
     // Visit a document first to cache it
-    const firstDoc = page.locator('aside ul li button').first();
+    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
     await firstDoc.click();
     await page.waitForURL(/\/docs\/.+/);
     await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -184,7 +185,7 @@ test.describe('WebSocket Connection Reliability', () => {
     });
 
     // Navigate to a document
-    const firstDoc = page.locator('aside ul li button').first();
+    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
     await firstDoc.click();
     await page.waitForURL(/\/docs\/.+/);
 
@@ -199,7 +200,7 @@ test.describe('WebSocket Connection Reliability', () => {
   test('sync status shows "Saved" after WebSocket connects', async ({ page }) => {
     await page.goto('/docs');
 
-    const firstDoc = page.locator('aside ul li button').first();
+    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
     await firstDoc.click();
     await page.waitForURL(/\/docs\/.+/);
 
@@ -221,7 +222,7 @@ test.describe('WebSocket Connection Reliability', () => {
 
     await page.goto('/docs');
 
-    const firstDoc = page.locator('aside ul li button').first();
+    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
     await firstDoc.click();
     await page.waitForURL(/\/docs\/.+/);
 

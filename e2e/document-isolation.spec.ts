@@ -110,16 +110,16 @@ test.describe('Document Isolation - Critical Data Integrity', () => {
 
   test('rapid navigation between documents does not cause content contamination', async ({ page }) => {
     await page.goto('/docs');
-    await page.waitForTimeout(1000);
 
-    // Get existing document links from sidebar
-    const docLinks = page.locator('aside ul li button');
+    // Wait for the document tree to load
+    await page.getByRole('tree', { name: 'Document tree' }).waitFor({ timeout: 10000 });
+
+    // Get existing document links from sidebar tree (seed data provides these)
+    const docLinks = page.getByRole('tree', { name: 'Document tree' }).getByRole('link');
     const count = await docLinks.count();
 
-    if (count < 2) {
-      test.skip();
-      return;
-    }
+    // Seed data should provide at least 2 wiki documents
+    expect(count, 'Seed data should provide at least 2 wiki documents. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
     // Navigate to first document and note its content
     await docLinks.first().click();
@@ -131,7 +131,7 @@ test.describe('Document Isolation - Critical Data Integrity', () => {
     const doc1InitialContent = await page.locator('.ProseMirror').textContent() || '';
 
     // Navigate to second document
-    await docLinks.nth(1).click();
+    await page.getByRole('tree', { name: 'Document tree' }).getByRole('link').nth(1).click();
     await page.waitForURL(/\/docs\/.+/);
     await page.waitForSelector('.ProseMirror', { timeout: 10000 });
     await page.waitForSelector('text=Saved', { timeout: 15000 });
@@ -257,15 +257,15 @@ test.describe('Document Isolation - Cross Document Type', () => {
   test('wiki document and issue document stay isolated', async ({ page }) => {
     // Create content in a wiki document
     await page.goto('/docs');
-    await page.waitForTimeout(1000);
 
-    const docLinks = page.locator('aside ul li button');
+    // Wait for the document tree to load
+    await page.getByRole('tree', { name: 'Document tree' }).waitFor({ timeout: 10000 });
+
+    const docLinks = page.getByRole('tree', { name: 'Document tree' }).getByRole('link');
     const docCount = await docLinks.count();
 
-    if (docCount === 0) {
-      test.skip();
-      return;
-    }
+    // Seed data should provide wiki documents
+    expect(docCount, 'Seed data should provide wiki documents. Run: pnpm db:seed').toBeGreaterThan(0);
 
     await docLinks.first().click();
     await page.waitForURL(/\/docs\/.+/);
@@ -283,15 +283,16 @@ test.describe('Document Isolation - Cross Document Type', () => {
 
     // Now navigate to an issue
     await page.goto('/issues');
-    await page.waitForTimeout(1000);
 
-    const issueLinks = page.locator('aside ul li button');
+    // Wait for the issues sidebar list to load
+    await page.getByRole('complementary', { name: 'Document list' }).getByRole('list').waitFor({ timeout: 10000 });
+
+    // Issues page has a sidebar list with issue links
+    const issueLinks = page.getByRole('complementary', { name: 'Document list' }).getByRole('link');
     const issueCount = await issueLinks.count();
 
-    if (issueCount === 0) {
-      test.skip();
-      return;
-    }
+    // Seed data should provide issues
+    expect(issueCount, 'Seed data should provide issues. Run: pnpm db:seed').toBeGreaterThan(0);
 
     await issueLinks.first().click();
     await page.waitForURL(/\/issues\/.+/);
