@@ -204,6 +204,76 @@ export function useUpdateIssue() {
   });
 }
 
+// Bulk update issues
+interface BulkUpdateRequest {
+  ids: string[];
+  action: 'archive' | 'delete' | 'restore' | 'update';
+  updates?: {
+    state?: string;
+    sprint_id?: string | null;
+  };
+}
+
+interface BulkUpdateResponse {
+  updated: Issue[];
+  failed: { id: string; error: string }[];
+}
+
+async function bulkUpdateIssuesApi(data: BulkUpdateRequest): Promise<BulkUpdateResponse> {
+  const res = await apiPost('/api/issues/bulk', data);
+  if (!res.ok) {
+    const error = new Error('Failed to bulk update issues') as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+// Hook for bulk updates
+export function useBulkUpdateIssues() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: BulkUpdateRequest) => bulkUpdateIssuesApi(data),
+    onMutate: async ({ ids, action, updates }) => {
+      await queryClient.cancelQueries({ queryKey: issueKeys.lists() });
+
+      const previousIssues = queryClient.getQueryData<Issue[]>(issueKeys.lists());
+
+      // Optimistic update
+      queryClient.setQueryData<Issue[]>(issueKeys.lists(), (old) => {
+        if (!old) return old;
+
+        if (action === 'archive' || action === 'delete') {
+          // Remove from list
+          return old.filter(i => !ids.includes(i.id));
+        }
+
+        if (action === 'update' && updates) {
+          return old.map(i => {
+            if (ids.includes(i.id)) {
+              return { ...i, ...updates, _pending: true };
+            }
+            return i;
+          });
+        }
+
+        return old;
+      });
+
+      return { previousIssues };
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousIssues) {
+        queryClient.setQueryData(issueKeys.lists(), context.previousIssues);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: issueKeys.lists() });
+    },
+  });
+}
+
 // Compatibility hook that matches the old useIssues interface
 export function useIssues() {
   const { data: issues = [], isLoading: loading, refetch } = useIssuesQuery();

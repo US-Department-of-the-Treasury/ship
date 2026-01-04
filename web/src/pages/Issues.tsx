@@ -1,9 +1,13 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
+import { useBulkUpdateIssues } from '@/hooks/useIssuesQuery';
+import { useSelection } from '@/hooks/useSelection';
 import { IssuesListSkeleton } from '@/components/ui/Skeleton';
 import { Combobox } from '@/components/ui/Combobox';
+import { useToast } from '@/components/ui/Toast';
+import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { cn } from '@/lib/cn';
 
 const SORT_OPTIONS = [
@@ -12,27 +16,6 @@ const SORT_OPTIONS = [
   { value: 'priority', label: 'Priority' },
   { value: 'title', label: 'Title' },
 ];
-
-function useKeyboardShortcuts(shortcuts: Record<string, () => void>) {
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      // Ignore if user is typing in an input or textarea
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        return;
-      }
-
-      const key = e.key.toLowerCase();
-      if (shortcuts[key]) {
-        e.preventDefault();
-        shortcuts[key]();
-      }
-    };
-
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [shortcuts]);
-}
 
 type ViewMode = 'list' | 'kanban';
 
@@ -64,10 +47,16 @@ export function IssuesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { issues: allIssues, loading, createIssue: contextCreateIssue, updateIssue: contextUpdateIssue } = useIssues();
-  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
+  const bulkUpdate = useBulkUpdateIssues();
+  const { showToast } = useToast();
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sortBy, setSortBy] = useState<string>('updated');
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
 
   const stateFilter = searchParams.get('state') || '';
+  const prevStateFilter = useRef(stateFilter);
 
   // Filter issues client-side based on state filter
   const issues = useMemo(() => {
@@ -75,6 +64,21 @@ export function IssuesPage() {
     const states = stateFilter.split(',');
     return allIssues.filter(issue => states.includes(issue.state));
   }, [allIssues, stateFilter]);
+
+  // Selection state
+  const selection = useSelection({
+    items: issues,
+    getItemId: (issue) => issue.id,
+    hoveredId,
+  });
+
+  // Clear selection when filter changes
+  useEffect(() => {
+    if (prevStateFilter.current !== stateFilter) {
+      selection.clearSelection();
+      prevStateFilter.current = stateFilter;
+    }
+  }, [stateFilter, selection]);
 
   const handleCreateIssue = useCallback(async () => {
     const issue = await contextCreateIssue();
@@ -98,13 +102,91 @@ export function IssuesPage() {
     await contextUpdateIssue(id, updates);
   };
 
-  // Keyboard shortcuts - "c" to create issue
-  // Memoize shortcuts object to prevent re-adding event listeners on every render
-  const shortcuts = useMemo(() => ({
-    c: handleCreateIssue,
-  }), [handleCreateIssue]);
+  // Bulk action handlers
+  const handleBulkArchive = useCallback(() => {
+    const ids = Array.from(selection.selectedIds);
+    const count = ids.length;
+    bulkUpdate.mutate({ ids, action: 'archive' }, {
+      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} archived`, 'success'),
+      onError: () => showToast('Failed to archive issues', 'error'),
+    });
+    selection.clearSelection();
+    setContextMenu(null);
+  }, [selection, bulkUpdate, showToast]);
 
-  useKeyboardShortcuts(shortcuts);
+  const handleBulkDelete = useCallback(() => {
+    const ids = Array.from(selection.selectedIds);
+    const count = ids.length;
+    bulkUpdate.mutate({ ids, action: 'delete' }, {
+      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} deleted`, 'success'),
+      onError: () => showToast('Failed to delete issues', 'error'),
+    });
+    selection.clearSelection();
+    setContextMenu(null);
+  }, [selection, bulkUpdate, showToast]);
+
+  const handleBulkMoveToSprint = useCallback((sprintId: string | null) => {
+    const ids = Array.from(selection.selectedIds);
+    const count = ids.length;
+    bulkUpdate.mutate({ ids, action: 'update', updates: { sprint_id: sprintId } }, {
+      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} moved`, 'success'),
+      onError: () => showToast('Failed to move issues', 'error'),
+    });
+    selection.clearSelection();
+    setContextMenu(null);
+  }, [selection, bulkUpdate, showToast]);
+
+  const handleBulkChangeStatus = useCallback((status: string) => {
+    const ids = Array.from(selection.selectedIds);
+    const count = ids.length;
+    const statusLabel = STATE_LABELS[status] || status;
+    bulkUpdate.mutate({ ids, action: 'update', updates: { state: status } }, {
+      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} changed to ${statusLabel}`, 'success'),
+      onError: () => showToast('Failed to update issues', 'error'),
+    });
+    selection.clearSelection();
+    setContextMenu(null);
+  }, [selection, bulkUpdate, showToast]);
+
+  // Context menu handler
+  const handleContextMenu = useCallback((e: React.MouseEvent, issueId: string) => {
+    e.preventDefault();
+    // If right-clicked item is not selected, select only that item
+    if (!selection.isSelected(issueId)) {
+      selection.clearSelection();
+      selection.handleClick(issueId, e);
+    }
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, [selection]);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      // "c" to create issue
+      if (e.key === 'c' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        handleCreateIssue();
+      }
+
+      // Shift+Arrow extends selection (Superhuman-style)
+      // Only handle globally if the table doesn't have focus (otherwise table's onKeyDown handles it)
+      if (e.shiftKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        const tableHasFocus = tableRef.current?.contains(document.activeElement);
+        if (!tableHasFocus && (hoveredId || selection.hasSelection)) {
+          e.preventDefault();
+          selection.extendSelection(e.key === 'ArrowDown' ? 'down' : 'up');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleCreateIssue, hoveredId, selection]);
 
   if (loading) {
     return <IssuesListSkeleton />;
@@ -176,6 +258,14 @@ export function IssuesPage() {
           issues={issues}
           onUpdateIssue={handleUpdateIssue}
           onIssueClick={(id) => navigate(`/issues/${id}`)}
+          selectedIds={selection.selectedIds}
+          onSelectionChange={(ids) => {
+            // Sync kanban selection with our selection state
+            if (ids.size === 0) {
+              selection.clearSelection();
+            }
+          }}
+          onCheckboxClick={(id, e) => selection.handleClick(id, e)}
         />
       ) : (
         <div className="flex-1 overflow-auto">
@@ -192,50 +282,192 @@ export function IssuesPage() {
               </div>
             </div>
           ) : (
-            <table className="w-full">
-              <thead className="sticky top-0 bg-background">
+            <table
+              ref={tableRef}
+              className="w-full"
+              role="grid"
+              aria-multiselectable="true"
+              aria-label="Issues list"
+              tabIndex={0}
+              onKeyDown={selection.handleKeyDown}
+            >
+              <thead className="sticky top-0 bg-background z-10">
                 <tr className="border-b border-border text-left text-xs text-muted">
-                  <th className="px-6 py-2 font-medium">ID</th>
-                  <th className="px-6 py-2 font-medium">Title</th>
-                  <th className="px-6 py-2 font-medium">Status</th>
-                  <th className="px-6 py-2 font-medium">Priority</th>
-                  <th className="px-6 py-2 font-medium">Assignee</th>
-                  <th className="px-6 py-2 font-medium">Updated</th>
+                  <th className="w-10 px-2 py-2" aria-label="Selection"></th>
+                  <th className="px-4 py-2 font-medium">ID</th>
+                  <th className="px-4 py-2 font-medium">Title</th>
+                  <th className="px-4 py-2 font-medium">Status</th>
+                  <th className="px-4 py-2 font-medium">Priority</th>
+                  <th className="px-4 py-2 font-medium">Assignee</th>
+                  <th className="px-4 py-2 font-medium">Updated</th>
                 </tr>
               </thead>
               <tbody>
                 {issues.map((issue) => (
-                  <tr
+                  <SelectableRow
                     key={issue.id}
-                    onClick={() => navigate(`/issues/${issue.id}`)}
-                    className="cursor-pointer border-b border-border/50 hover:bg-border/30 transition-colors"
-                  >
-                    <td className="px-6 py-3 text-sm text-muted">
-                      #{issue.ticket_number}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-foreground">
-                      {issue.title}
-                    </td>
-                    <td className="px-6 py-3">
-                      <StatusBadge state={issue.state} />
-                    </td>
-                    <td className="px-6 py-3">
-                      <PriorityBadge priority={issue.priority} />
-                    </td>
-                    <td className="px-6 py-3 text-sm text-muted">
-                      {issue.assignee_name || 'Unassigned'}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-muted">
-                      {issue.updated_at ? formatDate(issue.updated_at) : '-'}
-                    </td>
-                  </tr>
+                    issue={issue}
+                    isSelected={selection.isSelected(issue.id)}
+                    isFocused={selection.isFocused(issue.id)}
+                    onCheckboxClick={(e) => selection.handleClick(issue.id, e)}
+                    onRowClick={() => navigate(`/issues/${issue.id}`)}
+                    onFocus={() => selection.setFocusedId(issue.id)}
+                    onMouseEnter={() => setHoveredId(issue.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    onContextMenu={(e) => handleContextMenu(e, issue.id)}
+                  />
                 ))}
               </tbody>
             </table>
           )}
         </div>
       )}
+
+      {/* Selection announcer for screen readers */}
+      <div
+        id="selection-announcer"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {selection.hasSelection ? `${selection.selectedCount} items selected` : ''}
+      </div>
+
+      {/* Context Menu */}
+      {contextMenu && selection.hasSelection && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+          <div className="px-3 py-1.5 text-xs text-muted border-b border-border mb-1">
+            {selection.selectedCount} selected
+          </div>
+          <ContextMenuItem onClick={handleBulkArchive}>
+            <ArchiveIcon className="h-4 w-4" />
+            Archive
+          </ContextMenuItem>
+          <ContextMenuSubmenu label="Change Status">
+            <ContextMenuItem onClick={() => handleBulkChangeStatus('backlog')}>Backlog</ContextMenuItem>
+            <ContextMenuItem onClick={() => handleBulkChangeStatus('todo')}>Todo</ContextMenuItem>
+            <ContextMenuItem onClick={() => handleBulkChangeStatus('in_progress')}>In Progress</ContextMenuItem>
+            <ContextMenuItem onClick={() => handleBulkChangeStatus('done')}>Done</ContextMenuItem>
+          </ContextMenuSubmenu>
+          <ContextMenuSubmenu label="Move to Sprint">
+            <ContextMenuItem onClick={() => handleBulkMoveToSprint(null)}>No Sprint</ContextMenuItem>
+          </ContextMenuSubmenu>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={handleBulkDelete} destructive>
+            <TrashIcon className="h-4 w-4" />
+            Delete
+          </ContextMenuItem>
+        </ContextMenu>
+      )}
     </div>
+  );
+}
+
+interface SelectableRowProps {
+  issue: Issue;
+  isSelected: boolean;
+  isFocused: boolean;
+  onCheckboxClick: (e: React.MouseEvent) => void;
+  onRowClick: () => void;
+  onFocus: () => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+}
+
+function SelectableRow({ issue, isSelected, isFocused, onCheckboxClick, onRowClick, onFocus, onMouseEnter, onMouseLeave, onContextMenu }: SelectableRowProps) {
+  return (
+    <tr
+      role="row"
+      aria-selected={isSelected}
+      tabIndex={isFocused ? 0 : -1}
+      onFocus={onFocus}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onContextMenu={onContextMenu}
+      data-selected={isSelected}
+      className={cn(
+        'group cursor-pointer border-b border-border/50 transition-colors',
+        isSelected && 'bg-accent/10',
+        isFocused && 'ring-2 ring-accent ring-inset',
+        !isSelected && 'hover:bg-border/30'
+      )}
+    >
+      {/* Checkbox cell */}
+      <td className="w-10 px-2 py-3" role="gridcell">
+        <div
+          className={cn(
+            'flex items-center justify-center transition-opacity',
+            isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          )}
+        >
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={isSelected}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCheckboxClick(e);
+            }}
+            aria-label={`Select issue #${issue.ticket_number}`}
+            className={cn(
+              'h-4 w-4 rounded flex items-center justify-center transition-all',
+              'border focus:outline-none focus:ring-2 focus:ring-accent/50',
+              isSelected
+                ? 'bg-accent border-accent text-white'
+                : 'border-muted/50 hover:border-muted bg-transparent'
+            )}
+          >
+            {isSelected && (
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
+        </div>
+      </td>
+      {/* ID */}
+      <td
+        className="px-4 py-3 text-sm text-muted"
+        onClick={onRowClick}
+        role="gridcell"
+      >
+        #{issue.ticket_number}
+      </td>
+      {/* Title */}
+      <td
+        className="px-4 py-3 text-sm text-foreground"
+        onClick={onRowClick}
+        role="gridcell"
+      >
+        {issue.title}
+      </td>
+      {/* Status */}
+      <td className="px-4 py-3" onClick={onRowClick} role="gridcell">
+        <StatusBadge state={issue.state} />
+      </td>
+      {/* Priority */}
+      <td className="px-4 py-3" onClick={onRowClick} role="gridcell">
+        <PriorityBadge priority={issue.priority} />
+      </td>
+      {/* Assignee */}
+      <td
+        className="px-4 py-3 text-sm text-muted"
+        onClick={onRowClick}
+        role="gridcell"
+      >
+        {issue.assignee_name || 'Unassigned'}
+      </td>
+      {/* Updated */}
+      <td
+        className="px-4 py-3 text-sm text-muted"
+        onClick={onRowClick}
+        role="gridcell"
+      >
+        {issue.updated_at ? formatDate(issue.updated_at) : '-'}
+      </td>
+    </tr>
   );
 }
 
@@ -366,6 +598,22 @@ function KanbanIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+    </svg>
+  );
+}
+
+function ArchiveIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
     </svg>
   );
 }
