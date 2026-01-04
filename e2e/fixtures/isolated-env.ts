@@ -346,6 +346,29 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     [workspaceId, JSON.stringify({ user_id: userId, email: 'dev@ship.local' }), userId]
   );
 
+  // Create a member user (non-admin) for authorization tests
+  const memberResult = await pool.query(
+    `INSERT INTO users (email, password_hash, name, is_super_admin, last_workspace_id)
+     VALUES ('bob.martinez@ship.local', $1, 'Bob Martinez', false, $2)
+     RETURNING id`,
+    [passwordHash, workspaceId]
+  );
+  const memberId = memberResult.rows[0].id;
+
+  // Create workspace membership as regular member (not admin)
+  await pool.query(
+    `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+     VALUES ($1, $2, 'member')`,
+    [workspaceId, memberId]
+  );
+
+  // Create person document for member
+  await pool.query(
+    `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+     VALUES ($1, 'person', 'Bob Martinez', $2, $3)`,
+    [workspaceId, JSON.stringify({ user_id: memberId, email: 'bob.martinez@ship.local' }), userId]
+  );
+
   // Create programs (matching full seed)
   // 'key' is used for test referencing only, not stored in database
   const programs = [
@@ -457,12 +480,28 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     );
   }
 
-  // Create a wiki document
-  await pool.query(
+  // Create wiki documents with nested structure for tree testing
+  const parentDocResult = await pool.query(
     `INSERT INTO documents (workspace_id, document_type, title, created_by)
-     VALUES ($1, 'wiki', 'Welcome to Ship', $2)`,
+     VALUES ($1, 'wiki', 'Welcome to Ship', $2)
+     RETURNING id`,
     [workspaceId, userId]
   );
+  const parentDocId = parentDocResult.rows[0].id;
+
+  // Create child documents to enable tree expand/collapse testing
+  const childDocs = [
+    { title: 'Getting Started' },
+    { title: 'Advanced Topics' },
+  ];
+
+  for (const child of childDocs) {
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, parent_id, created_by)
+       VALUES ($1, 'wiki', $2, $3, $4)`,
+      [workspaceId, child.title, parentDocId, userId]
+    );
+  }
 }
 
 /**

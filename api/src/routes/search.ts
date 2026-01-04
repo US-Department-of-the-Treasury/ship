@@ -4,6 +4,12 @@ import { pool } from '../db/client.js';
 type RouterType = ReturnType<typeof Router>;
 export const searchRouter: RouterType = Router();
 
+// SECURITY: Escape SQL LIKE pattern special characters to prevent wildcard injection
+// This prevents users from using % and _ to match arbitrary patterns
+function escapeLikePattern(str: string): string {
+  return str.replace(/[%_\\]/g, '\\$&');
+}
+
 // Auth middleware - check session cookie
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const sessionId = req.cookies?.session_id;
@@ -62,6 +68,9 @@ searchRouter.get('/mentions', requireAuth, async (req: Request, res: Response) =
     const workspaceId = req.user!.workspaceId;
     const userId = req.user!.id;
 
+    // SECURITY: Escape wildcard characters to prevent SQL wildcard injection
+    const sanitizedQuery = escapeLikePattern(searchQuery);
+
     // Check if user is admin for visibility filtering
     const isAdmin = await isWorkspaceAdmin(userId, workspaceId);
 
@@ -79,7 +88,7 @@ searchRouter.get('/mentions', requireAuth, async (req: Request, res: Response) =
          AND d.title ILIKE $2
        ORDER BY d.title ASC
        LIMIT 5`,
-      [workspaceId, `%${searchQuery}%`]
+      [workspaceId, `%${sanitizedQuery}%`]
     );
 
     // Search for other documents (wiki, issue, project, program)
@@ -101,7 +110,7 @@ searchRouter.get('/mentions', requireAuth, async (req: Request, res: Response) =
          END,
          updated_at DESC
        LIMIT 10`,
-      [workspaceId, `%${searchQuery}%`, userId, isAdmin]
+      [workspaceId, `%${sanitizedQuery}%`, userId, isAdmin]
     );
 
     res.json({
