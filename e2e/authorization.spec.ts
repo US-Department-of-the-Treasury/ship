@@ -207,7 +207,7 @@ test.describe('Authorization - API Route Protection', () => {
     ]
 
     for (const route of protectedRoutes) {
-      const response = await request.get(`http://localhost:3000${route.url}`)
+      const response = await request.get(route.url)
       expect(response.status(), `${route.url} should reject unauthenticated requests`).toBe(401)
     }
   })
