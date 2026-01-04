@@ -171,6 +171,9 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
     `;
     const params: (string | boolean | null)[] = [workspaceId, userId, isAdmin];
 
+    // Exclude archived and deleted issues by default
+    query += ` AND d.archived_at IS NULL AND d.deleted_at IS NULL`;
+
     // Filter by source - defaults to 'internal' (excludes feedback from regular issues list)
     if (source) {
       query += ` AND d.properties->>'source' = $${params.length + 1}`;
@@ -529,6 +532,150 @@ router.get('/:id/history', requireAuth, async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Get issue history error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Bulk update issues
+const bulkUpdateSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(100),
+  action: z.enum(['archive', 'delete', 'restore', 'update']),
+  updates: z.object({
+    state: z.enum(['backlog', 'todo', 'in_progress', 'done', 'cancelled']).optional(),
+    sprint_id: z.string().uuid().nullable().optional(),
+  }).optional(),
+});
+
+router.post('/bulk', requireAuth, async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    const parsed = bulkUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    const { ids, action, updates } = parsed.data;
+    const userId = req.user!.id;
+    const workspaceId = req.user!.workspaceId;
+
+    // Get visibility context
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    await client.query('BEGIN');
+
+    // Verify all issues exist and user has access
+    const accessCheck = await client.query(
+      `SELECT id FROM documents
+       WHERE id = ANY($1) AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [ids, workspaceId, userId, isAdmin]
+    );
+
+    const accessibleIds = new Set(accessCheck.rows.map(r => r.id));
+    const failed: { id: string; error: string }[] = [];
+
+    for (const id of ids) {
+      if (!accessibleIds.has(id)) {
+        failed.push({ id, error: 'Not found or no access' });
+      }
+    }
+
+    const validIds = ids.filter(id => accessibleIds.has(id));
+
+    if (validIds.length === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'No valid issues found', failed });
+      return;
+    }
+
+    let result;
+
+    switch (action) {
+      case 'archive':
+        result = await client.query(
+          `UPDATE documents SET archived_at = NOW(), updated_at = NOW()
+           WHERE id = ANY($1) AND workspace_id = $2
+           RETURNING *`,
+          [validIds, workspaceId]
+        );
+        break;
+
+      case 'delete':
+        result = await client.query(
+          `UPDATE documents SET deleted_at = NOW(), updated_at = NOW()
+           WHERE id = ANY($1) AND workspace_id = $2
+           RETURNING *`,
+          [validIds, workspaceId]
+        );
+        break;
+
+      case 'restore':
+        result = await client.query(
+          `UPDATE documents SET archived_at = NULL, deleted_at = NULL, updated_at = NOW()
+           WHERE id = ANY($1) AND workspace_id = $2
+           RETURNING *`,
+          [validIds, workspaceId]
+        );
+        break;
+
+      case 'update':
+        if (!updates || Object.keys(updates).length === 0) {
+          await client.query('ROLLBACK');
+          res.status(400).json({ error: 'Updates required for update action' });
+          return;
+        }
+
+        const setClauses: string[] = ['updated_at = NOW()'];
+        const values: any[] = [validIds, workspaceId];
+        let paramIdx = 3;
+
+        if (updates.state !== undefined) {
+          // Update state in properties JSONB
+          setClauses.push(`properties = jsonb_set(COALESCE(properties, '{}'), '{state}', $${paramIdx}::jsonb)`);
+          values.push(JSON.stringify(updates.state));
+          paramIdx++;
+        }
+
+        if (updates.sprint_id !== undefined) {
+          setClauses.push(`sprint_id = $${paramIdx}`);
+          values.push(updates.sprint_id);
+          paramIdx++;
+        }
+
+        result = await client.query(
+          `UPDATE documents SET ${setClauses.join(', ')}
+           WHERE id = ANY($1) AND workspace_id = $2
+           RETURNING *`,
+          values
+        );
+        break;
+
+      default:
+        await client.query('ROLLBACK');
+        res.status(400).json({ error: 'Invalid action' });
+        return;
+    }
+
+    await client.query('COMMIT');
+
+    // Map results to issue format
+    const updated = result.rows.map(row => {
+      const issue = extractIssueFromRow(row);
+      return {
+        ...issue,
+        display_id: `#${issue.ticket_number}`,
+        archived_at: row.archived_at,
+        deleted_at: row.deleted_at,
+      };
+    });
+
+    res.json({ updated, failed });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Bulk update issues error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 

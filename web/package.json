@@ -49,13 +49,14 @@
     "workbox-window": "^7.4.0",
     "y-indexeddb": "^9.0.12",
     "y-websocket": "^2.0.4",
-    "yjs": "^13.6.20"
-  },
-  "devDependencies": {
+    "yjs": "^13.6.20",
     "@tanstack/query-sync-storage-persister": "^5.90.18",
     "@tanstack/react-query": "^5.90.16",
     "@tanstack/react-query-devtools": "^5.91.2",
     "@tanstack/react-query-persist-client": "^5.90.18",
+    "idb-keyval": "^6.2.2"
+  },
+  "devDependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
@@ -63,7 +64,6 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
-    "idb-keyval": "^6.2.2",
     "jsdom": "^27.4.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",

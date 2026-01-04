@@ -32,6 +32,10 @@ interface KanbanBoardProps {
   issues: Issue[];
   onUpdateIssue: (id: string, updates: { state: string }) => Promise<void>;
   onIssueClick: (id: string) => void;
+  // Selection props
+  selectedIds?: Set<string>;
+  onSelectionChange?: (ids: Set<string>) => void;
+  onCheckboxClick?: (id: string, e: React.MouseEvent) => void;
 }
 
 const COLUMNS = [
@@ -49,7 +53,13 @@ const PRIORITY_COLORS: Record<string, string> = {
   none: 'border-l-transparent',
 };
 
-export function KanbanBoard({ issues, onUpdateIssue, onIssueClick }: KanbanBoardProps) {
+export function KanbanBoard({
+  issues,
+  onUpdateIssue,
+  onIssueClick,
+  selectedIds = new Set(),
+  onCheckboxClick,
+}: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -120,6 +130,8 @@ export function KanbanBoard({ issues, onUpdateIssue, onIssueClick }: KanbanBoard
             column={column}
             issues={getIssuesByColumn(column.id)}
             onIssueClick={onIssueClick}
+            selectedIds={selectedIds}
+            onCheckboxClick={onCheckboxClick}
           />
         ))}
       </div>
@@ -134,10 +146,14 @@ function KanbanColumn({
   column,
   issues,
   onIssueClick,
+  selectedIds,
+  onCheckboxClick,
 }: {
   column: { id: string; title: string; color: string };
   issues: Issue[];
   onIssueClick: (id: string) => void;
+  selectedIds: Set<string>;
+  onCheckboxClick?: (id: string, e: React.MouseEvent) => void;
 }) {
   const { setNodeRef } = useSortable({ id: column.id });
 
@@ -170,6 +186,8 @@ function KanbanColumn({
               <SortableIssueCard
                 issue={issue}
                 onClick={() => onIssueClick(issue.id)}
+                isSelected={selectedIds.has(issue.id)}
+                onCheckboxClick={onCheckboxClick ? (e) => onCheckboxClick(issue.id, e) : undefined}
               />
             </li>
           ))}
@@ -187,9 +205,13 @@ function KanbanColumn({
 function SortableIssueCard({
   issue,
   onClick,
+  isSelected,
+  onCheckboxClick,
 }: {
   issue: Issue;
   onClick: () => void;
+  isSelected?: boolean;
+  onCheckboxClick?: (e: React.MouseEvent) => void;
 }) {
   const {
     attributes,
@@ -216,27 +238,61 @@ function SortableIssueCard({
       data-draggable
       data-issue
       data-dragging={isDragging ? 'true' : undefined}
+      data-selected={isSelected ? 'true' : undefined}
       aria-grabbed={isDragging ? 'true' : 'false'}
+      aria-selected={isSelected}
       tabIndex={0}
       role="button"
       aria-roledescription="draggable issue"
       aria-label={`Issue #${issue.ticket_number}: ${issue.title}. Press Space to pick up and move.`}
       className={cn(isDragging && 'opacity-50', 'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background rounded-md')}
     >
-      <IssueCard issue={issue} />
+      <IssueCard issue={issue} isSelected={isSelected} onCheckboxClick={onCheckboxClick} />
     </div>
   );
 }
 
-function IssueCard({ issue, isDragging }: { issue: Issue; isDragging?: boolean }) {
+function IssueCard({
+  issue,
+  isDragging,
+  isSelected,
+  onCheckboxClick,
+}: {
+  issue: Issue;
+  isDragging?: boolean;
+  isSelected?: boolean;
+  onCheckboxClick?: (e: React.MouseEvent) => void;
+}) {
   return (
     <div
       className={cn(
-        'cursor-pointer rounded-md border-l-2 bg-background p-3 shadow-sm transition-shadow hover:shadow-md',
+        'group cursor-pointer rounded-md border-l-2 bg-background p-3 shadow-sm transition-shadow hover:shadow-md relative',
         PRIORITY_COLORS[issue.priority] || PRIORITY_COLORS.none,
-        isDragging && 'shadow-lg'
+        isDragging && 'shadow-lg',
+        isSelected && 'ring-2 ring-accent bg-accent/10'
       )}
     >
+      {/* Hover-reveal checkbox */}
+      {onCheckboxClick && (
+        <div
+          className={cn(
+            'absolute top-2 right-2 transition-opacity',
+            isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={isSelected ?? false}
+            onChange={() => {}}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCheckboxClick(e);
+            }}
+            aria-label={`Select issue #${issue.ticket_number}`}
+            className="h-4 w-4 rounded border-border text-accent focus:ring-accent cursor-pointer"
+          />
+        </div>
+      )}
       <div className="mb-1 text-xs text-muted">#{issue.ticket_number}</div>
       <div className="text-sm text-foreground">{issue.title}</div>
       {issue.assignee_name && (
