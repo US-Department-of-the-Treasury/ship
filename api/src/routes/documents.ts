@@ -1,6 +1,7 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
+import { authMiddleware } from '../middleware/auth.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -36,47 +37,6 @@ async function canAccessDocument(
   return { canAccess: result.rows[0].can_access, doc: result.rows[0] };
 }
 
-// Auth middleware - check session cookie
-async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const sessionId = req.cookies?.session_id;
-  if (!sessionId) {
-    res.status(401).json({ error: 'Not authenticated' });
-    return;
-  }
-
-  try {
-    const result = await pool.query(
-      `SELECT s.id, s.user_id, s.workspace_id, u.email, u.name
-       FROM sessions s
-       JOIN users u ON s.user_id = u.id
-       WHERE s.id = $1 AND s.expires_at > now()`,
-      [sessionId]
-    );
-
-    if (result.rows.length === 0) {
-      res.status(401).json({ error: 'Session expired' });
-      return;
-    }
-
-    // Extend session on activity
-    await pool.query(
-      `UPDATE sessions SET last_activity = now(), expires_at = now() + interval '15 minutes' WHERE id = $1`,
-      [sessionId]
-    );
-
-    req.user = {
-      id: result.rows[0].user_id,
-      email: result.rows[0].email,
-      name: result.rows[0].name,
-      workspaceId: result.rows[0].workspace_id,
-    };
-    next();
-  } catch (err) {
-    console.error('Auth middleware error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
-
 // Validation schemas
 const createDocumentSchema = z.object({
   title: z.string().min(1).max(255).optional().default('Untitled'),
@@ -97,11 +57,11 @@ const updateDocumentSchema = z.object({
 });
 
 // List documents
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { type, parent_id } = req.query;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Check if user is admin (admins can see all documents)
     const isAdmin = await isWorkspaceAdmin(userId, workspaceId);
@@ -157,11 +117,11 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Get single document
-router.get('/:id', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = req.params.id!;
-    const userId = String(req.user!.id);
-    const workspaceId = String(req.user!.workspaceId);
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
 
     const { canAccess, doc } = await canAccessDocument(id, userId, workspaceId);
 
@@ -199,7 +159,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Create document
-router.post('/', requireAuth, async (req: Request, res: Response) => {
+router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const parsed = createDocumentSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -214,7 +174,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     if (parent_id && !visibility) {
       const parentResult = await pool.query(
         'SELECT visibility FROM documents WHERE id = $1 AND workspace_id = $2',
-        [parent_id, req.user!.workspaceId]
+        [parent_id, req.workspaceId]
       );
       if (parentResult.rows[0]) {
         visibility = parentResult.rows[0].visibility;
@@ -228,7 +188,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       `INSERT INTO documents (workspace_id, document_type, title, parent_id, sprint_id, properties, created_by, visibility)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [req.user!.workspaceId, document_type, title, parent_id || null, sprint_id || null, JSON.stringify(properties || {}), req.user!.id, visibility]
+      [req.workspaceId, document_type, title, parent_id || null, sprint_id || null, JSON.stringify(properties || {}), req.userId, visibility]
     );
 
     res.status(201).json(result.rows[0]);
@@ -239,11 +199,11 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Update document
-router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
+router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = req.params.id!;
-    const userId = String(req.user!.id);
-    const workspaceId = String(req.user!.workspaceId);
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
 
     const parsed = updateDocumentSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -356,11 +316,11 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Delete document
-router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
+router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = req.params.id!;
-    const userId = String(req.user!.id);
-    const workspaceId = String(req.user!.workspaceId);
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
 
     // Check if user can access the document
     const { canAccess, doc } = await canAccessDocument(id, userId, workspaceId);

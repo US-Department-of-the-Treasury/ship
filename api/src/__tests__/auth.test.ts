@@ -1,0 +1,224 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// Mock pool before importing auth middleware
+vi.mock('../db/client.js', () => ({
+  pool: {
+    query: vi.fn(),
+  },
+}));
+
+import { authMiddleware } from '../middleware/auth.js';
+import { pool } from '../db/client.js';
+import { Request, Response, NextFunction } from 'express';
+import { SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS } from '@ship/shared';
+
+// Helper to create mock request/response
+function createMockReqRes(cookies: Record<string, string> = {}) {
+  const req = { cookies } as unknown as Request;
+  const res = {
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
+  } as unknown as Response;
+  const next = vi.fn() as NextFunction;
+  return { req, res, next };
+}
+
+describe('authMiddleware', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('session validation', () => {
+    it('returns 401 when no session cookie is present', async () => {
+      const { req, res, next } = createMockReqRes({});
+      await authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          error: expect.objectContaining({ message: 'No session found' }),
+        })
+      );
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 when session does not exist in database', async () => {
+      const { req, res, next } = createMockReqRes({ session_id: 'invalid-session' });
+      vi.mocked(pool.query).mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
+      await authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({ message: 'Invalid session' }),
+        })
+      );
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('attaches session info to request for valid session', async () => {
+      const { req, res, next } = createMockReqRes({ session_id: 'valid-session' });
+      const now = new Date();
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'valid-session',
+            user_id: 'user-123',
+            workspace_id: 'ws-123',
+            last_activity: now,
+            created_at: now,
+            is_super_admin: false,
+          }],
+        } as any)
+        .mockResolvedValueOnce({ rows: [{ id: 'membership-1' }] } as any)
+        .mockResolvedValueOnce({ rows: [] } as any);
+
+      await authMiddleware(req, res, next);
+      expect(req.sessionId).toBe('valid-session');
+      expect(req.userId).toBe('user-123');
+      expect(req.workspaceId).toBe('ws-123');
+      expect(next).toHaveBeenCalled();
+    });
+  });
+
+  describe('session timeout handling', () => {
+    it('returns 401 when session exceeds 15-minute inactivity timeout', async () => {
+      const { req, res, next } = createMockReqRes({ session_id: 'stale-session' });
+      const now = new Date();
+      const staleActivity = new Date(now.getTime() - SESSION_TIMEOUT_MS - 1000);
+      vi.mocked(pool.query).mockResolvedValueOnce({
+        rows: [{
+          id: 'stale-session',
+          user_id: 'user-123',
+          workspace_id: 'ws-123',
+          last_activity: staleActivity,
+          created_at: now,
+          is_super_admin: false,
+        }],
+      } as any);
+
+      await authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({
+            message: expect.stringContaining('inactivity'),
+          }),
+        })
+      );
+    });
+
+    it('returns 401 when session exceeds 12-hour absolute timeout', async () => {
+      const { req, res, next } = createMockReqRes({ session_id: 'old-session' });
+      const now = new Date();
+      const oldCreatedAt = new Date(now.getTime() - ABSOLUTE_SESSION_TIMEOUT_MS - 1000);
+      vi.mocked(pool.query).mockResolvedValueOnce({
+        rows: [{
+          id: 'old-session',
+          user_id: 'user-123',
+          workspace_id: 'ws-123',
+          last_activity: now,
+          created_at: oldCreatedAt,
+          is_super_admin: false,
+        }],
+      } as any);
+
+      await authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({
+            message: expect.stringContaining('expired'),
+          }),
+        })
+      );
+    });
+
+    it('deletes expired session from database', async () => {
+      const { req, res, next } = createMockReqRes({ session_id: 'expired-session' });
+      const now = new Date();
+      const staleActivity = new Date(now.getTime() - SESSION_TIMEOUT_MS - 1000);
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'expired-session',
+            user_id: 'user-123',
+            workspace_id: 'ws-123',
+            last_activity: staleActivity,
+            created_at: now,
+            is_super_admin: false,
+          }],
+        } as any)
+        .mockResolvedValueOnce({ rows: [] } as any);
+
+      await authMiddleware(req, res, next);
+      expect(pool.query).toHaveBeenCalledWith(
+        'DELETE FROM sessions WHERE id = $1',
+        ['expired-session']
+      );
+    });
+  });
+
+  describe('workspace access verification', () => {
+    it('returns 403 when user no longer has workspace access', async () => {
+      const { req, res, next } = createMockReqRes({ session_id: 'valid-session' });
+      const now = new Date();
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'valid-session',
+            user_id: 'user-123',
+            workspace_id: 'ws-123',
+            last_activity: now,
+            created_at: now,
+            is_super_admin: false,
+          }],
+        } as any)
+        .mockResolvedValueOnce({ rows: [] } as any);
+
+      await authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({
+            message: expect.stringContaining('revoked'),
+          }),
+        })
+      );
+    });
+
+    it('skips workspace check for super-admin users', async () => {
+      const { req, res, next } = createMockReqRes({ session_id: 'admin-session' });
+      const now = new Date();
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'admin-session',
+            user_id: 'admin-123',
+            workspace_id: 'ws-123',
+            last_activity: now,
+            created_at: now,
+            is_super_admin: true,
+          }],
+        } as any)
+        .mockResolvedValueOnce({ rows: [] } as any);
+
+      await authMiddleware(req, res, next);
+      expect(req.isSuperAdmin).toBe(true);
+      expect(next).toHaveBeenCalled();
+    });
+  });
+
+  describe('error handling', () => {
+    it('returns 500 on database error', async () => {
+      const { req, res, next } = createMockReqRes({ session_id: 'some-session' });
+      vi.mocked(pool.query).mockRejectedValueOnce(new Error('DB connection failed'));
+      await authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({ message: 'Authentication failed' }),
+        })
+      );
+    });
+  });
+});

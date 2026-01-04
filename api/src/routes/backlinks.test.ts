@@ -145,7 +145,7 @@ describe('Backlinks API', () => {
         .get(`/api/documents/${testDocId}/backlinks`);
 
       expect(response.status).toBe(401);
-      expect(response.body.error).toBe('Not authenticated');
+      expect(response.body.error.code).toBe('UNAUTHORIZED');
     });
 
     it('should respect workspace scope', async () => {
