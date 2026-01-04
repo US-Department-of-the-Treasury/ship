@@ -21,9 +21,10 @@ async function createNewDocument(page: Page) {
   await page.waitForLoadState('networkidle')
 
   const currentUrl = page.url()
-  const newDocButton = page.locator('button[title="New document"]')
-  await expect(newDocButton).toBeVisible({ timeout: 5000 })
-  await newDocButton.click()
+  // Button uses aria-label, not title attribute
+  const newDocButton = page.getByRole('button', { name: /new document/i })
+  await expect(newDocButton.first()).toBeVisible({ timeout: 5000 })
+  await newDocButton.first().click()
 
   await page.waitForFunction(
     (oldUrl) => window.location.href !== oldUrl && /\/docs\/[a-f0-9-]+/.test(window.location.href),
