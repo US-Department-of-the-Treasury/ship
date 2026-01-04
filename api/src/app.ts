@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import session from 'express-session';
 import { csrfSync } from 'csrf-sync';
+import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.js';
 import documentsRoutes from './routes/documents.js';
 import issuesRoutes from './routes/issues.js';
@@ -31,6 +32,31 @@ const { csrfSynchronisedProtection, generateToken } = csrfSync({
   getTokenFromRequest: (req) => req.headers['x-csrf-token'] as string,
 });
 
+// Rate limiting configurations
+// In test environment, use much higher limits to avoid flaky tests
+// Production limits: login=5/15min (failed only), api=100/min
+const isTestEnv = process.env.NODE_ENV === 'test' || process.env.E2E_TEST === '1';
+
+// Strict rate limit for login (5 failed attempts / 15 min) - brute force protection
+// skipSuccessfulRequests: true means only failed attempts count toward the limit
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: isTestEnv ? 1000 : 5, // High limit for tests
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+  skipSuccessfulRequests: true, // Only count failed login attempts
+});
+
+// General API rate limit (100 req/min)
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: isTestEnv ? 10000 : 100, // High limit for tests
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
 export function createApp(corsOrigin: string = 'http://localhost:5173'): express.Express {
   const app = express();
 
@@ -51,10 +77,34 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
     });
   }
 
-  // Middleware
+  // Middleware - Security headers
   app.use(helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },  // Allow images to be loaded cross-origin
+    // Content Security Policy - prevents XSS attacks
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"], // TipTap editor needs inline styles
+        imgSrc: ["'self'", "data:", "blob:", "https:"],
+        connectSrc: ["'self'", "wss:", "ws:"], // WebSocket connections
+        fontSrc: ["'self'", "data:"],
+        objectSrc: ["'none'"],
+        frameSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      }
+    },
+    // HTTP Strict Transport Security
+    hsts: {
+      maxAge: 31536000, // 1 year in seconds
+      includeSubDomains: true,
+      preload: true,
+    },
   }));
+
+  // Apply rate limiting to all API routes
+  app.use('/api/', apiLimiter);
   app.use(cors({
     origin: corsOrigin,
     credentials: true,
@@ -87,6 +137,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // Setup routes (CSRF protected - first-time setup only)
   app.use('/api/setup', csrfSynchronisedProtection, setupRoutes);
+
+  // Apply stricter rate limiting to login endpoint (brute force protection)
+  app.use('/api/auth/login', loginLimiter);
 
   // Apply CSRF protection to all state-changing API routes
   app.use('/api/auth', csrfSynchronisedProtection, authRoutes);

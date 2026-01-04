@@ -157,9 +157,13 @@ test.describe('Phase 1: Critical Violations', () => {
       await docLink.click()
       await page.waitForLoadState('networkidle')
 
-      // Sync status MUST have role="status" and aria-live="polite"
-      const syncStatus = page.locator('[role="status"]')
+      // Editor sync status MUST have role="status" and aria-live="polite"
+      // Note: Multiple status regions exist (sync status, pending count, etc.), so we target specifically
+      const syncStatus = page.locator('[data-testid="sync-status"]')
       await expect(syncStatus).toHaveCount(1)
+
+      // Verify it has the proper status role
+      expect(await syncStatus.getAttribute('role')).toBe('status')
 
       const ariaLive = await syncStatus.getAttribute('aria-live')
       expect(ariaLive).toBe('polite')
@@ -178,8 +182,8 @@ test.describe('Phase 1: Critical Violations', () => {
       await docLink.click()
       await page.waitForLoadState('networkidle')
 
-      // Find sr-only text in status region
-      const statusRegion = page.locator('[role="status"]')
+      // Find sr-only text in Editor sync status region
+      const statusRegion = page.locator('[data-testid="sync-status"]')
       const srText = statusRegion.locator('.sr-only')
 
       // Text must be one of the exact specified messages
@@ -1020,22 +1024,26 @@ test.describe('Phase 2: Serious Violations', () => {
       await page.goto('/docs')
       await page.waitForLoadState('networkidle')
 
-      // Click on any document in the sidebar tree (not main content tree)
-      // Use the sidebar tree which has aria-label containing "documents"
-      const sidebarTree = page.locator('[role="tree"][aria-label*="documents"]').first()
-      const docLink = sidebarTree.locator('a[href*="/docs/"]').first()
+      // Click on any document from the sidebar tree specifically
+      // Use the complementary landmark to find the sidebar
+      const sidebar = page.locator('[aria-label="Document list"]')
+      await expect(sidebar).toBeVisible({ timeout: 5000 })
+
+      const docLink = sidebar.locator('a[href*="/docs/"]').first()
       await expect(docLink).toBeVisible()
       const href = await docLink.getAttribute('href')
       await docLink.click()
+
+      // Wait for URL to change to the document page
+      await page.waitForURL(`**${href}`)
       await page.waitForLoadState('networkidle')
 
-      // That document MUST be marked as selected/current in the sidebar tree
-      // Re-fetch the sidebar tree after navigation to ensure fresh reference
-      const freshSidebarTree = page.locator('[role="tree"][aria-label*="documents"]').first()
-      const treeItem = freshSidebarTree.locator(`[role="treeitem"]:has(a[href="${href}"])`)
+      // Wait for the treeitem to become selected (React needs time to re-render)
+      // The treeitem should have aria-selected="true" when active
+      const selectedTreeItem = sidebar.locator(`[role="treeitem"]:has(a[href="${href}"])[aria-selected="true"]`)
 
-      // Use Playwright's built-in assertion with auto-retry for timing reliability
-      await expect(treeItem).toHaveAttribute('aria-selected', 'true')
+      // Wait up to 5 seconds for selection to appear
+      await expect(selectedTreeItem).toBeVisible({ timeout: 5000 })
     })
   })
 

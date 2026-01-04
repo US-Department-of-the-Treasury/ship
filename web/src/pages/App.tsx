@@ -115,7 +115,7 @@ export function AppLayout() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Skip link for keyboard/screen reader users - Section 508 compliance */}
       <a
         href="#main-content"
@@ -281,16 +281,13 @@ export function AppLayout() {
           <div className="flex w-56 flex-col h-full">
             {/* Sidebar header */}
             <div className="flex h-10 items-center justify-between border-b border-border px-3">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-medium text-foreground m-0">
-                  {activeMode === 'docs' && 'Docs'}
-                  {activeMode === 'issues' && 'Issues'}
-                  {activeMode === 'programs' && 'Programs'}
-                  {activeMode === 'team' && 'Teams'}
-                  {activeMode === 'settings' && 'Settings'}
-                </h2>
-                <PendingSyncCount />
-              </div>
+              <h2 className="text-sm font-medium text-foreground m-0">
+                {activeMode === 'docs' && 'Docs'}
+                {activeMode === 'issues' && 'Issues'}
+                {activeMode === 'programs' && 'Programs'}
+                {activeMode === 'team' && 'Teams'}
+                {activeMode === 'settings' && 'Settings'}
+              </h2>
               <div className="flex items-center gap-1">
                 {activeMode === 'docs' && (
                   <button
@@ -349,6 +346,9 @@ export function AppLayout() {
                 <div className="px-3 py-2 text-sm text-muted">Settings</div>
               )}
             </div>
+
+            {/* Subtle sync status at bottom */}
+            <PendingSyncCount />
           </div>
         </aside>
 
@@ -356,6 +356,10 @@ export function AppLayout() {
         <main id="main-content" className="flex flex-1 flex-col overflow-hidden" role="main" tabIndex={-1}>
           <Outlet />
         </main>
+
+        {/* Properties sidebar landmark - always present for proper accessibility structure */}
+        {/* Portal content from Editor will be rendered here via React Portal */}
+        <aside id="properties-portal" aria-label="Document properties" className="flex flex-col" />
       </div>
 
       {/* Command Palette (Cmd+K) */}
@@ -553,6 +557,7 @@ function DocumentTreeItem({
         <Link
           to={`/docs/${document.id}`}
           className="flex-1 truncate text-left cursor-pointer flex items-center gap-1"
+          aria-current={isActive ? 'page' : undefined}
         >
           <span className="truncate">{document.title || 'Untitled'}</span>
           {document.visibility === 'private' && (

@@ -98,6 +98,7 @@ export function DocumentTreeItem({
         <Link
           to={`/docs/${document.id}`}
           className="flex-1 truncate text-left cursor-pointer"
+          aria-current={isActive ? 'page' : undefined}
         >
           {document.title || 'Untitled'}
         </Link>

@@ -479,12 +479,28 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     );
   }
 
-  // Create a wiki document
-  await pool.query(
+  // Create wiki documents with nested structure for tree testing
+  const parentDocResult = await pool.query(
     `INSERT INTO documents (workspace_id, document_type, title, created_by)
-     VALUES ($1, 'wiki', 'Welcome to Ship', $2)`,
+     VALUES ($1, 'wiki', 'Welcome to Ship', $2)
+     RETURNING id`,
     [workspaceId, userId]
   );
+  const parentDocId = parentDocResult.rows[0].id;
+
+  // Create child documents to enable tree expand/collapse testing
+  const childDocs = [
+    { title: 'Getting Started' },
+    { title: 'Advanced Topics' },
+  ];
+
+  for (const child of childDocs) {
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, parent_id, created_by)
+       VALUES ($1, 'wiki', $2, $3, $4)`,
+      [workspaceId, child.title, parentDocId, userId]
+    );
+  }
 }
 
 /**
