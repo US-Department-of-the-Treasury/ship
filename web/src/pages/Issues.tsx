@@ -9,6 +9,7 @@ import { Combobox } from '@/components/ui/Combobox';
 import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { cn } from '@/lib/cn';
+import { issueStatusColors, priorityColors } from '@/lib/statusColors';
 
 const SORT_OPTIONS = [
   { value: 'updated', label: 'Updated' },
@@ -36,10 +37,7 @@ const PRIORITY_LABELS: Record<string, string> = {
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  urgent: 'text-red-400',
-  high: 'text-orange-400',
-  medium: 'text-yellow-400',
-  low: 'text-blue-400',
+  ...priorityColors,
   none: 'text-muted',
 };
 
@@ -491,14 +489,6 @@ function FilterTab({ label, active, onClick, id }: { label: string; active: bool
 }
 
 function StatusBadge({ state }: { state: string }) {
-  const colors: Record<string, string> = {
-    backlog: 'bg-gray-500/20 text-gray-400',
-    todo: 'bg-blue-500/20 text-blue-400',
-    in_progress: 'bg-yellow-500/20 text-yellow-400',
-    done: 'bg-green-500/20 text-green-400',
-    cancelled: 'bg-red-500/20 text-red-400',
-  };
-
   const label = STATE_LABELS[state] || state;
 
   return (
@@ -506,7 +496,7 @@ function StatusBadge({ state }: { state: string }) {
       data-status-indicator
       data-status={state}
       aria-label={`Status: ${label}`}
-      className={cn('inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium', colors[state] || colors.backlog)}
+      className={cn('inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[state] || issueStatusColors.backlog)}
     >
       <StatusIcon state={state} />
       {label}

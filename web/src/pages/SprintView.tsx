@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
+import { sprintStatusColors, priorityColors } from '@/lib/statusColors';
 
 interface Sprint {
   id: string;
@@ -376,14 +377,8 @@ export function SprintViewPage() {
 }
 
 function StatusBadge({ status }: { status: Sprint['status'] }) {
-  const colors: Record<string, string> = {
-    planned: 'bg-gray-500/20 text-gray-400',
-    active: 'bg-green-500/20 text-green-400',
-    completed: 'bg-blue-500/20 text-blue-400',
-  };
-
   return (
-    <span className={cn('rounded px-2 py-0.5 text-xs font-medium capitalize', colors[status])}>
+    <span className={cn('rounded px-2 py-0.5 text-xs font-medium capitalize', sprintStatusColors[status])}>
       {status}
     </span>
   );
@@ -408,11 +403,8 @@ function IssueCard({
     cancelled: 'bg-red-500',
   };
 
-  const priorityColors: Record<string, string> = {
-    urgent: 'text-red-400',
-    high: 'text-orange-400',
-    medium: 'text-yellow-400',
-    low: 'text-blue-400',
+  const localPriorityColors: Record<string, string> = {
+    ...priorityColors,
     none: 'text-muted',
   };
 
@@ -438,7 +430,7 @@ function IssueCard({
         <div className="flex items-center gap-2">
           <span className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state])} />
           <span className="text-xs font-mono text-muted">{issue.display_id}</span>
-          <span className={cn('text-xs', priorityColors[issue.priority])}>
+          <span className={cn('text-xs', localPriorityColors[issue.priority])}>
             {issue.priority !== 'none' && issue.priority.charAt(0).toUpperCase()}
           </span>
         </div>
