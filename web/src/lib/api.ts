@@ -14,11 +14,37 @@ interface ApiResponse<T> {
 // CSRF token cache for state-changing requests
 let csrfToken: string | null = null;
 
+// Helper: Check if response has JSON content type
+function isJsonResponse(response: Response): boolean {
+  const contentType = response.headers.get('content-type');
+  return contentType?.includes('application/json') ?? false;
+}
+
+// Handle session expiration - redirect to login with returnTo URL
+// Returns `never` because it always redirects or throws
+function handleSessionExpired(): never {
+  if (window.location.pathname !== '/login') {
+    const returnTo = encodeURIComponent(
+      window.location.pathname + window.location.search + window.location.hash
+    );
+    window.location.href = `/login?expired=true&returnTo=${returnTo}`;
+  }
+  // Throw to satisfy TypeScript's `never` type (redirect is async)
+  throw new Error('Session expired - redirecting to login');
+}
+
 async function ensureCsrfToken(): Promise<string> {
   if (!csrfToken) {
     const response = await fetch(`${API_URL}/api/csrf-token`, {
       credentials: 'include',
     });
+    if (!response.ok || !isJsonResponse(response)) {
+      // Session likely expired - redirect to login
+      if (response.status === 401 || response.status === 403) {
+        handleSessionExpired(); // never returns
+      }
+      throw new Error('Failed to get CSRF token');
+    }
     const data = await response.json();
     csrfToken = data.token;
   }
@@ -47,8 +73,15 @@ async function fetchWithCsrf(
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  // If CSRF token invalid, retry once
-  if (res.status === 403) {
+  const isJson = isJsonResponse(res);
+
+  // CloudFront intercepts 403s and returns HTML - detect and redirect to login
+  if (res.status === 403 && !isJson) {
+    handleSessionExpired(); // never returns
+  }
+
+  // If CSRF token invalid (403 with JSON), retry once
+  if (res.status === 403 && isJson) {
     clearCsrfToken();
     const newToken = await ensureCsrfToken();
     return fetch(`${API_URL}${endpoint}`, {
@@ -82,17 +115,6 @@ export async function apiDelete(endpoint: string): Promise<Response> {
   return fetchWithCsrf(endpoint, 'DELETE');
 }
 
-// Handle session expiration - redirect to login with returnTo URL
-function handleSessionExpired(): void {
-  // Don't redirect if already on login page
-  if (window.location.pathname === '/login') return;
-
-  const returnTo = encodeURIComponent(
-    window.location.pathname + window.location.search + window.location.hash
-  );
-  window.location.href = `/login?expired=true&returnTo=${returnTo}`;
-}
-
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -115,33 +137,38 @@ async function request<T>(
     headers,
   });
 
+  // CloudFront may intercept errors and return HTML - detect and redirect
+  if (!isJsonResponse(response)) {
+    handleSessionExpired(); // never returns
+  }
+
+  const data: ApiResponse<T> = await response.json();
+
   // Handle session expiration - redirect to login
   if (response.status === 401) {
-    const data = await response.json();
-    // Check for session expired error codes
     if (data.error?.code === 'SESSION_EXPIRED' || data.error?.code === 'UNAUTHORIZED') {
-      handleSessionExpired();
+      handleSessionExpired(); // never returns
     }
     return data;
   }
 
   // If CSRF token is invalid, clear and retry once
-  if (response.status === 403) {
-    const data = await response.json();
-    if (data.error?.code === 'CSRF_ERROR') {
-      csrfToken = null;
-      const token = await ensureCsrfToken();
-      headers['X-CSRF-Token'] = token;
-      const retryResponse = await fetch(`${API_URL}${endpoint}`, {
-        ...options,
-        credentials: 'include',
-        headers,
-      });
-      return retryResponse.json();
+  if (response.status === 403 && data.error?.code === 'CSRF_ERROR') {
+    clearCsrfToken();
+    const newToken = await ensureCsrfToken();
+    headers['X-CSRF-Token'] = newToken;
+    const retryResponse = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      credentials: 'include',
+      headers,
+    });
+    if (!isJsonResponse(retryResponse)) {
+      handleSessionExpired(); // never returns
     }
+    return retryResponse.json();
   }
 
-  return response.json();
+  return data;
 }
 
 // Types for workspace management
