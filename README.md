@@ -95,13 +95,16 @@ cd ship
 # 2. Install dependencies
 pnpm install
 
-# 3. Start the database
+# 3. Configure environment
+cp api/.env.example api/.env.local
+
+# 4. Start the database
 docker-compose up -d
 
-# 4. Create sample data
+# 5. Create sample data
 pnpm db:seed
 
-# 5. Start the application
+# 6. Start the application
 pnpm dev
 ```
 
