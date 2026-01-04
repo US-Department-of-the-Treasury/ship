@@ -10,7 +10,7 @@ The U.S. Department of the Treasury takes security seriously. If you discover a 
 
 Instead, please report vulnerabilities through one of these channels:
 
-1. **Email**: Send details to the repository maintainers
+1. **Email**: Sam Corcos (samuel.corcos@treasury.gov)
 2. **GitHub Security Advisories**: Use the "Report a vulnerability" button in the Security tab
 
 ### What to Include
