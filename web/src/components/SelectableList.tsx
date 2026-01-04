@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, ReactNode } from 'react';
+import { useState, useCallback, ReactNode } from 'react';
 import { useSelection, UseSelectionReturn } from '@/hooks/useSelection';
 import { cn } from '@/lib/cn';
 
@@ -66,7 +66,6 @@ export function SelectableList<T extends { id: string }>({
   columns,
   ariaLabel = 'Selectable list',
 }: SelectableListProps<T>) {
-  const tableRef = useRef<HTMLTableElement>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const selection = useSelection({
@@ -104,7 +103,6 @@ export function SelectableList<T extends { id: string }>({
   return (
     <>
       <table
-        ref={tableRef}
         className="w-full"
         role="grid"
         aria-multiselectable={selectable ? 'true' : undefined}
