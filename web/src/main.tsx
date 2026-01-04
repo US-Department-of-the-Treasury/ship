@@ -1,6 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { queryClient, queryPersister, loadPendingMutations } from '@/lib/queryClient';
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -28,6 +32,22 @@ import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
 import { InviteAcceptPage } from '@/pages/InviteAccept';
 import { SetupPage } from '@/pages/Setup';
 import './index.css';
+
+// Load pending mutations from IndexedDB on startup
+loadPendingMutations();
+
+// Register service worker for offline support
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.log('[App] Service Worker registered:', registration.scope);
+      })
+      .catch((error) => {
+        console.log('[App] Service Worker registration failed:', error);
+      });
+  });
+}
 
 function PlaceholderPage({ title, subtitle }: { title: string; subtitle: string }) {
   return (
@@ -154,8 +174,14 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister: queryPersister }}
+    >
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+      <ReactQueryDevtools initialIsOpen={false} />
+    </PersistQueryClientProvider>
   </React.StrictMode>
 );

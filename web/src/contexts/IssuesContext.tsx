@@ -1,31 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
+import { createContext, useContext, ReactNode } from 'react';
+import { useIssues as useIssuesQuery, Issue } from '@/hooks/useIssuesQuery';
 
-export interface Issue {
-  id: string;
-  title: string;
-  state: string;
-  priority: string;
-  ticket_number: number;
-  display_id: string;
-  assignee_id: string | null;
-  assignee_name: string | null;
-  estimate: number | null;
-  program_id: string | null;
-  sprint_id: string | null;
-  program_name: string | null;
-  program_prefix: string | null;
-  sprint_name: string | null;
-  source: 'internal' | 'feedback';
-  rejection_reason: string | null;
-  created_at?: string;
-  updated_at?: string;
-  created_by?: string;
-  started_at?: string | null;
-  completed_at?: string | null;
-  cancelled_at?: string | null;
-  reopened_at?: string | null;
-}
+export type { Issue };
 
 interface IssuesContextValue {
   issues: Issue[];
@@ -38,58 +14,10 @@ interface IssuesContextValue {
 const IssuesContext = createContext<IssuesContextValue | null>(null);
 
 export function IssuesProvider({ children }: { children: ReactNode }) {
-  const [issues, setIssues] = useState<Issue[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const refreshIssues = useCallback(async () => {
-    try {
-      const res = await apiGet('/api/issues');
-      if (res.ok) {
-        const data = await res.json();
-        setIssues(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch issues:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshIssues();
-  }, [refreshIssues]);
-
-  const createIssue = useCallback(async (): Promise<Issue | null> => {
-    try {
-      const res = await apiPost('/api/issues', { title: 'Untitled' });
-      if (res.ok) {
-        const issue = await res.json();
-        setIssues(prev => [issue, ...prev]);
-        return issue;
-      }
-    } catch (err) {
-      console.error('Failed to create issue:', err);
-    }
-    return null;
-  }, []);
-
-  const updateIssue = useCallback(async (id: string, updates: Partial<Issue>): Promise<Issue | null> => {
-    try {
-      const res = await apiPatch(`/api/issues/${id}`, updates);
-      if (res.ok) {
-        const updated = await res.json();
-        // Update the issue in the shared state
-        setIssues(prev => prev.map(i => i.id === id ? updated : i));
-        return updated;
-      }
-    } catch (err) {
-      console.error('Failed to update issue:', err);
-    }
-    return null;
-  }, []);
+  const issuesData = useIssuesQuery();
 
   return (
-    <IssuesContext.Provider value={{ issues, loading, createIssue, updateIssue, refreshIssues }}>
+    <IssuesContext.Provider value={issuesData}>
       {children}
     </IssuesContext.Provider>
   );

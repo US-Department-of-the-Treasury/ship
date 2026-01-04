@@ -349,6 +349,7 @@ export function Editor({
             aria-live="polite"
             aria-atomic="true"
             className="flex items-center gap-1.5"
+            data-testid="sync-status"
           >
             <div
               className={cn(
@@ -386,7 +387,7 @@ export function Editor({
           )}
 
         {/* Connected users */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1" data-testid="collab-status">
           {connectedUsers.map((user, index) => (
             <div
               key={index}
@@ -427,7 +428,7 @@ export function Editor({
               placeholder="Untitled"
               className="mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none pl-8"
             />
-            <div className="tiptap-wrapper">
+            <div className="tiptap-wrapper" data-testid="tiptap-editor">
               <EditorContent editor={editor} />
             </div>
           </div>

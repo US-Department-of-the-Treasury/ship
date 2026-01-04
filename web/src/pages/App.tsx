@@ -6,11 +6,18 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
+import { documentKeys } from '@/hooks/useDocumentsQuery';
+import { issueKeys } from '@/hooks/useIssuesQuery';
+import { programKeys } from '@/hooks/useProgramsQuery';
 import { cn } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
 import { SessionTimeoutModal } from '@/components/SessionTimeoutModal';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
+import { OfflineIndicator } from '@/components/OfflineIndicator';
+import { PendingSyncCount } from '@/components/PendingSyncCount';
+import { PendingSyncIcon } from '@/components/PendingSyncIcon';
+import { StaleDataBanner } from '@/components/StaleDataBanner';
 
 type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
 
@@ -116,6 +123,23 @@ export function AppLayout() {
       >
         Skip to main content
       </a>
+
+      {/* Offline indicator banner */}
+      <div className="flex justify-center">
+        <OfflineIndicator />
+      </div>
+
+      {/* Stale data banner */}
+      <div className="flex justify-center">
+        <StaleDataBanner
+          queryKey={
+            activeMode === 'docs' ? documentKeys.wikiList() :
+            activeMode === 'issues' ? issueKeys.lists() :
+            activeMode === 'programs' ? programKeys.lists() :
+            undefined
+          }
+        />
+      </div>
 
       {/* Impersonation banner */}
       {impersonating && (
@@ -257,13 +281,16 @@ export function AppLayout() {
           <div className="flex w-56 flex-col h-full">
             {/* Sidebar header */}
             <div className="flex h-10 items-center justify-between border-b border-border px-3">
-              <h2 className="text-sm font-medium text-foreground m-0">
-                {activeMode === 'docs' && 'Documents'}
-                {activeMode === 'issues' && 'Issues'}
-                {activeMode === 'programs' && 'Programs'}
-                {activeMode === 'team' && 'Teams'}
-                {activeMode === 'settings' && 'Settings'}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-medium text-foreground m-0">
+                  {activeMode === 'docs' && 'Docs'}
+                  {activeMode === 'issues' && 'Issues'}
+                  {activeMode === 'programs' && 'Programs'}
+                  {activeMode === 'team' && 'Teams'}
+                  {activeMode === 'settings' && 'Settings'}
+                </h2>
+                <PendingSyncCount />
+              </div>
               <div className="flex items-center gap-1">
                 {activeMode === 'docs' && (
                   <button
@@ -369,7 +396,7 @@ function DocumentsTree({ documents, activeId, onSelect }: { documents: WikiDocum
   }
 
   return (
-    <ul role="tree" aria-label="Document tree" className="space-y-0.5 px-2">
+    <ul role="tree" aria-label="Document tree" className="space-y-0.5 px-2" data-testid="document-list">
       {tree.map((doc) => (
         <DocumentTreeItem
           key={doc.id}
@@ -425,6 +452,7 @@ function DocumentTreeItem({
       aria-expanded={hasChildren ? isOpen : undefined}
       aria-selected={isActive}
       data-tree-item
+      data-testid="doc-item"
     >
       <div
         className={cn(
@@ -458,6 +486,10 @@ function DocumentTreeItem({
         >
           {document.title || 'Untitled'}
         </Link>
+        {/* Pending sync indicator */}
+        {'_pending' in document && document._pending && (
+          <PendingSyncIcon isPending={true} />
+        )}
       </div>
 
       {/* Children (collapsible) */}
@@ -513,9 +545,9 @@ function IssuesList({ issues, activeId }: { issues: Issue[]; activeId?: string }
   };
 
   return (
-    <ul className="space-y-0.5 px-2">
+    <ul className="space-y-0.5 px-2" data-testid="issues-list">
       {issues.map((issue) => (
-        <li key={issue.id}>
+        <li key={issue.id} data-testid="issue-item">
           <Link
             to={`/issues/${issue.id}`}
             className={cn(
@@ -526,7 +558,10 @@ function IssuesList({ issues, activeId }: { issues: Issue[]; activeId?: string }
             )}
           >
             <span className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state] || stateColors.backlog)} />
-            <span className="truncate">{issue.title || 'Untitled'}</span>
+            <span className="flex-1 truncate">{issue.title || 'Untitled'}</span>
+            {'_pending' in issue && issue._pending && (
+              <PendingSyncIcon isPending={true} />
+            )}
           </Link>
         </li>
       ))}
@@ -540,9 +575,9 @@ function ProgramsList({ programs, activeId, onSelect }: { programs: Program[]; a
   }
 
   return (
-    <ul className="space-y-0.5 px-2">
+    <ul className="space-y-0.5 px-2" data-testid="programs-list">
       {programs.map((program) => (
-        <li key={program.id}>
+        <li key={program.id} data-testid="program-item">
           <button
             onClick={() => onSelect(program.id)}
             className={cn(
@@ -558,7 +593,10 @@ function ProgramsList({ programs, activeId, onSelect }: { programs: Program[]; a
             >
               {program.prefix.slice(0, 2)}
             </span>
-            <span className="truncate">{program.name}</span>
+            <span className="flex-1 truncate">{program.name}</span>
+            {'_pending' in program && program._pending && (
+              <PendingSyncIcon isPending={true} />
+            )}
           </button>
         </li>
       ))}
