@@ -19,6 +19,15 @@ async function ensureCsrfToken(): Promise<string> {
     const response = await fetch(`${API_URL}/api/csrf-token`, {
       credentials: 'include',
     });
+    // Check if response is JSON before parsing
+    const contentType = response.headers.get('content-type');
+    if (!response.ok || !contentType?.includes('application/json')) {
+      // Session likely expired - redirect to login
+      if (response.status === 401 || response.status === 403) {
+        handleSessionExpired();
+      }
+      throw new Error('Failed to get CSRF token');
+    }
     const data = await response.json();
     csrfToken = data.token;
   }
@@ -47,8 +56,18 @@ async function fetchWithCsrf(
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  // If CSRF token invalid, retry once
-  if (res.status === 403) {
+  // Check if response is JSON - CloudFront may intercept 403s and return HTML
+  const contentType = res.headers.get('content-type');
+  const isJson = contentType?.includes('application/json');
+
+  // If response is not JSON (CloudFront intercepted it), treat as session expired
+  if (!isJson && (res.status === 403 || res.status === 404 || res.status === 200)) {
+    handleSessionExpired();
+    throw new Error('Session expired');
+  }
+
+  // If CSRF token invalid (403 with JSON), retry once
+  if (res.status === 403 && isJson) {
     clearCsrfToken();
     const newToken = await ensureCsrfToken();
     return fetch(`${API_URL}${endpoint}`, {
@@ -93,6 +112,16 @@ function handleSessionExpired(): void {
   window.location.href = `/login?expired=true&returnTo=${returnTo}`;
 }
 
+// Helper to safely parse JSON response, handling CloudFront HTML interception
+async function safeJsonParse<T>(response: Response): Promise<T | null> {
+  const contentType = response.headers.get('content-type');
+  if (!contentType?.includes('application/json')) {
+    // CloudFront may have intercepted the response and returned HTML
+    return null;
+  }
+  return response.json();
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -115,9 +144,22 @@ async function request<T>(
     headers,
   });
 
+  // Check if response is JSON - CloudFront may intercept errors and return HTML
+  const data = await safeJsonParse<ApiResponse<T>>(response);
+  if (data === null) {
+    // Got HTML instead of JSON - session likely expired (CloudFront intercepted 403)
+    handleSessionExpired();
+    return {
+      success: false,
+      error: {
+        code: 'SESSION_EXPIRED',
+        message: 'Session expired',
+      },
+    };
+  }
+
   // Handle session expiration - redirect to login
   if (response.status === 401) {
-    const data = await response.json();
     // Check for session expired error codes
     if (data.error?.code === 'SESSION_EXPIRED' || data.error?.code === 'UNAUTHORIZED') {
       handleSessionExpired();
@@ -126,22 +168,30 @@ async function request<T>(
   }
 
   // If CSRF token is invalid, clear and retry once
-  if (response.status === 403) {
-    const data = await response.json();
-    if (data.error?.code === 'CSRF_ERROR') {
-      csrfToken = null;
-      const token = await ensureCsrfToken();
-      headers['X-CSRF-Token'] = token;
-      const retryResponse = await fetch(`${API_URL}${endpoint}`, {
-        ...options,
-        credentials: 'include',
-        headers,
-      });
-      return retryResponse.json();
+  if (response.status === 403 && data.error?.code === 'CSRF_ERROR') {
+    csrfToken = null;
+    const token = await ensureCsrfToken();
+    headers['X-CSRF-Token'] = token;
+    const retryResponse = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      credentials: 'include',
+      headers,
+    });
+    const retryData = await safeJsonParse<ApiResponse<T>>(retryResponse);
+    if (retryData === null) {
+      handleSessionExpired();
+      return {
+        success: false,
+        error: {
+          code: 'SESSION_EXPIRED',
+          message: 'Session expired',
+        },
+      };
     }
+    return retryData;
   }
 
-  return response.json();
+  return data;
 }
 
 // Types for workspace management
