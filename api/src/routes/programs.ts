@@ -46,24 +46,14 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-// Helper to generate random prefix
-function generatePrefix(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let result = 'PRG';
-  for (let i = 0; i < 5; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
 // Helper to extract program from row
 function extractProgramFromRow(row: any) {
   const props = row.properties || {};
   return {
     id: row.id,
     name: row.title,
-    prefix: props.prefix || null,
     color: props.color || '#6366f1',
+    emoji: props.emoji || null,
     archived_at: row.archived_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -81,13 +71,14 @@ function extractProgramFromRow(row: any) {
 // Validation schemas
 const createProgramSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
-  prefix: z.string().min(2).max(10).regex(/^[A-Z]+$/, 'Prefix must be uppercase letters only').optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#6366f1'),
+  emoji: z.string().max(10).optional().nullable(),
 });
 
 const updateProgramSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  emoji: z.string().max(10).optional().nullable(),
   owner_id: z.string().uuid().optional().nullable(),
   archived_at: z.string().datetime().optional().nullable(),
 });
@@ -175,39 +166,15 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, color } = parsed.data;
-    let prefix = parsed.data.prefix;
-
-    // Generate prefix if not provided, ensuring uniqueness
-    if (!prefix) {
-      let attempts = 0;
-      while (attempts < 10) {
-        prefix = generatePrefix();
-        const existingPrefix = await pool.query(
-          `SELECT id FROM documents WHERE workspace_id = $1 AND properties->>'prefix' = $2 AND document_type = 'program'`,
-          [req.user!.workspaceId, prefix]
-        );
-        if (existingPrefix.rows.length === 0) break;
-        attempts++;
-      }
-    } else {
-      // Check prefix uniqueness if explicitly provided
-      const existingPrefix = await pool.query(
-        `SELECT id FROM documents WHERE workspace_id = $1 AND properties->>'prefix' = $2 AND document_type = 'program'`,
-        [req.user!.workspaceId, prefix]
-      );
-
-      if (existingPrefix.rows.length > 0) {
-        res.status(400).json({ error: 'Program prefix already exists' });
-        return;
-      }
-    }
+    const { title, color, emoji } = parsed.data;
 
     // Build properties JSONB
-    const properties = {
-      prefix,
+    const properties: Record<string, unknown> = {
       color: color || '#6366f1',
     };
+    if (emoji) {
+      properties.emoji = emoji;
+    }
 
     const result = await pool.query(
       `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
@@ -280,6 +247,11 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 
     if (data.color !== undefined) {
       newProps.color = data.color;
+      propsChanged = true;
+    }
+
+    if (data.emoji !== undefined) {
+      newProps.emoji = data.emoji;
       propsChanged = true;
     }
 
@@ -384,7 +356,7 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
 
     // Verify program exists and user can access it
     const programExists = await pool.query(
-      `SELECT id, properties->>'prefix' as prefix FROM documents
+      `SELECT id FROM documents
        WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'
          AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
@@ -394,8 +366,6 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
       res.status(404).json({ error: 'Program not found' });
       return;
     }
-
-    const prefix = programExists.rows[0].prefix;
 
     // Also filter the issues by visibility
     const result = await pool.query(

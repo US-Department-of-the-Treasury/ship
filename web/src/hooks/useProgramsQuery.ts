@@ -11,8 +11,8 @@ export interface ProgramOwner {
 export interface Program {
   id: string;
   name: string;
-  prefix: string;
   color: string;
+  emoji?: string | null;
   archived_at: string | null;
   issue_count?: number;
   sprint_count?: number;
@@ -96,8 +96,8 @@ export function useCreateProgram() {
       const optimisticProgram: Program = {
         id: optimisticId,
         name: newProgram?.title ?? 'Untitled',
-        prefix: 'NEW',
         color: '#6B7280',
+        emoji: null,
         archived_at: null,
         issue_count: 0,
         sprint_count: 0,
@@ -205,8 +205,8 @@ export function usePrograms() {
       const optimisticProgram: Program = {
         id: optimisticId,
         name: 'Untitled',
-        prefix: 'NEW',
         color: '#6B7280',
+        emoji: null,
         archived_at: null,
         issue_count: 0,
         sprint_count: 0,

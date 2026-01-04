@@ -59,18 +59,18 @@ test.describe('Programs', () => {
     expect(newCount).toBeGreaterThanOrEqual(initialCount)
   })
 
-  test('program editor has Overview tab with prefix and color properties', async ({ page }) => {
+  test('program editor has Overview tab with icon and color properties', async ({ page }) => {
     await page.goto('/programs')
 
     // Create new program
     await page.getByRole('button', { name: /new program/i }).click()
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Should see Overview button (default tab)
-    await expect(page.getByRole('button', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
+    // Should see Overview tab (default tab)
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
 
-    // Should see prefix label in properties sidebar
-    await expect(page.getByText('Prefix')).toBeVisible({ timeout: 5000 })
+    // Should see icon label in properties sidebar (emoji picker)
+    await expect(page.getByText('Icon')).toBeVisible({ timeout: 5000 })
 
     // Should see color label for color picker
     await expect(page.getByText('Color')).toBeVisible({ timeout: 5000 })
@@ -83,12 +83,12 @@ test.describe('Programs', () => {
     await page.getByRole('button', { name: /new program/i }).click()
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Should see all tab buttons (scoped to main to avoid icon rail)
+    // Should see all tabs (scoped to main to avoid icon rail)
     const main = page.locator('main')
-    await expect(main.getByRole('button', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
-    await expect(main.getByRole('button', { name: 'Issues' })).toBeVisible({ timeout: 5000 })
-    await expect(main.getByRole('button', { name: 'Sprints' })).toBeVisible({ timeout: 5000 })
-    await expect(main.getByRole('button', { name: 'Feedback' })).toBeVisible({ timeout: 5000 })
+    await expect(main.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
+    await expect(main.getByRole('tab', { name: 'Issues' })).toBeVisible({ timeout: 5000 })
+    await expect(main.getByRole('tab', { name: 'Sprints' })).toBeVisible({ timeout: 5000 })
+    await expect(main.getByRole('tab', { name: 'Feedback' })).toBeVisible({ timeout: 5000 })
   })
 
   test('can switch between program tabs', async ({ page }) => {
@@ -102,19 +102,19 @@ test.describe('Programs', () => {
     const main = page.locator('main')
 
     // Click Issues tab
-    await main.getByRole('button', { name: 'Issues' }).click()
+    await main.getByRole('tab', { name: 'Issues' }).click()
 
     // Should see New Issue button in issues tab
     await expect(page.getByRole('button', { name: 'New Issue' })).toBeVisible({ timeout: 5000 })
 
     // Click Sprints tab
-    await main.getByRole('button', { name: 'Sprints' }).click()
+    await main.getByRole('tab', { name: 'Sprints' }).click()
 
-    // Should see New Sprint button
-    await expect(page.getByRole('button', { name: /new sprint/i })).toBeVisible({ timeout: 5000 })
+    // Should see Create sprint link in the timeline
+    await expect(page.getByText(/\+ Create sprint/).first()).toBeVisible({ timeout: 5000 })
 
     // Click Feedback tab
-    await main.getByRole('button', { name: 'Feedback' }).click()
+    await main.getByRole('tab', { name: 'Feedback' }).click()
 
     // Should see Give Feedback button
     await expect(page.getByRole('button', { name: /give feedback/i })).toBeVisible({ timeout: 5000 })
@@ -128,7 +128,7 @@ test.describe('Programs', () => {
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Click Issues tab (scoped to main to avoid icon rail)
-    await page.locator('main').getByRole('button', { name: 'Issues' }).click()
+    await page.locator('main').getByRole('tab', { name: 'Issues' }).click()
 
     // Should see view toggle buttons (list/kanban)
     const viewToggle = page.locator('.flex.rounded-md.border')
@@ -146,12 +146,10 @@ test.describe('Programs', () => {
 
     // Wait for program editor to fully load - verify we have the tab bar
     const main = page.locator('main')
-    await expect(main.getByRole('button', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
+    await expect(main.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
 
-    // Click Issues tab by finding the text "Issues" within main's buttons
-    // that are NOT the "New Issue" button (which contains "New")
-    const issuesTab = main.locator('button:has-text("Issues"):not(:has-text("New"))')
-    await issuesTab.click()
+    // Click Issues tab
+    await main.getByRole('tab', { name: 'Issues' }).click()
 
     // Should see New Issue button in the tab content
     await expect(main.getByRole('button', { name: 'New Issue' })).toBeVisible({ timeout: 5000 })
@@ -174,19 +172,18 @@ test.describe('Programs', () => {
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Click Sprints tab
-    await page.getByRole('button', { name: 'Sprints' }).click()
+    await page.getByRole('tab', { name: 'Sprints' }).click()
 
-    // Click New Sprint button
-    await page.getByRole('button', { name: /new sprint/i }).click()
+    // Click Create sprint in the timeline
+    await page.getByText(/\+ Create sprint/).first().click()
 
-    // Should show sprint creation modal
+    // Should show sprint creation modal with heading and owner selection
     await expect(page.getByRole('heading', { name: /create sprint/i })).toBeVisible({ timeout: 5000 })
 
-    // Modal should have Name, Goal, Start Date, End Date fields
-    await expect(page.getByText('Name')).toBeVisible()
-    await expect(page.getByText('Goal')).toBeVisible()
-    await expect(page.getByText('Start Date')).toBeVisible()
-    await expect(page.getByText('End Date')).toBeVisible()
+    // Modal should have owner selection and action buttons
+    await expect(page.getByText(/who should own this sprint/i)).toBeVisible()
+    await expect(page.getByRole('button', { name: /cancel/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /create/i })).toBeVisible()
   })
 
   test('sprint creation modal can be closed', async ({ page }) => {
@@ -197,10 +194,10 @@ test.describe('Programs', () => {
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Click Sprints tab
-    await page.getByRole('button', { name: 'Sprints' }).click()
+    await page.getByRole('tab', { name: 'Sprints' }).click()
 
     // Open sprint creation modal
-    await page.getByRole('button', { name: /new sprint/i }).click()
+    await page.getByText(/\+ Create sprint/).first().click()
     await expect(page.getByRole('heading', { name: /create sprint/i })).toBeVisible({ timeout: 5000 })
 
     // Click Cancel
@@ -290,7 +287,7 @@ test.describe('Programs', () => {
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Click Feedback tab
-    await page.getByRole('button', { name: 'Feedback' }).click()
+    await page.getByRole('tab', { name: 'Feedback' }).click()
 
     // Should see filter buttons (New, Accepted, Rejected, All, Drafts)
     await expect(page.getByRole('button', { name: 'New' })).toBeVisible({ timeout: 5000 })
@@ -308,7 +305,7 @@ test.describe('Programs', () => {
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Click Feedback tab
-    await page.getByRole('button', { name: 'Feedback' }).click()
+    await page.getByRole('tab', { name: 'Feedback' }).click()
 
     // Click Give Feedback button
     await page.getByRole('button', { name: /give feedback/i }).click()
@@ -317,16 +314,16 @@ test.describe('Programs', () => {
     await expect(page).toHaveURL(/\/feedback\/[a-f0-9-]+/, { timeout: 5000 })
   })
 
-  test('program cards show prefix badges', async ({ page }) => {
+  test('program cards show emoji or initial badges', async ({ page }) => {
     await page.goto('/programs')
 
     // Wait for programs to load
     await page.waitForTimeout(500)
 
-    // If there are program cards, they should show prefix badges (2-letter codes)
+    // If there are program cards, they should show badges (emoji or first letter)
     const programCards = page.locator('button:has-text("issues")')
     if (await programCards.count() > 0) {
-      // Each card should have a colored badge with 2 letters
+      // Each card should have a colored badge
       const badge = programCards.first().locator('.rounded-lg.text-sm.font-bold')
       await expect(badge).toBeVisible({ timeout: 2000 })
     }

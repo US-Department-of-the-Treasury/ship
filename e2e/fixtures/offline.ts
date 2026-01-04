@@ -141,7 +141,7 @@ async function getSessionCookies(page: Page): Promise<string> {
 // Interface for test data created by seedOfflineTestData
 interface OfflineTestData {
   wikis: Array<{ id: string; title: string }>
-  programs: Array<{ id: string; title: string; prefix: string }>
+  programs: Array<{ id: string; title: string }>
   issues: Array<{ id: string; title: string; ticket_number: number }>
 }
 

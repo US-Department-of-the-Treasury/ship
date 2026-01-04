@@ -664,7 +664,7 @@ function ProgramsList({ programs, activeId, onSelect }: { programs: Program[]; a
               className="h-4 w-4 rounded flex-shrink-0 flex items-center justify-center text-[10px] font-bold"
               style={{ backgroundColor: program.color, color: getContrastTextColor(program.color) }}
             >
-              {program.prefix.slice(0, 2)}
+              {program.emoji || program.name?.[0]?.toUpperCase() || '?'}
             </span>
             <span className="flex-1 truncate">{program.name}</span>
             {'_pending' in program && program._pending && (
