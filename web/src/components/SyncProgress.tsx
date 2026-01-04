@@ -32,6 +32,7 @@ export function SyncProgress({ totalToSync }: SyncProgressProps) {
       className="flex items-center gap-2 text-sm text-gray-600"
       role="status"
       aria-live="polite"
+      aria-atomic="true"
     >
       <svg
         className="h-4 w-4 animate-spin"

@@ -150,7 +150,7 @@ export function DocumentsPage() {
           </div>
         </div>
       ) : (
-        <div className="space-y-0.5">
+        <ul role="tree" aria-label="Documents" className="space-y-0.5">
           {documentTree.map((doc) => (
             <DocumentTreeItem
               key={doc.id}
@@ -158,7 +158,7 @@ export function DocumentsPage() {
               onCreateChild={handleCreateDocument}
             />
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

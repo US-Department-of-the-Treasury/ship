@@ -356,6 +356,10 @@ export function AppLayout() {
         <main id="main-content" className="flex flex-1 flex-col overflow-hidden" role="main" tabIndex={-1}>
           <Outlet />
         </main>
+
+        {/* Properties sidebar landmark - always present for proper accessibility structure */}
+        {/* Portal content from Editor will be rendered here via React Portal */}
+        <aside id="properties-portal" aria-label="Document properties" className="flex flex-col" />
       </div>
 
       {/* Command Palette (Cmd+K) */}
@@ -553,6 +557,7 @@ function DocumentTreeItem({
         <Link
           to={`/docs/${document.id}`}
           className="flex-1 truncate text-left cursor-pointer flex items-center gap-1"
+          aria-current={isActive ? 'page' : undefined}
         >
           <span className="truncate">{document.title || 'Untitled'}</span>
           {document.visibility === 'private' && (
