@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { ProgramsListSkeleton } from '@/components/ui/Skeleton';
+import { getContrastTextColor } from '@/lib/cn';
 
 export function ProgramsPage() {
   const navigate = useNavigate();
@@ -90,8 +91,8 @@ function ProgramCard({ program, onClick }: { program: Program; onClick: () => vo
     >
       <div className="flex items-center gap-3">
         <div
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold text-white"
-          style={{ backgroundColor: program.color }}
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold"
+          style={{ backgroundColor: program.color, color: getContrastTextColor(program.color) }}
         >
           {program.prefix.slice(0, 2)}
         </div>
