@@ -115,7 +115,7 @@ export function AppLayout() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Skip link for keyboard/screen reader users - Section 508 compliance */}
       <a
         href="#main-content"
