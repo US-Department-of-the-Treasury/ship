@@ -370,12 +370,13 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
   );
 
   // Create programs (matching full seed)
+  // 'key' is used for test referencing only, not stored in database
   const programs = [
-    { prefix: 'SHIP', name: 'Ship Core', color: '#3B82F6' },
-    { prefix: 'AUTH', name: 'Authentication', color: '#8B5CF6' },
-    { prefix: 'API', name: 'API Platform', color: '#10B981' },
-    { prefix: 'UI', name: 'Design System', color: '#F59E0B' },
-    { prefix: 'INFRA', name: 'Infrastructure', color: '#EF4444' },
+    { key: 'SHIP', name: 'Ship Core', color: '#3B82F6' },
+    { key: 'AUTH', name: 'Authentication', color: '#8B5CF6' },
+    { key: 'API', name: 'API Platform', color: '#10B981' },
+    { key: 'UI', name: 'Design System', color: '#F59E0B' },
+    { key: 'INFRA', name: 'Infrastructure', color: '#EF4444' },
   ];
 
   const programIds: Record<string, string> = {};
@@ -384,9 +385,9 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
       `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
        VALUES ($1, 'program', $2, $3, $4)
        RETURNING id`,
-      [workspaceId, prog.name, JSON.stringify({ prefix: prog.prefix, color: prog.color }), userId]
+      [workspaceId, prog.name, JSON.stringify({ color: prog.color }), userId]
     );
-    programIds[prog.prefix] = result.rows[0].id;
+    programIds[prog.key] = result.rows[0].id;
   }
 
   // Calculate current sprint number
@@ -397,7 +398,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
   // Create sprints for each program (current-2 to current+2)
   const sprintIds: Record<string, Record<number, string>> = {};
   for (const prog of programs) {
-    sprintIds[prog.prefix] = {};
+    sprintIds[prog.key] = {};
     for (let sprintNum = currentSprintNumber - 2; sprintNum <= currentSprintNumber + 2; sprintNum++) {
       if (sprintNum > 0) {
         const result = await pool.query(
@@ -407,12 +408,12 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
           [
             workspaceId,
             `Sprint ${sprintNum}`,
-            programIds[prog.prefix],
+            programIds[prog.key],
             JSON.stringify({ sprint_number: sprintNum, owner_id: userId }),
             userId,
           ]
         );
-        sprintIds[prog.prefix][sprintNum] = result.rows[0].id;
+        sprintIds[prog.key][sprintNum] = result.rows[0].id;
       }
     }
   }
@@ -462,7 +463,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
   }
 
   // Create a few issues for other programs too
-  for (const prog of programs.filter(p => p.prefix !== 'SHIP')) {
+  for (const prog of programs.filter(p => p.key !== 'SHIP')) {
     ticketNumber++;
     await pool.query(
       `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number, created_by)
@@ -470,8 +471,8 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
       [
         workspaceId,
         `${prog.name} initial setup`,
-        programIds[prog.prefix],
-        sprintIds[prog.prefix][currentSprintNumber] || null,
+        programIds[prog.key],
+        sprintIds[prog.key][currentSprintNumber] || null,
         JSON.stringify({ state: 'in_progress', priority: 'medium', source: 'internal', assignee_id: userId }),
         ticketNumber,
         userId,

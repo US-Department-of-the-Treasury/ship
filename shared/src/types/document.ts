@@ -43,14 +43,14 @@ export interface IssueProperties {
 }
 
 export interface ProgramProperties {
-  prefix: string;
   color: string;
+  emoji?: string | null;  // Optional emoji for visual identification
   [key: string]: unknown;
 }
 
 export interface ProjectProperties {
-  prefix: string;
   color: string;
+  emoji?: string | null;  // Optional emoji for visual identification
   [key: string]: unknown;
 }
 
@@ -198,8 +198,8 @@ export interface UpdateIssueInput extends UpdateDocumentInput {
 export interface CreateProgramInput extends CreateDocumentInput {
   document_type: 'program';
   properties: {
-    prefix: string;
     color?: string;
+    emoji?: string | null;
   };
 }
 

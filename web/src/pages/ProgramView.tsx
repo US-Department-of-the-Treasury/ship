@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { cn } from '@/lib/cn';
+import { cn, getContrastTextColor } from '@/lib/cn';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
+import { EmojiPickerPopover } from '@/components/EmojiPicker';
 
 interface Program {
   id: string;
   name: string;
   description: string | null;
-  prefix: string;
   color: string;
+  emoji?: string | null;
   issue_count: number;
   sprint_count: number;
   archived_at: string | null;
@@ -248,14 +249,13 @@ export function ProgramViewPage() {
           </svg>
         </button>
         <div
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-sm text-white"
           style={{ backgroundColor: program.color }}
         >
-          {program.prefix.slice(0, 2)}
+          {program.emoji || program.name?.[0]?.toUpperCase() || '?'}
         </div>
         <div>
           <h1 className="text-lg font-semibold text-foreground">{program.name}</h1>
-          <p className="text-xs text-muted">{program.prefix}</p>
         </div>
       </div>
 
@@ -437,8 +437,25 @@ function ProgramSettings({ program, onUpdate }: { program: Program; onUpdate: (u
     onUpdate({ name, description: description || null });
   };
 
+  const handleEmojiChange = (emoji: string | null) => {
+    onUpdate({ emoji });
+  };
+
   return (
     <div className="p-6 max-w-xl space-y-6">
+      <div>
+        <label className="mb-1 block text-sm font-medium text-muted">Icon</label>
+        <EmojiPickerPopover value={program.emoji} onChange={handleEmojiChange}>
+          <div
+            className="flex h-12 w-12 items-center justify-center rounded-lg text-xl cursor-pointer hover:ring-2 hover:ring-accent transition-all"
+            style={{ backgroundColor: program.color, color: getContrastTextColor(program.color) }}
+          >
+            {program.emoji || program.name?.[0]?.toUpperCase() || '?'}
+          </div>
+        </EmojiPickerPopover>
+        <p className="mt-1 text-xs text-muted">Click to change emoji</p>
+      </div>
+
       <div>
         <label className="mb-1 block text-sm font-medium text-muted">Name</label>
         <input
@@ -457,17 +474,6 @@ function ProgramSettings({ program, onUpdate }: { program: Program; onUpdate: (u
           rows={3}
           className="w-full rounded-md border border-border bg-background px-3 py-2 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
-      </div>
-
-      <div>
-        <label className="mb-1 block text-sm font-medium text-muted">Prefix</label>
-        <input
-          type="text"
-          value={program.prefix}
-          disabled
-          className="w-full rounded-md border border-border bg-border/50 px-3 py-2 text-muted cursor-not-allowed"
-        />
-        <p className="mt-1 text-xs text-muted">Prefix cannot be changed after creation</p>
       </div>
 
       <button
