@@ -4,6 +4,7 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/lib/cn';
+import { feedbackStatusColors } from '@/lib/statusColors';
 import { useAutoSave } from '@/hooks/useAutoSave';
 
 interface Feedback {
@@ -223,13 +224,6 @@ export function FeedbackEditorPage() {
 
   const displayStatus = getDisplayStatus();
 
-  const statusColors: Record<string, string> = {
-    draft: 'bg-gray-500/20 text-gray-400',
-    submitted: 'bg-purple-500/20 text-purple-400',
-    accepted: 'bg-green-500/20 text-green-400',
-    rejected: 'bg-red-500/20 text-red-400',
-  };
-
   const statusLabels: Record<string, string> = {
     draft: 'Draft',
     submitted: 'Submitted',
@@ -290,7 +284,7 @@ export function FeedbackEditorPage() {
         sidebar={
           <div className="space-y-4 p-4">
             <PropertyRow label="Status">
-              <span className={cn('inline-block rounded px-2 py-0.5 text-xs font-medium', statusColors[displayStatus])}>
+              <span className={cn('inline-block rounded px-2 py-0.5 text-xs font-medium', feedbackStatusColors[displayStatus])}>
                 {statusLabels[displayStatus]}
               </span>
             </PropertyRow>

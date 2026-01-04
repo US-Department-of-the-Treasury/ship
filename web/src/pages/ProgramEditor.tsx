@@ -4,6 +4,7 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { cn, getContrastTextColor } from '@/lib/cn';
+import { issueStatusColors, sprintStatusColors, feedbackStatusColors } from '@/lib/statusColors';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 import { KanbanBoard } from '@/components/KanbanBoard';
@@ -642,14 +643,6 @@ function PropertyRow({ label, children }: { label: string; children: React.React
 }
 
 function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (id: string) => void }) {
-  const stateColors: Record<string, string> = {
-    backlog: 'bg-gray-500/20 text-gray-400',
-    todo: 'bg-blue-500/20 text-blue-400',
-    in_progress: 'bg-yellow-500/20 text-yellow-400',
-    done: 'bg-green-500/20 text-green-400',
-    cancelled: 'bg-red-500/20 text-red-400',
-  };
-
   const stateLabels: Record<string, string> = {
     backlog: 'Backlog',
     todo: 'Todo',
@@ -690,7 +683,7 @@ function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (
               {issue.title}
             </td>
             <td className="px-6 py-3">
-              <span className={cn('rounded px-2 py-0.5 text-xs font-medium', stateColors[issue.state])}>
+              <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
                 {stateLabels[issue.state] || issue.state}
               </span>
             </td>
@@ -725,14 +718,6 @@ function IssuesListWithBulkActions({
   const [isMoving, setIsMoving] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [showSprintSubmenu, setShowSprintSubmenu] = useState(false);
-
-  const stateColors: Record<string, string> = {
-    backlog: 'bg-gray-500/20 text-gray-400',
-    todo: 'bg-blue-500/20 text-blue-400',
-    in_progress: 'bg-yellow-500/20 text-yellow-400',
-    done: 'bg-green-500/20 text-green-400',
-    cancelled: 'bg-red-500/20 text-red-400',
-  };
 
   const stateLabels: Record<string, string> = {
     backlog: 'Backlog',
@@ -882,7 +867,7 @@ function IssuesListWithBulkActions({
                   {issue.title}
                 </td>
                 <td className="px-3 py-3">
-                  <span className={cn('rounded px-2 py-0.5 text-xs font-medium', stateColors[issue.state])}>
+                  <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
                     {stateLabels[issue.state] || issue.state}
                   </span>
                 </td>
@@ -1301,7 +1286,7 @@ function ActiveSprintProgress({
   // Get status for non-active sprints
   const status = sprintWindow.status;
   const statusLabel = status === 'active' ? 'ACTIVE' : status === 'upcoming' ? 'UPCOMING' : 'COMPLETED';
-  const statusClass = status === 'active' ? 'bg-accent/20 text-accent' : status === 'upcoming' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400';
+  const statusClass = status === 'active' ? 'bg-accent/20 text-accent' : sprintStatusColors[status] || sprintStatusColors.completed;
 
   // Chart calculations
   const padding = { top: 20, right: 20, bottom: 30, left: 40 };
@@ -1797,9 +1782,7 @@ function SprintWindowCard({
         <div className="mt-2 text-xs">
           <span className={cn(
             'rounded px-1.5 py-0.5',
-            status === 'active' && 'bg-accent/20 text-accent',
-            status === 'upcoming' && 'bg-blue-500/20 text-blue-400',
-            status === 'completed' && 'bg-gray-500/20 text-gray-400'
+            status === 'active' ? 'bg-accent/20 text-accent' : sprintStatusColors[status]
           )}>
             {status.charAt(0).toUpperCase() + status.slice(1)}
           </span>
@@ -1831,8 +1814,7 @@ function SprintWindowCard({
       <div className="mt-2 text-xs">
         <span className={cn(
           'rounded px-1.5 py-0.5',
-          status === 'upcoming' && 'bg-blue-500/20 text-blue-400',
-          status === 'completed' && 'bg-gray-500/20 text-gray-400'
+          sprintStatusColors[status]
         )}>
           {status.charAt(0).toUpperCase() + status.slice(1)}
         </span>
@@ -1983,13 +1965,6 @@ function FeedbackList({
   const [showRejectModal, setShowRejectModal] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
-  const statusColors: Record<string, string> = {
-    draft: 'bg-gray-500/20 text-gray-400',
-    submitted: 'bg-purple-500/20 text-purple-400',
-    accepted: 'bg-green-500/20 text-green-400',
-    rejected: 'bg-red-500/20 text-red-400',
-  };
-
   const statusLabels: Record<string, string> = {
     draft: 'Draft',
     submitted: 'Submitted',
@@ -2089,7 +2064,7 @@ function FeedbackList({
                   onClick={() => onFeedbackClick(item.id)}
                   className="px-6 py-3"
                 >
-                  <span className={cn('rounded px-2 py-0.5 text-xs font-medium', statusColors[getFeedbackDisplayStatus(item)])}>
+                  <span className={cn('rounded px-2 py-0.5 text-xs font-medium', feedbackStatusColors[getFeedbackDisplayStatus(item)])}>
                     {statusLabels[getFeedbackDisplayStatus(item)]}
                   </span>
                 </td>
