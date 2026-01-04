@@ -13,6 +13,13 @@ const __dirname = dirname(__filename);
 // Local uploads directory (for development)
 const UPLOADS_DIR = join(__dirname, '../../uploads');
 
+// UUID validation regex - prevents path traversal by ensuring ID is valid UUID
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUUID(id: string): boolean {
+  return UUID_REGEX.test(id);
+}
+
 type RouterType = ReturnType<typeof Router>;
 export const filesRouter: RouterType = Router();
 
@@ -166,9 +173,17 @@ const rawBodyParser = express.raw({
 
 // POST /api/files/:id/local-upload - Local development upload endpoint
 // In production, files upload directly to S3
+// SECURITY: UUID validation prevents path traversal attacks
 filesRouter.post('/:id/local-upload', rawBodyParser, requireAuth, async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
+
+    // SECURITY: Validate UUID format to prevent path traversal
+    if (!fileId || !isValidUUID(fileId)) {
+      res.status(400).json({ error: 'Invalid file ID format' });
+      return;
+    }
+
     const workspaceId = req.user!.workspaceId;
 
     // Verify file record exists and belongs to user's workspace
@@ -232,9 +247,17 @@ filesRouter.post('/:id/local-upload', rawBodyParser, requireAuth, async (req: Re
 });
 
 // POST /api/files/:id/confirm - Confirm upload complete (for S3 direct uploads)
+// SECURITY: UUID validation prevents path traversal attacks
 filesRouter.post('/:id/confirm', requireAuth, async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
+
+    // SECURITY: Validate UUID format to prevent path traversal
+    if (!fileId || !isValidUUID(fileId)) {
+      res.status(400).json({ error: 'Invalid file ID format' });
+      return;
+    }
+
     const workspaceId = req.user!.workspaceId;
 
     // Verify file record exists and belongs to user's workspace
@@ -278,14 +301,24 @@ filesRouter.post('/:id/confirm', requireAuth, async (req: Request, res: Response
 });
 
 // GET /api/files/:id/serve - Serve file (local development only)
-filesRouter.get('/:id/serve', async (req: Request, res: Response) => {
+// SECURITY: requireAuth added to prevent unauthenticated file access
+// SECURITY: UUID validation prevents path traversal attacks
+filesRouter.get('/:id/serve', requireAuth, async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
 
-    // Get file record
+    // SECURITY: Validate UUID format to prevent path traversal
+    if (!fileId || !isValidUUID(fileId)) {
+      res.status(400).json({ error: 'Invalid file ID format' });
+      return;
+    }
+
+    const workspaceId = req.user!.workspaceId;
+
+    // Get file record - SECURITY: Verify file belongs to user's workspace
     const fileResult = await pool.query(
-      `SELECT * FROM files WHERE id = $1 AND status = 'uploaded'`,
-      [fileId]
+      `SELECT * FROM files WHERE id = $1 AND workspace_id = $2 AND status = 'uploaded'`,
+      [fileId, workspaceId]
     );
 
     if (fileResult.rows.length === 0) {
@@ -307,9 +340,17 @@ filesRouter.get('/:id/serve', async (req: Request, res: Response) => {
 });
 
 // GET /api/files/:id - Get file metadata
+// SECURITY: UUID validation prevents path traversal attacks
 filesRouter.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
+
+    // SECURITY: Validate UUID format to prevent path traversal
+    if (!fileId || !isValidUUID(fileId)) {
+      res.status(400).json({ error: 'Invalid file ID format' });
+      return;
+    }
+
     const workspaceId = req.user!.workspaceId;
 
     const result = await pool.query(
@@ -331,9 +372,17 @@ filesRouter.get('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/files/:id - Delete a file
+// SECURITY: UUID validation prevents path traversal attacks
 filesRouter.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
+
+    // SECURITY: Validate UUID format to prevent path traversal
+    if (!fileId || !isValidUUID(fileId)) {
+      res.status(400).json({ error: 'Invalid file ID format' });
+      return;
+    }
+
     const workspaceId = req.user!.workspaceId;
 
     // Get file record

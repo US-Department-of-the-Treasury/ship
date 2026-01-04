@@ -12,6 +12,7 @@ export interface WikiDocument {
   updated_at: string;
   created_by?: string | null;
   properties?: Record<string, unknown>;
+  visibility: 'private' | 'workspace';
   _pending?: boolean;
   _pendingId?: string;
 }
@@ -86,7 +87,7 @@ export function useCreateDocument() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: { title?: string; document_type?: string; parent_id?: string | null; _optimisticId?: string }) =>
+    mutationFn: (data: { title?: string; document_type?: string; parent_id?: string | null; visibility?: 'private' | 'workspace'; _optimisticId?: string }) =>
       createDocumentApi({
         title: data.title ?? 'Untitled',
         document_type: data.document_type ?? 'wiki',
@@ -116,6 +117,7 @@ export function useCreateDocument() {
         position: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        visibility: newDoc.visibility ?? 'workspace',
         _pending: true,
         _pendingId: pendingId,
       };
@@ -268,6 +270,7 @@ export function useDocuments() {
         position: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        visibility: 'workspace',
         _pending: true,
       };
       // Trigger mutation (will be queued) - pass optimisticId so onMutate can use it

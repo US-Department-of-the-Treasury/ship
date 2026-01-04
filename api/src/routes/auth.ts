@@ -30,11 +30,11 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    // Find user with their workspace memberships
+    // Find user with their workspace memberships (case-insensitive email lookup)
     const userResult = await pool.query(
       `SELECT u.id, u.email, u.password_hash, u.name, u.is_super_admin, u.last_workspace_id
        FROM users u
-       WHERE u.email = $1`,
+       WHERE LOWER(u.email) = LOWER($1)`,
       [email]
     );
 

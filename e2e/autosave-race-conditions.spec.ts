@@ -26,9 +26,10 @@ async function createNewDocument(page: Page) {
   await page.waitForLoadState('networkidle');
 
   const currentUrl = page.url();
-  const newDocButton = page.locator('button[title="New document"]');
-  await expect(newDocButton).toBeVisible({ timeout: 5000 });
-  await newDocButton.click();
+  // Button uses aria-label, not title attribute
+  const newDocButton = page.getByRole('button', { name: /new document/i });
+  await expect(newDocButton.first()).toBeVisible({ timeout: 5000 });
+  await newDocButton.first().click();
 
   await page.waitForFunction(
     (oldUrl) => window.location.href !== oldUrl && /\/docs\/[a-f0-9-]+/.test(window.location.href),
@@ -45,7 +46,8 @@ async function createNewIssue(page: Page) {
   await page.goto('/issues');
   await page.waitForLoadState('networkidle');
 
-  const newIssueButton = page.locator('button[title="New issue"]');
+  // Use the sidebar button with aria-label (there's also a text button "New Issue" in main content)
+  const newIssueButton = page.getByRole('button', { name: 'New issue', exact: true });
   await expect(newIssueButton).toBeVisible({ timeout: 5000 });
   await newIssueButton.click();
 
