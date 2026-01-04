@@ -32,11 +32,10 @@ const RESULTS_DIR = 'test-results';
 const PROGRESS_FILE = path.join(RESULTS_DIR, 'progress.jsonl');
 const ERRORS_DIR = path.join(RESULTS_DIR, 'errors');
 
+const SUMMARY_FILE = path.join(RESULTS_DIR, 'summary.json');
+
 class ProgressReporter implements Reporter {
   private totalTests = 0;
-  private passedTests = 0;
-  private failedTests = 0;
-  private skippedTests = 0;
 
   onBegin(config: FullConfig, suite: Suite): void {
     // Ensure directories exist
@@ -59,8 +58,20 @@ class ProgressReporter implements Reporter {
       });
     }
 
-    // Write summary line
-    this.writeSummary();
+    // Initialize summary with total count (only main process does this)
+    if (this.totalTests > 0) {
+      fs.writeFileSync(
+        SUMMARY_FILE,
+        JSON.stringify({
+          total: this.totalTests,
+          passed: 0,
+          failed: 0,
+          skipped: 0,
+          pending: this.totalTests,
+          ts: Date.now(),
+        }, null, 2)
+      );
+    }
   }
 
   onTestBegin(test: TestCase): void {
@@ -70,16 +81,11 @@ class ProgressReporter implements Reporter {
       status: 'running',
       ts: Date.now(),
     });
-    this.writeSummary();
   }
 
   onTestEnd(test: TestCase, result: TestResult): void {
     const testFile = this.getTestFile(test);
     const status = this.mapStatus(result.status);
-
-    if (status === 'passed') this.passedTests++;
-    else if (status === 'failed') this.failedTests++;
-    else if (status === 'skipped') this.skippedTests++;
 
     const entry: ProgressEntry = {
       test: testFile,
@@ -96,7 +102,9 @@ class ProgressReporter implements Reporter {
     }
 
     this.writeProgress(entry);
-    this.writeSummary();
+
+    // Atomically update summary counters (read-modify-write)
+    this.updateSummaryCounter(status);
   }
 
   onEnd(result: FullResult): void {
@@ -107,7 +115,24 @@ class ProgressReporter implements Reporter {
       status: result.status === 'passed' ? 'passed' : 'failed',
       ts: Date.now(),
     });
-    this.writeSummary();
+  }
+
+  private updateSummaryCounter(status: 'passed' | 'failed' | 'skipped'): void {
+    try {
+      const data = fs.readFileSync(SUMMARY_FILE, 'utf-8');
+      const summary = JSON.parse(data);
+
+      if (status === 'passed') summary.passed++;
+      else if (status === 'failed') summary.failed++;
+      else if (status === 'skipped') summary.skipped++;
+
+      summary.pending = summary.total - summary.passed - summary.failed - summary.skipped;
+      summary.ts = Date.now();
+
+      fs.writeFileSync(SUMMARY_FILE, JSON.stringify(summary, null, 2));
+    } catch {
+      // Ignore errors - file might not exist yet or race condition
+    }
   }
 
   private collectTests(suite: Suite): TestCase[] {
@@ -144,25 +169,6 @@ class ProgressReporter implements Reporter {
 
   private writeProgress(entry: ProgressEntry): void {
     fs.appendFileSync(PROGRESS_FILE, JSON.stringify(entry) + '\n');
-  }
-
-  private writeSummary(): void {
-    const summary = {
-      total: this.totalTests,
-      passed: this.passedTests,
-      failed: this.failedTests,
-      skipped: this.skippedTests,
-      pending:
-        this.totalTests -
-        this.passedTests -
-        this.failedTests -
-        this.skippedTests,
-      ts: Date.now(),
-    };
-    fs.writeFileSync(
-      path.join(RESULTS_DIR, 'summary.json'),
-      JSON.stringify(summary, null, 2)
-    );
   }
 
   private writeErrorLog(test: TestCase, result: TestResult): string {
