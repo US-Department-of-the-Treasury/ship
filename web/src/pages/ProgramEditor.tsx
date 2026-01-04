@@ -3,12 +3,13 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
-import { cn } from '@/lib/cn';
+import { cn, getContrastTextColor } from '@/lib/cn';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { useAutoSave } from '@/hooks/useAutoSave';
+import { EmojiPickerPopover } from '@/components/EmojiPicker';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -594,14 +595,19 @@ function OverviewTab({
             />
           </PropertyRow>
 
-          <PropertyRow label="Prefix">
-            <input
-              type="text"
-              value={program.prefix}
-              disabled
-              className="w-full rounded bg-border/50 px-2 py-1 text-sm font-mono text-muted cursor-not-allowed"
-            />
-            <p className="mt-1 text-xs text-muted">Cannot be changed</p>
+          <PropertyRow label="Icon">
+            <EmojiPickerPopover
+              value={program.emoji}
+              onChange={(emoji) => onUpdateProgram({ emoji })}
+            >
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-lg cursor-pointer hover:ring-2 hover:ring-accent transition-all"
+                style={{ backgroundColor: program.color, color: getContrastTextColor(program.color) }}
+              >
+                {program.emoji || program.name?.[0]?.toUpperCase() || '?'}
+              </div>
+            </EmojiPickerPopover>
+            <p className="mt-1 text-xs text-muted">Click to change</p>
           </PropertyRow>
 
           <PropertyRow label="Color">

@@ -1,4 +1,4 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import express from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { mkdir, writeFile, unlink } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { authMiddleware } from '../middleware/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -22,47 +23,6 @@ function isValidUUID(id: string): boolean {
 
 type RouterType = ReturnType<typeof Router>;
 export const filesRouter: RouterType = Router();
-
-// Auth middleware - check session cookie
-async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const sessionId = req.cookies?.session_id;
-  if (!sessionId) {
-    res.status(401).json({ error: 'Not authenticated' });
-    return;
-  }
-
-  try {
-    const result = await pool.query(
-      `SELECT s.id, s.user_id, s.workspace_id, u.email, u.name
-       FROM sessions s
-       JOIN users u ON s.user_id = u.id
-       WHERE s.id = $1 AND s.expires_at > now()`,
-      [sessionId]
-    );
-
-    if (result.rows.length === 0) {
-      res.status(401).json({ error: 'Session expired' });
-      return;
-    }
-
-    // Extend session on activity
-    await pool.query(
-      `UPDATE sessions SET last_activity = now(), expires_at = now() + interval '15 minutes' WHERE id = $1`,
-      [sessionId]
-    );
-
-    req.user = {
-      id: result.rows[0].user_id,
-      email: result.rows[0].email,
-      name: result.rows[0].name,
-      workspaceId: result.rows[0].workspace_id,
-    };
-    next();
-  } catch (err) {
-    console.error('Auth middleware error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
 
 // Validation schemas
 const uploadRequestSchema = z.object({
@@ -116,7 +76,7 @@ function isAllowedFile(filename: string, mimeType: string): boolean {
 // POST /api/files/upload - Get presigned URL for upload
 // For local dev: returns a mock upload URL
 // For production: would return S3 presigned URL
-filesRouter.post('/upload', requireAuth, async (req: Request, res: Response) => {
+filesRouter.post('/upload', authMiddleware, async (req: Request, res: Response) => {
   try {
     const validation = uploadRequestSchema.safeParse(req.body);
     if (!validation.success) {
@@ -125,8 +85,8 @@ filesRouter.post('/upload', requireAuth, async (req: Request, res: Response) => 
     }
 
     const { filename, mimeType, sizeBytes } = validation.data;
-    const workspaceId = req.user!.workspaceId;
-    const userId = req.user!.id;
+    const workspaceId = req.workspaceId;
+    const userId = req.userId;
 
     // Validate file type
     if (!isAllowedFile(filename, mimeType)) {
@@ -174,7 +134,7 @@ const rawBodyParser = express.raw({
 // POST /api/files/:id/local-upload - Local development upload endpoint
 // In production, files upload directly to S3
 // SECURITY: UUID validation prevents path traversal attacks
-filesRouter.post('/:id/local-upload', rawBodyParser, requireAuth, async (req: Request, res: Response) => {
+filesRouter.post('/:id/local-upload', rawBodyParser, authMiddleware, async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
 
@@ -184,7 +144,7 @@ filesRouter.post('/:id/local-upload', rawBodyParser, requireAuth, async (req: Re
       return;
     }
 
-    const workspaceId = req.user!.workspaceId;
+    const workspaceId = req.workspaceId;
 
     // Verify file record exists and belongs to user's workspace
     const fileResult = await pool.query(
@@ -248,7 +208,7 @@ filesRouter.post('/:id/local-upload', rawBodyParser, requireAuth, async (req: Re
 
 // POST /api/files/:id/confirm - Confirm upload complete (for S3 direct uploads)
 // SECURITY: UUID validation prevents path traversal attacks
-filesRouter.post('/:id/confirm', requireAuth, async (req: Request, res: Response) => {
+filesRouter.post('/:id/confirm', authMiddleware, async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
 
@@ -258,7 +218,7 @@ filesRouter.post('/:id/confirm', requireAuth, async (req: Request, res: Response
       return;
     }
 
-    const workspaceId = req.user!.workspaceId;
+    const workspaceId = req.workspaceId;
 
     // Verify file record exists and belongs to user's workspace
     const fileResult = await pool.query(
@@ -303,7 +263,7 @@ filesRouter.post('/:id/confirm', requireAuth, async (req: Request, res: Response
 // GET /api/files/:id/serve - Serve file (local development only)
 // SECURITY: requireAuth added to prevent unauthenticated file access
 // SECURITY: UUID validation prevents path traversal attacks
-filesRouter.get('/:id/serve', requireAuth, async (req: Request, res: Response) => {
+filesRouter.get('/:id/serve', authMiddleware, async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
 
@@ -313,7 +273,7 @@ filesRouter.get('/:id/serve', requireAuth, async (req: Request, res: Response) =
       return;
     }
 
-    const workspaceId = req.user!.workspaceId;
+    const workspaceId = req.workspaceId;
 
     // Get file record - SECURITY: Verify file belongs to user's workspace
     const fileResult = await pool.query(
@@ -341,7 +301,7 @@ filesRouter.get('/:id/serve', requireAuth, async (req: Request, res: Response) =
 
 // GET /api/files/:id - Get file metadata
 // SECURITY: UUID validation prevents path traversal attacks
-filesRouter.get('/:id', requireAuth, async (req: Request, res: Response) => {
+filesRouter.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
 
@@ -351,7 +311,7 @@ filesRouter.get('/:id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const workspaceId = req.user!.workspaceId;
+    const workspaceId = req.workspaceId;
 
     const result = await pool.query(
       `SELECT id, filename, mime_type, size_bytes, cdn_url, status, created_at
@@ -373,7 +333,7 @@ filesRouter.get('/:id', requireAuth, async (req: Request, res: Response) => {
 
 // DELETE /api/files/:id - Delete a file
 // SECURITY: UUID validation prevents path traversal attacks
-filesRouter.delete('/:id', requireAuth, async (req: Request, res: Response) => {
+filesRouter.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const fileId = req.params.id;
 
@@ -383,7 +343,7 @@ filesRouter.delete('/:id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    const workspaceId = req.user!.workspaceId;
+    const workspaceId = req.workspaceId;
 
     // Get file record
     const fileResult = await pool.query(
