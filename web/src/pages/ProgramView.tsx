@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn, getContrastTextColor } from '@/lib/cn';
+import { issueStatusColors, sprintStatusColors } from '@/lib/statusColors';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
@@ -305,14 +306,6 @@ export function ProgramViewPage() {
 
 
 function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (id: string) => void }) {
-  const stateColors: Record<string, string> = {
-    backlog: 'bg-gray-500/20 text-gray-400',
-    todo: 'bg-blue-500/20 text-blue-400',
-    in_progress: 'bg-yellow-500/20 text-yellow-400',
-    done: 'bg-green-500/20 text-green-400',
-    cancelled: 'bg-red-500/20 text-red-400',
-  };
-
   const stateLabels: Record<string, string> = {
     backlog: 'Backlog',
     todo: 'Todo',
@@ -353,7 +346,7 @@ function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (
               {issue.title}
             </td>
             <td className="px-6 py-3">
-              <span className={cn('rounded px-2 py-0.5 text-xs font-medium', stateColors[issue.state])}>
+              <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
                 {stateLabels[issue.state] || issue.state}
               </span>
             </td>
@@ -368,12 +361,6 @@ function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (
 }
 
 function SprintsList({ sprints, onSprintClick }: { sprints: Sprint[]; onSprintClick: (id: string) => void }) {
-  const statusColors: Record<string, string> = {
-    planned: 'bg-gray-500/20 text-gray-400',
-    active: 'bg-green-500/20 text-green-400',
-    completed: 'bg-blue-500/20 text-blue-400',
-  };
-
   if (sprints.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -398,7 +385,7 @@ function SprintsList({ sprints, onSprintClick }: { sprints: Sprint[]; onSprintCl
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h3 className="font-medium text-foreground">{sprint.name}</h3>
-                <span className={cn('rounded px-2 py-0.5 text-xs font-medium capitalize', statusColors[sprint.status])}>
+                <span className={cn('rounded px-2 py-0.5 text-xs font-medium capitalize', sprintStatusColors[sprint.status])}>
                   {sprint.status}
                 </span>
               </div>
