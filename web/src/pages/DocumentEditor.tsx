@@ -6,6 +6,7 @@ import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { VisibilityDropdown } from '@/components/VisibilityDropdown';
+import { BacklinksPanel } from '@/components/editor/BacklinksPanel';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -223,6 +224,8 @@ export function DocumentEditorPage() {
           <PropertyRow label="Updated">
             <p className="text-sm text-foreground">{formatDateTime(document.updated_at)}</p>
           </PropertyRow>
+
+          <BacklinksPanel documentId={document.id} />
         </div>
       }
     />
