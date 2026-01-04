@@ -98,9 +98,20 @@ async function fetchWithCsrf(
 }
 
 export async function apiGet(endpoint: string): Promise<Response> {
-  return fetch(`${API_URL}${endpoint}`, {
+  const res = await fetch(`${API_URL}${endpoint}`, {
     credentials: 'include',
   });
+
+  // Handle session expiration - redirect to login
+  // Check for non-JSON response (CloudFront HTML interception) or 401 status
+  if (!isJsonResponse(res) && res.status !== 200) {
+    handleSessionExpired(); // never returns
+  }
+  if (res.status === 401) {
+    handleSessionExpired(); // never returns
+  }
+
+  return res;
 }
 
 export async function apiPost(endpoint: string, body?: object): Promise<Response> {
