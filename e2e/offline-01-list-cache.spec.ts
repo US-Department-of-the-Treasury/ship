@@ -11,7 +11,6 @@
  * 2. Add IndexedDB persistence adapter for TanStack Query cache
  * 3. Implement stale-while-revalidate pattern for offline-first UX
  * 4. Add offline indicator component with data-testid="offline-indicator"
- * 5. Add stale data banner with data-testid="stale-data-banner"
  *
  * See: docs/application-architecture.md "Layer 2: Lists/Metadata (Planned)"
  */
@@ -110,21 +109,9 @@ test.describe('1.2 Empty Cache Shows Offline Message', () => {
   })
 })
 
-test.describe('1.3 Stale Data Indicator When Offline', () => {
-  test('shows stale data indicator when displaying cached data', async ({ page, goOffline, login }) => {
-    await login()
-
-    // GIVEN: User has previously loaded data
-    await page.goto('/docs')
-    await expect(page.getByTestId('document-list')).toBeVisible()
-
-    // WHEN: User goes offline
-    await goOffline()
-    await page.reload()
-
-    // THEN: Shows visual indicator that data may be stale
-    await expect(page.getByTestId('stale-data-banner')).toBeVisible()
-    // AND: Banner includes last sync timestamp
-    await expect(page.getByTestId('last-sync-time')).toContainText(/Last synced:/i)
-  })
-})
+// REMOVED: Stale data indicator tests
+// The StaleDataBanner component was removed because React Query already handles:
+// - Auto-refetch on window focus
+// - Auto-refetch when network comes back online
+// - Background refetching
+// The banner added unnecessary visual clutter and layout shift without meaningful benefit.

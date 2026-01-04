@@ -7,10 +7,7 @@ import fs from 'fs';
  * These tests verify that features ACTUALLY WORK for real users
  */
 
-// Get API URL from environment
-const API_URL = process.env.API_URL
-  ? process.env.API_URL
-  : 'http://localhost:3000';
+// No API_URL needed - page.request uses the page's context baseURL automatically
 
 // Helper to login
 async function login(page: Page) {
@@ -102,7 +99,7 @@ test.describe('TIER 1: @Mentions - REAL TESTS', () => {
     await page.waitForTimeout(1000);
 
     // Verify API was called and returned results
-    const apiResponse = await page.request.get(`${API_URL}/api/search/mentions?q=dev`);
+    const apiResponse = await page.request.get(`/api/search/mentions?q=dev`);
     expect(apiResponse.ok()).toBe(true);
 
     const data = await apiResponse.json();
@@ -121,7 +118,7 @@ test.describe('TIER 1: @Mentions - REAL TESTS', () => {
     await page.waitForTimeout(500);
 
     // Verify seed data provides users for mentions
-    const apiResponse = await page.request.get(`${API_URL}/api/search/mentions?q=`);
+    const apiResponse = await page.request.get(`/api/search/mentions?q=`);
     const data = await apiResponse.json();
     expect(data.people?.length, 'Seed data should provide users for mentions. Run: pnpm db:seed').toBeGreaterThan(0);
 
@@ -147,7 +144,7 @@ test.describe('TIER 1: @Mentions - REAL TESTS', () => {
     await page.waitForTimeout(1000);
 
     // API should return documents too
-    const apiResponse = await page.request.get(`${API_URL}/api/search/mentions?q=test`);
+    const apiResponse = await page.request.get(`/api/search/mentions?q=test`);
     const data = await apiResponse.json();
 
     expect(data.documents).toBeDefined();
@@ -561,7 +558,7 @@ test.describe('TIER 3: Backlinks - REAL TESTS', () => {
 
     if (docId) {
       // Check backlinks API
-      const response = await page.request.get(`${API_URL}/api/documents/${docId}/backlinks`);
+      const response = await page.request.get(`/api/documents/${docId}/backlinks`);
 
       // Should return 200 (even if empty)
       expect(response.status()).toBe(200);
@@ -601,7 +598,7 @@ test.describe('TIER 3: Backlinks - REAL TESTS', () => {
 
     // Now check backlinks on first document
     if (firstDocId) {
-      const response = await page.request.get(`${API_URL}/api/documents/${firstDocId}/backlinks`);
+      const response = await page.request.get(`/api/documents/${firstDocId}/backlinks`);
       const backlinks = await response.json();
 
       // Should have at least one backlink now
@@ -620,7 +617,7 @@ test.describe('API Health - REAL TESTS', () => {
     // Login via page to get session cookies
     await login(page);
 
-    const response = await page.request.get(`${API_URL}/api/search/mentions?q=test`);
+    const response = await page.request.get(`/api/search/mentions?q=test`);
     expect(response.status()).not.toBe(500);
     expect(response.ok()).toBe(true);
   });
@@ -628,10 +625,10 @@ test.describe('API Health - REAL TESTS', () => {
   test('file upload API does not return 500', async ({ page }) => {
     await login(page);
 
-    const csrfResponse = await page.request.get(`${API_URL}/api/csrf-token`);
+    const csrfResponse = await page.request.get(`/api/csrf-token`);
     const { token } = await csrfResponse.json();
 
-    const response = await page.request.post(`${API_URL}/api/files/upload`, {
+    const response = await page.request.post(`/api/files/upload`, {
       headers: { 'x-csrf-token': token },
       data: { filename: 'test.png', mimeType: 'image/png', sizeBytes: 100 }
     });
@@ -643,7 +640,7 @@ test.describe('API Health - REAL TESTS', () => {
     await login(page);
 
     // Use a fake UUID - should return 404 or empty array, not 500
-    const response = await page.request.get(`${API_URL}/api/documents/00000000-0000-0000-0000-000000000000/backlinks`);
+    const response = await page.request.get(`/api/documents/00000000-0000-0000-0000-000000000000/backlinks`);
     expect(response.status()).not.toBe(500);
   });
 });

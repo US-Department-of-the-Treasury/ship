@@ -9,8 +9,7 @@
  * 1. Offline indicator component (data-testid="offline-indicator")
  * 2. Pending sync count badge (data-testid="pending-sync-count")
  * 3. Per-item sync status icons (sync-status-pending, syncing, synced)
- * 4. Stale data banner (data-testid="stale-data-banner")
- * 5. Listen to navigator.onLine events to update indicator state
+ * 4. Listen to navigator.onLine events to update indicator state
  *
  * See: docs/application-architecture.md "Offline UI Components"
  */

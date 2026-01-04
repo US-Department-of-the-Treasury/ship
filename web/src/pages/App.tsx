@@ -17,7 +17,6 @@ import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { PendingSyncCount } from '@/components/PendingSyncCount';
 import { PendingSyncIcon } from '@/components/PendingSyncIcon';
-import { StaleDataBanner } from '@/components/StaleDataBanner';
 
 type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
 
@@ -127,18 +126,6 @@ export function AppLayout() {
       {/* Offline indicator banner */}
       <div className="flex justify-center">
         <OfflineIndicator />
-      </div>
-
-      {/* Stale data banner */}
-      <div className="flex justify-center">
-        <StaleDataBanner
-          queryKey={
-            activeMode === 'docs' ? documentKeys.wikiList() :
-            activeMode === 'issues' ? issueKeys.lists() :
-            activeMode === 'programs' ? programKeys.lists() :
-            undefined
-          }
-        />
       </div>
 
       {/* Impersonation banner */}
