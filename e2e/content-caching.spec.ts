@@ -16,8 +16,9 @@ test.describe('Content Caching - High Performance Navigation', () => {
     await page.goto('/docs');
     await page.waitForTimeout(1000);
 
-    // Click on first document
-    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
+    // Click on first document (tree has aria-label="Workspace documents" or "Documents")
+    const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
+    const firstDoc = tree.getByRole('link').first();
     await firstDoc.click();
     await page.waitForURL(/\/docs\/.+/);
 
@@ -50,11 +51,12 @@ test.describe('Content Caching - High Performance Navigation', () => {
   test('toggling between two documents shows no blank flash', async ({ page }) => {
     await page.goto('/docs');
 
-    // Wait for the document tree to load
-    await page.getByRole('tree', { name: 'Document tree' }).waitFor({ timeout: 10000 });
+    // Wait for the document tree to load (tree has aria-label="Workspace documents" or "Documents")
+    const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
+    await tree.first().waitFor({ timeout: 10000 });
 
     // Get first two document links from sidebar tree (seed data provides these)
-    const docLinks = page.getByRole('tree', { name: 'Document tree' }).getByRole('link');
+    const docLinks = tree.first().getByRole('link');
     const count = await docLinks.count();
 
     // Seed data should provide at least 2 wiki documents
@@ -99,8 +101,9 @@ test.describe('Content Caching - High Performance Navigation', () => {
   test('IndexedDB stores document content after visit', async ({ page }) => {
     await page.goto('/docs');
 
-    // Visit a document
-    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
+    // Visit a document (tree has aria-label="Workspace documents" or "Documents")
+    const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
+    const firstDoc = tree.getByRole('link').first();
     await firstDoc.click();
     await page.waitForURL(/\/docs\/.+/);
 
@@ -133,8 +136,9 @@ test.describe('Content Caching - High Performance Navigation', () => {
   test('cached content is available even when WebSocket is slow', async ({ page }) => {
     await page.goto('/docs');
 
-    // Visit a document first to cache it
-    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
+    // Visit a document first to cache it (tree has aria-label="Workspace documents" or "Documents")
+    const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
+    const firstDoc = tree.getByRole('link').first();
     await firstDoc.click();
     await page.waitForURL(/\/docs\/.+/);
     await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -184,8 +188,9 @@ test.describe('WebSocket Connection Reliability', () => {
       wsConnections.push(ws.url());
     });
 
-    // Navigate to a document
-    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
+    // Navigate to a document (tree has aria-label="Workspace documents" or "Documents")
+    const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
+    const firstDoc = tree.getByRole('link').first();
     await firstDoc.click();
     await page.waitForURL(/\/docs\/.+/);
 
@@ -200,8 +205,9 @@ test.describe('WebSocket Connection Reliability', () => {
   test('sync status shows "Saved" after WebSocket connects', async ({ page }) => {
     await page.goto('/docs');
 
-    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
-    await firstDoc.click();
+    const tree2 = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
+    const firstDoc2 = tree2.getByRole('link').first();
+    await firstDoc2.click();
     await page.waitForURL(/\/docs\/.+/);
 
     // Wait for sync status to show "Saved"
@@ -222,8 +228,9 @@ test.describe('WebSocket Connection Reliability', () => {
 
     await page.goto('/docs');
 
-    const firstDoc = page.getByRole('tree', { name: 'Document tree' }).getByRole('link').first();
-    await firstDoc.click();
+    const tree3 = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
+    const firstDoc3 = tree3.getByRole('link').first();
+    await firstDoc3.click();
     await page.waitForURL(/\/docs\/.+/);
 
     // Wait for connection to establish

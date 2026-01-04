@@ -62,9 +62,10 @@ export default defineConfig({
   // Reporters:
   // - 'line' shows real-time progress: [1/641] ✓ auth.spec.ts:15 (2.3s)
   // - 'html' generates detailed report at end
+  // - './e2e/progress-reporter.ts' writes JSONL for live monitoring
   reporter: process.env.CI
-    ? [['github'], ['html', { open: 'never' }]]
-    : [['line'], ['html', { open: 'never' }]],
+    ? [['github'], ['html', { open: 'never' }], ['./e2e/progress-reporter.ts']]
+    : [['line'], ['html', { open: 'never' }], ['./e2e/progress-reporter.ts']],
   use: {
     // baseURL is provided by the isolated-env fixture
     trace: 'on-first-retry',

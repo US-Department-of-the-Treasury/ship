@@ -9,7 +9,7 @@ import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
-import { cn } from '@/lib/cn';
+import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
 import { SessionTimeoutModal } from '@/components/SessionTimeoutModal';
@@ -420,7 +420,7 @@ function DocumentsTree({ documents, activeId, onSelect }: { documents: WikiDocum
           <GlobeIcon className="h-3 w-3" />
           Workspace
         </div>
-        <ul role="tree" aria-label="Workspace documents" className="space-y-0.5 px-2">
+        <ul role="tree" aria-label="Workspace documents" aria-live="polite" className="space-y-0.5 px-2">
           {workspaceToShow.length > 0 ? (
             workspaceToShow.map((doc) => (
               <DocumentTreeItem
@@ -453,7 +453,7 @@ function DocumentsTree({ documents, activeId, onSelect }: { documents: WikiDocum
             <LockIcon className="h-3 w-3" />
             Private
           </div>
-          <ul role="tree" aria-label="Private documents" className="space-y-0.5 px-2">
+          <ul role="tree" aria-label="Private documents" aria-live="polite" className="space-y-0.5 px-2">
             {privateToShow.map((doc) => (
               <DocumentTreeItem
                 key={doc.id}
@@ -661,8 +661,8 @@ function ProgramsList({ programs, activeId, onSelect }: { programs: Program[]; a
             )}
           >
             <span
-              className="h-4 w-4 rounded flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white"
-              style={{ backgroundColor: program.color }}
+              className="h-4 w-4 rounded flex-shrink-0 flex items-center justify-center text-[10px] font-bold"
+              style={{ backgroundColor: program.color, color: getContrastTextColor(program.color) }}
             >
               {program.prefix.slice(0, 2)}
             </span>
