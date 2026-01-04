@@ -1,50 +1,11 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
-
-// Auth middleware
-async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const sessionId = req.cookies?.session_id;
-  if (!sessionId) {
-    res.status(401).json({ error: 'Not authenticated' });
-    return;
-  }
-
-  try {
-    const result = await pool.query(
-      `SELECT s.id, s.user_id, s.workspace_id, u.email, u.name
-       FROM sessions s
-       JOIN users u ON s.user_id = u.id
-       WHERE s.id = $1 AND s.expires_at > now()`,
-      [sessionId]
-    );
-
-    if (result.rows.length === 0) {
-      res.status(401).json({ error: 'Session expired' });
-      return;
-    }
-
-    await pool.query(
-      `UPDATE sessions SET last_activity = now(), expires_at = now() + interval '15 minutes' WHERE id = $1`,
-      [sessionId]
-    );
-
-    req.user = {
-      id: result.rows[0].user_id,
-      email: result.rows[0].email,
-      name: result.rows[0].name,
-      workspaceId: result.rows[0].workspace_id,
-    };
-    next();
-  } catch (err) {
-    console.error('Auth middleware error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
 
 // Helper to extract program from row
 function extractProgramFromRow(row: any) {
@@ -84,11 +45,11 @@ const updateProgramSchema = z.object({
 });
 
 // List programs (documents with document_type = 'program')
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const includeArchived = req.query.archived === 'true';
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -122,11 +83,11 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Get single program
-router.get('/:id', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -158,7 +119,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Create program (creates a document with document_type = 'program')
-router.post('/', requireAuth, async (req: Request, res: Response) => {
+router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const parsed = createProgramSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -180,18 +141,25 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
        VALUES ($1, 'program', $2, $3, $4)
        RETURNING id, title, properties, archived_at, created_at, updated_at`,
-      [req.user!.workspaceId, title, JSON.stringify(properties), req.user!.id]
+      [req.workspaceId, title, JSON.stringify(properties), req.userId]
     );
+
+    // Get user info for owner response
+    const userResult = await pool.query(
+      'SELECT id, name, email FROM users WHERE id = $1',
+      [req.userId]
+    );
+    const user = userResult.rows[0];
 
     res.status(201).json({
       ...extractProgramFromRow(result.rows[0]),
       issue_count: 0,
       sprint_count: 0,
-      owner: {
-        id: req.user!.id,
-        name: req.user!.name,
-        email: req.user!.email,
-      }
+      owner: user ? {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      } : null
     });
   } catch (err) {
     console.error('Create program error:', err);
@@ -200,11 +168,11 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Update program
-router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
+router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     const parsed = updateProgramSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -281,7 +249,7 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     await pool.query(
       `UPDATE documents SET ${updates.join(', ')}
        WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'program'`,
-      [...values, id, req.user!.workspaceId]
+      [...values, id, req.workspaceId]
     );
 
     // Re-query to get full program with owner info
@@ -303,11 +271,11 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Delete program
-router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
+router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -345,11 +313,11 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Get program issues
-router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -416,11 +384,11 @@ router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
 
 // Get program sprints (documents with document_type = 'sprint' that belong to this program)
 // Returns sprints with sprint_number and owner_id - dates/status computed on frontend
-router.get('/:id/sprints', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);

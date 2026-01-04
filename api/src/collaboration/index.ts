@@ -12,6 +12,71 @@ import cookie from 'cookie';
 const messageSync = 0;
 const messageAwareness = 1;
 
+// Rate limiting configuration
+const RATE_LIMIT = {
+  // Connection rate limiting: max connections per IP in time window
+  CONNECTION_WINDOW_MS: 60_000,  // 1 minute window
+  MAX_CONNECTIONS_PER_IP: 30,    // 30 connections per minute per IP
+  // Message rate limiting: max messages per connection in time window
+  MESSAGE_WINDOW_MS: 1_000,      // 1 second window
+  MAX_MESSAGES_PER_SECOND: 50,   // 50 messages per second per connection
+};
+
+// Track connection attempts per IP (sliding window)
+const connectionAttempts = new Map<string, number[]>();
+
+// Track message timestamps per WebSocket connection
+const messageTimestamps = new Map<WebSocket, number[]>();
+
+// Clean up old connection attempts periodically
+setInterval(() => {
+  const now = Date.now();
+  connectionAttempts.forEach((timestamps, ip) => {
+    const valid = timestamps.filter(t => now - t < RATE_LIMIT.CONNECTION_WINDOW_MS);
+    if (valid.length === 0) {
+      connectionAttempts.delete(ip);
+    } else {
+      connectionAttempts.set(ip, valid);
+    }
+  });
+}, 30_000);
+
+// Check if IP is rate limited for new connections
+function isConnectionRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const attempts = connectionAttempts.get(ip) || [];
+  const recentAttempts = attempts.filter(t => now - t < RATE_LIMIT.CONNECTION_WINDOW_MS);
+  return recentAttempts.length >= RATE_LIMIT.MAX_CONNECTIONS_PER_IP;
+}
+
+// Record a connection attempt from an IP
+function recordConnectionAttempt(ip: string): void {
+  const now = Date.now();
+  const attempts = connectionAttempts.get(ip) || [];
+  attempts.push(now);
+  // Keep only recent attempts to limit memory usage
+  const recentAttempts = attempts.filter(t => now - t < RATE_LIMIT.CONNECTION_WINDOW_MS);
+  connectionAttempts.set(ip, recentAttempts);
+}
+
+// Check if a WebSocket connection is rate limited for messages
+function isMessageRateLimited(ws: WebSocket): boolean {
+  const now = Date.now();
+  const timestamps = messageTimestamps.get(ws) || [];
+  const recentMessages = timestamps.filter(t => now - t < RATE_LIMIT.MESSAGE_WINDOW_MS);
+  return recentMessages.length >= RATE_LIMIT.MAX_MESSAGES_PER_SECOND;
+}
+
+// Record a message from a WebSocket connection
+function recordMessage(ws: WebSocket): void {
+  const now = Date.now();
+  const timestamps = messageTimestamps.get(ws) || [];
+  timestamps.push(now);
+  // Keep only recent timestamps to limit memory usage
+  const recentTimestamps = timestamps.filter(t => now - t < RATE_LIMIT.MESSAGE_WINDOW_MS);
+  messageTimestamps.set(ws, recentTimestamps);
+}
+
 // Store documents and awareness by room name
 const docs = new Map<string, Y.Doc>();
 const awareness = new Map<string, awarenessProtocol.Awareness>();
@@ -312,6 +377,18 @@ export function setupCollaboration(server: Server) {
       return;
     }
 
+    // Rate limit check: prevent connection floods from single IP
+    const clientIp = (request.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+                     request.socket.remoteAddress ||
+                     'unknown';
+
+    if (isConnectionRateLimited(clientIp)) {
+      socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    recordConnectionAttempt(clientIp);
+
     // CRITICAL: Validate session before allowing WebSocket connection
     const sessionData = await validateWebSocketSession(request);
     if (!sessionData) {
@@ -360,6 +437,13 @@ export function setupCollaboration(server: Server) {
     }
 
     ws.on('message', (data: Buffer) => {
+      // Rate limit messages to prevent message floods
+      if (isMessageRateLimited(ws)) {
+        // Drop message silently - client will retry via Yjs sync protocol
+        return;
+      }
+      recordMessage(ws);
+
       handleMessage(ws, new Uint8Array(data), docName, doc, aw);
     });
 
@@ -369,6 +453,8 @@ export function setupCollaboration(server: Server) {
         awarenessProtocol.removeAwarenessStates(aw, [conn.awarenessClientId], null);
         conns.delete(ws);
       }
+      // Clean up rate limiting data for this connection
+      messageTimestamps.delete(ws);
 
       // Clean up if no more connections to this doc
       let hasConnections = false;

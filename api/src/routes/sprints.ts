@@ -1,50 +1,11 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
-
-// Auth middleware
-async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const sessionId = req.cookies?.session_id;
-  if (!sessionId) {
-    res.status(401).json({ error: 'Not authenticated' });
-    return;
-  }
-
-  try {
-    const result = await pool.query(
-      `SELECT s.id, s.user_id, s.workspace_id, u.email, u.name
-       FROM sessions s
-       JOIN users u ON s.user_id = u.id
-       WHERE s.id = $1 AND s.expires_at > now()`,
-      [sessionId]
-    );
-
-    if (result.rows.length === 0) {
-      res.status(401).json({ error: 'Session expired' });
-      return;
-    }
-
-    await pool.query(
-      `UPDATE sessions SET last_activity = now(), expires_at = now() + interval '15 minutes' WHERE id = $1`,
-      [sessionId]
-    );
-
-    req.user = {
-      id: result.rows[0].user_id,
-      email: result.rows[0].email,
-      name: result.rows[0].name,
-      workspaceId: result.rows[0].workspace_id,
-    };
-    next();
-  } catch (err) {
-    console.error('Auth middleware error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
 
 // Validation schemas
 // Sprint properties: only sprint_number and owner_id are stored
@@ -85,11 +46,11 @@ function extractSprintFromRow(row: any) {
 }
 
 // Get single sprint
-router.get('/:id', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -125,10 +86,10 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
 
 // Create sprint (creates a document with document_type = 'sprint')
 // Only stores sprint_number and owner_id - dates/status computed from sprint_number
-router.post('/', requireAuth, async (req: Request, res: Response) => {
+router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     const parsed = createSprintSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -161,7 +122,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       `SELECT u.id, u.name, u.email FROM users u
        JOIN workspace_memberships wm ON wm.user_id = u.id
        WHERE u.id = $1 AND wm.workspace_id = $2`,
-      [owner_id, req.user!.workspaceId]
+      [owner_id, req.workspaceId]
     );
 
     if (ownerCheck.rows.length === 0) {
@@ -191,7 +152,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by)
        VALUES ($1, 'sprint', $2, $3, $4, $5)
        RETURNING id, title, properties, program_id`,
-      [req.user!.workspaceId, title, program_id, JSON.stringify(properties), req.user!.id]
+      [req.workspaceId, title, program_id, JSON.stringify(properties), req.userId]
     );
 
     const owner = ownerCheck.rows[0];
@@ -220,11 +181,11 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 
 // Update sprint - only title and owner_id can be updated
 // sprint_number cannot be changed (determines window), dates/status are computed
-router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
+router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     const parsed = updateSprintSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -271,7 +232,7 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
         `SELECT u.id FROM users u
          JOIN workspace_memberships wm ON wm.user_id = u.id
          WHERE u.id = $1 AND wm.workspace_id = $2`,
-        [data.owner_id, req.user!.workspaceId]
+        [data.owner_id, req.workspaceId]
       );
 
       if (ownerCheck.rows.length === 0) {
@@ -298,7 +259,7 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
     await pool.query(
       `UPDATE documents SET ${updates.join(', ')}
        WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'sprint'`,
-      [...values, id, req.user!.workspaceId]
+      [...values, id, req.workspaceId]
     );
 
     // Re-query to get full sprint with owner info
@@ -326,11 +287,11 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Delete sprint
-router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
+router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -367,11 +328,11 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Get sprint issues
-router.get('/:id/issues', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);

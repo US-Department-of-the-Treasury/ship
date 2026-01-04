@@ -1,51 +1,11 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
-
-// Auth middleware - check session cookie
-async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const sessionId = req.cookies?.session_id;
-  if (!sessionId) {
-    res.status(401).json({ error: 'Not authenticated' });
-    return;
-  }
-
-  try {
-    const result = await pool.query(
-      `SELECT s.id, s.user_id, s.workspace_id, u.email, u.name
-       FROM sessions s
-       JOIN users u ON s.user_id = u.id
-       WHERE s.id = $1 AND s.expires_at > now()`,
-      [sessionId]
-    );
-
-    if (result.rows.length === 0) {
-      res.status(401).json({ error: 'Session expired' });
-      return;
-    }
-
-    // Extend session on activity
-    await pool.query(
-      `UPDATE sessions SET last_activity = now(), expires_at = now() + interval '15 minutes' WHERE id = $1`,
-      [sessionId]
-    );
-
-    req.user = {
-      id: result.rows[0].user_id,
-      email: result.rows[0].email,
-      name: result.rows[0].name,
-      workspaceId: result.rows[0].workspace_id,
-    };
-    next();
-  } catch (err) {
-    console.error('Auth middleware error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
 
 // Validation schema for updating links
 const updateLinksSchema = z.object({
@@ -53,11 +13,11 @@ const updateLinksSchema = z.object({
 });
 
 // GET /api/documents/:id/backlinks - Get documents that link to this one
-router.get('/:id/backlinks', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id/backlinks', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -106,11 +66,11 @@ router.get('/:id/backlinks', requireAuth, async (req: Request, res: Response) =>
 });
 
 // POST /api/documents/:id/links - Update links for a document
-router.post('/:id/links', requireAuth, async (req: Request, res: Response) => {
+router.post('/:id/links', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     const parsed = updateLinksSchema.safeParse(req.body);
     if (!parsed.success) {

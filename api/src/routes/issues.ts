@@ -1,51 +1,11 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
-
-// Auth middleware - check session cookie
-async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const sessionId = req.cookies?.session_id;
-  if (!sessionId) {
-    res.status(401).json({ error: 'Not authenticated' });
-    return;
-  }
-
-  try {
-    const result = await pool.query(
-      `SELECT s.id, s.user_id, s.workspace_id, u.email, u.name
-       FROM sessions s
-       JOIN users u ON s.user_id = u.id
-       WHERE s.id = $1 AND s.expires_at > now()`,
-      [sessionId]
-    );
-
-    if (result.rows.length === 0) {
-      res.status(401).json({ error: 'Session expired' });
-      return;
-    }
-
-    // Extend session on activity
-    await pool.query(
-      `UPDATE sessions SET last_activity = now(), expires_at = now() + interval '15 minutes' WHERE id = $1`,
-      [sessionId]
-    );
-
-    req.user = {
-      id: result.rows[0].user_id,
-      email: result.rows[0].email,
-      name: result.rows[0].name,
-      workspaceId: result.rows[0].workspace_id,
-    };
-    next();
-  } catch (err) {
-    console.error('Auth middleware error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
 
 // Validation schemas
 const createIssueSchema = z.object({
@@ -145,11 +105,11 @@ function extractIssueFromRow(row: any) {
 }
 
 // List issues with filters
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { state, priority, assignee_id, program_id, sprint_id, source } = req.query;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -242,11 +202,11 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Get single issue
-router.get('/:id', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -289,7 +249,9 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Create issue
-router.post('/', requireAuth, async (req: Request, res: Response) => {
+// Uses advisory lock to prevent race condition in ticket number generation
+router.post('/', authMiddleware, async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
     const parsed = createIssueSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -299,12 +261,21 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 
     const { title, state, priority, assignee_id, program_id, sprint_id } = parsed.data;
 
-    // Get next ticket number for workspace
-    const ticketResult = await pool.query(
+    await client.query('BEGIN');
+
+    // Use advisory lock to serialize ticket number generation per workspace
+    // This prevents race conditions where concurrent requests get the same MAX value
+    // The lock key is derived from workspace_id (first 15 hex chars as bigint)
+    const workspaceIdHex = req.workspaceId!.replace(/-/g, '').substring(0, 15);
+    const lockKey = parseInt(workspaceIdHex, 16);
+    await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
+
+    // Now safely get next ticket number - we hold the lock until transaction ends
+    const ticketResult = await client.query(
       `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
        FROM documents
        WHERE workspace_id = $1 AND document_type = 'issue'`,
-      [req.user!.workspaceId]
+      [req.workspaceId]
     );
     const ticketNumber = ticketResult.rows[0].next_number;
 
@@ -318,18 +289,18 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       rejection_reason: null,
     };
 
-    const result = await pool.query(
+    const result = await client.query(
       `INSERT INTO documents (workspace_id, document_type, title, properties, program_id, sprint_id, ticket_number, created_by)
        VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.user!.workspaceId, title, JSON.stringify(properties), program_id || null, sprint_id || null, ticketNumber, req.user!.id]
+      [req.workspaceId, title, JSON.stringify(properties), program_id || null, sprint_id || null, ticketNumber, req.userId]
     );
 
     // Get program prefix if assigned
     let displayId = `#${ticketNumber}`;
     let programPrefix = null;
     if (program_id) {
-      const programResult = await pool.query(
+      const programResult = await client.query(
         `SELECT properties->>'prefix' as prefix FROM documents WHERE id = $1 AND document_type = 'program'`,
         [program_id]
       );
@@ -339,21 +310,26 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       }
     }
 
+    await client.query('COMMIT');
+
     const row = result.rows[0];
     const issue = extractIssueFromRow({ ...row, program_prefix: programPrefix });
     res.status(201).json({ ...issue, display_id: displayId });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Create issue error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
 // Update issue
-router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
+router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     const parsed = updateIssueSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -464,14 +440,14 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 
     // Log all changes to history
     for (const change of changes) {
-      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.user!.id!);
+      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.userId!);
     }
 
     updates.push(`updated_at = now()`);
 
     const result = await pool.query(
       `UPDATE documents SET ${updates.join(', ')} WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} RETURNING *`,
-      [...values, id, req.user!.workspaceId]
+      [...values, id, req.workspaceId]
     );
 
     const row = result.rows[0];
@@ -486,11 +462,11 @@ router.patch('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Get issue history
-router.get('/:id/history', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id/history', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -545,7 +521,7 @@ const bulkUpdateSchema = z.object({
   }).optional(),
 });
 
-router.post('/bulk', requireAuth, async (req: Request, res: Response) => {
+router.post('/bulk', authMiddleware, async (req: Request, res: Response) => {
   const client = await pool.connect();
   try {
     const parsed = bulkUpdateSchema.safeParse(req.body);
@@ -555,8 +531,8 @@ router.post('/bulk', requireAuth, async (req: Request, res: Response) => {
     }
 
     const { ids, action, updates } = parsed.data;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -680,11 +656,11 @@ router.post('/bulk', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Delete issue
-router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
+router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.user!.id;
-    const workspaceId = req.user!.workspaceId;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);

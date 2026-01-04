@@ -1,50 +1,10 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
+import { authMiddleware } from '../middleware/auth.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
-
-// Auth middleware - check session cookie
-async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const sessionId = req.cookies?.session_id;
-  if (!sessionId) {
-    res.status(401).json({ error: 'Not authenticated' });
-    return;
-  }
-
-  try {
-    const result = await pool.query(
-      `SELECT s.id, s.user_id, s.workspace_id, u.email, u.name
-       FROM sessions s
-       JOIN users u ON s.user_id = u.id
-       WHERE s.id = $1 AND s.expires_at > now()`,
-      [sessionId]
-    );
-
-    if (result.rows.length === 0) {
-      res.status(401).json({ error: 'Session expired' });
-      return;
-    }
-
-    // Extend session on activity
-    await pool.query(
-      `UPDATE sessions SET last_activity = now(), expires_at = now() + interval '15 minutes' WHERE id = $1`,
-      [sessionId]
-    );
-
-    req.user = {
-      id: result.rows[0].user_id,
-      email: result.rows[0].email,
-      name: result.rows[0].name,
-      workspaceId: result.rows[0].workspace_id,
-    };
-    next();
-  } catch (err) {
-    console.error('Auth middleware error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
 
 // Validation schemas
 const createFeedbackSchema = z.object({
@@ -84,7 +44,7 @@ function extractFeedbackFromRow(row: any, programPrefix?: string | null) {
 }
 
 // Create feedback (creates an issue with source='feedback', feedback_status='draft')
-router.post('/', requireAuth, async (req: Request, res: Response) => {
+router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const parsed = createFeedbackSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -97,7 +57,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     // Verify program exists and belongs to workspace
     const programResult = await pool.query(
       `SELECT id, properties->>'prefix' as prefix FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
-      [program_id, req.user!.workspaceId]
+      [program_id, req.workspaceId]
     );
 
     if (programResult.rows.length === 0) {
@@ -112,7 +72,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
        FROM documents
        WHERE workspace_id = $1 AND document_type = 'issue'`,
-      [req.user!.workspaceId]
+      [req.workspaceId]
     );
     const ticketNumber = ticketResult.rows[0].next_number;
 
@@ -131,7 +91,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       `INSERT INTO documents (workspace_id, document_type, title, properties, program_id, ticket_number, created_by, content)
        VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.user!.workspaceId, title, JSON.stringify(properties), program_id, ticketNumber, req.user!.id, content ? JSON.stringify(content) : null]
+      [req.workspaceId, title, JSON.stringify(properties), program_id, ticketNumber, req.userId, content ? JSON.stringify(content) : null]
     );
 
     res.status(201).json(extractFeedbackFromRow(result.rows[0], programPrefix));
@@ -142,7 +102,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Get single feedback item
-router.get('/:id', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
 
@@ -164,7 +124,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
        LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
        LEFT JOIN users creator ON d.created_by = creator.id
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'issue' AND d.properties->>'source' = 'feedback'`,
-      [id, req.user!.workspaceId]
+      [id, req.workspaceId]
     );
 
     if (result.rows.length === 0) {
@@ -180,7 +140,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Submit feedback (changes feedback_status from 'draft' to 'submitted')
-router.post('/:id/submit', requireAuth, async (req: Request, res: Response) => {
+router.post('/:id/submit', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
 
@@ -194,7 +154,7 @@ router.post('/:id/submit', requireAuth, async (req: Request, res: Response) => {
     // Verify it's a feedback item in draft status
     const existing = await pool.query(
       `SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
-      [id, req.user!.workspaceId]
+      [id, req.workspaceId]
     );
 
     if (existing.rows.length === 0) {
@@ -220,7 +180,7 @@ router.post('/:id/submit', requireAuth, async (req: Request, res: Response) => {
        SET properties = $3, updated_at = now()
        WHERE id = $1 AND workspace_id = $2
        RETURNING *`,
-      [id, req.user!.workspaceId, JSON.stringify(newProps)]
+      [id, req.workspaceId, JSON.stringify(newProps)]
     );
 
     // Get program prefix for display_id
@@ -242,7 +202,7 @@ router.post('/:id/submit', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Accept feedback (clears feedback_status, keeps state as backlog - becomes regular issue)
-router.post('/:id/accept', requireAuth, async (req: Request, res: Response) => {
+router.post('/:id/accept', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
 
@@ -256,7 +216,7 @@ router.post('/:id/accept', requireAuth, async (req: Request, res: Response) => {
     // Verify it's a feedback item in submitted status
     const existing = await pool.query(
       `SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
-      [id, req.user!.workspaceId]
+      [id, req.workspaceId]
     );
 
     if (existing.rows.length === 0) {
@@ -282,7 +242,7 @@ router.post('/:id/accept', requireAuth, async (req: Request, res: Response) => {
        SET properties = $3, updated_at = now()
        WHERE id = $1 AND workspace_id = $2
        RETURNING *`,
-      [id, req.user!.workspaceId, JSON.stringify(newProps)]
+      [id, req.workspaceId, JSON.stringify(newProps)]
     );
 
     // Get program prefix for display_id
@@ -304,7 +264,7 @@ router.post('/:id/accept', requireAuth, async (req: Request, res: Response) => {
 });
 
 // Reject feedback (clears feedback_status, stores rejection reason)
-router.post('/:id/reject', requireAuth, async (req: Request, res: Response) => {
+router.post('/:id/reject', authMiddleware, async (req: Request, res: Response) => {
   try {
     const id = req.params.id as string;
 
@@ -326,7 +286,7 @@ router.post('/:id/reject', requireAuth, async (req: Request, res: Response) => {
     // Verify it's a feedback item in submitted status
     const existing = await pool.query(
       `SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
-      [id, req.user!.workspaceId]
+      [id, req.workspaceId]
     );
 
     if (existing.rows.length === 0) {
@@ -352,7 +312,7 @@ router.post('/:id/reject', requireAuth, async (req: Request, res: Response) => {
        SET properties = $3, updated_at = now()
        WHERE id = $1 AND workspace_id = $2
        RETURNING *`,
-      [id, req.user!.workspaceId, JSON.stringify(newProps)]
+      [id, req.workspaceId, JSON.stringify(newProps)]
     );
 
     // Get program prefix for display_id
