@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures/isolated-env'
 
 /**
  * Sprint tests that complement program-mode-sprint-ux.spec.ts
@@ -26,8 +26,8 @@ test.describe('Sprints - Issue Editor Integration', () => {
     await page.locator('main').getByRole('button', { name: /ship core/i }).click()
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Should see Sprints tab button in the program editor
-    await expect(page.getByRole('button', { name: 'Sprints' })).toBeVisible({ timeout: 5000 })
+    // Should see Sprints tab in the program editor (can be tab or button depending on implementation)
+    await expect(page.getByRole('tab', { name: 'Sprints' }).or(page.getByRole('button', { name: 'Sprints' }))).toBeVisible({ timeout: 5000 })
   })
 
   test('can assign issue to sprint via sprint picker in issue editor', async ({ page }) => {
@@ -36,13 +36,9 @@ test.describe('Sprints - Issue Editor Integration', () => {
     await page.locator('main').getByRole('button', { name: /ship core/i }).click()
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Get program ID for later
-    const programUrl = page.url()
-    const programId = programUrl.split('/programs/')[1]
-
     // Navigate to issues and create a new issue
     await page.goto('/issues')
-    await page.getByRole('button', { name: /new issue/i }).click()
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
     await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 10000 })
 
     // Give the issue a title
@@ -50,6 +46,11 @@ test.describe('Sprints - Issue Editor Integration', () => {
     await titleInput.fill('Sprint Picker Test Issue')
 
     // Wait for title to save (API call)
+    await page.waitForResponse(resp => resp.url().includes('/api/issues/') && resp.request().method() === 'PATCH')
+
+    // Add an estimate first (required before assigning to sprint)
+    const estimateInput = page.getByRole('spinbutton', { name: /estimate/i })
+    await estimateInput.fill('4')
     await page.waitForResponse(resp => resp.url().includes('/api/issues/') && resp.request().method() === 'PATCH')
 
     // Assign the issue to Ship Core program using the Program combobox

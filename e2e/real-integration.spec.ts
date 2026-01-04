@@ -1,4 +1,4 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page } from './fixtures/isolated-env';
 
 /**
  * REAL INTEGRATION TESTS - No mocking, actual end-to-end verification

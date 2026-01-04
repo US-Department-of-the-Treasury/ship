@@ -1,5 +1,8 @@
 // Document types
 
+// Document visibility for private/workspace documents
+export type DocumentVisibility = 'private' | 'workspace';
+
 // Document type enum matching PostgreSQL enum
 export type DocumentType =
   | 'wiki'
@@ -102,6 +105,8 @@ export interface Document {
   created_at: Date;
   updated_at: Date;
   created_by?: string | null;
+  // Document visibility (private = creator only, workspace = all members)
+  visibility: DocumentVisibility;
   // Status timestamps (primarily for issues)
   started_at?: Date | null;
   completed_at?: Date | null;
@@ -162,6 +167,7 @@ export interface CreateDocumentInput {
   project_id?: string | null;
   sprint_id?: string | null;
   properties?: Record<string, unknown>;
+  visibility?: DocumentVisibility;
 }
 
 export interface UpdateDocumentInput {
@@ -174,6 +180,7 @@ export interface UpdateDocumentInput {
   sprint_id?: string | null;
   properties?: Record<string, unknown>;
   archived_at?: Date | null;
+  visibility?: DocumentVisibility;
 }
 
 // Helper type for issue creation with required properties

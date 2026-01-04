@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './fixtures/isolated-env'
 
 test.describe('Team Mode (Phase 7)', () => {
   test.beforeEach(async ({ page }) => {

@@ -1,4 +1,4 @@
-import { test, expect, Page, Browser } from '@playwright/test'
+import { test, expect, Page, Browser } from './fixtures/isolated-env'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'

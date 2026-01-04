@@ -1,0 +1,167 @@
+import { test, expect } from './fixtures/isolated-env';
+
+test.describe('Issue Display IDs', () => {
+  test.beforeEach(async ({ page }) => {
+    // Login before each test
+    await page.goto('/login')
+    await page.locator('#email').fill('dev@ship.local')
+    await page.locator('#password').fill('admin123')
+    await page.getByRole('button', { name: /sign in/i }).click()
+
+    // Wait for app to load
+    await expect(page).not.toHaveURL('/login', { timeout: 10000 })
+  });
+
+  test('displays issue with hash-number format (#N) in issues list', async ({ page }) => {
+    // Navigate to issues page directly
+    await page.goto('/issues')
+    await page.waitForTimeout(1000)
+
+    // Check for #N format in the issues list
+    const issueDisplayId = page.getByText(/#\d+/).first()
+    await expect(issueDisplayId).toBeVisible({ timeout: 5000 })
+  });
+
+  test('displays issue with hash-number format (#N) in issue editor header', async ({ page }) => {
+    // Navigate to issues page
+    await page.goto('/issues')
+    await page.waitForTimeout(500)
+
+    // Click on first issue in the list (look for the row click area)
+    const issueRow = page.locator('tr').filter({ hasText: /#\d+/ }).first()
+    if (await issueRow.isVisible({ timeout: 5000 })) {
+      await issueRow.click()
+      await page.waitForTimeout(500)
+
+      // Check header badge shows #N format
+      const headerBadge = page.locator('.font-mono').filter({ hasText: /#\d+/ }).first()
+      await expect(headerBadge).toBeVisible({ timeout: 5000 })
+      await expect(headerBadge).toHaveText(/^#\d+$/)
+    }
+  });
+
+  test('new issue gets sequential ticket number', async ({ page }) => {
+    // Navigate to issues
+    await page.goto('/issues')
+    await page.waitForTimeout(500)
+
+    // Create new issue (use the specific button in the header, not the sidebar icon)
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
+    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+
+    // New issue should have a number in the header
+    const headerBadge = page.locator('.font-mono').filter({ hasText: /#\d+/ }).first()
+    await expect(headerBadge).toBeVisible({ timeout: 5000 })
+    await expect(headerBadge).toHaveText(/^#\d+$/)
+  });
+
+  test('issue display ID does not contain program prefix', async ({ page }) => {
+    // Navigate to issues
+    await page.goto('/issues')
+    await page.waitForTimeout(500)
+
+    // Click on first issue row
+    const issueRow = page.locator('tr').filter({ hasText: /#\d+/ }).first()
+    if (await issueRow.isVisible({ timeout: 5000 })) {
+      await issueRow.click()
+      await page.waitForTimeout(500)
+
+      // Header badge should NOT contain uppercase letters (no prefix)
+      const headerBadge = page.locator('.font-mono').first()
+      const text = await headerBadge.textContent()
+      // Should be #N format, not PREFIX-N format
+      expect(text).toMatch(/^#\d+$/)
+      expect(text).not.toMatch(/^[A-Z]+-\d+$/)
+    }
+  });
+
+  test('all issue display IDs use hash-number format', async ({ page }) => {
+    // Navigate to issues
+    await page.goto('/issues')
+    await page.waitForTimeout(500)
+
+    // Verify all visible issue display IDs use #N format
+    const tableCells = page.locator('td.font-mono, td:first-child')
+    const count = await tableCells.count()
+
+    let checkedCount = 0
+    for (let i = 0; i < count; i++) {
+      const cellText = await tableCells.nth(i).textContent()
+      if (cellText && /^#\d+$/.test(cellText.trim())) {
+        // Verify #N format (not PREFIX-N)
+        expect(cellText.trim()).toMatch(/^#\d+$/)
+        expect(cellText.trim()).not.toMatch(/^[A-Z]+-\d+$/)
+        checkedCount++
+      }
+    }
+    // Should have found at least one issue
+    expect(checkedCount).toBeGreaterThan(0)
+  });
+
+  test('program issues list shows hash-number format', async ({ page }) => {
+    // Navigate to programs
+    await page.goto('/programs')
+    await page.waitForTimeout(500)
+
+    // Click on first program in the list
+    const programCard = page.locator('[data-testid="program-card"], .contextual-sidebar button').first()
+    if (await programCard.isVisible({ timeout: 5000 })) {
+      await programCard.click()
+      await page.waitForTimeout(500)
+
+      // Click Issues tab if it exists
+      const issuesTab = page.getByRole('button', { name: /issues/i })
+      if (await issuesTab.isVisible()) {
+        await issuesTab.click()
+        await page.waitForTimeout(500)
+      }
+
+      // Check that issues in the program view show #N format
+      const issueDisplayId = page.getByText(/#\d+/).first()
+      if (await issueDisplayId.isVisible({ timeout: 3000 })) {
+        await expect(issueDisplayId).toHaveText(/^#\d+$/)
+      }
+    }
+  });
+
+  test('command palette shows issues with hash-number format (#N)', async ({ page }) => {
+    // Wait for app to be fully loaded
+    await page.goto('/issues')
+    await page.waitForTimeout(1000)
+
+    // Open command palette with Cmd+K (or Ctrl+K on non-Mac)
+    await page.keyboard.press('Meta+k')
+    await page.waitForTimeout(300)
+
+    // If command palette didn't open, try Ctrl+K
+    const commandPalette = page.locator('[cmdk-root], [data-testid="command-palette"]')
+    if (!(await commandPalette.isVisible())) {
+      await page.keyboard.press('Control+k')
+      await page.waitForTimeout(300)
+    }
+
+    // Type to search for issues
+    const searchInput = page.locator('[cmdk-input], input[placeholder*="Search"], input[placeholder*="Type"]')
+    if (await searchInput.isVisible()) {
+      await searchInput.fill('#')
+      await page.waitForTimeout(500)
+
+      // Check that any issue results use #N format, not PREFIX-N format
+      const issueResults = page.locator('[cmdk-item]')
+      const count = await issueResults.count()
+
+      for (let i = 0; i < Math.min(count, 5); i++) {
+        const text = await issueResults.nth(i).textContent()
+        if (text && text.includes('#')) {
+          // Should see #N format
+          expect(text).toMatch(/#\d+/)
+          // Should NOT see PREFIX-N format (uppercase letters followed by hyphen and number)
+          expect(text).not.toMatch(/[A-Z]{2,}-\d+/)
+        }
+      }
+    }
+
+    // Close command palette
+    await page.keyboard.press('Escape')
+  });
+});

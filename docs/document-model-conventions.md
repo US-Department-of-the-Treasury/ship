@@ -211,6 +211,18 @@ This ensures:
 
 When creating a sprint, the UI must show owner availability and prevent selecting someone already assigned to another program's sprint in that window.
 
+### Team Allocation View
+
+The Team Allocation view (Team → Allocation tab) shows **explicit sprint ownership**, NOT inferred assignments from issues:
+
+| What it shows | What it does NOT show |
+|---------------|----------------------|
+| Sprint `owner_id` - who is explicitly assigned as sprint owner | Issue `assignee_id` - who has work assigned |
+
+**Key distinction:** A person might have issues assigned to them in a sprint, but that doesn't make them the sprint owner. Sprint ownership is an explicit, accountable assignment stored in `properties.owner_id` on the sprint document.
+
+The `/api/team/assignments` endpoint queries sprint documents by `owner_id`, not issues by `assignee_id`.
+
 ### Sprint UI in Program Mode
 
 Program mode displays sprints in **three sections**:
@@ -386,6 +398,27 @@ Document types differ by:
 They do NOT differ by title handling. Keep it simple.
 
 ## Decision Log
+
+### 2025-01-03: Team Allocation View Bug Fix
+
+**Attendees:** User + Claude
+
+**Context:** Team Allocation view showed empty grid despite sprints having `owner_id` set in seed data. Investigation revealed the API was querying issues by `assignee_id` instead of sprints by `owner_id`.
+
+**Root Cause:** The `/api/team/assignments` endpoint was incorrectly treating "allocation" as inferred from issue assignees rather than explicit sprint ownership. This contradicted the documented model where `owner_id` on sprints is the explicit accountability assignment.
+
+**Fix Applied:**
+- `GET /api/team/assignments` - Now queries sprint documents by `owner_id` (was querying issues by `assignee_id`)
+- `POST /api/team/assign` - Sets `owner_id` on sprint document (was creating placeholder issues)
+- `DELETE /api/team/assign` - Clears `owner_id` from sprint (was removing placeholder issues)
+
+**Key Clarification Added:**
+- Added "Team Allocation View" section to document the distinction between:
+  - Sprint ownership (`owner_id`) - explicit accountability
+  - Issue assignment (`assignee_id`) - who has work assigned
+- These are different concepts; allocation grid shows ownership, not inferred assignments
+
+**Lesson Learned:** When implementing features involving sprints, always check the documented sprint model. Sprint `owner_id` is the authoritative source for "who owns this sprint."
 
 ### 2025-01-01: Program Mode Sprint UX Interview
 
