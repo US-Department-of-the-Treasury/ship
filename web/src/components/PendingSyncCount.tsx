@@ -10,19 +10,19 @@ export function PendingSyncCount() {
 
   const count = pendingMutations.length;
 
+  // Only show when there are pending items
+  if (count === 0) {
+    return null;
+  }
+
   return (
-    <span
+    <div
       data-testid="pending-sync-count"
-      className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium ${
-        count > 0
-          ? 'bg-amber-100 text-amber-800'
-          : 'bg-gray-100 text-gray-600'
-      }`}
+      className="px-3 py-2 text-xs text-muted border-t border-border"
       role="status"
       aria-live="polite"
-      aria-label={`${count} pending ${count === 1 ? 'change' : 'changes'} to sync`}
     >
-      {count}
-    </span>
+      {count} {count === 1 ? 'change' : 'changes'} waiting to sync
+    </div>
   );
 }

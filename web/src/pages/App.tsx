@@ -281,16 +281,13 @@ export function AppLayout() {
           <div className="flex w-56 flex-col h-full">
             {/* Sidebar header */}
             <div className="flex h-10 items-center justify-between border-b border-border px-3">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-medium text-foreground m-0">
-                  {activeMode === 'docs' && 'Docs'}
-                  {activeMode === 'issues' && 'Issues'}
-                  {activeMode === 'programs' && 'Programs'}
-                  {activeMode === 'team' && 'Teams'}
-                  {activeMode === 'settings' && 'Settings'}
-                </h2>
-                <PendingSyncCount />
-              </div>
+              <h2 className="text-sm font-medium text-foreground m-0">
+                {activeMode === 'docs' && 'Docs'}
+                {activeMode === 'issues' && 'Issues'}
+                {activeMode === 'programs' && 'Programs'}
+                {activeMode === 'team' && 'Teams'}
+                {activeMode === 'settings' && 'Settings'}
+              </h2>
               <div className="flex items-center gap-1">
                 {activeMode === 'docs' && (
                   <button
@@ -349,6 +346,9 @@ export function AppLayout() {
                 <div className="px-3 py-2 text-sm text-muted">Settings</div>
               )}
             </div>
+
+            {/* Subtle sync status at bottom */}
+            <PendingSyncCount />
           </div>
         </aside>
 
