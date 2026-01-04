@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
@@ -125,6 +126,13 @@ export function Editor({
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => {
     return localStorage.getItem('ship:rightSidebarCollapsed') === 'true';
   });
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+
+  // Find portal target for properties sidebar (for proper landmark order)
+  useLayoutEffect(() => {
+    const target = document.getElementById('properties-portal');
+    setPortalTarget(target);
+  }, []);
 
   // Persist right sidebar state
   useEffect(() => {
@@ -456,46 +464,47 @@ export function Editor({
           />
         </div>
 
-        {/* Optional sidebar (e.g., issue properties) */}
-        {sidebar && (
-          <aside
-            className={cn(
-              'flex flex-col border-l border-border transition-all duration-200 overflow-hidden',
-              rightSidebarCollapsed ? 'w-0 border-l-0' : 'w-64'
-            )}
-            aria-label="Document properties"
-          >
-            <div className="flex w-64 flex-col h-full">
-              {/* Sidebar header with collapse button */}
-              <div className="flex h-10 items-center justify-between border-b border-border px-3">
-                <span className="text-sm font-medium text-foreground">Properties</span>
-                <button
-                  onClick={() => setRightSidebarCollapsed(true)}
-                  className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                  aria-label="Collapse sidebar"
-                >
-                  <CollapseRightIcon />
-                </button>
-              </div>
-              {/* Sidebar content */}
-              <div className="flex-1 overflow-auto">
-                {sidebar}
-              </div>
-            </div>
-          </aside>
-        )}
-
-        {/* Expand button when right sidebar is collapsed */}
-        {sidebar && rightSidebarCollapsed && (
-          <button
-            onClick={() => setRightSidebarCollapsed(false)}
-            className="flex h-10 w-10 items-center justify-center border-l border-border text-muted hover:bg-border/50 hover:text-foreground transition-colors"
-            aria-label="Expand properties sidebar"
-          >
-            <ExpandLeftIcon />
-          </button>
-        )}
       </div>
+
+      {/* Properties sidebar content - rendered via portal into the aside landmark in App.tsx */}
+      {sidebar && portalTarget && createPortal(
+        <div
+          className={cn(
+            'flex flex-col border-l border-border transition-all duration-200 overflow-hidden h-full',
+            rightSidebarCollapsed ? 'w-0 border-l-0' : 'w-64'
+          )}
+        >
+          <div className="flex w-64 flex-col h-full">
+            {/* Sidebar header with collapse button */}
+            <div className="flex h-10 items-center justify-between border-b border-border px-3">
+              <span className="text-sm font-medium text-foreground">Properties</span>
+              <button
+                onClick={() => setRightSidebarCollapsed(true)}
+                className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                aria-label="Collapse sidebar"
+              >
+                <CollapseRightIcon />
+              </button>
+            </div>
+            {/* Sidebar content */}
+            <div className="flex-1 overflow-auto">
+              {sidebar}
+            </div>
+          </div>
+
+          {/* Expand button when right sidebar is collapsed */}
+          {rightSidebarCollapsed && (
+            <button
+              onClick={() => setRightSidebarCollapsed(false)}
+              className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center border-l border-border text-muted hover:bg-border/50 hover:text-foreground transition-colors"
+              aria-label="Expand properties sidebar"
+            >
+              <ExpandLeftIcon />
+            </button>
+          )}
+        </div>,
+        portalTarget
+      )}
     </div>
   );
 }
