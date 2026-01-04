@@ -80,6 +80,9 @@ importers:
       express:
         specifier: ^4.21.2
         version: 4.22.1
+      express-rate-limit:
+        specifier: ^8.2.1
+        version: 8.2.1(express@4.22.1)
       express-session:
         specifier: ^1.18.2
         version: 1.18.2
@@ -150,9 +153,6 @@ importers:
       '@vitest/ui':
         specifier: ^4.0.16
         version: 4.0.16(vitest@4.0.16)
-      express-rate-limit:
-        specifier: ^8.2.1
-        version: 8.2.1(express@4.22.1)
       supertest:
         specifier: ^7.1.4
         version: 7.1.4
