@@ -20,10 +20,10 @@ This document describes the application architecture for the Ship greenfield reb
 | **Frontend**       | React + Vite             | Fast dev experience, TipTap/Yjs ecosystem |
 | **Database**       | PostgreSQL               | Reliable, feature-rich, direct SQL        |
 | **DB Client**      | pg (raw SQL)             | Maximum simplicity, no abstraction        |
-| **Client Storage** | IndexedDB                | Offline cache, write queue                |
-| **Real-time**      | WebSocket (ws)           | Same process as API, simple               |
-| **Rich Text**      | TipTap + Yjs             | Collaborative editing (online only)       |
-| **State Mgmt**     | TanStack Query + Zustand | Server state + minimal UI state           |
+| **Client Storage** | IndexedDB (y-indexeddb)  | Editor content cache (implemented)        |
+| **Real-time**      | WebSocket (y-websocket)  | Yjs sync for collaborative editing        |
+| **Rich Text**      | TipTap + Yjs             | Offline-tolerant via IndexedDB cache      |
+| **State Mgmt**     | React Context (current)  | TanStack Query migration planned          |
 | **UI Components**  | shadcn/ui                | Tailwind + Radix, copy-paste ownership    |
 | **Router**         | React Router v6          | Boring, ubiquitous, works with Vite       |
 | **Forms**          | React Hook Form          | Performant, good validation               |
@@ -158,29 +158,60 @@ type WSMessage =
 
 ### State Management
 
-**TanStack Query** for server/cached data:
+#### Current Implementation (React Context)
+
+Lists and metadata currently use React Context + useState with direct API calls:
 
 ```typescript
-// Queries read from IndexedDB (cached data)
+// web/src/contexts/DocumentsContext.tsx (current)
+const [documents, setDocuments] = useState<Document[]>([]);
+
+const refreshDocuments = useCallback(async () => {
+  const res = await apiGet('/api/documents?type=wiki');
+  if (res.ok) setDocuments(await res.json());
+}, []);
+```
+
+**Limitations of current approach:**
+- No caching across page navigations
+- No automatic cache invalidation
+- No offline support for lists
+- Full re-renders on context updates
+
+#### Target Architecture (TanStack Query + IndexedDB)
+
+Migration to TanStack Query with IndexedDB persistence is planned:
+
+```typescript
+// Target: TanStack Query with IndexedDB persist
 const { data: documents } = useQuery({
   queryKey: ["documents", { programId }],
-  queryFn: () => localDb.documents.where({ programId }).toArray(),
+  queryFn: () => fetchDocuments(programId),
+  staleTime: 1000 * 60, // 1 minute
 });
 
-// Mutations write to IndexedDB + queue for sync
+// Mutations with optimistic updates
 const mutation = useMutation({
-  mutationFn: async (doc) => {
-    await localDb.documents.put(doc);
-    await syncQueue.add({ type: "update", doc });
+  mutationFn: createDocument,
+  onMutate: async (newDoc) => {
+    // Optimistic update - show immediately
+    await queryClient.cancelQueries(['documents']);
+    const previous = queryClient.getQueryData(['documents']);
+    queryClient.setQueryData(['documents'], (old) => [...old, newDoc]);
+    return { previous };
   },
-  onSuccess: () => queryClient.invalidateQueries(["documents"]),
+  onError: (err, newDoc, context) => {
+    // Rollback on error
+    queryClient.setQueryData(['documents'], context.previous);
+  },
+  onSettled: () => queryClient.invalidateQueries(['documents']),
 });
 ```
 
-**Zustand** for UI-only state:
+**Zustand** for UI-only state (unchanged):
 
 ```typescript
-// Minimal UI state
+// Minimal UI state - does not need offline persistence
 const useUIStore = create<UIState>((set) => ({
   sidebarOpen: true,
   currentMode: "programs",
@@ -188,99 +219,122 @@ const useUIStore = create<UIState>((set) => ({
 }));
 ```
 
-### IndexedDB Schema
-
-```typescript
-// web/src/db/schema.ts
-interface ShipDB {
-  documents: Document;
-  programs: Program;
-  config: ConfigEntity; // States, Labels, IssueTypes
-  syncQueue: QueuedChange;
-  syncMeta: { key: string; value: any };
-}
-```
-
 ### Offline Strategy
 
-**Model**: Offline-tolerant (server is source of truth)
+**Design Philosophy**: Email-client UX - app feels native, works on flaky wifi, syncs when online.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Online                                │
-│  ┌──────────┐    fetch     ┌──────────┐    query   ┌─────┐  │
-│  │  Server  │ ──────────>  │ IndexedDB │ ────────> │ UI  │  │
-│  └──────────┘              └──────────┘            └─────┘  │
-│       ▲                          │                    │      │
-│       │         sync queue       │       mutation     │      │
-│       └──────────────────────────┴────────────────────┘      │
-└─────────────────────────────────────────────────────────────┘
+**Model**: Offline-tolerant (server is source of truth, last-write-wins for conflicts)
 
-┌─────────────────────────────────────────────────────────────┐
-│                        Offline                               │
-│                                                              │
-│  ┌──────────┐   (queued)   ┌──────────┐    query   ┌─────┐  │
-│  │  Server  │ <─ ─ ─ ─ ─   │ IndexedDB │ ────────> │ UI  │  │
-│  └──────────┘              └──────────┘            └─────┘  │
-│       ▲                          │                    │      │
-│       │         sync queue       │       mutation     │      │
-│       └──────────────────────────┴────────────────────┘      │
-└─────────────────────────────────────────────────────────────┘
-```
+#### Two-Layer Sync Architecture
 
-**Reads**: Served from IndexedDB cache
-**Writes**: Saved to IndexedDB + added to sync queue
-**Reconnect**: Flush sync queue to server
-**Conflicts**: Last-write-wins (timestamp-based)
+Ship uses two different sync mechanisms optimized for their data types:
 
-### Sync Flow (Current)
+| Layer | Data Type | Sync Technology | Offline Behavior |
+|-------|-----------|-----------------|------------------|
+| **Editor Content** | Yjs documents | y-websocket + y-indexeddb | ✅ **Implemented** - edits queue locally, auto-merge on reconnect |
+| **Lists/Metadata** | Documents, issues, programs | TanStack Query + IndexedDB persist | 🔲 **Planned** - currently requires connection |
 
-Currently using standard REST endpoints for sync:
+#### Layer 1: Editor Content (Implemented)
+
+Collaborative document editing uses Yjs CRDTs with dual persistence:
 
 ```typescript
-// web/src/sync/syncManager.ts
-class SyncManager {
-  async initialize() {
-    // Load cached data from IndexedDB
-    await this.loadFromCache();
+// web/src/components/Editor.tsx (current implementation)
+import { IndexeddbPersistence } from 'y-indexeddb';
+import { WebsocketProvider } from 'y-websocket';
 
-    // Start sync if online
-    if (navigator.onLine) {
-      await this.pullChanges();
-      await this.flushQueue();
-    }
+// IndexedDB caches content locally - loads instantly
+const indexeddbProvider = new IndexeddbPersistence(`ship-${roomPrefix}-${documentId}`, ydoc);
 
-    // Listen for online/offline
-    window.addEventListener("online", () => this.onOnline());
-  }
-
-  async onOnline() {
-    await this.flushQueue(); // Push pending changes
-    await this.pullChanges(); // Get server updates
-  }
-
-  async pullChanges() {
-    // Uses standard REST endpoints to fetch recent documents
-    const documents = await api.get("/api/documents?updated_since=...");
-    await this.applyChanges(documents);
-  }
-
-  async flushQueue() {
-    // Flush queued changes via standard REST endpoints
-    const pending = await localDb.syncQueue.toArray();
-    for (const change of pending) {
-      await api.patch(`/api/documents/${change.id}`, change.data);
-    }
-    await localDb.syncQueue.clear();
-  }
-}
+// WebSocket syncs with server - handles real-time collaboration
+const wsProvider = new WebsocketProvider(wsUrl, `${roomPrefix}:${documentId}`, ydoc);
 ```
 
-> **Roadmap:** Dedicated sync endpoints (`/api/sync/changes`, `/api/sync/push`) planned for more efficient offline-first experience. See Roadmap section.
+**How it works:**
+1. **Open document**: IndexedDB loads cached content instantly (no spinner)
+2. **WebSocket connects**: Merges any server changes via CRDT (conflict-free)
+3. **Edit offline**: Changes saved to IndexedDB, queued for sync
+4. **Reconnect**: Yjs automatically merges local + server changes
+
+**Status indicators:**
+- `Saved` (green) - synced with server
+- `Cached` (blue) - loaded from local cache, not yet synced
+- `Saving` (yellow) - connecting to server
+- `Offline` (red) - disconnected, edits cached locally
+
+#### Layer 2: Lists/Metadata (Planned)
+
+Document lists, properties, and metadata will use TanStack Query with IndexedDB persistence:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Architecture                          │
+├─────────────────────────────────────────────────────────────┤
+│  UI Layer (React Components)                                │
+├─────────────────────────────────────────────────────────────┤
+│  TanStack Query                     │  Yjs (Editor)         │
+│  - Query cache (in-memory)          │  - Y.Doc (in-memory)  │
+│  - Mutations with optimistic UI     │  - CRDT operations    │
+│  ↕                                  │  ↕                    │
+│  IndexedDB Persister                │  y-indexeddb          │
+│  (query cache survives reload)      │  (doc survives reload)│
+│  ↕                                  │  ↕                    │
+│  REST API (/api/*)                  │  WebSocket (/collab)  │
+├─────────────────────────────────────────────────────────────┤
+│                    PostgreSQL (source of truth)              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Target implementation (planned):**
+
+```typescript
+// Target: TanStack Query with IndexedDB persistence
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import { persistQueryClient } from '@tanstack/react-query-persist-client';
+
+const persister = createSyncStoragePersister({
+  storage: window.localStorage, // or IndexedDB adapter
+});
+
+persistQueryClient({
+  queryClient,
+  persister,
+  maxAge: 1000 * 60 * 60 * 24, // 24 hours
+});
+```
+
+**Offline mutation queue (planned):**
+
+```typescript
+// Target: Queued mutations for offline writes
+const mutation = useMutation({
+  mutationFn: createDocument,
+  onMutate: async (newDoc) => {
+    // Show optimistically
+    queryClient.setQueryData(['documents'], (old) => [...old, { ...newDoc, _pending: true }]);
+  },
+  retry: true, // Retry when back online
+  networkMode: 'offlineFirst',
+});
+```
+
+#### Conflict Resolution
+
+| Data Type | Strategy | Rationale |
+|-----------|----------|-----------|
+| Editor content | CRDT auto-merge | Yjs handles this - no conflicts possible |
+| Structured data | Last-write-wins | Simple, predictable, server timestamp decides |
+
+**Last-write-wins behavior:**
+- Each mutation includes client timestamp
+- Server compares with current `updated_at`
+- Most recent timestamp wins
+- User's offline edit may be overwritten if server has newer data
+- No conflict UI needed - keep it simple
 
 ## Real-Time Collaboration
 
-**Online only** - collaborative editing requires connection.
+**Offline-tolerant** - editing works offline, collaboration resumes on reconnect.
 
 ### TipTap + Yjs Integration
 
@@ -313,10 +367,11 @@ awareness.setLocalState({
 
 **Offline behavior**:
 
-- Document opens in single-user mode
-- No presence indicators
-- Edits queue locally
-- On reconnect: changes sync, presence restored
+- Document opens with cached content (IndexedDB)
+- No presence indicators when offline
+- Edits saved locally, queued for sync
+- On reconnect: Yjs CRDT auto-merges changes, presence restored
+- No data loss - offline edits always preserved
 
 ## Authentication
 
@@ -773,22 +828,69 @@ pnpm dev
 - **Idle timeout**: Warn at 14 min, auto-logout at 15 min
 - **Re-auth for sensitive actions**: Consider requiring fresh auth for destructive operations
 
+### 2026-01-03: Offline Architecture Clarification
+
+**Attendees:** User + Claude
+
+**Context:** Architecture review revealed docs described TanStack Query + IndexedDB but implementation used React Context. Clarified intended architecture through interview.
+
+**Key Decisions:**
+
+1. **Two-layer sync architecture**: Editor content (Yjs) and lists/metadata (TanStack Query) use different strategies
+2. **Editor offline**: Already implemented via y-indexeddb - works fully offline
+3. **Lists offline (planned)**: TanStack Query + IndexedDB persistence + mutation queue
+4. **Conflict resolution**: Last-write-wins for structured data (simple, no UI needed)
+5. **Design philosophy**: "Email client UX" - works on flaky wifi, syncs when online
+6. **Scope**: Full offline for everything (no exceptions that add complexity)
+
+**Implementation Phases:**
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| Editor content | Yjs + y-indexeddb + y-websocket | ✅ Implemented |
+| TanStack Query migration | Replace Context + useState | 🔲 Planned |
+| IndexedDB persistence | Persist query cache | 🔲 Planned |
+| Offline mutation queue | Queue writes, sync on reconnect | 🔲 Planned |
+
+**Rationale:**
+
+- **Two-layer approach**: Editor benefits from CRDT (conflict-free), lists can use simpler last-write-wins
+- **Full offline**: Exceptions add their own complexity; simpler to make everything work offline
+- **Last-write-wins**: Avoids conflict UI complexity; users understand "most recent change wins"
+
 ---
 
 ## Roadmap
 
 Features planned but not yet implemented:
 
-### Dedicated Sync API
+### TanStack Query Migration (High Priority)
 
-Optimized endpoints for offline-first sync:
+Replace React Context with TanStack Query for server state:
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/sync/changes?since=timestamp` | Get all changes since last sync |
-| `POST /api/sync/push` | Batch push queued offline changes |
+| Current | Target |
+|---------|--------|
+| `DocumentsContext` + useState | `useDocuments()` hook with TanStack Query |
+| `IssuesContext` + useState | `useIssues()` hook with TanStack Query |
+| `ProgramsContext` + useState | `usePrograms()` hook with TanStack Query |
+| `WorkspaceContext` + useState | `useWorkspace()` hook with TanStack Query |
 
-**Why:** Current REST endpoints work but require multiple requests. Dedicated sync endpoints enable more efficient bulk sync operations.
+**Why:** Enables caching, optimistic updates, and offline persistence. Current Context pattern causes full re-renders and no caching.
+
+### Offline Mutation Queue
+
+Queued writes for true offline support:
+
+```typescript
+// TanStack Query mutation with offline support
+const mutation = useMutation({
+  mutationFn: createDocument,
+  networkMode: 'offlineFirst',
+  retry: true,
+});
+```
+
+**Why:** Enables creating/editing documents while offline. Changes sync automatically on reconnect.
 
 ### Type-Safe Query Builder
 
@@ -805,6 +907,133 @@ const results = await db
 ```
 
 **Why:** Raw SQL is sufficient for simple CRUD. Type-safe builder may help with complex filtering/reporting queries.
+
+---
+
+## E2E Offline Test Infrastructure Requirements
+
+The e2e/offline-*.spec.ts test suite is comprehensive TDD coverage for offline functionality. Tests are organized into what currently passes vs. what needs infrastructure.
+
+### Currently Passing (14 tests)
+
+**offline-03-editor-content.spec.ts** - Editor content offline persistence via Yjs + y-indexeddb:
+- Document content loads from IndexedDB when offline
+- Offline edits persist across page reloads
+- Offline edits sync when reconnected
+- Multiple documents can be edited offline
+
+**Why these pass:** Layer 1 (Editor Content) is fully implemented with y-indexeddb.
+
+### Skipped Tests (138 tests) - Infrastructure Needed
+
+Tests in these categories are skipped because they require Layer 2 infrastructure that is not yet implemented:
+
+#### 1. TanStack Query + IndexedDB Persistence
+
+**Required for:** Lists caching, metadata persistence, offline page loads
+
+```typescript
+// Target implementation
+import { persistQueryClient } from '@tanstack/react-query-persist-client';
+import { createIDBPersister } from './idb-persister';
+
+const persister = createIDBPersister();
+persistQueryClient({ queryClient, persister });
+```
+
+**Test files needing this:**
+- offline-01-list-cache.spec.ts (list caching)
+- offline-09-cold-start.spec.ts (cold start from cache)
+- offline-10-search-filter.spec.ts (cached search/filter)
+- offline-22-background-tab.spec.ts (refetchOnWindowFocus)
+- offline-26-schema-migration.spec.ts (cache version migration)
+- offline-32-ui-state.spec.ts (state preservation)
+- offline-33-version-mismatch.spec.ts (API version handling)
+
+#### 2. Offline Mutation Queue
+
+**Required for:** Creating/editing while offline, auto-sync on reconnect
+
+```typescript
+// Target implementation
+const mutation = useMutation({
+  mutationFn: createDocument,
+  networkMode: 'offlineFirst',
+  onMutate: async (newDoc) => {
+    // Optimistic update - show with pending indicator
+    queryClient.setQueryData(['documents'], (old) =>
+      [...old, { ...newDoc, _pending: true }]
+    );
+  },
+  retry: true,
+});
+```
+
+**Test files needing this:**
+- offline-02-mutations.spec.ts (CRUD operations offline)
+- offline-04-queue-management.spec.ts (queue ordering, persistence)
+- offline-05-error-handling.spec.ts (retry logic, error recovery)
+- offline-07-session-handling.spec.ts (session expiry during offline)
+- offline-12-extended-periods.spec.ts (long offline periods)
+- offline-14-server-validation.spec.ts (validation error handling)
+- offline-15-chained-operations.spec.ts (operation collapsing)
+- offline-16-optimistic-rollback.spec.ts (rollback on error)
+- offline-18-browser-close.spec.ts (persistence across sessions)
+- offline-19-*.spec.ts (assignees, programs, projects, sprints)
+- offline-20-reference-integrity.spec.ts (dangling references)
+- offline-23-ticket-collision.spec.ts (concurrent issue creation)
+- offline-24-rapid-mutations.spec.ts (debouncing/deduplication)
+- offline-28-flaky-network.spec.ts (timeout/retry handling)
+- offline-30-permission-changes.spec.ts (auth error handling)
+- offline-31-large-content.spec.ts (large document sync)
+
+#### 3. Offline UI Components
+
+**Required for:** User feedback during offline/sync states
+
+| Component | data-testid | Purpose |
+|-----------|-------------|---------|
+| Offline indicator | `offline-indicator` | Shows "You're offline" banner |
+| Connection status | `connection-status` | Shows server vs network issues |
+| Pending sync count | `pending-sync-count` | Shows "3 changes pending" |
+| Pending sync icon | `pending-sync-icon` | Per-item pending indicator |
+| Document list | `document-list` | Main document list container |
+
+**Test files needing these:**
+- offline-06-ui-indicators.spec.ts (all indicators)
+- offline-08-websocket.spec.ts (collab status)
+- offline-11-multi-tab.spec.ts (cross-tab sync)
+- offline-13-storage-limits.spec.ts (quota warnings)
+- offline-17-user-controls.spec.ts (manual sync controls)
+- offline-21-server-unreachable.spec.ts (server vs offline distinction)
+- offline-27-accessibility.spec.ts (ARIA for offline states)
+
+### Implementation Priority
+
+Based on test coverage and user impact:
+
+| Priority | Component | Impact | Complexity |
+|----------|-----------|--------|------------|
+| 1 | TanStack Query migration | Lists cache, no loading on navigate | Medium |
+| 2 | IndexedDB persistence | Offline page loads work | Low |
+| 3 | Offline mutation queue | Create/edit offline | High |
+| 4 | Offline UI components | User feedback | Low |
+
+### Running Offline Tests
+
+```bash
+# Run all offline tests (shows pass/skip counts)
+npx playwright test e2e/offline-*.spec.ts --reporter=line
+
+# Run only passing tests (editor content)
+npx playwright test e2e/offline-03-editor-content.spec.ts
+
+# Expected current output:
+# 138 skipped
+# 14 passed
+```
+
+As each infrastructure component is implemented, remove `.skip` from the corresponding test files to enable the TDD tests.
 
 ---
 

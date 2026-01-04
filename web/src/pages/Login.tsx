@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, type FormEvent } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
+import { getIsOnline, subscribeToOnlineStatus } from '@/lib/queryClient';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -30,6 +31,12 @@ export function LoginPage() {
   const [errorField, setErrorField] = useState<'email' | 'password' | 'general' | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingSetup, setIsCheckingSetup] = useState(true);
+  const [isOnline, setIsOnline] = useState(getIsOnline());
+
+  // Subscribe to online/offline status changes
+  useEffect(() => {
+    return subscribeToOnlineStatus(setIsOnline);
+  }, []);
 
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -130,6 +137,16 @@ export function LoginPage() {
 
         {/* Login Form */}
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          {/* Offline message */}
+          {!isOnline && (
+            <div
+              role="alert"
+              className="rounded-md border border-yellow-500/20 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-400"
+            >
+              You're currently offline. Please connect to the internet to sign in.
+            </div>
+          )}
+
           {/* Session expired message */}
           {sessionExpired && (
             <div

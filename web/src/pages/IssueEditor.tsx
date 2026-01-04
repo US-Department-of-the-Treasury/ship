@@ -159,7 +159,7 @@ export function IssueEditorPage() {
       roomPrefix="issue"
       placeholder="Add a description..."
       headerBadge={
-        <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted">
+        <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted" data-testid="ticket-number">
           {issue.display_id}
         </span>
       }

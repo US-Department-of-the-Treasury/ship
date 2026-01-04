@@ -81,4 +81,19 @@ test.describe('Authentication', () => {
     // Should redirect to login (may have query params like ?expired=true&returnTo=...)
     await expect(page).toHaveURL(/\/login/)
   })
+
+  test('login is case-insensitive for email', async ({ page }) => {
+    await page.goto('/login')
+
+    // Enter valid credentials with different case (seed uses 'dev@ship.local')
+    await page.locator('#email').fill('DEV@SHIP.LOCAL')
+    await page.locator('#password').fill('admin123')
+    await page.getByRole('button', { name: /sign in/i }).click()
+
+    // Should redirect to app (not /login) - login succeeds despite different case
+    await expect(page).not.toHaveURL('/login', { timeout: 5000 })
+
+    // Should show Documents page (default landing after login)
+    await expect(page.locator('h1', { hasText: 'Documents' })).toBeVisible({ timeout: 5000 })
+  })
 })
