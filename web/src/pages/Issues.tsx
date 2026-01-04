@@ -193,7 +193,7 @@ export function IssuesPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <h1 className="text-xl font-semibold text-foreground">Issues</h1>
