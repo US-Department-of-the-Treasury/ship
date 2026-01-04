@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
+import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { cn, getContrastTextColor } from '@/lib/cn';
@@ -454,7 +455,7 @@ export function ProgramEditorPage() {
                 onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
               />
             ) : (
-              <IssuesListWithBulkActions
+              <ProgramIssuesList
                 issues={filteredIssues}
                 sprints={sprints}
                 selectedIssues={selectedIssues}
@@ -476,18 +477,6 @@ export function ProgramEditorPage() {
                   const res = await fetch(`${API_URL}/api/programs/${id}/issues`, { credentials: 'include' });
                   if (res.ok) setIssues(await res.json());
                   setSelectedIssues(new Set());
-                }}
-                onSingleMoveToSprint={async (issueId, sprintId) => {
-                  const token = await getCsrfToken();
-                  await fetch(`${API_URL}/api/issues/${issueId}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-                    credentials: 'include',
-                    body: JSON.stringify({ sprint_id: sprintId }),
-                  });
-                  // Refresh issues
-                  const res = await fetch(`${API_URL}/api/programs/${id}/issues`, { credentials: 'include' });
-                  if (res.ok) setIssues(await res.json());
                 }}
               />
             )}
@@ -642,70 +631,23 @@ function PropertyRow({ label, children }: { label: string; children: React.React
   );
 }
 
-function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (id: string) => void }) {
-  const stateLabels: Record<string, string> = {
-    backlog: 'Backlog',
-    todo: 'Todo',
-    in_progress: 'In Progress',
-    done: 'Done',
-    cancelled: 'Cancelled',
-  };
+// Status labels for issues
+const STATE_LABELS: Record<string, string> = {
+  backlog: 'Backlog',
+  todo: 'Todo',
+  in_progress: 'In Progress',
+  done: 'Done',
+  cancelled: 'Cancelled',
+};
 
-  if (issues.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted">No issues in this program</p>
-      </div>
-    );
-  }
-
-  return (
-    <table className="w-full">
-      <thead className="sticky top-0 bg-background">
-        <tr className="border-b border-border text-left text-xs text-muted">
-          <th className="px-6 py-2 font-medium">ID</th>
-          <th className="px-6 py-2 font-medium">Title</th>
-          <th className="px-6 py-2 font-medium">Status</th>
-          <th className="px-6 py-2 font-medium">Assignee</th>
-        </tr>
-      </thead>
-      <tbody>
-        {issues.map((issue) => (
-          <tr
-            key={issue.id}
-            onClick={() => onIssueClick(issue.id)}
-            className="cursor-pointer border-b border-border/50 hover:bg-border/30 transition-colors"
-          >
-            <td className="px-6 py-3 text-sm font-mono text-muted">
-              {issue.display_id}
-            </td>
-            <td className="px-6 py-3 text-sm text-foreground">
-              {issue.title}
-            </td>
-            <td className="px-6 py-3">
-              <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
-                {stateLabels[issue.state] || issue.state}
-              </span>
-            </td>
-            <td className="px-6 py-3 text-sm text-muted">
-              {issue.assignee_name || 'Unassigned'}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-// Issues list with bulk selection and move to sprint functionality
-function IssuesListWithBulkActions({
+// Program Issues List using SelectableList component
+function ProgramIssuesList({
   issues,
   sprints,
   selectedIssues,
   onSelectionChange,
   onIssueClick,
   onBulkMoveToSprint,
-  onSingleMoveToSprint,
 }: {
   issues: Issue[];
   sprints: Sprint[];
@@ -713,41 +655,43 @@ function IssuesListWithBulkActions({
   onSelectionChange: (selected: Set<string>) => void;
   onIssueClick: (id: string) => void;
   onBulkMoveToSprint: (sprintId: string | null) => Promise<void>;
-  onSingleMoveToSprint: (issueId: string, sprintId: string | null) => Promise<void>;
 }) {
   const [isMoving, setIsMoving] = useState(false);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [showSprintSubmenu, setShowSprintSubmenu] = useState(false);
 
-  const stateLabels: Record<string, string> = {
-    backlog: 'Backlog',
-    todo: 'Todo',
-    in_progress: 'In Progress',
-    done: 'Done',
-    cancelled: 'Cancelled',
-  };
+  // Column definitions
+  const columns = useMemo(() => [
+    { key: 'id', label: 'ID' },
+    { key: 'title', label: 'Title' },
+    { key: 'status', label: 'Status' },
+    { key: 'assignee', label: 'Assignee' },
+    { key: 'sprint', label: 'Sprint' },
+  ], []);
 
-  const allSelected = issues.length > 0 && issues.every(i => selectedIssues.has(i.id));
-  const someSelected = issues.some(i => selectedIssues.has(i.id));
-
-  const toggleAll = () => {
-    if (allSelected) {
-      onSelectionChange(new Set());
-    } else {
-      onSelectionChange(new Set(issues.map(i => i.id)));
-    }
-  };
-
-  const toggleIssue = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newSelection = new Set(selectedIssues);
-    if (newSelection.has(id)) {
-      newSelection.delete(id);
-    } else {
-      newSelection.add(id);
-    }
-    onSelectionChange(newSelection);
-  };
+  // Render function for issue rows
+  const renderIssueRow = useCallback((issue: Issue, _props: RowRenderProps) => {
+    const sprint = sprints.find(s => s.id === issue.sprint_id);
+    return (
+      <>
+        <td className="px-4 py-3 text-sm font-mono text-muted" role="gridcell">
+          {issue.display_id}
+        </td>
+        <td className="px-4 py-3 text-sm text-foreground" role="gridcell">
+          {issue.title}
+        </td>
+        <td className="px-4 py-3" role="gridcell">
+          <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
+            {STATE_LABELS[issue.state] || issue.state}
+          </span>
+        </td>
+        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+          {issue.assignee_name || 'Unassigned'}
+        </td>
+        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+          {sprint ? `Sprint ${sprint.sprint_number}` : '—'}
+        </td>
+      </>
+    );
+  }, [sprints]);
 
   const handleMoveToSprint = async (sprintId: string) => {
     setIsMoving(true);
@@ -758,40 +702,17 @@ function IssuesListWithBulkActions({
     }
   };
 
-  const handleSingleMoveToSprint = async (issueId: string, sprintId: string) => {
-    setOpenMenuId(null);
-    setShowSprintSubmenu(false);
-    await onSingleMoveToSprint(issueId, sprintId === 'backlog' ? null : sprintId);
-  };
+  // Empty state
+  const emptyState = useMemo(() => (
+    <p className="text-muted">No issues match the current filter</p>
+  ), []);
 
-  const handleMenuClick = (e: React.MouseEvent, issueId: string) => {
-    e.stopPropagation();
-    if (openMenuId === issueId) {
-      setOpenMenuId(null);
-      setShowSprintSubmenu(false);
-    } else {
-      setOpenMenuId(issueId);
-      setShowSprintSubmenu(false);
-    }
-  };
-
-  const handleAssignToSprintClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setShowSprintSubmenu(true);
-  };
-
-  if (issues.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted">No issues match the current filter</p>
-      </div>
-    );
-  }
+  const hasSelection = selectedIssues.size > 0;
 
   return (
     <div className="flex flex-col h-full">
       {/* Bulk action bar */}
-      {someSelected && (
+      {hasSelection && (
         <div className="flex items-center gap-4 px-6 py-2 bg-accent/10 border-b border-border">
           <span className="text-sm text-foreground">
             {selectedIssues.size} issue{selectedIssues.size !== 1 ? 's' : ''} selected
@@ -820,115 +741,18 @@ function IssuesListWithBulkActions({
         </div>
       )}
 
-      <table className="w-full">
-        <thead className="sticky top-0 bg-background">
-          <tr className="border-b border-border text-left text-xs text-muted">
-            <th className="px-3 py-2 w-10">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={toggleAll}
-                className="rounded border-border"
-              />
-            </th>
-            <th className="px-3 py-2 font-medium">ID</th>
-            <th className="px-3 py-2 font-medium">Title</th>
-            <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium">Assignee</th>
-            <th className="px-3 py-2 font-medium">Sprint</th>
-            <th className="px-3 py-2 w-10"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {issues.map((issue) => {
-            const sprint = sprints.find(s => s.id === issue.sprint_id);
-            return (
-              <tr
-                key={issue.id}
-                onClick={() => onIssueClick(issue.id)}
-                className={cn(
-                  "cursor-pointer border-b border-border/50 hover:bg-border/30 transition-colors",
-                  selectedIssues.has(issue.id) && "bg-accent/5"
-                )}
-              >
-                <td className="px-3 py-3 w-10">
-                  <input
-                    type="checkbox"
-                    checked={selectedIssues.has(issue.id)}
-                    onChange={() => {}}
-                    onClick={(e) => toggleIssue(issue.id, e)}
-                    className="rounded border-border"
-                  />
-                </td>
-                <td className="px-3 py-3 text-sm font-mono text-muted">
-                  {issue.display_id}
-                </td>
-                <td className="px-3 py-3 text-sm text-foreground">
-                  {issue.title}
-                </td>
-                <td className="px-3 py-3">
-                  <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
-                    {stateLabels[issue.state] || issue.state}
-                  </span>
-                </td>
-                <td className="px-3 py-3 text-sm text-muted">
-                  {issue.assignee_name || 'Unassigned'}
-                </td>
-                <td className="px-3 py-3 text-sm text-muted">
-                  {sprint ? `Sprint ${sprint.sprint_number}` : '—'}
-                </td>
-                <td className="px-3 py-3 w-10 relative">
-                  <button
-                    onClick={(e) => handleMenuClick(e, issue.id)}
-                    aria-label="Issue actions"
-                    className="p-1 rounded hover:bg-border/50 text-muted hover:text-foreground"
-                  >
-                    ⋮
-                  </button>
-                  {openMenuId === issue.id && (
-                    <div className="absolute right-0 top-full mt-1 z-50 min-w-[160px] rounded-md border border-border bg-background shadow-lg">
-                      {!showSprintSubmenu ? (
-                        <button
-                          onClick={handleAssignToSprintClick}
-                          className="w-full px-3 py-2 text-left text-sm hover:bg-border/50 flex items-center justify-between"
-                        >
-                          Assign to Sprint
-                          <span className="text-muted">▶</span>
-                        </button>
-                      ) : (
-                        <div className="py-1">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setShowSprintSubmenu(false); }}
-                            className="w-full px-3 py-1 text-left text-xs text-muted hover:bg-border/50 flex items-center gap-1"
-                          >
-                            ◀ Back
-                          </button>
-                          <div className="border-t border-border my-1" />
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleSingleMoveToSprint(issue.id, 'backlog'); }}
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-border/50"
-                          >
-                            Backlog
-                          </button>
-                          {sprints.map(s => (
-                            <button
-                              key={s.id}
-                              onClick={(e) => { e.stopPropagation(); handleSingleMoveToSprint(issue.id, s.id); }}
-                              className="w-full px-3 py-2 text-left text-sm hover:bg-border/50"
-                            >
-                              Sprint {s.sprint_number}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {/* Issues list using SelectableList */}
+      <div className="flex-1 overflow-auto">
+        <SelectableList
+          items={issues}
+          renderRow={renderIssueRow}
+          columns={columns}
+          emptyState={emptyState}
+          onItemClick={(issue) => onIssueClick(issue.id)}
+          onSelectionChange={onSelectionChange}
+          ariaLabel="Program issues list"
+        />
+      </div>
     </div>
   );
 }

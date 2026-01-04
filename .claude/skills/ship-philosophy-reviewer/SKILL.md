@@ -77,6 +77,25 @@ All new documents are titled "Untitled". Not "Untitled Issue". Not "New Project"
 
 This seems small but it's a symptom of the deeper principle: document types are just a property, not a fundamental difference in nature.
 
+### 7. Use Canonical UI Patterns
+
+Ship has exactly 4 patterns for displaying collections of items:
+
+| Pattern | Component | Use When |
+|---------|-----------|----------|
+| SelectableList | `<SelectableList>` | Tabular data with selection/bulk actions |
+| Tree | `<DocumentTreeItem>` | Hierarchical parent-child data |
+| Kanban | `<KanbanBoard>` | Status-based workflow columns |
+| CardGrid | `<CardGrid>` | Visual cards for navigation |
+
+**The question to ask:** "Is this displaying a collection of items?" If yes, use one of these 4 components. Do not create new patterns or duplicate existing ones.
+
+**Smell tests for violations:**
+- `grid-cols-` with `map()` over items → Should probably be `<CardGrid>`
+- Checkbox + selection state + map() → Should probably be `<SelectableList>`
+- Custom expand/collapse with children → Should probably use Tree pattern
+- Columns with drag-drop → Should probably be `<KanbanBoard>`
+
 ## How to Review
 
 1. **Understand the change** - What's being added or modified?
@@ -96,5 +115,7 @@ These patterns usually indicate a philosophy violation:
 - Type-specific component variants
 - Code duplicated across multiple editor pages
 - Abstractions with only one use
+- Inline `grid-cols-` with `map()` that should use `<CardGrid>`
+- Custom checkbox selection logic that should use `<SelectableList>`
 
 When you see these, dig deeper. The fix is usually to consolidate, not to add more.
