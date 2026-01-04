@@ -84,6 +84,9 @@ function getInitials(name: string): string {
 }
 
 function ProgramCard({ program, onClick }: { program: Program; onClick: () => void }) {
+  // Show emoji if set, otherwise show first letter of name
+  const badge = program.emoji || program.name?.[0]?.toUpperCase() || '?';
+
   return (
     <button
       onClick={onClick}
@@ -91,14 +94,13 @@ function ProgramCard({ program, onClick }: { program: Program; onClick: () => vo
     >
       <div className="flex items-center gap-3">
         <div
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-lg"
           style={{ backgroundColor: program.color, color: getContrastTextColor(program.color) }}
         >
-          {program.prefix.slice(0, 2)}
+          {badge}
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="font-medium text-foreground truncate">{program.name}</h3>
-          <p className="text-xs text-muted">{program.prefix}</p>
         </div>
       </div>
 

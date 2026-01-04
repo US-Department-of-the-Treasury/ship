@@ -169,7 +169,7 @@ test.describe('Team Mode (Phase 7)', () => {
     await page.waitForTimeout(500) // Wait for scroll + any lazy loading
 
     // Find an empty cell (button with no program badge inside)
-    // Empty cells are buttons within cells that don't have a program prefix span
+    // Empty cells are buttons within cells that don't have a program badge span
     const emptyCell = page.locator('.border-b.border-r.border-border')
       .filter({ hasNot: page.locator('span.rounded.px-1\\.5.py-0\\.5.text-xs.font-bold') })
       .first()
@@ -189,8 +189,8 @@ test.describe('Team Mode (Phase 7)', () => {
     )
 
     // Verify the program badge now appears in that cell area
-    // The cell should now show the API prefix badge
-    await expect(page.locator('span.rounded.px-1\\.5.py-0\\.5.text-xs.font-bold').filter({ hasText: 'API' })).toBeVisible()
+    // The cell should now show the program initial (A for API Platform)
+    await expect(page.locator('span.rounded.px-1\\.5.py-0\\.5.text-xs.font-bold').filter({ hasText: 'A' })).toBeVisible()
   })
 
   test('shows conflict error when user already assigned to different program', async ({ page }) => {
