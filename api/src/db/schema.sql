@@ -122,7 +122,10 @@ CREATE TABLE IF NOT EXISTS documents (
   -- Timestamps
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
-  created_by UUID REFERENCES users(id) ON DELETE SET NULL
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+
+  -- Document visibility (private = creator only, workspace = all members)
+  visibility TEXT NOT NULL DEFAULT 'workspace' CHECK (visibility IN ('private', 'workspace'))
 );
 
 -- Unique constraint for program prefixes within a workspace (using properties JSONB)
@@ -144,6 +147,10 @@ CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id);
 CREATE INDEX IF NOT EXISTS idx_documents_sprint_id ON documents(sprint_id);
 -- GIN index for efficient JSONB property queries
 CREATE INDEX IF NOT EXISTS idx_documents_properties ON documents USING GIN (properties);
+
+-- Visibility indexes for efficient filtering
+CREATE INDEX IF NOT EXISTS idx_documents_visibility ON documents(visibility);
+CREATE INDEX IF NOT EXISTS idx_documents_visibility_created_by ON documents(visibility, created_by);
 
 -- Workspace membership indexes
 CREATE INDEX IF NOT EXISTS idx_workspace_memberships_workspace_id ON workspace_memberships(workspace_id);

@@ -12,6 +12,7 @@ export interface WikiDocument {
   updated_at: string;
   created_by?: string | null;
   properties?: Record<string, unknown>;
+  visibility?: 'private' | 'workspace';
   _pending?: boolean;
   _pendingId?: string;
 }
