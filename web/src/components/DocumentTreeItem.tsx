@@ -131,7 +131,7 @@ export function DocumentTreeItem({
 
       {/* Children (collapsible) */}
       {hasChildren && isOpen && (
-        <ul role="group">
+        <ul role="group" className="space-y-0.5">
           {document.children.map((child) => (
             <DocumentTreeItem
               key={child.id}

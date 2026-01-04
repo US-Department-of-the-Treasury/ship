@@ -19,17 +19,18 @@ test.describe('Admin Workspace Detail Page', () => {
     await page.goto('/admin')
 
     // Click on a workspace name (should be a link)
-    const workspaceLink = page.getByRole('link', { name: /Ship Workspace/i }).first()
+    // Note: The isolated-env fixture seeds "Test Workspace", not "Ship Workspace"
+    const workspaceLink = page.getByRole('link', { name: /Test Workspace/i }).first()
     await workspaceLink.click()
 
     // Should navigate to workspace detail page
     await expect(page).toHaveURL(/\/admin\/workspaces\//)
-    await expect(page.getByText('Workspace: Ship Workspace')).toBeVisible()
+    await expect(page.getByText('Workspace: Test Workspace')).toBeVisible()
   })
 
   test('workspace detail page shows members table', async ({ page }) => {
     await page.goto('/admin')
-    await page.getByRole('link', { name: /Ship Workspace/i }).first().click()
+    await page.getByRole('link', { name: /Test Workspace/i }).first().click()
 
     // Should show members section with table
     await expect(page.getByRole('heading', { name: /Members \(\d+\)/ })).toBeVisible()
@@ -40,7 +41,7 @@ test.describe('Admin Workspace Detail Page', () => {
 
   test('workspace detail page shows pending invites section', async ({ page }) => {
     await page.goto('/admin')
-    await page.getByRole('link', { name: /Ship Workspace/i }).first().click()
+    await page.getByRole('link', { name: /Test Workspace/i }).first().click()
 
     // Should show pending invites section
     await expect(page.getByRole('heading', { name: /Pending Invites/ })).toBeVisible()
@@ -48,7 +49,7 @@ test.describe('Admin Workspace Detail Page', () => {
 
   test('workspace detail page shows add existing user section', async ({ page }) => {
     await page.goto('/admin')
-    await page.getByRole('link', { name: /Ship Workspace/i }).first().click()
+    await page.getByRole('link', { name: /Test Workspace/i }).first().click()
 
     // Should show "Add Existing User" section
     await expect(page.getByRole('heading', { name: 'Add Existing User' })).toBeVisible()
@@ -58,7 +59,7 @@ test.describe('Admin Workspace Detail Page', () => {
 
   test('workspace detail page shows invite form', async ({ page }) => {
     await page.goto('/admin')
-    await page.getByRole('link', { name: /Ship Workspace/i }).first().click()
+    await page.getByRole('link', { name: /Test Workspace/i }).first().click()
 
     // Should show invite form
     await expect(page.getByRole('heading', { name: 'Invite New Member' })).toBeVisible()
@@ -68,7 +69,7 @@ test.describe('Admin Workspace Detail Page', () => {
 
   test('back button returns to admin dashboard', async ({ page }) => {
     await page.goto('/admin')
-    await page.getByRole('link', { name: /Ship Workspace/i }).first().click()
+    await page.getByRole('link', { name: /Test Workspace/i }).first().click()
 
     // Click back button
     await page.getByRole('button').filter({ has: page.locator('svg') }).first().click()
@@ -85,7 +86,7 @@ test.describe('Admin Workspace Member Management', () => {
 
   test('can change member role', async ({ page }) => {
     await page.goto('/admin')
-    await page.getByRole('link', { name: /Ship Workspace/i }).first().click()
+    await page.getByRole('link', { name: /Test Workspace/i }).first().click()
 
     // Find a member with "Member" role and change to "Admin"
     const memberRow = page.locator('tr').filter({ hasText: 'Member' }).first()
@@ -104,7 +105,7 @@ test.describe('Admin Workspace Member Management', () => {
 
   test('can send invite to new email', async ({ page }) => {
     await page.goto('/admin')
-    await page.getByRole('link', { name: /Ship Workspace/i }).first().click()
+    await page.getByRole('link', { name: /Test Workspace/i }).first().click()
 
     // Generate unique email
     const testEmail = `test-admin-${Date.now()}@example.com`
@@ -119,7 +120,7 @@ test.describe('Admin Workspace Member Management', () => {
 
   test('can revoke invite', async ({ page }) => {
     await page.goto('/admin')
-    await page.getByRole('link', { name: /Ship Workspace/i }).first().click()
+    await page.getByRole('link', { name: /Test Workspace/i }).first().click()
 
     // First create an invite
     const testEmail = `test-revoke-${Date.now()}@example.com`
@@ -137,7 +138,7 @@ test.describe('Admin Workspace Member Management', () => {
 
   test('can copy invite link', async ({ page }) => {
     await page.goto('/admin')
-    await page.getByRole('link', { name: /Ship Workspace/i }).first().click()
+    await page.getByRole('link', { name: /Test Workspace/i }).first().click()
 
     // Create an invite first
     const testEmail = `test-copy-${Date.now()}@example.com`
@@ -168,7 +169,7 @@ test.describe('Admin User Search', () => {
       await workspaceLink.click()
     } else {
       // Fall back to Ship Workspace
-      await page.getByRole('link', { name: /Ship Workspace/i }).first().click()
+      await page.getByRole('link', { name: /Test Workspace/i }).first().click()
     }
 
     // Type in search box
@@ -243,7 +244,7 @@ test.describe('Admin Workspace Access Control', () => {
     await page.context().clearCookies()
     await page.goto('/admin/workspaces/some-id')
 
-    // Should redirect to login
-    await expect(page).toHaveURL('/login')
+    // Should redirect to login (may include query params)
+    await expect(page).toHaveURL(/\/login/)
   })
 })
