@@ -63,9 +63,10 @@ export function DocumentTreeItem({
   const hasChildren = document.children.length > 0;
 
   return (
-    <div
+    <li
       role="treeitem"
-      aria-expanded={isOpen}
+      aria-expanded={hasChildren ? isOpen : undefined}
+      aria-selected={isActive}
     >
       <div
         className={cn(
@@ -129,7 +130,7 @@ export function DocumentTreeItem({
 
       {/* Children (collapsible) */}
       {hasChildren && isOpen && (
-        <div>
+        <ul role="group" className="space-y-0.5">
           {document.children.map((child) => (
             <DocumentTreeItem
               key={child.id}
@@ -139,8 +140,8 @@ export function DocumentTreeItem({
               onCreateChild={onCreateChild}
             />
           ))}
-        </div>
+        </ul>
       )}
-    </div>
+    </li>
   );
 }

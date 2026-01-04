@@ -18,6 +18,7 @@ export function OfflineIndicator() {
       className="flex items-center gap-2 rounded bg-amber-100 px-3 py-1.5 text-sm text-amber-800"
       role="status"
       aria-live="polite"
+      aria-atomic="true"
     >
       <svg
         className="h-4 w-4"

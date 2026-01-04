@@ -20,6 +20,7 @@ export function PendingSyncCount() {
       }`}
       role="status"
       aria-live="polite"
+      aria-atomic="true"
       aria-label={`${count} pending ${count === 1 ? 'change' : 'changes'} to sync`}
     >
       {count}

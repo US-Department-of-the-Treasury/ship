@@ -12,6 +12,8 @@ export function PendingSyncIcon({ isPending }: PendingSyncIconProps) {
       data-testid="pending-sync-icon"
       className="inline-flex items-center justify-center text-amber-500"
       role="status"
+      aria-live="polite"
+      aria-atomic="true"
       aria-label="Pending sync"
     >
       <svg
