@@ -168,6 +168,7 @@ export function IssuesPage() {
     { key: 'id', label: 'ID' },
     { key: 'title', label: 'Title' },
     { key: 'status', label: 'Status' },
+    { key: 'source', label: 'Source' },
     { key: 'priority', label: 'Priority' },
     { key: 'assignee', label: 'Assignee' },
     { key: 'updated', label: 'Updated' },
@@ -175,8 +176,8 @@ export function IssuesPage() {
 
   // Render function for issue rows
   const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => (
-    <IssueRowContent issue={issue} isSelected={isSelected} onClick={() => navigate(`/issues/${issue.id}`)} />
-  ), [navigate]);
+    <IssueRowContent issue={issue} isSelected={isSelected} />
+  ), []);
 
   // Empty state for the list
   const emptyState = useMemo(() => (
@@ -266,58 +267,15 @@ export function IssuesPage() {
         />
       ) : (
         <div className="flex-1 overflow-auto">
-          {issues.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-center">
-                <p className="text-muted">No issues yet</p>
-                <button
-                  onClick={handleCreateIssue}
-                  className="mt-2 text-sm text-accent hover:underline"
-                >
-                  Create your first issue
-                </button>
-              </div>
-            </div>
-          ) : (
-            <table
-              ref={tableRef}
-              className="w-full"
-              role="grid"
-              aria-multiselectable="true"
-              aria-label="Issues list"
-              tabIndex={0}
-              onKeyDown={selection.handleKeyDown}
-            >
-              <thead className="sticky top-0 bg-background z-10">
-                <tr className="border-b border-border text-left text-xs text-muted">
-                  <th className="w-10 px-2 py-2" aria-label="Selection"></th>
-                  <th className="px-4 py-2 font-medium">ID</th>
-                  <th className="px-4 py-2 font-medium">Title</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium">Source</th>
-                  <th className="px-4 py-2 font-medium">Priority</th>
-                  <th className="px-4 py-2 font-medium">Assignee</th>
-                  <th className="px-4 py-2 font-medium">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {issues.map((issue) => (
-                  <SelectableRow
-                    key={issue.id}
-                    issue={issue}
-                    isSelected={selection.isSelected(issue.id)}
-                    isFocused={selection.isFocused(issue.id)}
-                    onCheckboxClick={(e) => selection.handleClick(issue.id, e)}
-                    onRowClick={() => navigate(`/issues/${issue.id}`)}
-                    onFocus={() => selection.setFocusedId(issue.id)}
-                    onMouseEnter={() => setHoveredId(issue.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                    onContextMenu={(e) => handleContextMenu(e, issue.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          )}
+          <SelectableList
+            items={issues}
+            renderRow={renderIssueRow}
+            columns={columns}
+            emptyState={emptyState}
+            onItemClick={(issue) => navigate(`/issues/${issue.id}`)}
+            onContextMenu={handleContextMenu}
+            ariaLabel="Issues list"
+          />
         </div>
       )}
 
@@ -358,38 +316,37 @@ export function IssuesPage() {
 interface IssueRowContentProps {
   issue: Issue;
   isSelected: boolean;
-  onClick: () => void;
 }
 
-function IssueRowContent({ issue, onClick }: IssueRowContentProps) {
+function IssueRowContent({ issue }: IssueRowContentProps) {
   return (
     <>
       {/* ID */}
-      <td className="px-4 py-3 text-sm text-muted" onClick={onClick} role="gridcell">
+      <td className="px-4 py-3 text-sm text-muted" role="gridcell">
         #{issue.ticket_number}
       </td>
       {/* Title */}
-      <td className="px-4 py-3 text-sm text-foreground" onClick={onClick} role="gridcell">
+      <td className="px-4 py-3 text-sm text-foreground" role="gridcell">
         {issue.title}
       </td>
       {/* Status */}
-      <td className="px-4 py-3" onClick={onClick} role="gridcell">
+      <td className="px-4 py-3" role="gridcell">
         <StatusBadge state={issue.state} />
       </td>
       {/* Source */}
-      <td className="px-4 py-3" onClick={onRowClick} role="gridcell">
+      <td className="px-4 py-3" role="gridcell">
         <SourceBadge source={issue.source} />
       </td>
       {/* Priority */}
-      <td className="px-4 py-3" onClick={onClick} role="gridcell">
+      <td className="px-4 py-3" role="gridcell">
         <PriorityBadge priority={issue.priority} />
       </td>
       {/* Assignee */}
-      <td className="px-4 py-3 text-sm text-muted" onClick={onClick} role="gridcell">
+      <td className="px-4 py-3 text-sm text-muted" role="gridcell">
         {issue.assignee_name || 'Unassigned'}
       </td>
       {/* Updated */}
-      <td className="px-4 py-3 text-sm text-muted" onClick={onClick} role="gridcell">
+      <td className="px-4 py-3 text-sm text-muted" role="gridcell">
         {issue.updated_at ? formatDate(issue.updated_at) : '-'}
       </td>
     </>
