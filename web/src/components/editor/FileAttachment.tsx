@@ -48,7 +48,7 @@ function FileAttachmentComponent({ node }: { node: any }) {
   const formattedSize = size ? formatFileSize(size) : '';
 
   return (
-    <NodeViewWrapper className="file-attachment-wrapper">
+    <NodeViewWrapper className="file-attachment-wrapper" data-file-attachment>
       <div className="file-attachment" contentEditable={false}>
         <div className="file-attachment-icon">{fileIcon}</div>
         <div className="file-attachment-info">

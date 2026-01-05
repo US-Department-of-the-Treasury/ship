@@ -22,12 +22,10 @@ test.describe('Issue Estimates', () => {
 
   test.describe('Estimate Field UI', () => {
     test('shows estimate field in issue editor properties', async ({ page }) => {
-      // Navigate to an existing issue via sidebar
+      // Create a new issue to test estimate field
       await page.goto('/issues')
-      // Wait for issues to load in sidebar, then click first one
-      await page.locator('aside[aria-label="Issues sidebar"] button').first().waitFor({ timeout: 10000 })
-      await page.locator('aside[aria-label="Issues sidebar"] button').first().click()
-      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+      await page.getByRole('button', { name: 'New Issue', exact: true }).click()
+      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 10000 })
 
       // Should see Estimate field label in properties sidebar (label element, exact match)
       await expect(page.locator('label').filter({ hasText: /^Estimate$/ })).toBeVisible({ timeout: 5000 })
@@ -67,11 +65,10 @@ test.describe('Issue Estimates', () => {
     })
 
     test('shows hours label/hint next to estimate field', async ({ page }) => {
+      // Create a new issue to test hours label
       await page.goto('/issues')
-      // Wait for issues to load in sidebar, then click first one
-      await page.locator('aside[aria-label="Issues sidebar"] button').first().waitFor({ timeout: 10000 })
-      await page.locator('aside[aria-label="Issues sidebar"] button').first().click()
-      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+      await page.getByRole('button', { name: 'New Issue', exact: true }).click()
+      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 10000 })
 
       // Should show "hours" label next to estimate field
       await expect(page.getByText('hours')).toBeVisible({ timeout: 5000 })
@@ -105,7 +102,7 @@ test.describe('Issue Estimates', () => {
       // Select a program first
       await page.getByRole('combobox').filter({ hasText: 'No Program' }).click()
       await page.waitForTimeout(300)
-      await page.getByText('API Platform').click()
+      await page.getByText('API Platform', { exact: true }).click()
       await page.waitForResponse(resp => resp.url().includes('/api/programs/') && resp.url().includes('/sprints'))
 
       // Try to assign to sprint without estimate - should show error or be disabled
@@ -139,7 +136,7 @@ test.describe('Issue Estimates', () => {
       // Select program
       await page.getByRole('combobox').filter({ hasText: 'No Program' }).click()
       await page.waitForTimeout(300)
-      await page.getByText('API Platform').click()
+      await page.getByText('API Platform', { exact: true }).click()
       await page.waitForResponse(resp => resp.url().includes('/api/programs/') && resp.url().includes('/sprints'))
 
       // Now sprint assignment should work
@@ -160,8 +157,8 @@ test.describe('Issue Estimates', () => {
       await page.locator('main').getByRole('button', { name: /API Platform/i }).click()
       await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-      // Go to Sprints tab
-      await page.getByRole('button', { name: 'Sprints' }).click()
+      // Go to Sprints tab (it's a tab, not a button)
+      await page.getByRole('tab', { name: 'Sprints' }).click()
 
       // Should see estimated hours in active sprint section or timeline
       await expect(page.getByText(/\d+h|\d+ hours|estimated/i).first()).toBeVisible({ timeout: 5000 })
@@ -172,7 +169,7 @@ test.describe('Issue Estimates', () => {
       await page.locator('main').getByRole('button', { name: /API Platform/i }).click()
       await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-      await page.getByRole('button', { name: 'Sprints' }).click()
+      await page.getByRole('tab', { name: 'Sprints' }).click()
 
       // Timeline cards should be visible
       const sprintCard = page.locator('button').filter({ hasText: /Sprint \d+/ }).first()
@@ -397,7 +394,7 @@ test.describe('Progress Chart Integration', () => {
     await page.locator('main').getByRole('button', { name: /API Platform/i }).click()
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-    await page.getByRole('button', { name: 'Sprints' }).click()
+    await page.getByRole('tab', { name: 'Sprints' }).click()
 
     // The progress chart should include hours-based visualization
     // Look for the chart container

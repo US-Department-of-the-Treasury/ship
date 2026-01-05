@@ -654,6 +654,6 @@ test.describe('Data Integrity - Copy/Paste', () => {
     await expect(editor).toContainText('Bold and italic text')
     await expect(editor.locator('strong')).toContainText('Bold')
     await expect(editor.locator('em')).toContainText('italic')
-    await expect(editor.locator('li')).toContainText('Item 1')
+    await expect(editor.locator('li').first()).toContainText('Item 1')
   })
 })

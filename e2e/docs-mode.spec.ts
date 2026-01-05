@@ -43,7 +43,7 @@ test.describe('Docs Mode (Phase 3)', () => {
 
     // If no create button in sidebar, look for main button
     if (!await createButton.isVisible({ timeout: 2000 })) {
-      await page.getByRole('button', { name: /new document/i }).click()
+      await page.getByRole('button', { name: 'New Document', exact: true }).click()
     } else {
       await createButton.click()
     }
@@ -62,10 +62,10 @@ test.describe('Docs Mode (Phase 3)', () => {
     await page.waitForTimeout(500) // Wait for sidebar to populate
     const initialCount = await page.locator('aside ul li').count()
 
-    // Create new document using the + button in sidebar header
-    const sidebarPlusButton = page.locator('aside button[title="New document"]')
-    if (await sidebarPlusButton.isVisible({ timeout: 2000 })) {
-      await sidebarPlusButton.click()
+    // Create new document using the sidebar button or main button
+    const sidebarButton = page.locator('aside').getByRole('button', { name: /new|create|\+/i }).first()
+    if (await sidebarButton.isVisible({ timeout: 2000 })) {
+      await sidebarButton.click()
     } else {
       // Fallback to main New Document button
       await page.getByRole('button', { name: 'New Document', exact: true }).click()
@@ -83,10 +83,10 @@ test.describe('Docs Mode (Phase 3)', () => {
   test('can edit document title', async ({ page }) => {
     await page.goto('/docs')
 
-    // Create a new document using the + button in sidebar header
-    const sidebarPlusButton = page.locator('aside button[title="New document"]')
-    if (await sidebarPlusButton.isVisible({ timeout: 2000 })) {
-      await sidebarPlusButton.click()
+    // Create a new document using the sidebar button or main button
+    const sidebarButton = page.locator('aside').getByRole('button', { name: /new|create|\+/i }).first()
+    if (await sidebarButton.isVisible({ timeout: 2000 })) {
+      await sidebarButton.click()
     } else {
       // Fallback to main New Document button (exact match)
       await page.getByRole('button', { name: 'New Document', exact: true }).click()
@@ -114,18 +114,15 @@ test.describe('Docs Mode (Phase 3)', () => {
   test('can navigate between documents using sidebar', async ({ page }) => {
     await page.goto('/docs')
 
-    // Wait for sidebar to load
-    const sidebarItems = page.locator('aside ul li button')
+    // Wait for sidebar to load - use links within tree items (not buttons, which are for expand/add)
+    const sidebarLinks = page.locator('aside [role="tree"] [role="treeitem"] a')
     await page.waitForTimeout(500)
 
     // If there are documents in the sidebar, click one and verify navigation
-    const itemCount = await sidebarItems.count()
+    const itemCount = await sidebarLinks.count()
     if (itemCount > 0) {
-      // Get current URL before clicking
-      const urlBefore = page.url()
-
-      // Click a sidebar item
-      await sidebarItems.first().click()
+      // Click a sidebar item link
+      await sidebarLinks.first().click()
 
       // Should navigate to a document URL
       await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
@@ -133,7 +130,7 @@ test.describe('Docs Mode (Phase 3)', () => {
       // If there are multiple items, click a different one to verify navigation
       if (itemCount >= 2) {
         const firstUrl = page.url()
-        await sidebarItems.nth(1).click()
+        await sidebarLinks.nth(1).click()
         await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
 
         // The URL should have changed to a different document
@@ -141,7 +138,7 @@ test.describe('Docs Mode (Phase 3)', () => {
       }
     } else {
       // Create a document if none exist
-      await page.getByRole('button', { name: /new document/i }).click()
+      await page.getByRole('button', { name: 'New Document', exact: true }).click()
       await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
     }
   })
@@ -154,7 +151,7 @@ test.describe('Docs Mode (Phase 3)', () => {
     if (await createButton.isVisible({ timeout: 2000 })) {
       await createButton.click()
     } else {
-      await page.getByRole('button', { name: /new document/i }).click()
+      await page.getByRole('button', { name: 'New Document', exact: true }).click()
     }
 
     await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
@@ -166,7 +163,7 @@ test.describe('Docs Mode (Phase 3)', () => {
     await page.keyboard.type('Hello world')
 
     // Should see save status indicator (Saved, Syncing..., or Offline)
-    // The status is shown in the editor header
-    await expect(page.getByText(/saved|syncing|offline/i)).toBeVisible({ timeout: 10000 })
+    // The status is shown in the editor header (use .first() to avoid matching sr-only element)
+    await expect(page.getByText(/saved|syncing|offline/i).first()).toBeVisible({ timeout: 10000 })
   })
 })

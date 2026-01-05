@@ -80,16 +80,17 @@ async function navigateToProgram(page: Page, programName: string = 'Ship Core') 
 }
 
 async function clickSprintsTab(page: Page) {
-  await page.getByRole('button', { name: 'Sprints' }).click()
+  // Tabs have role="tab", not role="button"
+  await page.getByRole('tab', { name: 'Sprints' }).click()
   // Wait for sprints tab to be active
-  await expect(page.getByRole('button', { name: 'Sprints' })).toHaveAttribute('data-state', 'active', { timeout: 5000 }).catch(() => {
+  await expect(page.getByRole('tab', { name: 'Sprints' })).toHaveAttribute('data-state', 'active', { timeout: 5000 }).catch(() => {
     // Fallback: just wait for content to load
   })
 }
 
 async function clickIssuesTab(page: Page) {
-  // Click the Issues tab inside the main content area (not the global nav Issues button)
-  await page.locator('main').getByRole('button', { name: 'Issues' }).click()
+  // Click the Issues tab inside the main content area (tabs have role="tab")
+  await page.locator('main').getByRole('tab', { name: 'Issues' }).click()
 }
 
 // =============================================================================

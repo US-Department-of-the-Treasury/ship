@@ -122,9 +122,9 @@ export function ProgramCombobox({
             filter={(value, search) => {
               const program = programs.find((p) => p.id === value);
               if (!program) return 0;
-              const name = program.name.toLowerCase();
-              const prefix = program.prefix.toLowerCase();
-              const s = search.toLowerCase();
+              const name = (program.name || '').toLowerCase();
+              const prefix = (program.prefix || '').toLowerCase();
+              const s = (search || '').toLowerCase();
               if (name.includes(s) || prefix.includes(s)) return 1;
               return 0;
             }}

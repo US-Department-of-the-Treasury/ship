@@ -1,7 +1,4 @@
-import { test as base, expect, Page, APIRequestContext } from '@playwright/test'
-
-// API base URL (matches playwright.config.ts)
-const API_URL = process.env.API_URL || 'http://localhost:3000'
+import { test as base, expect, Page, APIRequestContext } from './isolated-env'
 
 // Test user credentials (from seed data)
 const TEST_USER = {
@@ -10,8 +7,8 @@ const TEST_USER = {
 }
 
 // Helper to get CSRF token
-async function getCsrfToken(request: APIRequestContext, cookies: string): Promise<string> {
-  const response = await request.get(`${API_URL}/api/csrf-token`, {
+async function getCsrfToken(request: APIRequestContext, cookies: string, apiUrl: string): Promise<string> {
+  const response = await request.get(`${apiUrl}/api/csrf-token`, {
     headers: { Cookie: cookies }
   })
   if (!response.ok()) {
@@ -22,6 +19,7 @@ async function getCsrfToken(request: APIRequestContext, cookies: string): Promis
 }
 
 // Helper to login via the UI (idempotent - skips if already logged in)
+// Note: Uses relative URLs since baseURL is set to webServer.url by isolated-env
 async function loginViaUI(page: Page) {
   // Check if already logged in by looking at current URL
   const currentUrl = page.url()
@@ -63,6 +61,7 @@ async function loginViaUI(page: Page) {
 async function createDocument(
   request: APIRequestContext,
   cookies: string,
+  apiUrl: string,
   data: {
     title: string
     document_type: 'wiki' | 'issue' | 'program' | 'project' | 'sprint' | 'person'
@@ -73,8 +72,8 @@ async function createDocument(
     sprint_id?: string
   }
 ) {
-  const csrfToken = await getCsrfToken(request, cookies)
-  const response = await request.post(`${API_URL}/api/documents`, {
+  const csrfToken = await getCsrfToken(request, cookies, apiUrl)
+  const response = await request.post(`${apiUrl}/api/documents`, {
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookies,
@@ -92,6 +91,7 @@ async function createDocument(
 async function updateDocument(
   request: APIRequestContext,
   cookies: string,
+  apiUrl: string,
   id: string,
   data: {
     title?: string
@@ -99,8 +99,8 @@ async function updateDocument(
     properties?: object
   }
 ) {
-  const csrfToken = await getCsrfToken(request, cookies)
-  const response = await request.patch(`${API_URL}/api/documents/${id}`, {
+  const csrfToken = await getCsrfToken(request, cookies, apiUrl)
+  const response = await request.patch(`${apiUrl}/api/documents/${id}`, {
     headers: {
       'Content-Type': 'application/json',
       Cookie: cookies,
@@ -118,10 +118,11 @@ async function updateDocument(
 async function deleteDocument(
   request: APIRequestContext,
   cookies: string,
+  apiUrl: string,
   id: string
 ) {
-  const csrfToken = await getCsrfToken(request, cookies)
-  const response = await request.delete(`${API_URL}/api/documents/${id}`, {
+  const csrfToken = await getCsrfToken(request, cookies, apiUrl)
+  const response = await request.delete(`${apiUrl}/api/documents/${id}`, {
     headers: {
       Cookie: cookies,
       'X-CSRF-Token': csrfToken
@@ -152,8 +153,8 @@ export const test = base.extend<{
   isOnline: () => Promise<boolean>
   login: () => Promise<void>
   getCookies: () => Promise<string>
-  createDoc: (data: Parameters<typeof createDocument>[2]) => Promise<{ id: string }>
-  updateDoc: (id: string, data: Parameters<typeof updateDocument>[3]) => Promise<void>
+  createDoc: (data: Parameters<typeof createDocument>[3]) => Promise<{ id: string }>
+  updateDoc: (id: string, data: Parameters<typeof updateDocument>[4]) => Promise<void>
   deleteDoc: (id: string) => Promise<void>
   testData: OfflineTestData
 }>({
@@ -202,12 +203,12 @@ export const test = base.extend<{
   },
 
   // Document creation helper
-  createDoc: async ({ page, request }, use) => {
+  createDoc: async ({ page, request, apiServer }, use) => {
     const createdDocs: string[] = []
 
     await use(async (data) => {
       const cookies = await getSessionCookies(page)
-      const result = await createDocument(request, cookies, data)
+      const result = await createDocument(request, cookies, apiServer.url, data)
       createdDocs.push(result.id)
       return result
     })
@@ -216,7 +217,7 @@ export const test = base.extend<{
     const cookies = await getSessionCookies(page)
     for (const id of createdDocs) {
       try {
-        await deleteDocument(request, cookies, id)
+        await deleteDocument(request, cookies, apiServer.url, id)
       } catch {
         // Ignore cleanup errors (doc may already be deleted by test)
       }
@@ -224,43 +225,44 @@ export const test = base.extend<{
   },
 
   // Document update helper
-  updateDoc: async ({ page, request }, use) => {
+  updateDoc: async ({ page, request, apiServer }, use) => {
     await use(async (id, data) => {
       const cookies = await getSessionCookies(page)
-      await updateDocument(request, cookies, id, data)
+      await updateDocument(request, cookies, apiServer.url, id, data)
     })
   },
 
   // Document delete helper
-  deleteDoc: async ({ page, request }, use) => {
+  deleteDoc: async ({ page, request, apiServer }, use) => {
     await use(async (id) => {
       const cookies = await getSessionCookies(page)
-      await deleteDocument(request, cookies, id)
+      await deleteDocument(request, cookies, apiServer.url, id)
     })
   },
 
   // Pre-seeded test data (fetched from existing seed data)
-  testData: async ({ page, request }, use) => {
-    // Login first
+  testData: async ({ page, request, apiServer }, use) => {
+    const apiUrl = apiServer.url
+    // Login first (uses relative URLs via baseURL)
     await loginViaUI(page)
 
     // Get session cookies
     const cookies = await getSessionCookies(page)
 
     // Fetch existing wikis
-    const wikiResponse = await request.get(`${API_URL}/api/documents?type=wiki`, {
+    const wikiResponse = await request.get(`${apiUrl}/api/documents?type=wiki`, {
       headers: { Cookie: cookies }
     })
     const wikis = wikiResponse.ok() ? await wikiResponse.json() : []
 
     // Fetch existing programs
-    const programResponse = await request.get(`${API_URL}/api/documents?type=program`, {
+    const programResponse = await request.get(`${apiUrl}/api/documents?type=program`, {
       headers: { Cookie: cookies }
     })
     const programs = programResponse.ok() ? await programResponse.json() : []
 
     // Fetch existing issues
-    const issueResponse = await request.get(`${API_URL}/api/issues`, {
+    const issueResponse = await request.get(`${apiUrl}/api/issues`, {
       headers: { Cookie: cookies }
     })
     const issues = issueResponse.ok() ? await issueResponse.json() : []

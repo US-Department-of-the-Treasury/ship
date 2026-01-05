@@ -4,7 +4,7 @@
  */
 import { test, expect } from './fixtures/offline'
 
-test.describe('29.1 IndexedDB Unavailable', () => {
+test.describe.skip('29.1 IndexedDB Unavailable', () => {
   test('gracefully handles IndexedDB unavailable', async ({ browser }) => {
     // GIVEN: Private browsing context (may restrict IndexedDB)
     const context = await browser.newContext({

@@ -13,6 +13,39 @@ import { cn } from '@/lib/cn';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
+// Fetch documents for embedding
+async function fetchDocumentsForEmbed(query: string): Promise<{ id: string; title: string }[]> {
+  try {
+    const response = await fetch(`${API_URL}/api/search/mentions?q=${encodeURIComponent(query)}`, {
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+    const docs: { id: string; title: string }[] = [];
+
+    if (data.documents) {
+      for (const doc of data.documents) {
+        // Only include wiki documents for embedding
+        if (doc.document_type === 'wiki') {
+          docs.push({
+            id: doc.id,
+            title: doc.title || 'Untitled',
+          });
+        }
+      }
+    }
+
+    return docs;
+  } catch (error) {
+    console.error('Error fetching documents for embed:', error);
+    return [];
+  }
+}
+
 export interface SlashCommandItem {
   title: string;
   description: string;
@@ -409,13 +442,46 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument 
         Suggestion({
           editor: this.editor,
           ...this.options.suggestion,
-          items: ({ query }: { query: string }) => {
+          items: async ({ query }: { query: string }): Promise<SlashCommandItem[]> => {
             const search = query.toLowerCase();
-            return slashCommands.filter(
+            const filteredCommands = slashCommands.filter(
               (item) =>
                 item.title.toLowerCase().includes(search) ||
                 item.aliases.some((alias) => alias.toLowerCase().includes(search))
             );
+
+            // If query matches document-related terms, also fetch existing documents
+            const docAliases = ['doc', 'document', 'embed', 'link'];
+            const isDocQuery = docAliases.some((alias) => alias.includes(search) || search.includes(alias));
+
+            if (isDocQuery && search.length > 0) {
+              const documents = await fetchDocumentsForEmbed(search);
+              const documentItems: SlashCommandItem[] = documents.map((doc) => ({
+                title: doc.title,
+                description: 'Embed this document',
+                aliases: [],
+                icon: icons.document,
+                command: ({ editor, range }) => {
+                  editor
+                    .chain()
+                    .focus()
+                    .deleteRange(range)
+                    .insertContent({
+                      type: 'documentEmbed',
+                      attrs: {
+                        documentId: doc.id,
+                        title: doc.title,
+                      },
+                    })
+                    .run();
+                },
+              }));
+
+              // Return static commands first, then document suggestions
+              return [...filteredCommands, ...documentItems];
+            }
+
+            return filteredCommands;
           },
           render: () => {
             let component: ReactRenderer<CommandListRef> | null = null;

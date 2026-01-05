@@ -1,3 +1,5 @@
+import { getIsOnline } from './queryClient';
+
 // In development, Vite proxy handles /api routes (see vite.config.ts)
 // In production, use VITE_API_URL or relative URLs
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -23,6 +25,16 @@ function isJsonResponse(response: Response): boolean {
 // Handle session expiration - redirect to login with returnTo URL
 // Returns `never` because it always redirects or throws
 function handleSessionExpired(): never {
+  // Don't redirect to login when offline - let TanStack Query handle retries
+  // Check both navigator.onLine and our tracked state to handle race conditions
+  // (Playwright's setOffline may block network before dispatching offline event)
+  if (!navigator.onLine || !getIsOnline()) {
+    throw new Error('Network offline - request failed');
+  }
+  // Don't redirect on public routes like /invite - they work without authentication
+  if (window.location.pathname.startsWith('/invite')) {
+    throw new Error('Session check failed - continuing on public route');
+  }
   if (window.location.pathname !== '/login') {
     const returnTo = encodeURIComponent(
       window.location.pathname + window.location.search + window.location.hash

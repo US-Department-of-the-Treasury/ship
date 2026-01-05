@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
@@ -6,19 +6,8 @@ import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { Combobox } from '@/components/ui/Combobox';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
-
-interface TeamMember {
-  id: string;
-  user_id: string;
-  name: string;
-}
-
-interface Program {
-  id: string;
-  name: string;
-  prefix: string;
-  color: string;
-}
+import { useProgramsQuery } from '@/hooks/useProgramsQuery';
+import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
 
 interface Sprint {
   id: string;
@@ -27,6 +16,14 @@ interface Sprint {
 }
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+// Map Program from query to the format needed by combobox
+interface ProgramOption {
+  id: string;
+  name: string;
+  prefix: string;
+  color: string;
+}
 
 const STATES = [
   { value: 'backlog', label: 'Backlog' },
@@ -49,53 +46,30 @@ export function IssueEditorPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue } = useIssues();
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [programs, setPrograms] = useState<Program[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
-  const [relatedDataLoading, setRelatedDataLoading] = useState(true);
   const [sprintError, setSprintError] = useState<string | null>(null);
+
+  // Use TanStack Query for programs and team members (supports offline via cache)
+  const { data: programsData = [], isLoading: programsLoading } = useProgramsQuery();
+  const { data: teamMembersData = [], isLoading: teamMembersLoading } = useTeamMembersQuery();
+
+  // Map programs to the format needed by combobox
+  const programs: ProgramOption[] = programsData.map(p => ({
+    id: p.id,
+    name: p.name,
+    prefix: p.name.substring(0, 3).toUpperCase(), // Generate prefix from name
+    color: p.color,
+  }));
+
+  // Map team members to format with user_id
+  const teamMembers = teamMembersData.map(m => ({
+    id: m.id,
+    user_id: m.user_id,
+    name: m.name,
+  }));
 
   // Get the current issue from context
   const issue = issues.find(i => i.id === id) || null;
-
-  // Fetch related data (programs, team members) with cancellation
-  useEffect(() => {
-    if (!id) return;
-
-    // Reset state for new issue
-    setPrograms([]);
-    setTeamMembers([]);
-    setSprints([]);
-    setRelatedDataLoading(true);
-
-    let cancelled = false;
-
-    async function fetchRelatedData() {
-      try {
-        const [programsRes, teamRes] = await Promise.all([
-          fetch(`${API_URL}/api/programs`, { credentials: 'include' }),
-          fetch(`${API_URL}/api/team/people`, { credentials: 'include' }),
-        ]);
-
-        if (cancelled) return;
-
-        if (programsRes.ok) {
-          setPrograms(await programsRes.json());
-        }
-
-        if (teamRes.ok) {
-          setTeamMembers(await teamRes.json());
-        }
-      } catch (err) {
-        if (!cancelled) console.error('Failed to fetch related data:', err);
-      } finally {
-        if (!cancelled) setRelatedDataLoading(false);
-      }
-    }
-
-    fetchRelatedData();
-    return () => { cancelled = true; };
-  }, [id]);
 
   // Fetch sprints when issue's program changes with cancellation
   useEffect(() => {
@@ -115,8 +89,9 @@ export function IssueEditorPage() {
   }, [issue?.program_id]);
 
   // Redirect if issue not found after loading
+  // Skip redirect for temp IDs (pending offline creation) - give cache time to sync
   useEffect(() => {
-    if (!issuesLoading && id && !issue) {
+    if (!issuesLoading && id && !issue && !id.startsWith('temp-')) {
       navigate('/issues');
     }
   }, [issuesLoading, id, issue, navigate]);
@@ -134,13 +109,36 @@ export function IssueEditorPage() {
     },
   });
 
-  const loading = issuesLoading || relatedDataLoading;
+  // Only wait for issues to load - programs/team can load in background
+  // This allows the page to render with cached data when offline
+  const loading = issuesLoading;
 
   if (loading) {
     return <EditorSkeleton />;
   }
 
-  if (!issue || !user) {
+  // For temp IDs (offline-created issues), create a placeholder issue while waiting for cache sync
+  const displayIssue = issue || (id?.startsWith('temp-') ? {
+    id: id,
+    title: 'Untitled',
+    state: 'backlog',
+    priority: 'none',
+    ticket_number: -1,
+    display_id: 'PENDING',
+    assignee_id: null,
+    assignee_name: null,
+    estimate: null,
+    program_id: null,
+    sprint_id: null,
+    program_name: null,
+    program_prefix: null,
+    sprint_name: null,
+    source: 'internal' as const,
+    rejection_reason: null,
+    _pending: true,
+  } : null);
+
+  if (!displayIssue || !user) {
     return null;
   }
 
@@ -151,23 +149,23 @@ export function IssueEditorPage() {
 
   return (
     <Editor
-      documentId={issue.id}
+      documentId={displayIssue.id}
       userName={user.name}
-      initialTitle={issue.title}
+      initialTitle={displayIssue.title}
       onTitleChange={throttledTitleSave}
       onBack={() => navigate('/issues')}
       roomPrefix="issue"
       placeholder="Add a description..."
       headerBadge={
         <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted" data-testid="ticket-number">
-          {issue.display_id}
+          {displayIssue.display_id}
         </span>
       }
       sidebar={
         <div className="space-y-4 p-4">
           <PropertyRow label="Status">
               <select
-                value={issue.state}
+                value={displayIssue.state}
                 onChange={(e) => handleUpdateIssue({ state: e.target.value })}
                 aria-label="Status"
                 className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
@@ -182,7 +180,7 @@ export function IssueEditorPage() {
 
             <PropertyRow label="Priority">
               <select
-                value={issue.priority}
+                value={displayIssue.priority}
                 onChange={(e) => handleUpdateIssue({ priority: e.target.value })}
                 aria-label="Priority"
                 className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
@@ -203,7 +201,7 @@ export function IssueEditorPage() {
                   min="0"
                   placeholder="—"
                   aria-label="Estimate in hours"
-                  value={issue.estimate ?? ''}
+                  value={displayIssue.estimate ?? ''}
                   onChange={(e) => {
                     const value = e.target.value ? parseFloat(e.target.value) : null;
                     handleUpdateIssue({ estimate: value });
@@ -218,7 +216,7 @@ export function IssueEditorPage() {
             <PropertyRow label="Assignee">
               <Combobox
                 options={teamMembers.map((m) => ({ value: m.user_id, label: m.name }))}
-                value={issue.assignee_id}
+                value={displayIssue.assignee_id}
                 onChange={(value) => handleUpdateIssue({ assignee_id: value })}
                 placeholder="Unassigned"
                 clearLabel="Unassigned"
@@ -231,7 +229,7 @@ export function IssueEditorPage() {
             <PropertyRow label="Program">
               <Combobox
                 options={programs.map((p) => ({ value: p.id, label: p.name, description: p.prefix }))}
-                value={issue.program_id}
+                value={displayIssue.program_id}
                 onChange={handleProgramChange}
                 placeholder="No Program"
                 clearLabel="No Program"
@@ -241,13 +239,13 @@ export function IssueEditorPage() {
               />
             </PropertyRow>
 
-            {issue.program_id && (
+            {displayIssue.program_id && (
               <PropertyRow label="Sprint">
                 <Combobox
                   options={sprints.map((s) => ({ value: s.id, label: s.name, description: s.status }))}
-                  value={issue.sprint_id}
+                  value={displayIssue.sprint_id}
                   onChange={(value) => {
-                    if (value && !issue.estimate) {
+                    if (value && !displayIssue.estimate) {
                       setSprintError('Please add an estimate before assigning to a sprint');
                       return;
                     }

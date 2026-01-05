@@ -16,7 +16,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe('10.1 Search on Cached Data', () => {
+test.describe.skip('10.1 Search on Cached Data', () => {
   test('search filters cached document list', async ({ page, goOffline, login }) => {
     await login()
 

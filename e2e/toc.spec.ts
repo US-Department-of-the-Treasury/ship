@@ -56,18 +56,15 @@ test.describe('Table of Contents (TOC)', () => {
     await page.keyboard.type('/toc')
     await page.waitForTimeout(500)
 
-    // Look for TOC option in menu
-    const tocOption = page.getByText('Table of Contents', { exact: false }).or(page.getByText('TOC', { exact: false }))
-    if (await tocOption.isVisible()) {
-      await tocOption.click()
-      await page.waitForTimeout(500)
+    // Look for TOC option in menu - use button role to be specific
+    const tocOption = page.getByRole('button', { name: /Table of Contents/i })
+    await expect(tocOption).toBeVisible({ timeout: 3000 })
+    await tocOption.click()
+    await page.waitForTimeout(500)
 
-      // Should insert TOC node
-      const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
-      await expect(toc).toBeVisible({ timeout: 3000 })
-    } else {
-      expect(true).toBe(false) // Element not found, test cannot continue
-    }
+    // Should insert TOC node
+    const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
+    await expect(toc).toBeVisible({ timeout: 3000 })
   })
 
   test('TOC shows document headings', async ({ page }) => {
@@ -89,22 +86,19 @@ test.describe('Table of Contents (TOC)', () => {
     await page.keyboard.type('/toc')
     await page.waitForTimeout(500)
 
-    const tocOption = page.getByText('Table of Contents', { exact: false }).or(page.getByText('TOC', { exact: false }))
-    if (await tocOption.isVisible()) {
-      await tocOption.click()
-      await page.waitForTimeout(500)
+    const tocOption = page.getByRole('button', { name: /Table of Contents/i })
+    await expect(tocOption).toBeVisible({ timeout: 3000 })
+    await tocOption.click()
+    await page.waitForTimeout(500)
 
-      // TOC should show the headings
-      const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
-      await expect(toc).toBeVisible({ timeout: 3000 })
+    // TOC should show the headings
+    const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
+    await expect(toc).toBeVisible({ timeout: 3000 })
 
-      const tocText = await toc.textContent()
-      expect(tocText).toContain('Introduction')
-      expect(tocText).toContain('Background')
-      expect(tocText).toContain('Methods')
-    } else {
-      expect(true).toBe(false) // Element not found, test cannot continue
-    }
+    const tocText = await toc.textContent()
+    expect(tocText).toContain('Introduction')
+    expect(tocText).toContain('Background')
+    expect(tocText).toContain('Methods')
   })
 
   test('TOC updates when heading added', async ({ page }) => {
@@ -122,28 +116,25 @@ test.describe('Table of Contents (TOC)', () => {
     await page.keyboard.type('/toc')
     await page.waitForTimeout(500)
 
-    const tocOption = page.getByText('Table of Contents', { exact: false }).or(page.getByText('TOC', { exact: false }))
-    if (await tocOption.isVisible()) {
-      await tocOption.click()
-      await page.waitForTimeout(500)
+    const tocOption = page.getByRole('button', { name: /Table of Contents/i })
+    await expect(tocOption).toBeVisible({ timeout: 3000 })
+    await tocOption.click()
+    await page.waitForTimeout(500)
 
-      const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
-      await expect(toc).toBeVisible({ timeout: 3000 })
+    const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
+    await expect(toc).toBeVisible({ timeout: 3000 })
 
-      // Add new heading
-      await editor.click()
-      await page.keyboard.press('End')
-      await page.keyboard.press('Enter')
-      await page.keyboard.type('## Second Heading')
-      await page.waitForTimeout(1000)
+    // Add new heading
+    await editor.click()
+    await page.keyboard.press('End')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('## Second Heading')
+    await page.waitForTimeout(1000)
 
-      // TOC should update to include new heading
-      const tocText = await toc.textContent()
-      expect(tocText).toContain('First Heading')
-      expect(tocText).toContain('Second Heading')
-    } else {
-      expect(true).toBe(false) // Element not found, test cannot continue
-    }
+    // TOC should update to include new heading
+    const tocText = await toc.textContent()
+    expect(tocText).toContain('First Heading')
+    expect(tocText).toContain('Second Heading')
   })
 
   test('TOC updates when heading removed', async ({ page }) => {
@@ -163,37 +154,35 @@ test.describe('Table of Contents (TOC)', () => {
     await page.keyboard.type('/toc')
     await page.waitForTimeout(500)
 
-    const tocOption = page.getByText('Table of Contents', { exact: false }).or(page.getByText('TOC', { exact: false }))
-    if (await tocOption.isVisible()) {
-      await tocOption.click()
-      await page.waitForTimeout(500)
+    const tocOption = page.getByRole('button', { name: /Table of Contents/i })
+    await expect(tocOption).toBeVisible({ timeout: 3000 })
+    await tocOption.click()
+    await page.waitForTimeout(500)
 
-      const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
-      await expect(toc).toBeVisible({ timeout: 3000 })
+    const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
+    await expect(toc).toBeVisible({ timeout: 3000 })
 
-      // Verify all headings are in TOC
-      let tocText = await toc.textContent()
-      expect(tocText).toContain('Keep This')
-      expect(tocText).toContain('Delete This')
-      expect(tocText).toContain('Keep This Too')
+    // Verify all headings are in TOC
+    let tocText = await toc.textContent()
+    expect(tocText).toContain('Keep This')
+    expect(tocText).toContain('Delete This')
+    expect(tocText).toContain('Keep This Too')
 
-      // Delete the "Delete This" heading
-      const headingToDelete = page.locator('.ProseMirror h2').filter({ hasText: 'Delete This' })
-      await headingToDelete.click()
+    // Delete the "Delete This" heading
+    const headingToDelete = page.locator('.ProseMirror h2').filter({ hasText: 'Delete This' })
+    await headingToDelete.click()
 
-      // Select all text in heading and delete
-      await page.keyboard.press('Control+A')
-      await page.keyboard.press('Backspace')
-      await page.waitForTimeout(1000)
+    // Select heading text only (not entire document) using triple-click
+    await headingToDelete.click({ clickCount: 3 })
+    await page.waitForTimeout(200)
+    await page.keyboard.press('Backspace')
+    await page.waitForTimeout(1000)
 
-      // TOC should update - "Delete This" should be gone
-      tocText = await toc.textContent()
-      expect(tocText).toContain('Keep This')
-      expect(tocText).not.toContain('Delete This')
-      expect(tocText).toContain('Keep This Too')
-    } else {
-      expect(true).toBe(false) // Element not found, test cannot continue
-    }
+    // TOC should update - "Delete This" should be gone
+    tocText = await toc.textContent()
+    expect(tocText).toContain('Keep This')
+    expect(tocText).not.toContain('Delete This')
+    expect(tocText).toContain('Keep This Too')
   })
 
   test('TOC updates when heading renamed', async ({ page }) => {
@@ -211,32 +200,29 @@ test.describe('Table of Contents (TOC)', () => {
     await page.keyboard.type('/toc')
     await page.waitForTimeout(500)
 
-    const tocOption = page.getByText('Table of Contents', { exact: false }).or(page.getByText('TOC', { exact: false }))
-    if (await tocOption.isVisible()) {
-      await tocOption.click()
-      await page.waitForTimeout(500)
+    const tocOption = page.getByRole('button', { name: /Table of Contents/i })
+    await expect(tocOption).toBeVisible({ timeout: 3000 })
+    await tocOption.click()
+    await page.waitForTimeout(500)
 
-      const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
-      await expect(toc).toBeVisible({ timeout: 3000 })
+    const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
+    await expect(toc).toBeVisible({ timeout: 3000 })
 
-      // Verify original title
-      let tocText = await toc.textContent()
-      expect(tocText).toContain('Original Title')
+    // Verify original title
+    let tocText = await toc.textContent()
+    expect(tocText).toContain('Original Title')
 
-      // Rename the heading
-      const heading = page.locator('.ProseMirror h1').filter({ hasText: 'Original Title' })
-      await heading.click()
-      await page.keyboard.press('Control+A')
-      await page.keyboard.type('New Title')
-      await page.waitForTimeout(1000)
+    // Rename the heading - use triple-click to select only heading text
+    const heading = page.locator('.ProseMirror h1').filter({ hasText: 'Original Title' })
+    await heading.click({ clickCount: 3 })
+    await page.waitForTimeout(200)
+    await page.keyboard.type('New Title')
+    await page.waitForTimeout(1000)
 
-      // TOC should update
-      tocText = await toc.textContent()
-      expect(tocText).toContain('New Title')
-      expect(tocText).not.toContain('Original Title')
-    } else {
-      expect(true).toBe(false) // Element not found, test cannot continue
-    }
+    // TOC should update
+    tocText = await toc.textContent()
+    expect(tocText).toContain('New Title')
+    expect(tocText).not.toContain('Original Title')
   })
 
   test('clicking TOC item scrolls to heading', async ({ page }) => {
@@ -266,30 +252,27 @@ test.describe('Table of Contents (TOC)', () => {
     await page.keyboard.type('/toc')
     await page.waitForTimeout(500)
 
-    const tocOption = page.getByText('Table of Contents', { exact: false }).or(page.getByText('TOC', { exact: false }))
-    if (await tocOption.isVisible()) {
-      await tocOption.click()
-      await page.waitForTimeout(500)
+    const tocOption = page.getByRole('button', { name: /Table of Contents/i })
+    await expect(tocOption).toBeVisible({ timeout: 3000 })
+    await tocOption.click()
+    await page.waitForTimeout(500)
 
-      const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
-      await expect(toc).toBeVisible({ timeout: 3000 })
+    const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
+    await expect(toc).toBeVisible({ timeout: 3000 })
 
-      // Scroll to bottom first
-      await page.keyboard.press('End')
-      await page.waitForTimeout(500)
+    // Scroll to bottom first
+    await page.keyboard.press('End')
+    await page.waitForTimeout(500)
 
-      // Click on "Section Two" in TOC
-      const sectionTwoLink = toc.locator('text="Section Two"').or(toc.locator('[href*="section-two"]'))
-      if (await sectionTwoLink.isVisible()) {
-        await sectionTwoLink.click()
-        await page.waitForTimeout(1000)
+    // Click on "Section Two" in TOC
+    const sectionTwoLink = toc.locator('text="Section Two"').or(toc.locator('[href*="section-two"]'))
+    if (await sectionTwoLink.isVisible()) {
+      await sectionTwoLink.click()
+      await page.waitForTimeout(1000)
 
-        // Verify "Section Two" heading is in viewport
-        const sectionTwoHeading = page.locator('.ProseMirror h1').filter({ hasText: 'Section Two' })
-        await expect(sectionTwoHeading).toBeInViewport({ timeout: 3000 })
-      }
-    } else {
-      expect(true).toBe(false) // Element not found, test cannot continue
+      // Verify "Section Two" heading is in viewport
+      const sectionTwoHeading = page.locator('.ProseMirror h1').filter({ hasText: 'Section Two' })
+      await expect(sectionTwoHeading).toBeInViewport({ timeout: 3000 })
     }
   })
 
@@ -313,34 +296,33 @@ test.describe('Table of Contents (TOC)', () => {
     await page.keyboard.type('/toc')
     await page.waitForTimeout(500)
 
-    const tocOption = page.getByText('Table of Contents', { exact: false }).or(page.getByText('TOC', { exact: false }))
-    if (await tocOption.isVisible()) {
-      await tocOption.click()
-      await page.waitForTimeout(500)
+    const tocOption = page.getByRole('button', { name: /Table of Contents/i })
+    await expect(tocOption).toBeVisible({ timeout: 3000 })
+    await tocOption.click()
+    await page.waitForTimeout(500)
 
-      const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
-      await expect(toc).toBeVisible({ timeout: 3000 })
+    const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
+    await expect(toc).toBeVisible({ timeout: 3000 })
 
-      // TOC should show all levels
-      const tocText = await toc.textContent()
-      expect(tocText).toContain('Chapter One')
-      expect(tocText).toContain('Section 1.1')
-      expect(tocText).toContain('Subsection 1.1.1')
-      expect(tocText).toContain('Section 1.2')
-      expect(tocText).toContain('Chapter Two')
+    // TOC should show all levels
+    const tocText = await toc.textContent()
+    expect(tocText).toContain('Chapter One')
+    expect(tocText).toContain('Section 1.1')
+    expect(tocText).toContain('Subsection 1.1.1')
+    expect(tocText).toContain('Section 1.2')
+    expect(tocText).toContain('Chapter Two')
 
-      // Check for indentation or nesting (TOC should show hierarchy)
-      const tocHTML = await toc.innerHTML()
-      // Nested structure typically uses ul/ol or indentation classes
-      const hasNesting = tocHTML.includes('<ul') ||
-                        tocHTML.includes('<ol') ||
-                        tocHTML.includes('indent') ||
-                        tocHTML.includes('nested') ||
-                        tocHTML.includes('level')
-      expect(hasNesting).toBeTruthy()
-    } else {
-      expect(true).toBe(false) // Element not found, test cannot continue
-    }
+    // Check for indentation or nesting (TOC should show hierarchy)
+    const tocHTML = await toc.innerHTML()
+    // TOC uses toc-item-h1, toc-item-h2, toc-item-h3 classes for hierarchy
+    const hasNesting = tocHTML.includes('<ul') ||
+                      tocHTML.includes('<ol') ||
+                      tocHTML.includes('indent') ||
+                      tocHTML.includes('nested') ||
+                      tocHTML.includes('toc-item-h1') ||
+                      tocHTML.includes('toc-item-h2') ||
+                      tocHTML.includes('toc-item-h3')
+    expect(hasNesting).toBeTruthy()
   })
 
   test('TOC persists after page reload', async ({ page }) => {
@@ -359,40 +341,37 @@ test.describe('Table of Contents (TOC)', () => {
     await page.keyboard.type('/toc')
     await page.waitForTimeout(500)
 
-    const tocOption = page.getByText('Table of Contents', { exact: false }).or(page.getByText('TOC', { exact: false }))
-    if (await tocOption.isVisible()) {
-      await tocOption.click()
-      await page.waitForTimeout(500)
+    const tocOption = page.getByRole('button', { name: /Table of Contents/i })
+    await expect(tocOption).toBeVisible({ timeout: 3000 })
+    await tocOption.click()
+    await page.waitForTimeout(500)
 
-      // Verify TOC exists
-      const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
-      await expect(toc).toBeVisible({ timeout: 3000 })
+    // Verify TOC exists
+    const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
+    await expect(toc).toBeVisible({ timeout: 3000 })
 
-      // Get current URL
-      const docUrl = page.url()
+    // Get current URL
+    const docUrl = page.url()
 
-      // Wait for auto-save
-      await page.waitForTimeout(2000)
+    // Wait for auto-save
+    await page.waitForTimeout(2000)
 
-      // Navigate away and back
-      await page.goto('/docs')
-      await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible({ timeout: 5000 })
+    // Navigate away and back
+    await page.goto('/docs')
+    await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible({ timeout: 5000 })
 
-      // Navigate back to document
-      await page.goto(docUrl)
-      await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
-      await page.waitForTimeout(1000)
+    // Navigate back to document
+    await page.goto(docUrl)
+    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
+    await page.waitForTimeout(1000)
 
-      // Verify TOC persisted
-      const restoredToc = page.locator('[data-toc], .toc, .table-of-contents').first()
-      await expect(restoredToc).toBeVisible({ timeout: 3000 })
+    // Verify TOC persisted
+    const restoredToc = page.locator('[data-toc], .toc, .table-of-contents').first()
+    await expect(restoredToc).toBeVisible({ timeout: 3000 })
 
-      const tocText = await restoredToc.textContent()
-      expect(tocText).toContain('Persistent Heading')
-      expect(tocText).toContain('Subheading')
-    } else {
-      expect(true).toBe(false) // Element not found, test cannot continue
-    }
+    const tocText = await restoredToc.textContent()
+    expect(tocText).toContain('Persistent Heading')
+    expect(tocText).toContain('Subheading')
   })
 
   test('empty document TOC shows "No headings" message', async ({ page }) => {
@@ -405,23 +384,20 @@ test.describe('Table of Contents (TOC)', () => {
     await page.keyboard.type('/toc')
     await page.waitForTimeout(500)
 
-    const tocOption = page.getByText('Table of Contents', { exact: false }).or(page.getByText('TOC', { exact: false }))
-    if (await tocOption.isVisible()) {
-      await tocOption.click()
-      await page.waitForTimeout(500)
+    const tocOption = page.getByRole('button', { name: /Table of Contents/i })
+    await expect(tocOption).toBeVisible({ timeout: 3000 })
+    await tocOption.click()
+    await page.waitForTimeout(500)
 
-      const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
-      await expect(toc).toBeVisible({ timeout: 3000 })
+    const toc = page.locator('[data-toc], .toc, .table-of-contents').first()
+    await expect(toc).toBeVisible({ timeout: 3000 })
 
-      // Should show empty state or "No headings" message
-      const tocText = await toc.textContent()
-      const hasEmptyMessage = tocText?.toLowerCase().includes('no headings') ||
-                             tocText?.toLowerCase().includes('empty') ||
-                             tocText?.toLowerCase().includes('add headings') ||
-                             tocText?.trim() === ''
-      expect(hasEmptyMessage).toBeTruthy()
-    } else {
-      expect(true).toBe(false) // Element not found, test cannot continue
-    }
+    // Should show empty state or "No headings" message
+    const tocText = await toc.textContent()
+    const hasEmptyMessage = tocText?.toLowerCase().includes('no headings') ||
+                           tocText?.toLowerCase().includes('empty') ||
+                           tocText?.toLowerCase().includes('add headings') ||
+                           tocText?.trim() === ''
+    expect(hasEmptyMessage).toBeTruthy()
   })
 })

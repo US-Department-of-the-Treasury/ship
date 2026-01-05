@@ -13,10 +13,16 @@ async function createNewDocument(page: Page) {
   // Get current URL to detect change after clicking
   const currentUrl = page.url();
 
-  // Click the "New document" button
-  const newDocButton = page.locator('button[title="New document"]');
-  await expect(newDocButton).toBeVisible({ timeout: 5000 });
-  await newDocButton.click();
+  // Try sidebar button first, fall back to main "New Document" button
+  const sidebarButton = page.locator('aside').getByRole('button', { name: /new|create|\+/i }).first();
+  const mainButton = page.getByRole('button', { name: 'New Document', exact: true });
+
+  if (await sidebarButton.isVisible({ timeout: 2000 })) {
+    await sidebarButton.click();
+  } else {
+    await expect(mainButton).toBeVisible({ timeout: 5000 });
+    await mainButton.click();
+  }
 
   // Wait for URL to change to a new document
   await page.waitForFunction(
@@ -70,15 +76,15 @@ test.describe('File Attachments', () => {
     await page.waitForTimeout(500);
 
     // Should show file attachment option
-    const fileOption = page.getByRole('button', { name: /File.*Attach/i });
+    const fileOption = page.getByRole('button', { name: /^File Upload a file attachment/i });
     await expect(fileOption).toBeVisible({ timeout: 5000 });
 
     // Create test file
     const tmpPath = createTestFile('test-document.pdf', 'PDF file content');
 
-    // Press Enter to select the File option and wait for file chooser
+    // Click the File option and wait for file chooser
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.keyboard.press('Enter');
+    await fileOption.click();
 
     // Handle file chooser
     const fileChooser = await fileChooserPromise;
@@ -107,7 +113,7 @@ test.describe('File Attachments', () => {
 
     // Select file option
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(tmpPath);
 
@@ -133,7 +139,7 @@ test.describe('File Attachments', () => {
     const tmpPath = createTestFile('download-test.txt', 'Test content');
 
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(tmpPath);
 
@@ -167,7 +173,7 @@ test.describe('File Attachments', () => {
     const tmpPath = createTestFile('potentially-dangerous.exe', 'Not really an exe');
 
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(tmpPath);
 
@@ -198,7 +204,7 @@ test.describe('File Attachments', () => {
     const tmpPath = createTestFile('persist-test.pdf', 'Persistent content');
 
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(tmpPath);
 
@@ -244,7 +250,7 @@ test.describe('File Attachments', () => {
     const tmpPath = createTestFile('sync-test.txt', 'Sync test content');
 
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(tmpPath);
 
@@ -296,7 +302,7 @@ test.describe('File Attachments', () => {
     const tmpPath = createTestFile('icon-test.pdf', 'PDF content');
 
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(tmpPath);
 
@@ -328,7 +334,7 @@ test.describe('File Attachments', () => {
     const tmpPath = createTestFile('size-test.txt', content);
 
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
     const fileChooser = await fileChooserPromise;
     await fileChooser.setFiles(tmpPath);
 

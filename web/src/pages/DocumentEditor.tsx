@@ -1,51 +1,93 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { useAutoSave } from '@/hooks/useAutoSave';
-import { PersonCombobox, Person } from '@/components/PersonCombobox';
+import { PersonCombobox } from '@/components/PersonCombobox';
 import { VisibilityDropdown } from '@/components/VisibilityDropdown';
 import { BacklinksPanel } from '@/components/editor/BacklinksPanel';
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
+import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
+import { getIsOnline } from '@/lib/queryClient';
 
 export function DocumentEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { documents, loading: documentsLoading, createDocument, updateDocument: contextUpdateDocument, deleteDocument } = useDocuments();
+  const { documents, loading: documentsLoading, createDocument, updateDocument: contextUpdateDocument, deleteDocument, refreshDocuments } = useDocuments();
 
-  // State for non-wiki documents (fetched directly)
-  const [directDocument, setDirectDocument] = useState<WikiDocument | null>(null);
-  const [directLoading, setDirectLoading] = useState(false);
+  // Use TanStack Query for team members (supports offline via cache)
+  const { data: teamMembersData = [] } = useTeamMembersQuery();
+  const teamMembers = teamMembersData.map(m => ({
+    id: m.id,
+    user_id: m.user_id,
+    name: m.name,
+    email: m.email || '',
+  }));
 
-  // State for team members (for maintainer selection)
-  const [teamMembers, setTeamMembers] = useState<Person[]>([]);
-
-  // Get the current document from context first
+  // Get the current document from context (TanStack Query cache)
   const contextDocument = documents.find(d => d.id === id) || null;
 
-  // Fetch document directly if not in wiki context (e.g., person documents)
-  useEffect(() => {
-    if (!documentsLoading && id && !contextDocument) {
-      setDirectLoading(true);
-      fetch(`${API_URL}/api/documents/${id}`, { credentials: 'include' })
-        .then(res => res.ok ? res.json() : null)
-        .then(doc => {
-          if (doc) {
-            setDirectDocument(doc);
-          } else {
-            navigate('/docs');
-          }
-        })
-        .catch(() => navigate('/docs'))
-        .finally(() => setDirectLoading(false));
-    }
-  }, [documentsLoading, id, contextDocument, navigate]);
+  // Track the latest contextDocument in a ref for async timeout checks
+  const contextDocumentRef = useRef(contextDocument);
+  contextDocumentRef.current = contextDocument;
 
-  // Use context document if available, otherwise use directly fetched document
-  const document = contextDocument || directDocument;
+  // Track if we've already tried to refresh for this document ID
+  const hasTriedRefreshRef = useRef<string | null>(null);
+
+  // Redirect if document not found after loading
+  // Skip redirect for temp IDs (pending offline creation) - give cache time to sync
+  // Skip redirect when offline - document might be in cache but API call would fail
+  // First try refreshing the documents list before redirecting
+  useEffect(() => {
+    const shouldHandleMissingDocument = !documentsLoading && id && !contextDocument && !id.startsWith('temp-') && getIsOnline();
+
+    if (shouldHandleMissingDocument) {
+      // If we haven't tried refreshing for this specific document ID yet, try it first
+      if (hasTriedRefreshRef.current !== id) {
+        hasTriedRefreshRef.current = id;
+        // Refresh the documents list, then redirect if still not found
+        refreshDocuments()
+          .then(() => {
+            // Wait a moment for React to process the update
+            setTimeout(() => {
+              // Check if document was found after refresh
+              if (!contextDocumentRef.current) {
+                navigate('/docs');
+              }
+            }, 300);
+          })
+          .catch(() => {
+            // On error, redirect to docs list
+            navigate('/docs');
+          });
+        return;
+      }
+
+      // We've already refreshed and still don't have the document
+      // Wait a short time to allow optimistic updates to propagate, then redirect
+      const timeoutId = setTimeout(() => {
+        // Re-check using ref to get the latest value
+        if (!contextDocumentRef.current) {
+          navigate('/docs');
+        }
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [documentsLoading, id, contextDocument, navigate, refreshDocuments]);
+
+  // For temp IDs (offline-created documents), create a placeholder while waiting for cache sync
+  const document = contextDocument || (id?.startsWith('temp-') ? {
+    id: id,
+    title: 'Untitled',
+    document_type: 'wiki',
+    parent_id: null,
+    position: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    visibility: 'workspace' as const,
+    _pending: true,
+  } : null);
 
   // Track last visited document for auto-open on /docs
   useEffect(() => {
@@ -54,38 +96,11 @@ export function DocumentEditorPage() {
     }
   }, [id, document]);
 
-  // Fetch team members for maintainer selection
-  useEffect(() => {
-    fetch(`${API_URL}/api/team/people`, { credentials: 'include' })
-      .then(res => res.ok ? res.json() : [])
-      .then(setTeamMembers)
-      .catch(() => setTeamMembers([]));
-  }, []);
-
-  // Update handler - uses context for wiki docs, direct API for others
+  // Update handler using shared context (supports offline via TanStack Query)
   const handleUpdateDocument = useCallback(async (updates: Partial<WikiDocument>) => {
     if (!id) return;
-    if (contextDocument) {
-      // Wiki document - use context
-      await contextUpdateDocument(id, updates);
-    } else {
-      // Non-wiki document - use direct API call
-      try {
-        const res = await fetch(`${API_URL}/api/documents/${id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(updates),
-        });
-        if (res.ok) {
-          const updated = await res.json();
-          setDirectDocument(prev => prev ? { ...prev, ...updated } : null);
-        }
-      } catch (err) {
-        console.error('Failed to update document:', err);
-      }
-    }
-  }, [id, contextDocument, contextUpdateDocument]);
+    await contextUpdateDocument(id, updates);
+  }, [id, contextUpdateDocument]);
 
   // Throttled title save with stale response handling
   const throttledTitleSave = useAutoSave({
@@ -124,7 +139,7 @@ export function DocumentEditorPage() {
     navigate(`/docs/${docId}`);
   }, [navigate]);
 
-  if (documentsLoading || directLoading) {
+  if (documentsLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-muted">Loading...</div>

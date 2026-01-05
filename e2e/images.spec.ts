@@ -20,10 +20,16 @@ async function createNewDocument(page: Page) {
   // Get current URL to detect change after clicking
   const currentUrl = page.url();
 
-  // Click the "New document" button
-  const newDocButton = page.locator('button[title="New document"]');
-  await expect(newDocButton).toBeVisible({ timeout: 5000 });
-  await newDocButton.click();
+  // Try sidebar button first, fall back to main "New Document" button
+  const sidebarButton = page.locator('aside').getByRole('button', { name: /new|create|\+/i }).first();
+  const mainButton = page.getByRole('button', { name: 'New Document', exact: true });
+
+  if (await sidebarButton.isVisible({ timeout: 2000 })) {
+    await sidebarButton.click();
+  } else {
+    await expect(mainButton).toBeVisible({ timeout: 5000 });
+    await mainButton.click();
+  }
 
   // Wait for URL to change to a new document
   await page.waitForFunction(

@@ -7,9 +7,6 @@ import { test, expect, Page } from './fixtures/isolated-env';
  * In development, the API uses local file storage instead of S3.
  */
 
-// Get API URL from environment
-const API_URL = process.env.VITE_API_URL || 'http://localhost:3147';
-
 // Helper to login and get session cookie
 async function loginAndGetCookies(page: Page): Promise<string> {
   await page.goto('/login');
@@ -23,15 +20,16 @@ async function loginAndGetCookies(page: Page): Promise<string> {
   return cookies.map(c => `${c.name}=${c.value}`).join('; ');
 }
 
-// Helper to get CSRF token
-async function getCsrfToken(page: Page): Promise<string> {
-  const response = await page.request.get(`${API_URL}/api/csrf-token`);
+// Helper to get CSRF token using dynamic API URL
+async function getCsrfToken(page: Page, apiUrl: string): Promise<string> {
+  const response = await page.request.get(`${apiUrl}/api/csrf-token`);
   const data = await response.json();
   return data.token;
 }
 
 test.describe('File Upload API', () => {
-  test('requires authentication for upload endpoint', async ({ page }) => {
+  test('requires authentication for upload endpoint', async ({ page, apiServer }) => {
+    const API_URL = apiServer.url;
     // Try to access upload API without being logged in
     // Note: Returns 403 (CSRF) or 401 (auth) depending on which check runs first
     const response = await page.request.post(`${API_URL}/api/files/upload`, {
@@ -49,12 +47,13 @@ test.describe('File Upload API', () => {
     expect(text.length).toBeGreaterThan(0);
   });
 
-  test('returns presigned upload URL when authenticated', async ({ page }) => {
+  test('returns presigned upload URL when authenticated', async ({ page, apiServer }) => {
+    const API_URL = apiServer.url;
     // Login first
     await loginAndGetCookies(page);
 
     // Get CSRF token
-    const csrfToken = await getCsrfToken(page);
+    const csrfToken = await getCsrfToken(page, API_URL);
 
     // Request presigned URL
     const response = await page.request.post(`${API_URL}/api/files/upload`, {
@@ -82,12 +81,13 @@ test.describe('File Upload API', () => {
     expect(data.uploadUrl).toBeTruthy();
   });
 
-  test('confirms upload and returns CDN URL', async ({ page }) => {
+  test('confirms upload and returns CDN URL', async ({ page, apiServer }) => {
+    const API_URL = apiServer.url;
     // Login first
     await loginAndGetCookies(page);
 
     // Get CSRF token
-    const csrfToken = await getCsrfToken(page);
+    const csrfToken = await getCsrfToken(page, API_URL);
 
     // Step 1: Request presigned URL
     const uploadResponse = await page.request.post(`${API_URL}/api/files/upload`, {

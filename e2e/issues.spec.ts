@@ -33,8 +33,8 @@ test.describe('Issues (Phase 5)', () => {
   test('can create a new issue', async ({ page }) => {
     await page.goto('/issues')
 
-    // Click New Issue button
-    await page.getByRole('button', { name: 'New Issue' }).click()
+    // Click New Issue button (exact match to avoid sidebar icon button)
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
 
     // Should navigate to issue editor (full-page editor)
     await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
@@ -46,8 +46,8 @@ test.describe('Issues (Phase 5)', () => {
   test('new issue appears with ticket number in list', async ({ page }) => {
     await page.goto('/issues')
 
-    // Create new issue
-    await page.getByRole('button', { name: 'New Issue' }).click()
+    // Create new issue (exact match to avoid sidebar icon button)
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
     await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Navigate back to list
@@ -85,8 +85,8 @@ test.describe('Issues (Phase 5)', () => {
   test('issue editor shows full document editor', async ({ page }) => {
     await page.goto('/issues')
 
-    // Create new issue
-    await page.getByRole('button', { name: 'New Issue' }).click()
+    // Create new issue (exact match to avoid sidebar icon button)
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
     await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Should see full editor with title area
@@ -99,8 +99,8 @@ test.describe('Issues (Phase 5)', () => {
   test('can edit issue title', async ({ page }) => {
     await page.goto('/issues')
 
-    // Create new issue
-    await page.getByRole('button', { name: 'New Issue' }).click()
+    // Create new issue (exact match to avoid sidebar icon button)
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
     await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Find title input (contenteditable or input)
