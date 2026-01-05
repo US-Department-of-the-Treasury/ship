@@ -1,3 +1,8 @@
+# Fail on empty Playwright tests (they silently pass - major footgun)
+if [ -f "./scripts/check-empty-tests.sh" ]; then
+  ./scripts/check-empty-tests.sh
+fi
+
 # Open source compliance checks (secrets scan + AI analysis)
 if command -v comply &> /dev/null; then
   comply opensource --hook --staged --exclude e2e

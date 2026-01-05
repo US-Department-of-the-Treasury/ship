@@ -10,7 +10,7 @@ const router: RouterType = Router();
 // Validation schemas
 const createIssueSchema = z.object({
   title: z.string().min(1).max(500),
-  state: z.enum(['backlog', 'todo', 'in_progress', 'done', 'cancelled']).optional().default('backlog'),
+  state: z.enum(['triage', 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional().default('backlog'),
   priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().default('medium'),
   assignee_id: z.string().uuid().optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
@@ -19,12 +19,16 @@ const createIssueSchema = z.object({
 
 const updateIssueSchema = z.object({
   title: z.string().min(1).max(500).optional(),
-  state: z.enum(['backlog', 'todo', 'in_progress', 'done', 'cancelled']).optional(),
+  state: z.enum(['triage', 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional(),
   priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional(),
   assignee_id: z.string().uuid().optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
   estimate: z.number().positive().nullable().optional(),
+});
+
+const rejectIssueSchema = z.object({
+  reason: z.string().min(1).max(1000),
 });
 
 // Fields to track in document_history
@@ -82,7 +86,6 @@ function extractIssueFromRow(row: any) {
     assignee_id: props.assignee_id || null,
     estimate: props.estimate ?? null,
     source: props.source || 'internal',
-    feedback_status: props.feedback_status || null,
     rejection_reason: props.rejection_reason || null,
     ticket_number: row.ticket_number,
     program_id: row.program_id,
@@ -134,14 +137,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     // Exclude archived and deleted issues by default
     query += ` AND d.archived_at IS NULL AND d.deleted_at IS NULL`;
 
-    // Filter by source - defaults to 'internal' (excludes feedback from regular issues list)
+    // Filter by source if specified (internal or external)
     if (source) {
       query += ` AND d.properties->>'source' = $${params.length + 1}`;
       params.push(source as string);
-    } else {
-      // By default, only show internal issues (not feedback)
-      query += ` AND (d.properties->>'source' = 'internal' OR d.properties->>'source' IS NULL)`;
     }
+    // No default filtering - show all issues regardless of source
 
     if (state) {
       const states = (state as string).split(',');
@@ -285,7 +286,6 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       priority: priority || 'medium',
       source: 'internal',
       assignee_id: assignee_id || null,
-      feedback_status: null,
       rejection_reason: null,
     };
 
@@ -516,7 +516,7 @@ const bulkUpdateSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(100),
   action: z.enum(['archive', 'delete', 'restore', 'update']),
   updates: z.object({
-    state: z.enum(['backlog', 'todo', 'in_progress', 'done', 'cancelled']).optional(),
+    state: z.enum(['triage', 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional(),
     sprint_id: z.string().uuid().nullable().optional(),
   }).optional(),
 });
@@ -687,6 +687,118 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
     res.status(204).send();
   } catch (err) {
     console.error('Delete issue error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Accept issue (move from triage to backlog)
+router.post('/:id/accept', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Get the issue
+    const existing = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (existing.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    const props = existing.rows[0].properties || {};
+
+    // Verify the issue is in triage state
+    if (props.state !== 'triage') {
+      res.status(400).json({ error: 'Issue must be in triage state to be accepted' });
+      return;
+    }
+
+    // Update state to backlog
+    const newProps = { ...props, state: 'backlog' };
+    const result = await pool.query(
+      `UPDATE documents
+       SET properties = $3, updated_at = now()
+       WHERE id = $1 AND workspace_id = $2
+       RETURNING *`,
+      [id, workspaceId, JSON.stringify(newProps)]
+    );
+
+    // Log the state change
+    await logDocumentChange(id!, 'state', 'triage', 'backlog', req.userId!);
+
+    const issue = extractIssueFromRow(result.rows[0]);
+    res.json({ ...issue, display_id: `#${issue.ticket_number}` });
+  } catch (err) {
+    console.error('Accept issue error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Reject issue (move from triage to cancelled with reason)
+router.post('/:id/reject', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = rejectIssueSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Rejection reason is required' });
+      return;
+    }
+
+    const { reason } = parsed.data;
+
+    // Get visibility context
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Get the issue
+    const existing = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (existing.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    const props = existing.rows[0].properties || {};
+
+    // Verify the issue is in triage state
+    if (props.state !== 'triage') {
+      res.status(400).json({ error: 'Issue must be in triage state to be rejected' });
+      return;
+    }
+
+    // Update state to cancelled and store rejection reason
+    const newProps = { ...props, state: 'cancelled', rejection_reason: reason };
+    const result = await pool.query(
+      `UPDATE documents
+       SET properties = $3, cancelled_at = NOW(), updated_at = now()
+       WHERE id = $1 AND workspace_id = $2
+       RETURNING *`,
+      [id, workspaceId, JSON.stringify(newProps)]
+    );
+
+    // Log the state change
+    await logDocumentChange(id!, 'state', 'triage', 'cancelled', req.userId!);
+
+    const issue = extractIssueFromRow(result.rows[0]);
+    res.json({ ...issue, display_id: `#${issue.ticket_number}` });
+  } catch (err) {
+    console.error('Reject issue error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

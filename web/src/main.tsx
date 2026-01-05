@@ -26,6 +26,7 @@ import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
 import { PersonEditorPage } from '@/pages/PersonEditor';
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
+import { PublicFeedbackPage } from '@/pages/PublicFeedback';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
@@ -101,75 +102,94 @@ function SuperAdminRoute({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <WorkspaceProvider>
-      <AuthProvider>
-        <Routes>
-          <Route
-            path="/setup"
-            element={<SetupPage />}
-          />
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
-                <LoginPage />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/invite/:token"
-            element={<InviteAcceptPage />}
-          />
-          <Route
-            path="/admin"
-            element={
-              <SuperAdminRoute>
-                <AdminDashboardPage />
-              </SuperAdminRoute>
-            }
-          />
-          <Route
-            path="/admin/workspaces/:id"
-            element={
-              <SuperAdminRoute>
-                <AdminWorkspaceDetailPage />
-              </SuperAdminRoute>
-            }
-          />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <DocumentsProvider>
-                  <ProgramsProvider>
-                    <IssuesProvider>
-                      <AppLayout />
-                    </IssuesProvider>
-                  </ProgramsProvider>
-                </DocumentsProvider>
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Navigate to="/docs" replace />} />
-            <Route path="docs" element={<DocumentsPage />} />
-            <Route path="docs/:id" element={<DocumentEditorPage />} />
-            <Route path="issues" element={<IssuesPage />} />
-            <Route path="issues/:id" element={<IssueEditorPage />} />
-            <Route path="programs" element={<ProgramsPage />} />
-            <Route path="programs/:id" element={<ProgramEditorPage />} />
-            <Route path="programs/:id/view" element={<ProgramViewPage />} />
-            <Route path="sprints/:id" element={<SprintEditorPage />} />
-            <Route path="sprints/:id/view" element={<SprintViewPage />} />
-            <Route path="team" element={<Navigate to="/team/allocation" replace />} />
-            <Route path="team/allocation" element={<TeamModePage />} />
-            <Route path="team/directory" element={<TeamDirectoryPage />} />
-            <Route path="team/:id" element={<PersonEditorPage />} />
-            <Route path="feedback/:id" element={<FeedbackEditorPage />} />
-            <Route path="settings" element={<WorkspaceSettingsPage />} />
-          </Route>
-        </Routes>
-      </AuthProvider>
-    </WorkspaceProvider>
+    <Routes>
+      {/* Truly public routes - no AuthProvider wrapper */}
+      <Route
+        path="/feedback/:programId"
+        element={<PublicFeedbackPage />}
+      />
+      {/* Routes that need AuthProvider (even if some are public) */}
+      <Route
+        path="/*"
+        element={
+          <WorkspaceProvider>
+            <AuthProvider>
+              <AppRoutes />
+            </AuthProvider>
+          </WorkspaceProvider>
+        }
+      />
+    </Routes>
+  );
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route
+        path="/setup"
+        element={<SetupPage />}
+      />
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <LoginPage />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/invite/:token"
+        element={<InviteAcceptPage />}
+      />
+      <Route
+        path="/admin"
+        element={
+          <SuperAdminRoute>
+            <AdminDashboardPage />
+          </SuperAdminRoute>
+        }
+      />
+      <Route
+        path="/admin/workspaces/:id"
+        element={
+          <SuperAdminRoute>
+            <AdminWorkspaceDetailPage />
+          </SuperAdminRoute>
+        }
+      />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <DocumentsProvider>
+              <ProgramsProvider>
+                <IssuesProvider>
+                  <AppLayout />
+                </IssuesProvider>
+              </ProgramsProvider>
+            </DocumentsProvider>
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/docs" replace />} />
+        <Route path="docs" element={<DocumentsPage />} />
+        <Route path="docs/:id" element={<DocumentEditorPage />} />
+        <Route path="issues" element={<IssuesPage />} />
+        <Route path="issues/:id" element={<IssueEditorPage />} />
+        <Route path="programs" element={<ProgramsPage />} />
+        <Route path="programs/:id" element={<ProgramEditorPage />} />
+        <Route path="programs/:id/view" element={<ProgramViewPage />} />
+        <Route path="sprints/:id" element={<SprintEditorPage />} />
+        <Route path="sprints/:id/view" element={<SprintViewPage />} />
+        <Route path="team" element={<Navigate to="/team/allocation" replace />} />
+        <Route path="team/allocation" element={<TeamModePage />} />
+        <Route path="team/directory" element={<TeamDirectoryPage />} />
+        <Route path="team/:id" element={<PersonEditorPage />} />
+        <Route path="feedback/:id" element={<FeedbackEditorPage />} />
+        <Route path="settings" element={<WorkspaceSettingsPage />} />
+      </Route>
+    </Routes>
   );
 }
 

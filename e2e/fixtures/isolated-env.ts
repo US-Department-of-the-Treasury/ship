@@ -480,6 +480,34 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     );
   }
 
+  // Create external issues for feedback consolidation testing
+  const externalIssues = [
+    // Issue in triage (awaiting review)
+    { title: 'External feature request from user', state: 'triage', rejection_reason: null },
+    { title: 'Bug report from customer', state: 'triage', rejection_reason: null },
+    // Accepted external feedback (moved to backlog)
+    { title: 'Accepted user suggestion', state: 'backlog', rejection_reason: null },
+    // Rejected external feedback
+    { title: 'Rejected spam submission', state: 'cancelled', rejection_reason: 'Not relevant to product' },
+  ];
+
+  for (const issue of externalIssues) {
+    ticketNumber++;
+    const properties: Record<string, unknown> = {
+      state: issue.state,
+      priority: 'medium',
+      source: 'external',
+    };
+    if (issue.rejection_reason) {
+      properties.rejection_reason = issue.rejection_reason;
+    }
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, ticket_number, created_by)
+       VALUES ($1, 'issue', $2, $3, $4, $5, $6)`,
+      [workspaceId, issue.title, programIds['SHIP'], JSON.stringify(properties), ticketNumber, userId]
+    );
+  }
+
   // Create wiki documents with nested structure for tree testing
   const parentDocResult = await pool.query(
     `INSERT INTO documents (workspace_id, document_type, title, created_by)

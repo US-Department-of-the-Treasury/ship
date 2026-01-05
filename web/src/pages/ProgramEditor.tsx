@@ -4,7 +4,7 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { cn, getContrastTextColor } from '@/lib/cn';
-import { issueStatusColors, sprintStatusColors, feedbackStatusColors } from '@/lib/statusColors';
+import { issueStatusColors, sprintStatusColors } from '@/lib/statusColors';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 import { KanbanBoard } from '@/components/KanbanBoard';
@@ -115,20 +115,7 @@ interface SprintWindow {
   sprint: Sprint | null; // null if no sprint document exists for this window
 }
 
-type Tab = 'overview' | 'issues' | 'sprints' | 'feedback';
-
-interface Feedback {
-  id: string;
-  title: string;
-  state: string;
-  feedback_status: 'draft' | 'submitted' | null;
-  ticket_number: number;
-  display_id: string;
-  created_at: string;
-  created_by: string;
-  created_by_name: string | null;
-  rejection_reason: string | null;
-}
+type Tab = 'overview' | 'issues' | 'sprints';
 
 export function ProgramEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -139,16 +126,13 @@ export function ProgramEditorPage() {
 
   // Initialize activeTab from URL param or default to 'overview'
   const tabParam = searchParams.get('tab') as Tab | null;
-  const [activeTab, setActiveTab] = useState<Tab>(tabParam && ['overview', 'issues', 'sprints', 'feedback'].includes(tabParam) ? tabParam : 'overview');
+  const [activeTab, setActiveTab] = useState<Tab>(tabParam && ['overview', 'issues', 'sprints'].includes(tabParam) ? tabParam : 'overview');
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [workspaceSprintStartDate, setWorkspaceSprintStartDate] = useState<Date | null>(null);
-  const [feedback, setFeedback] = useState<Feedback[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [sprintsLoading, setSprintsLoading] = useState(false);
-  const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
-  const [feedbackFilter, setFeedbackFilter] = useState<'drafts' | 'new' | 'backlog' | 'closed' | 'all'>('new');
   const [sprintFilter, setSprintFilter] = useState<SprintFilter>('all');
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
@@ -157,22 +141,7 @@ export function ProgramEditorPage() {
   useEffect(() => {
     setIssues([]);
     setSprints([]);
-    setFeedback([]);
   }, [id]);
-
-  // Show toast from URL param (e.g., after submitting feedback)
-  useEffect(() => {
-    const toastParam = searchParams.get('toast');
-    if (toastParam === 'submitted') {
-      setToast('Feedback submitted!');
-      // Clear toast param from URL
-      const newParams = new URLSearchParams(searchParams);
-      newParams.delete('toast');
-      navigate(`/programs/${id}?${newParams.toString()}`, { replace: true });
-      // Auto-hide toast after 3 seconds
-      setTimeout(() => setToast(null), 3000);
-    }
-  }, [searchParams, id, navigate]);
 
   // Get the current program from context
   const program = programs.find(p => p.id === id) || null;
@@ -211,23 +180,6 @@ export function ProgramEditorPage() {
     }
   }, [activeTab, id, sprints.length]);
 
-  // Fetch feedback when switching to feedback tab
-  const fetchFeedback = useCallback(() => {
-    if (!id) return;
-    setFeedbackLoading(true);
-    fetch(`${API_URL}/api/issues?source=feedback&program_id=${id}`, { credentials: 'include' })
-      .then(res => res.ok ? res.json() : [])
-      .then(setFeedback)
-      .catch(console.error)
-      .finally(() => setFeedbackLoading(false));
-  }, [id]);
-
-  useEffect(() => {
-    if (activeTab === 'feedback' && id && feedback.length === 0) {
-      fetchFeedback();
-    }
-  }, [activeTab, id, feedback.length, fetchFeedback]);
-
   const handleUpdateProgram = useCallback(async (updates: Partial<Program>) => {
     if (!id) return;
     await contextUpdateProgram(id, updates);
@@ -250,19 +202,6 @@ export function ProgramEditorPage() {
       }
     } catch (err) {
       console.error('Failed to create issue:', err);
-    }
-  };
-
-  const createFeedback = async () => {
-    if (!id) return;
-    try {
-      const res = await apiPost('/api/feedback', { title: 'Untitled', program_id: id });
-      if (res.ok) {
-        const fb = await res.json();
-        navigate(`/feedback/${fb.id}`);
-      }
-    } catch (err) {
-      console.error('Failed to create feedback:', err);
     }
   };
 
@@ -296,7 +235,6 @@ export function ProgramEditorPage() {
     { id: 'overview', label: 'Overview' },
     { id: 'issues', label: 'Issues' },
     { id: 'sprints', label: 'Sprints' },
-    { id: 'feedback', label: 'Feedback' },
   ];
 
   // Filter issues based on sprint filter
@@ -398,16 +336,6 @@ export function ProgramEditorPage() {
     if (activeTab === 'sprints') {
       // Sprint creation happens via clicking empty windows in the timeline
       return null;
-    }
-    if (activeTab === 'feedback') {
-      return (
-        <button
-          onClick={createFeedback}
-          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
-        >
-          Give Feedback
-        </button>
-      );
     }
     return null;
   };
@@ -512,43 +440,6 @@ export function ProgramEditorPage() {
           </div>
         )}
 
-        {activeTab === 'feedback' && (
-          <div className="h-full overflow-auto">
-            {feedbackLoading ? (
-              <div className="flex h-full items-center justify-center">
-                <div className="text-muted">Loading feedback...</div>
-              </div>
-            ) : (
-              <FeedbackList
-                feedback={feedback}
-                filter={feedbackFilter}
-                onFilterChange={setFeedbackFilter}
-                currentUserId={user?.id}
-                onFeedbackClick={(feedbackId) => navigate(`/feedback/${feedbackId}`)}
-                onAccept={async (feedbackId) => {
-                  try {
-                    const res = await apiPost(`/api/feedback/${feedbackId}/accept`);
-                    if (res.ok) {
-                      fetchFeedback();
-                    }
-                  } catch (err) {
-                    console.error('Failed to accept feedback:', err);
-                  }
-                }}
-                onReject={async (feedbackId, reason) => {
-                  try {
-                    const res = await apiPost(`/api/feedback/${feedbackId}/reject`, { reason });
-                    if (res.ok) {
-                      fetchFeedback();
-                    }
-                  } catch (err) {
-                    console.error('Failed to reject feedback:', err);
-                  }
-                }}
-              />
-            )}
-          </div>
-        )}
       </div>
 
       </div>
@@ -1933,253 +1824,6 @@ function KanbanIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-    </svg>
-  );
-}
-
-// Helper to get display status from feedback_status and rejection_reason
-function getFeedbackDisplayStatus(item: Feedback): 'draft' | 'submitted' | 'accepted' | 'rejected' {
-  if (item.feedback_status === 'draft') return 'draft';
-  if (item.feedback_status === 'submitted') return 'submitted';
-  if (item.rejection_reason) return 'rejected';
-  return 'accepted';
-}
-
-function FeedbackList({
-  feedback,
-  filter,
-  onFilterChange,
-  currentUserId,
-  onFeedbackClick,
-  onAccept,
-  onReject,
-}: {
-  feedback: Feedback[];
-  filter: 'drafts' | 'new' | 'backlog' | 'closed' | 'all';
-  onFilterChange: (filter: 'drafts' | 'new' | 'backlog' | 'closed' | 'all') => void;
-  currentUserId?: string;
-  onFeedbackClick: (id: string) => void;
-  onAccept: (id: string) => void;
-  onReject: (id: string, reason: string) => void;
-}) {
-  const [showRejectModal, setShowRejectModal] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-
-  const statusLabels: Record<string, string> = {
-    draft: 'Draft',
-    submitted: 'Submitted',
-    accepted: 'Accepted',
-    rejected: 'Rejected',
-  };
-
-  const filters: { id: 'drafts' | 'new' | 'backlog' | 'closed' | 'all'; label: string }[] = [
-    { id: 'new', label: 'New' },
-    { id: 'backlog', label: 'Accepted' },
-    { id: 'closed', label: 'Rejected' },
-    { id: 'all', label: 'All' },
-    { id: 'drafts', label: 'Drafts' },
-  ];
-
-  // Filter by feedback_status, not state
-  const filteredFeedback = filter === 'all'
-    ? feedback
-    : feedback.filter(f => {
-        const displayStatus = getFeedbackDisplayStatus(f);
-        if (filter === 'drafts') return displayStatus === 'draft' && f.created_by === currentUserId;
-        if (filter === 'new') return displayStatus === 'submitted';
-        if (filter === 'backlog') return displayStatus === 'accepted';
-        if (filter === 'closed') return displayStatus === 'rejected';
-        return true;
-      });
-
-  const handleReject = () => {
-    if (showRejectModal && rejectReason.trim()) {
-      onReject(showRejectModal, rejectReason.trim());
-      setShowRejectModal(null);
-      setRejectReason('');
-    }
-  };
-
-  return (
-    <div className="h-full flex flex-col">
-      {/* Filter tabs */}
-      <div className="flex gap-1 border-b border-border px-6 py-2">
-        {filters.map((f) => (
-          <button
-            key={f.id}
-            onClick={() => onFilterChange(f.id)}
-            className={cn(
-              'rounded-md px-3 py-1.5 text-sm transition-colors',
-              filter === f.id
-                ? 'bg-border text-foreground'
-                : 'text-muted hover:text-foreground hover:bg-border/50'
-            )}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Content */}
-      {filteredFeedback.length === 0 ? (
-        <div className="flex h-full items-center justify-center">
-          <p className="text-muted">
-            {filter === 'drafts'
-              ? 'No draft feedback'
-              : filter === 'new' && feedback.length > 0
-              ? 'All caught up! No new feedback to triage'
-              : 'No feedback submitted for this program'}
-          </p>
-        </div>
-      ) : (
-        <table className="w-full">
-          <thead className="sticky top-0 bg-background">
-            <tr className="border-b border-border text-left text-xs text-muted">
-              <th className="px-6 py-2 font-medium">ID</th>
-              <th className="px-6 py-2 font-medium">Title</th>
-              <th className="px-6 py-2 font-medium">Status</th>
-              <th className="px-6 py-2 font-medium">Submitted</th>
-              <th className="px-6 py-2 font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredFeedback.map((item) => (
-              <tr
-                key={item.id}
-                className="cursor-pointer border-b border-border/50 hover:bg-border/30 transition-colors"
-              >
-                <td
-                  onClick={() => onFeedbackClick(item.id)}
-                  className="px-6 py-3 text-sm font-mono text-muted"
-                >
-                  {item.display_id}
-                </td>
-                <td
-                  onClick={() => onFeedbackClick(item.id)}
-                  className="px-6 py-3 text-sm text-foreground"
-                >
-                  {item.title}
-                </td>
-                <td
-                  onClick={() => onFeedbackClick(item.id)}
-                  className="px-6 py-3"
-                >
-                  <span className={cn('rounded px-2 py-0.5 text-xs font-medium', feedbackStatusColors[getFeedbackDisplayStatus(item)])}>
-                    {statusLabels[getFeedbackDisplayStatus(item)]}
-                  </span>
-                </td>
-                <td
-                  onClick={() => onFeedbackClick(item.id)}
-                  className="px-6 py-3 text-sm text-muted"
-                >
-                  {formatDate(item.created_at)}
-                </td>
-                <td className="px-6 py-3">
-                  {item.feedback_status === 'submitted' && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onAccept(item.id);
-                        }}
-                        className="rounded p-1 text-green-400 hover:bg-green-500/20 transition-colors"
-                        title="Accept"
-                      >
-                        <CheckIcon />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowRejectModal(item.id);
-                        }}
-                        className="rounded p-1 text-red-400 hover:bg-red-500/20 transition-colors"
-                        title="Reject"
-                      >
-                        <XIcon />
-                      </button>
-                    </div>
-                  )}
-                  {item.rejection_reason && (
-                    <span className="text-xs text-muted truncate max-w-[200px] block" title={item.rejection_reason}>
-                      {item.rejection_reason}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* Reject Modal */}
-      {showRejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-md rounded-lg border border-border bg-background p-6">
-            <h2 className="text-lg font-semibold text-foreground">Reject Feedback</h2>
-            <p className="mt-1 text-sm text-muted">Why are you rejecting this feedback?</p>
-
-            <div className="mt-4 space-y-2">
-              {['Duplicate', 'Out of scope', 'Already exists', 'Won\'t fix'].map((reason) => (
-                <button
-                  key={reason}
-                  onClick={() => setRejectReason(reason)}
-                  className={cn(
-                    'w-full rounded-md px-3 py-2 text-left text-sm transition-colors',
-                    rejectReason === reason
-                      ? 'bg-accent text-white'
-                      : 'bg-border/50 text-foreground hover:bg-border'
-                  )}
-                >
-                  {reason}
-                </button>
-              ))}
-            </div>
-
-            <textarea
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="Or enter a custom reason..."
-              rows={2}
-              className="mt-4 w-full rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            />
-
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setShowRejectModal(null);
-                  setRejectReason('');
-                }}
-                className="rounded-md px-4 py-2 text-sm text-muted hover:bg-border transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReject}
-                disabled={!rejectReason.trim()}
-                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Reject
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-    </svg>
-  );
-}
-
-function XIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
     </svg>
   );
 }

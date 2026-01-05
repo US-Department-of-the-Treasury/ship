@@ -108,6 +108,24 @@ aws cloudfront get-invalidation --distribution-id DIST_ID --id INVALIDATION_ID -
 - Frontend deploys to S3, served via CloudFront
 - CloudFront invalidation typically completes in 30-60 seconds
 
+## E2E Testing
+
+**Empty Playwright tests pass silently - major footgun.** A test with only a TODO comment passes as if it were real:
+
+```typescript
+// WRONG - passes silently, gives false confidence
+test('my test', async ({ page }) => {
+  // TODO: implement this test
+});
+
+// RIGHT - shows as "fixme" in report, not "passed"
+test.fixme('my test', async ({ page }) => {
+  // TODO: implement this test
+});
+```
+
+A pre-commit hook (`scripts/check-empty-tests.sh`) catches empty tests. Tests must have `expect()` or `page.` calls to be considered non-empty.
+
 ## Philosophy Enforcement
 
 Use `/ship-philosophy-reviewer` to audit changes against Ship's core philosophy. Auto-triggers on schema changes, new components, or route additions. In autonomous contexts (ralph-loop), violations are fixed automatically.
