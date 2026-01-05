@@ -643,7 +643,7 @@ function SprintCell({
         onChange={onChange}
         onNavigate={onNavigate}
         disabled={loading}
-        placeholder=""
+        placeholder="+"
         triggerClassName={cn(
           'w-full h-full justify-start',
           !assignment && 'hover:bg-border/30'

@@ -5,11 +5,6 @@ import { test, expect, Page } from './fixtures/isolated-env';
  * These tests verify features actually work, not just that code runs
  */
 
-// Get API URL from environment
-const API_URL = process.env.API_PORT
-  ? `http://localhost:${process.env.API_PORT}`
-  : 'http://localhost:3147';
-
 // Helper to login
 async function login(page: Page) {
   await page.goto('/login');
@@ -42,13 +37,13 @@ test.describe('Real Integration - @Mentions', () => {
     await login(page);
   });
 
-  test('@mention API returns real users from database', async ({ page }) => {
+  test('@mention API returns real users from database', async ({ page, apiServer }) => {
     // Navigate to docs to establish session context
     await page.goto('/docs');
     await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible({ timeout: 5000 });
 
     // Test API directly (using full URL)
-    const response = await page.request.get(`${API_URL}/api/search/mentions?q=`);
+    const response = await page.request.get(`${apiServer.url}/api/search/mentions?q=`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
@@ -68,13 +63,13 @@ test.describe('Real Integration - @Mentions', () => {
     }
   });
 
-  test('@mention API filters users by search query', async ({ page }) => {
+  test('@mention API filters users by search query', async ({ page, apiServer }) => {
     // Already logged in from beforeEach
     await page.goto('/docs');
     await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible({ timeout: 5000 });
 
     // Search for "dev" user
-    const response = await page.request.get(`${API_URL}/api/search/mentions?q=dev`);
+    const response = await page.request.get(`${apiServer.url}/api/search/mentions?q=dev`);
     expect(response.ok()).toBe(true);
 
     const data = await response.json();
@@ -102,12 +97,12 @@ test.describe('Real Integration - @Mentions', () => {
 });
 
 test.describe('Real Integration - API Health', () => {
-  test('mentions API returns 200, not 500', async ({ page }) => {
+  test('mentions API returns 200, not 500', async ({ page, apiServer }) => {
     // Login via page to get session
     await login(page);
 
     // Test mentions endpoint with full URL
-    const response = await page.request.get(`${API_URL}/api/search/mentions?q=`);
+    const response = await page.request.get(`${apiServer.url}/api/search/mentions?q=`);
 
     // REAL VERIFICATION: Should return 200, not 500
     expect(response.status()).toBe(200);
@@ -117,17 +112,17 @@ test.describe('Real Integration - API Health', () => {
     expect(data).toHaveProperty('documents');
   });
 
-  test('file upload API works', async ({ page }) => {
+  test('file upload API works', async ({ page, apiServer }) => {
     // Login via page
     await login(page);
 
     // Get CSRF token
-    const csrfResponse = await page.request.get(`${API_URL}/api/csrf-token`);
+    const csrfResponse = await page.request.get(`${apiServer.url}/api/csrf-token`);
     expect(csrfResponse.ok()).toBe(true);
     const { token } = await csrfResponse.json();
 
     // Test upload endpoint (creates file record and returns upload URL)
-    const response = await page.request.post(`${API_URL}/api/files/upload`, {
+    const response = await page.request.post(`${apiServer.url}/api/files/upload`, {
       headers: { 'x-csrf-token': token },
       data: {
         filename: 'test.png',
@@ -144,11 +139,11 @@ test.describe('Real Integration - API Health', () => {
     expect(data).toHaveProperty('uploadUrl');
   });
 
-  test('CORS headers are set correctly on file endpoints', async ({ page }) => {
+  test('CORS headers are set correctly on file endpoints', async ({ page, apiServer }) => {
     await login(page);
 
     // Access file serve endpoint (even if 404, check headers)
-    const response = await page.request.get(`${API_URL}/api/files/test-id/serve`);
+    const response = await page.request.get(`${apiServer.url}/api/files/test-id/serve`);
 
     // REAL VERIFICATION: cross-origin-resource-policy should be 'cross-origin'
     const headers = response.headers();

@@ -155,7 +155,10 @@ test.describe('Authorization - Cross-Workspace Isolation', () => {
 
     // Try to access a document that doesn't exist (simulates cross-workspace access)
     await page.goto('/docs/00000000-0000-0000-0000-000000000000')
-    await page.waitForLoadState('networkidle')
+
+    // Wait for the app to detect the invalid document and redirect
+    // The redirect happens asynchronously after a refresh attempt and timeout
+    await page.waitForURL(url => !url.toString().includes('00000000-0000-0000-0000-000000000000'), { timeout: 5000 })
 
     // Should be redirected away from the invalid document URL
     // The app redirects to the last visited document or a default

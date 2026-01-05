@@ -235,9 +235,21 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
     console.error('Failed to load document:', err);
   }
 
-  // Set up persistence on changes
-  doc.on('update', () => {
+  // Set up persistence and broadcast on changes
+  doc.on('update', (update: Uint8Array, origin: any) => {
     schedulePersist(docName, doc!);
+
+    // Broadcast update to all other clients in this room (except sender)
+    const encoder = encoding.createEncoder();
+    encoding.writeVarUint(encoder, messageSync);
+    syncProtocol.writeUpdate(encoder, update);
+    const message = encoding.toUint8Array(encoder);
+
+    conns.forEach((conn, ws) => {
+      if (conn.docName === docName && ws !== origin && ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    });
   });
 
   return doc;
@@ -276,7 +288,8 @@ function handleMessage(ws: WebSocket, message: Uint8Array, docName: string, doc:
     case messageSync: {
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, messageSync);
-      const syncMessageType = syncProtocol.readSyncMessage(decoder, encoder, doc, null);
+      // Pass ws as origin so broadcast excludes the sender
+      syncProtocol.readSyncMessage(decoder, encoder, doc, ws);
 
       if (encoding.length(encoder) > 1) {
         ws.send(encoding.toUint8Array(encoder));

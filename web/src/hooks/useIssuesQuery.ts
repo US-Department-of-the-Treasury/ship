@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
-import { addPendingMutation, removePendingMutation } from '@/lib/queryClient';
+import { addPendingMutation, removePendingMutation, getIsOnline } from '@/lib/queryClient';
 
 export interface Issue {
   id: string;
@@ -95,6 +95,14 @@ export function useCreateIssue() {
 
       // Use passed optimisticId if available (for offline creation)
       const optimisticId = (newIssue as { _optimisticId?: string })?._optimisticId || `temp-${crypto.randomUUID()}`;
+
+      // Check if issue was already added to cache (offline path adds synchronously)
+      const alreadyExists = previousIssues?.some(i => i.id === optimisticId);
+      if (alreadyExists) {
+        // Issue already in cache from offline path - just track for rollback
+        return { previousIssues, optimisticId, pendingId: undefined };
+      }
+
       const pendingId = addPendingMutation({
         type: 'create',
         resource: 'issue',
@@ -276,13 +284,16 @@ export function useBulkUpdateIssues() {
 
 // Compatibility hook that matches the old useIssues interface
 export function useIssues() {
+  const queryClient = useQueryClient();
   const { data: issues = [], isLoading: loading, refetch } = useIssuesQuery();
   const createMutation = useCreateIssue();
   const updateMutation = useUpdateIssue();
 
   const createIssue = async (): Promise<Issue | null> => {
-    // When offline, return optimistic data immediately instead of waiting for mutateAsync
-    if (!navigator.onLine) {
+    // When offline, add to cache synchronously and return immediately
+    // This avoids race condition where navigation happens before onMutate runs
+    // Use getIsOnline() which is updated by the offline event handler (more reliable than navigator.onLine)
+    if (!getIsOnline()) {
       const optimisticId = `temp-${crypto.randomUUID()}`;
       const optimisticIssue: Issue = {
         id: optimisticId,
@@ -305,7 +316,14 @@ export function useIssues() {
         updated_at: new Date().toISOString(),
         _pending: true,
       };
-      // Trigger mutation (will be queued) - pass optimisticId so onMutate can use it
+
+      // Add to cache SYNCHRONOUSLY before mutate() to avoid race with navigation
+      queryClient.setQueryData<Issue[]>(
+        issueKeys.lists(),
+        (old) => [optimisticIssue, ...(old || [])]
+      );
+
+      // Trigger mutation (will be queued for when back online)
       createMutation.mutate({ _optimisticId: optimisticId } as { title?: string; _optimisticId?: string });
       return optimisticIssue;
     }
@@ -319,7 +337,7 @@ export function useIssues() {
 
   const updateIssue = async (id: string, updates: Partial<Issue>): Promise<Issue | null> => {
     // When offline, trigger mutation and return immediately
-    if (!navigator.onLine) {
+    if (!getIsOnline()) {
       updateMutation.mutate({ id, updates });
       return { ...updates, id } as Issue;
     }

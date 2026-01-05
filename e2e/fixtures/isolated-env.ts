@@ -418,21 +418,21 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     }
   }
 
-  // Create issues for Ship Core with various states
+  // Create issues for Ship Core with various states and estimates
   const shipCoreIssues = [
     // Done issues (past sprint)
-    { title: 'Initial project setup', state: 'done', priority: 'high', sprintOffset: -1 },
-    { title: 'Database schema design', state: 'done', priority: 'high', sprintOffset: -1 },
-    // Current sprint - mixed states
-    { title: 'Implement sprint management', state: 'done', priority: 'high', sprintOffset: 0 },
-    { title: 'Build issue assignment flow', state: 'in_progress', priority: 'high', sprintOffset: 0 },
-    { title: 'Add sprint velocity metrics', state: 'todo', priority: 'medium', sprintOffset: 0 },
-    { title: 'Implement burndown chart', state: 'todo', priority: 'medium', sprintOffset: 0 },
+    { title: 'Initial project setup', state: 'done', priority: 'high', sprintOffset: -1, estimate: 4 },
+    { title: 'Database schema design', state: 'done', priority: 'high', sprintOffset: -1, estimate: 8 },
+    // Current sprint - mixed states with estimates for capacity tracking
+    { title: 'Implement sprint management', state: 'done', priority: 'high', sprintOffset: 0, estimate: 5 },
+    { title: 'Build issue assignment flow', state: 'in_progress', priority: 'high', sprintOffset: 0, estimate: 8 },
+    { title: 'Add sprint velocity metrics', state: 'todo', priority: 'medium', sprintOffset: 0, estimate: 4 },
+    { title: 'Implement burndown chart', state: 'todo', priority: 'medium', sprintOffset: 0, estimate: 6 },
     // Future sprint
-    { title: 'Add team workload view', state: 'todo', priority: 'high', sprintOffset: 1 },
-    // Backlog (no sprint)
-    { title: 'Add dark mode support', state: 'backlog', priority: 'low', sprintOffset: null },
-    { title: 'Create mobile app', state: 'backlog', priority: 'low', sprintOffset: null },
+    { title: 'Add team workload view', state: 'todo', priority: 'high', sprintOffset: 1, estimate: 12 },
+    // Backlog (no sprint) - with estimates so they can be moved to sprints
+    { title: 'Add dark mode support', state: 'backlog', priority: 'low', sprintOffset: null, estimate: 16 },
+    { title: 'Create mobile app', state: 'backlog', priority: 'low', sprintOffset: null, estimate: 40 },
   ];
 
   let ticketNumber = 0;
@@ -455,6 +455,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
           priority: issue.priority,
           source: 'internal',
           assignee_id: userId,
+          ...(issue.estimate !== null ? { estimate: issue.estimate } : {}),
         }),
         ticketNumber,
         userId,
@@ -462,7 +463,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     );
   }
 
-  // Create a few issues for other programs too
+  // Create a few issues for other programs too (with estimates for capacity testing)
   for (const prog of programs.filter(p => p.key !== 'SHIP')) {
     ticketNumber++;
     await pool.query(
@@ -473,7 +474,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
         `${prog.name} initial setup`,
         programIds[prog.key],
         sprintIds[prog.key][currentSprintNumber] || null,
-        JSON.stringify({ state: 'in_progress', priority: 'medium', source: 'internal', assignee_id: userId }),
+        JSON.stringify({ state: 'in_progress', priority: 'medium', source: 'internal', assignee_id: userId, estimate: 8 }),
         ticketNumber,
         userId,
       ]
@@ -530,6 +531,26 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
       [workspaceId, child.title, parentDocId, userId]
     );
   }
+
+  // Create additional top-level wiki documents for tests that require multiple documents
+  // (e.g., content-caching tests that toggle between documents)
+  const additionalWikiDocs = [
+    { title: 'Project Overview', content: 'Overview of the Ship project and its goals.' },
+    { title: 'Architecture Guide', content: 'Technical architecture and design decisions.' },
+  ];
+
+  for (let i = 0; i < additionalWikiDocs.length; i++) {
+    const doc = additionalWikiDocs[i]!;
+    const contentJson = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.content }] }],
+    };
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, content, position, created_by)
+       VALUES ($1, 'wiki', $2, $3, $4, $5)`,
+      [workspaceId, doc.title, JSON.stringify(contentJson), i + 1, userId]
+    );
+  }
 }
 
 /**
@@ -556,4 +577,4 @@ async function waitForServer(url: string, timeout: number): Promise<void> {
 }
 
 // Re-export expect for convenience
-export { expect } from '@playwright/test';
+export { expect, Page, APIRequestContext } from '@playwright/test';

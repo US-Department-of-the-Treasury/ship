@@ -18,9 +18,17 @@ async function createNewDocument(page: Page) {
   await page.waitForLoadState('networkidle')
 
   const currentUrl = page.url()
-  const newDocButton = page.locator('button[title="New document"]')
-  await expect(newDocButton).toBeVisible({ timeout: 5000 })
-  await newDocButton.click()
+
+  // Try sidebar button first, fall back to main "New Document" button
+  const sidebarButton = page.locator('aside').getByRole('button', { name: /new|create|\+/i }).first()
+  const mainButton = page.getByRole('button', { name: 'New Document', exact: true })
+
+  if (await sidebarButton.isVisible({ timeout: 2000 })) {
+    await sidebarButton.click()
+  } else {
+    await expect(mainButton).toBeVisible({ timeout: 5000 })
+    await mainButton.click()
+  }
 
   await page.waitForFunction(
     (oldUrl) => window.location.href !== oldUrl && /\/docs\/[a-f0-9-]+/.test(window.location.href),
@@ -107,7 +115,8 @@ test.describe('Error Handling', () => {
     await page.waitForTimeout(500)
 
     // The slash command menu should still appear (not crash)
-    const slashMenu = page.locator('[role="button"]').filter({ hasText: /Image/i })
+    // Slash menu renders in a Tippy popup - look for button containing "Image" text within
+    const slashMenu = page.locator('button').filter({ hasText: 'Image' }).filter({ hasText: 'Upload' })
     await expect(slashMenu).toBeVisible({ timeout: 3000 })
 
     // Note: Full upload error testing requires file picker interaction

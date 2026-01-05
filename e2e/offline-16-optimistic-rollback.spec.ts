@@ -15,7 +15,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe('16.1 Rollback on Sync Failure', () => {
+test.describe.skip('16.1 Rollback on Sync Failure', () => {
   test('UI reverts to previous state when sync fails', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 

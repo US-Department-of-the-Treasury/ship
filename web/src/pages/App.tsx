@@ -16,7 +16,7 @@ import { SessionTimeoutModal } from '@/components/SessionTimeoutModal';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { PendingSyncCount } from '@/components/PendingSyncCount';
-import { PendingSyncIcon } from '@/components/PendingSyncIcon';
+import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
 
 type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
 
@@ -553,7 +553,7 @@ function DocumentTreeItem({
         </Link>
         {/* Pending sync indicator */}
         {'_pending' in document && document._pending && (
-          <PendingSyncIcon isPending={true} />
+          <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in document ? document._syncStatus as SyncStatus : undefined} />
         )}
       </div>
 
@@ -625,7 +625,7 @@ function IssuesList({ issues, activeId }: { issues: Issue[]; activeId?: string }
             <span className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state] || stateColors.backlog)} />
             <span className="flex-1 truncate">{issue.title || 'Untitled'}</span>
             {'_pending' in issue && issue._pending && (
-              <PendingSyncIcon isPending={true} />
+              <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in issue ? issue._syncStatus as SyncStatus : undefined} />
             )}
           </Link>
         </li>
@@ -660,7 +660,7 @@ function ProgramsList({ programs, activeId, onSelect }: { programs: Program[]; a
             </span>
             <span className="flex-1 truncate">{program.name}</span>
             {'_pending' in program && program._pending && (
-              <PendingSyncIcon isPending={true} />
+              <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in program ? program._syncStatus as SyncStatus : undefined} />
             )}
           </button>
         </li>

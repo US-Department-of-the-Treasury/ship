@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, onlineManager } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
-import { addPendingMutation, removePendingMutation } from '@/lib/queryClient';
+import { addPendingMutation, removePendingMutation, updateMutationSyncStatus, MutationSyncStatus } from '@/lib/queryClient';
 
 export interface WikiDocument {
   id: string;
@@ -15,6 +15,7 @@ export interface WikiDocument {
   visibility: 'private' | 'workspace';
   _pending?: boolean;
   _pendingId?: string;
+  _syncStatus?: MutationSyncStatus;
 }
 
 // Query keys - simplified to match issues/programs pattern for consistent cache persistence
@@ -79,6 +80,7 @@ export function useDocumentsQuery(type: string = 'wiki') {
     queryKey,
     queryFn: () => fetchDocuments(type),
     staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnMount: 'always', // Always refetch on mount to ensure fresh data after navigation/reload
   });
 }
 
@@ -94,6 +96,7 @@ export function useCreateDocument() {
         parent_id: data.parent_id ?? null,
       }),
     onMutate: async (newDoc) => {
+      console.log('[CreateDocument] onMutate called, navigator.onLine:', navigator.onLine, 'onlineManager.isOnline():', onlineManager.isOnline());
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: documentKeys.lists() });
 
@@ -109,6 +112,10 @@ export function useCreateDocument() {
         data: newDoc,
       });
 
+      // Determine initial sync status based on online state
+      const isOnline = navigator.onLine;
+      const initialSyncStatus: MutationSyncStatus = isOnline ? 'syncing' : 'pending';
+
       const optimisticDoc: WikiDocument = {
         id: optimisticId,
         title: newDoc.title ?? 'Untitled',
@@ -120,7 +127,11 @@ export function useCreateDocument() {
         visibility: newDoc.visibility ?? 'workspace',
         _pending: true,
         _pendingId: pendingId,
+        _syncStatus: initialSyncStatus,
       };
+
+      // Update mutation status
+      updateMutationSyncStatus(pendingId, initialSyncStatus);
 
       // Optimistically add to cache
       queryClient.setQueryData<WikiDocument[]>(
@@ -130,7 +141,8 @@ export function useCreateDocument() {
 
       return { previousDocs, optimisticId, pendingId };
     },
-    onError: (_err, _newDoc, context) => {
+    onError: (err, _newDoc, context) => {
+      console.log('[CreateDocument] onError called:', err);
       // Rollback on error
       if (context?.previousDocs) {
         queryClient.setQueryData(documentKeys.wikiList(), context.previousDocs);
@@ -140,13 +152,24 @@ export function useCreateDocument() {
       }
     },
     onSuccess: (data, _variables, context) => {
-      // Replace optimistic document with real one
+      console.log('[CreateDocument] onSuccess called:', data);
+      // Replace optimistic document with real one, show synced status briefly
       if (context?.optimisticId && context?.pendingId) {
+        // First show synced status
+        updateMutationSyncStatus(context.pendingId, 'synced');
         queryClient.setQueryData<WikiDocument[]>(
           documentKeys.wikiList(),
-          (old) => old?.map(d => d.id === context.optimisticId ? data : d) || [data]
+          (old) => old?.map(d => d.id === context.optimisticId ? { ...data, _syncStatus: 'synced' as MutationSyncStatus, _pendingId: context.pendingId } : d) || [data]
         );
-        removePendingMutation(context.pendingId);
+
+        // After a brief delay, remove the pending indicator
+        setTimeout(() => {
+          queryClient.setQueryData<WikiDocument[]>(
+            documentKeys.wikiList(),
+            (old) => old?.map(d => d.id === data.id ? { ...d, _pending: false, _syncStatus: undefined, _pendingId: undefined } : d) || []
+          );
+          removePendingMutation(context.pendingId);
+        }, 1500);
       }
     },
     onSettled: () => {
@@ -253,15 +276,26 @@ export function useDeleteDocument() {
 
 // Compatibility hook that matches the old useDocuments interface
 export function useDocuments() {
+  const queryClient = useQueryClient();
   const { data: documents = [], isLoading: loading, refetch } = useDocumentsQuery('wiki');
   const createMutation = useCreateDocument();
   const updateMutation = useUpdateDocument();
   const deleteMutation = useDeleteDocument();
 
   const createDocument = async (parentId?: string): Promise<WikiDocument | null> => {
-    // When offline, return optimistic data immediately instead of waiting for mutateAsync
+    // When offline, manually handle optimistic update since onMutate won't run
+    // with networkMode: 'online' (mutation is paused, onMutate only runs when resumed)
     if (!navigator.onLine) {
       const optimisticId = `temp-${crypto.randomUUID()}`;
+
+      // Add to our custom pending mutations tracking
+      const pendingId = addPendingMutation({
+        type: 'create',
+        resource: 'document',
+        resourceId: optimisticId,
+        data: { title: 'Untitled', document_type: 'wiki', parent_id: parentId ?? null },
+      });
+
       const optimisticDoc: WikiDocument = {
         id: optimisticId,
         title: 'Untitled',
@@ -272,9 +306,19 @@ export function useDocuments() {
         updated_at: new Date().toISOString(),
         visibility: 'workspace',
         _pending: true,
+        _pendingId: pendingId,
+        _syncStatus: 'pending',
       };
-      // Trigger mutation (will be queued) - pass optimisticId so onMutate can use it
-      createMutation.mutate({ parent_id: parentId, _optimisticId: optimisticId } as { parent_id?: string | null; _optimisticId?: string });
+
+      // Manually update the query cache with the optimistic document
+      queryClient.setQueryData<WikiDocument[]>(
+        documentKeys.wikiList(),
+        (old) => [optimisticDoc, ...(old || [])]
+      );
+
+      // Don't call createMutation.mutate() - our custom sync handler via
+      // processPendingMutations() will handle the API call when going online.
+      // Calling the mutation here would cause both handlers to fire.
       return optimisticDoc;
     }
 
@@ -286,9 +330,29 @@ export function useDocuments() {
   };
 
   const updateDocument = async (id: string, updates: Partial<WikiDocument>): Promise<WikiDocument | null> => {
-    // When offline, trigger mutation and return immediately
+    // When offline, manually handle optimistic update since onMutate won't run
     if (!navigator.onLine) {
-      updateMutation.mutate({ id, updates });
+      // Add to our custom pending mutations tracking
+      const pendingId = addPendingMutation({
+        type: 'update',
+        resource: 'document',
+        resourceId: id,
+        data: updates,
+      });
+
+      // Manually update the query cache
+      queryClient.setQueryData<WikiDocument[]>(
+        documentKeys.wikiList(),
+        (old) => old?.map(d => d.id === id ? {
+          ...d,
+          ...updates,
+          _pending: true,
+          _pendingId: pendingId,
+          _syncStatus: 'pending' as MutationSyncStatus,
+        } : d) || []
+      );
+
+      // Don't call updateMutation.mutate() - our custom sync handler handles it
       return { ...updates, id } as WikiDocument;
     }
 
@@ -300,9 +364,23 @@ export function useDocuments() {
   };
 
   const deleteDocument = async (id: string): Promise<boolean> => {
-    // When offline, trigger mutation and return immediately
+    // When offline, manually handle optimistic update since onMutate won't run
     if (!navigator.onLine) {
-      deleteMutation.mutate(id);
+      // Add to our custom pending mutations tracking
+      addPendingMutation({
+        type: 'delete',
+        resource: 'document',
+        resourceId: id,
+        data: null,
+      });
+
+      // Manually update the query cache (remove the document)
+      queryClient.setQueryData<WikiDocument[]>(
+        documentKeys.wikiList(),
+        (old) => old?.filter(d => d.id !== id) || []
+      );
+
+      // Don't call deleteMutation.mutate() - our custom sync handler handles it
       return true;
     }
 

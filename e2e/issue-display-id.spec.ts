@@ -15,7 +15,14 @@ test.describe('Issue Display IDs', () => {
   test('displays issue with hash-number format (#N) in issues list', async ({ page }) => {
     // Navigate to issues page directly
     await page.goto('/issues')
-    await page.waitForTimeout(1000)
+
+    // Create a new issue first to ensure there's at least one
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
+    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+
+    // Navigate back to issues list
+    await page.goto('/issues')
+    await page.waitForTimeout(500)
 
     // Check for #N format in the issues list
     const issueDisplayId = page.getByText(/#\d+/).first()
@@ -23,21 +30,15 @@ test.describe('Issue Display IDs', () => {
   });
 
   test('displays issue with hash-number format (#N) in issue editor header', async ({ page }) => {
-    // Navigate to issues page
+    // Navigate to issues page and create a new issue
     await page.goto('/issues')
-    await page.waitForTimeout(500)
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
+    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Click on first issue in the list (look for the row click area)
-    const issueRow = page.locator('tr').filter({ hasText: /#\d+/ }).first()
-    if (await issueRow.isVisible({ timeout: 5000 })) {
-      await issueRow.click()
-      await page.waitForTimeout(500)
-
-      // Check header badge shows #N format
-      const headerBadge = page.locator('.font-mono').filter({ hasText: /#\d+/ }).first()
-      await expect(headerBadge).toBeVisible({ timeout: 5000 })
-      await expect(headerBadge).toHaveText(/^#\d+$/)
-    }
+    // Check header badge shows #N format
+    const headerBadge = page.locator('.font-mono').filter({ hasText: /#\d+/ }).first()
+    await expect(headerBadge).toBeVisible({ timeout: 5000 })
+    await expect(headerBadge).toHaveText(/^#\d+$/)
   });
 
   test('new issue gets sequential ticket number', async ({ page }) => {
@@ -56,46 +57,47 @@ test.describe('Issue Display IDs', () => {
   });
 
   test('issue display ID does not contain program prefix', async ({ page }) => {
-    // Navigate to issues
+    // Navigate to issues and create a new issue
     await page.goto('/issues')
-    await page.waitForTimeout(500)
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
+    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Click on first issue row
-    const issueRow = page.locator('tr').filter({ hasText: /#\d+/ }).first()
-    if (await issueRow.isVisible({ timeout: 5000 })) {
-      await issueRow.click()
-      await page.waitForTimeout(500)
-
-      // Header badge should NOT contain uppercase letters (no prefix)
-      const headerBadge = page.locator('.font-mono').first()
-      const text = await headerBadge.textContent()
-      // Should be #N format, not PREFIX-N format
-      expect(text).toMatch(/^#\d+$/)
-      expect(text).not.toMatch(/^[A-Z]+-\d+$/)
-    }
+    // Header badge should NOT contain uppercase letters (no prefix)
+    const headerBadge = page.locator('.font-mono').first()
+    const text = await headerBadge.textContent()
+    // Should be #N format, not PREFIX-N format
+    expect(text).toMatch(/^#\d+$/)
+    expect(text).not.toMatch(/^[A-Z]+-\d+$/)
   });
 
   test('all issue display IDs use hash-number format', async ({ page }) => {
-    // Navigate to issues
+    // Navigate to issues and create a few issues
+    await page.goto('/issues')
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
+    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+
+    await page.goto('/issues')
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
+    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+
+    // Navigate back to issues list
     await page.goto('/issues')
     await page.waitForTimeout(500)
 
     // Verify all visible issue display IDs use #N format
-    const tableCells = page.locator('td.font-mono, td:first-child')
-    const count = await tableCells.count()
+    // The issues list uses ARIA grid with gridcell elements, not td elements
+    const idCells = page.locator('[role="gridcell"]').filter({ hasText: /^#\d+$/ })
+    const count = await idCells.count()
 
-    let checkedCount = 0
+    // Should have found at least one issue with #N format
+    expect(count).toBeGreaterThan(0)
+
+    // Verify each ID cell matches the expected format
     for (let i = 0; i < count; i++) {
-      const cellText = await tableCells.nth(i).textContent()
-      if (cellText && /^#\d+$/.test(cellText.trim())) {
-        // Verify #N format (not PREFIX-N)
-        expect(cellText.trim()).toMatch(/^#\d+$/)
-        expect(cellText.trim()).not.toMatch(/^[A-Z]+-\d+$/)
-        checkedCount++
-      }
+      const cellText = await idCells.nth(i).textContent()
+      expect(cellText?.trim()).toMatch(/^#\d+$/)
+      expect(cellText?.trim()).not.toMatch(/^[A-Z]+-\d+$/)
     }
-    // Should have found at least one issue
-    expect(checkedCount).toBeGreaterThan(0)
   });
 
   test('program issues list shows hash-number format', async ({ page }) => {
@@ -125,9 +127,14 @@ test.describe('Issue Display IDs', () => {
   });
 
   test('command palette shows issues with hash-number format (#N)', async ({ page }) => {
-    // Wait for app to be fully loaded
+    // Create an issue first so there's something to search for
     await page.goto('/issues')
-    await page.waitForTimeout(1000)
+    await page.getByRole('button', { name: 'New Issue', exact: true }).click()
+    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+
+    // Navigate back and open command palette
+    await page.goto('/issues')
+    await page.waitForTimeout(500)
 
     // Open command palette with Cmd+K (or Ctrl+K on non-Mac)
     await page.keyboard.press('Meta+k')

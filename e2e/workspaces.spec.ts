@@ -232,8 +232,8 @@ test.describe('Non-Admin Access Control', () => {
     await page.context().clearCookies()
     await page.goto('/admin')
 
-    // Should redirect to login
-    await expect(page).toHaveURL('/login')
+    // Should redirect to login (may include query params like expired=true&returnTo=...)
+    await expect(page).toHaveURL(/\/login/)
   })
 
   test('non-workspace-admin sees permission denied on settings', async ({ page }) => {
@@ -242,8 +242,8 @@ test.describe('Non-Admin Access Control', () => {
     await page.context().clearCookies()
     await page.goto('/settings')
 
-    // Without auth, should redirect to login
-    await expect(page).toHaveURL('/login')
+    // Without auth, should redirect to login (may include query params)
+    await expect(page).toHaveURL(/\/login/)
   })
 })
 

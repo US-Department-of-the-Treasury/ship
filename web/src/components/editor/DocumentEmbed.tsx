@@ -12,7 +12,7 @@ function DocumentEmbedComponent({ node }: NodeViewProps) {
   };
 
   return (
-    <NodeViewWrapper className="document-embed" contentEditable={false}>
+    <NodeViewWrapper className="document-embed" contentEditable={false} data-document-embed>
       <button
         type="button"
         onClick={handleClick}

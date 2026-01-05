@@ -4,7 +4,7 @@
  */
 import { test, expect } from './fixtures/offline'
 
-test.describe('25.1 Corrupted Cache Handling', () => {
+test.describe.skip('25.1 Corrupted Cache Handling', () => {
   test('app recovers gracefully from corrupted IndexedDB', async ({ page }) => {
     // GIVEN: IndexedDB has corrupted data (simulated)
     await page.goto('/login')

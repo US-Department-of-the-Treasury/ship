@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { queryClient, queryPersister, loadPendingMutations } from '@/lib/queryClient';
+import { initializeSyncHandlers } from '@/lib/syncHandlers';
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -37,6 +38,9 @@ import './index.css';
 
 // Load pending mutations from IndexedDB on startup
 loadPendingMutations();
+
+// Initialize sync handlers for offline mutation processing
+initializeSyncHandlers();
 
 // Register service worker for offline support
 if ('serviceWorker' in navigator) {
