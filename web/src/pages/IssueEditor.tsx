@@ -6,6 +6,7 @@ import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { Combobox } from '@/components/ui/Combobox';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
+import { apiPost } from '@/lib/api';
 
 interface TeamMember {
   id: string;
@@ -28,10 +29,60 @@ interface Sprint {
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
+interface RejectionDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onReject: (reason: string) => void;
+}
+
+function RejectionDialog({ isOpen, onClose, onReject }: RejectionDialogProps) {
+  const [reason, setReason] = useState('');
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-lg">
+        <h2 className="mb-4 text-lg font-semibold text-foreground">Reject Issue</h2>
+        <p className="mb-4 text-sm text-muted">Please provide a reason for rejecting this issue:</p>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Reason for rejection..."
+          className="mb-4 w-full rounded border border-border bg-border/50 px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+          rows={3}
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="rounded px-3 py-1.5 text-sm text-muted hover:text-foreground transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              if (reason.trim()) {
+                onReject(reason.trim());
+                setReason('');
+              }
+            }}
+            disabled={!reason.trim()}
+            className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            Reject
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const STATES = [
+  { value: 'triage', label: 'Needs Triage' },
   { value: 'backlog', label: 'Backlog' },
   { value: 'todo', label: 'Todo' },
   { value: 'in_progress', label: 'In Progress' },
+  { value: 'in_review', label: 'In Review' },
   { value: 'done', label: 'Done' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
@@ -48,12 +99,13 @@ export function IssueEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue } = useIssues();
+  const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [relatedDataLoading, setRelatedDataLoading] = useState(true);
   const [sprintError, setSprintError] = useState<string | null>(null);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
 
   // Get the current issue from context
   const issue = issues.find(i => i.id === id) || null;
@@ -127,6 +179,35 @@ export function IssueEditorPage() {
     await contextUpdateIssue(id, updates);
   }, [id, contextUpdateIssue]);
 
+  // Accept triage issue - move to backlog
+  const handleAccept = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await apiPost(`/api/issues/${id}/accept`);
+      if (res.ok) {
+        // Refresh to get updated state from server
+        await refreshIssues();
+      }
+    } catch (err) {
+      console.error('Failed to accept issue:', err);
+    }
+  }, [id, refreshIssues]);
+
+  // Reject triage issue - move to cancelled with reason
+  const handleReject = useCallback(async (reason: string) => {
+    if (!id) return;
+    try {
+      const res = await apiPost(`/api/issues/${id}/reject`, { reason });
+      if (res.ok) {
+        // Refresh to get updated state from server
+        await refreshIssues();
+        setShowRejectDialog(false);
+      }
+    } catch (err) {
+      console.error('Failed to reject issue:', err);
+    }
+  }, [id, refreshIssues]);
+
   // Throttled title save with stale response handling
   const throttledTitleSave = useAutoSave({
     onSave: async (title: string) => {
@@ -150,6 +231,7 @@ export function IssueEditorPage() {
   };
 
   return (
+    <>
     <Editor
       documentId={issue.id}
       userName={user.name}
@@ -165,6 +247,27 @@ export function IssueEditorPage() {
       }
       sidebar={
         <div className="space-y-4 p-4">
+          {/* Triage Actions - only show for issues in triage state */}
+          {issue.state === 'triage' && (
+            <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <p className="mb-3 text-sm font-medium text-amber-300">Needs Triage</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAccept}
+                  className="flex-1 rounded bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+                >
+                  Accept
+                </button>
+                <button
+                  onClick={() => setShowRejectDialog(true)}
+                  className="flex-1 rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          )}
+
           <PropertyRow label="Status">
               <select
                 value={issue.state}
@@ -265,9 +368,29 @@ export function IssueEditorPage() {
                 )}
               </PropertyRow>
             )}
+
+            <PropertyRow label="Source">
+              <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${
+                issue.source === 'external' ? 'bg-purple-500/20 text-purple-300' : 'bg-blue-500/20 text-blue-300'
+              }`}>
+                {issue.source === 'external' ? 'External' : 'Internal'}
+              </span>
+            </PropertyRow>
+
+            {issue.state === 'cancelled' && issue.rejection_reason && (
+              <PropertyRow label="Rejection Reason">
+                <span className="text-sm text-red-300">{issue.rejection_reason}</span>
+              </PropertyRow>
+            )}
         </div>
       }
     />
+    <RejectionDialog
+      isOpen={showRejectDialog}
+      onClose={() => setShowRejectDialog(false)}
+      onReject={handleReject}
+    />
+    </>
   );
 }
 

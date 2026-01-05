@@ -8,7 +8,7 @@ import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.js';
 import documentsRoutes from './routes/documents.js';
 import issuesRoutes from './routes/issues.js';
-import feedbackRoutes from './routes/feedback.js';
+import feedbackRoutes, { publicFeedbackRouter } from './routes/feedback.js';
 import programsRoutes from './routes/programs.js';
 import sprintsRoutes from './routes/sprints.js';
 import teamRoutes from './routes/team.js';
@@ -137,6 +137,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // Setup routes (CSRF protected - first-time setup only)
   app.use('/api/setup', csrfSynchronisedProtection, setupRoutes);
+
+  // Public feedback routes - no auth or CSRF required (must be before protected routes)
+  app.use('/api/feedback', publicFeedbackRouter);
 
   // Apply stricter rate limiting to login endpoint (brute force protection)
   app.use('/api/auth/login', loginLimiter);

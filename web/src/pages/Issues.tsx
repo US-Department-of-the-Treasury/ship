@@ -21,11 +21,18 @@ const SORT_OPTIONS = [
 type ViewMode = 'list' | 'kanban';
 
 const STATE_LABELS: Record<string, string> = {
+  triage: 'Needs Triage',
   backlog: 'Backlog',
   todo: 'Todo',
   in_progress: 'In Progress',
+  in_review: 'In Review',
   done: 'Done',
   cancelled: 'Cancelled',
+};
+
+const SOURCE_STYLES: Record<string, string> = {
+  internal: 'bg-blue-500/20 text-blue-300',
+  external: 'bg-purple-500/20 text-purple-300',
 };
 
 const PRIORITY_LABELS: Record<string, string> = {
@@ -243,9 +250,11 @@ export function IssuesPage() {
       {/* Filter tabs */}
       <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Issue filters">
         <FilterTab label="All" active={!stateFilter} onClick={() => setFilter('')} id="filter-all" />
-        <FilterTab label="Active" active={stateFilter === 'todo,in_progress'} onClick={() => setFilter('todo,in_progress')} id="filter-active" />
+        <FilterTab label="Needs Triage" active={stateFilter === 'triage'} onClick={() => setFilter('triage')} id="filter-triage" />
+        <FilterTab label="Active" active={stateFilter === 'todo,in_progress,in_review'} onClick={() => setFilter('todo,in_progress,in_review')} id="filter-active" />
         <FilterTab label="Backlog" active={stateFilter === 'backlog'} onClick={() => setFilter('backlog')} id="filter-backlog" />
         <FilterTab label="Done" active={stateFilter === 'done'} onClick={() => setFilter('done')} id="filter-done" />
+        <FilterTab label="Cancelled" active={stateFilter === 'cancelled'} onClick={() => setFilter('cancelled')} id="filter-cancelled" />
       </div>
 
       {/* Content */}
@@ -257,15 +266,58 @@ export function IssuesPage() {
         />
       ) : (
         <div className="flex-1 overflow-auto">
-          <SelectableList
-            items={issues}
-            renderRow={renderIssueRow}
-            columns={columns}
-            emptyState={emptyState}
-            onItemClick={(issue) => navigate(`/issues/${issue.id}`)}
-            onContextMenu={handleContextMenu}
-            ariaLabel="Issues list"
-          />
+          {issues.length === 0 ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center">
+                <p className="text-muted">No issues yet</p>
+                <button
+                  onClick={handleCreateIssue}
+                  className="mt-2 text-sm text-accent hover:underline"
+                >
+                  Create your first issue
+                </button>
+              </div>
+            </div>
+          ) : (
+            <table
+              ref={tableRef}
+              className="w-full"
+              role="grid"
+              aria-multiselectable="true"
+              aria-label="Issues list"
+              tabIndex={0}
+              onKeyDown={selection.handleKeyDown}
+            >
+              <thead className="sticky top-0 bg-background z-10">
+                <tr className="border-b border-border text-left text-xs text-muted">
+                  <th className="w-10 px-2 py-2" aria-label="Selection"></th>
+                  <th className="px-4 py-2 font-medium">ID</th>
+                  <th className="px-4 py-2 font-medium">Title</th>
+                  <th className="px-4 py-2 font-medium">Status</th>
+                  <th className="px-4 py-2 font-medium">Source</th>
+                  <th className="px-4 py-2 font-medium">Priority</th>
+                  <th className="px-4 py-2 font-medium">Assignee</th>
+                  <th className="px-4 py-2 font-medium">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {issues.map((issue) => (
+                  <SelectableRow
+                    key={issue.id}
+                    issue={issue}
+                    isSelected={selection.isSelected(issue.id)}
+                    isFocused={selection.isFocused(issue.id)}
+                    onCheckboxClick={(e) => selection.handleClick(issue.id, e)}
+                    onRowClick={() => navigate(`/issues/${issue.id}`)}
+                    onFocus={() => selection.setFocusedId(issue.id)}
+                    onMouseEnter={() => setHoveredId(issue.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    onContextMenu={(e) => handleContextMenu(e, issue.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
@@ -324,6 +376,10 @@ function IssueRowContent({ issue, onClick }: IssueRowContentProps) {
       <td className="px-4 py-3" onClick={onClick} role="gridcell">
         <StatusBadge state={issue.state} />
       </td>
+      {/* Source */}
+      <td className="px-4 py-3" onClick={onRowClick} role="gridcell">
+        <SourceBadge source={issue.source} />
+      </td>
       {/* Priority */}
       <td className="px-4 py-3" onClick={onClick} role="gridcell">
         <PriorityBadge priority={issue.priority} />
@@ -380,6 +436,12 @@ function StatusIcon({ state }: { state: string }) {
   const iconProps = { className: 'h-3 w-3', 'aria-hidden': 'true' as const };
 
   switch (state) {
+    case 'triage':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" strokeDasharray="3 2" />
+        </svg>
+      );
     case 'backlog':
       return (
         <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
@@ -398,6 +460,13 @@ function StatusIcon({ state }: { state: string }) {
         <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
           <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
           <path d="M8 2 A6 6 0 1 1 2 8" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'in_review':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+          <circle cx="8" cy="8" r="3" fill="currentColor" stroke="none" />
         </svg>
       );
     case 'done':
@@ -427,6 +496,20 @@ function PriorityBadge({ priority }: { priority: string }) {
   return (
     <span className={cn('text-sm', PRIORITY_COLORS[priority] || PRIORITY_COLORS.none)}>
       {PRIORITY_LABELS[priority] || priority}
+    </span>
+  );
+}
+
+function SourceBadge({ source }: { source: 'internal' | 'external' }) {
+  const label = source === 'internal' ? 'Internal' : 'External';
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded px-2 py-0.5 text-xs font-medium',
+        SOURCE_STYLES[source] || SOURCE_STYLES.internal
+      )}
+    >
+      {label}
     </span>
   );
 }

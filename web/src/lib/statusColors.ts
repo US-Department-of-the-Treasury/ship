@@ -4,9 +4,11 @@
  */
 
 export const issueStatusColors: Record<string, string> = {
+  triage: 'bg-purple-500/20 text-purple-300',
   backlog: 'bg-gray-500/20 text-gray-300',
   todo: 'bg-blue-500/20 text-blue-300',
   in_progress: 'bg-yellow-500/20 text-yellow-300',
+  in_review: 'bg-cyan-500/20 text-cyan-300',
   done: 'bg-green-500/20 text-green-300',
   cancelled: 'bg-red-500/20 text-red-300',
 };
@@ -16,14 +18,6 @@ export const sprintStatusColors: Record<string, string> = {
   upcoming: 'bg-blue-500/20 text-blue-300', // alias for timeline view
   active: 'bg-green-500/20 text-green-300',
   completed: 'bg-gray-500/20 text-gray-300',
-};
-
-export const feedbackStatusColors: Record<string, string> = {
-  draft: 'bg-gray-500/20 text-gray-300',
-  submitted: 'bg-purple-500/20 text-purple-300',
-  pending: 'bg-yellow-500/20 text-yellow-300',
-  accepted: 'bg-green-500/20 text-green-300',
-  rejected: 'bg-red-500/20 text-red-300',
 };
 
 export const priorityColors: Record<string, string> = {
