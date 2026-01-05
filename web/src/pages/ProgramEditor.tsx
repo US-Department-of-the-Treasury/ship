@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Editor } from '@/components/Editor';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useAuth } from '@/hooks/useAuth';
@@ -12,6 +13,7 @@ import { KanbanBoard } from '@/components/KanbanBoard';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
+import { issueKeys } from '@/hooks/useIssuesQuery';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -124,6 +126,7 @@ export function ProgramEditorPage() {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { programs, loading, updateProgram: contextUpdateProgram } = usePrograms();
+  const queryClient = useQueryClient();
 
   // Initialize activeTab from URL param or default to 'overview'
   const tabParam = searchParams.get('tab') as Tab | null;
@@ -199,6 +202,8 @@ export function ProgramEditorPage() {
       const res = await apiPost('/api/issues', { title: 'Untitled', program_id: id });
       if (res.ok) {
         const issue = await res.json();
+        // Invalidate issues cache so IssueEditorPage can find the new issue
+        await queryClient.invalidateQueries({ queryKey: issueKeys.lists() });
         navigate(`/issues/${issue.id}`);
       }
     } catch (err) {
