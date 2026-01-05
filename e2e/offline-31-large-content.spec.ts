@@ -16,7 +16,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('31.1 Large Documents Sync Correctly', () => {
+test.describe('31.1 Large Documents Sync Correctly', () => {
   test('large document (100KB+) syncs without timeout', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 

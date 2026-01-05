@@ -17,7 +17,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('15.1 Create-Edit-Delete Chains', () => {
+test.describe('15.1 Create-Edit-Delete Chains', () => {
   test('create then edit then delete same document offline', async ({ page, goOffline, goOnline, login }) => {
     await login()
 

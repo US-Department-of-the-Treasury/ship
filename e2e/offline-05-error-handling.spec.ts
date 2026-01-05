@@ -18,7 +18,7 @@ import { test, expect } from './fixtures/offline'
 
 
 
-test.describe.skip('5.1 Sync Conflicts', () => {
+test.describe('5.1 Sync Conflicts', () => {
   test('shows conflict resolution UI when server rejects stale update', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 
@@ -101,7 +101,7 @@ test.describe.skip('5.1 Sync Conflicts', () => {
   })
 })
 
-test.describe.skip('5.2 Network Flakiness', () => {
+test.describe('5.2 Network Flakiness', () => {
   test('retries failed mutations automatically', async ({ page, goOffline, goOnline, login }) => {
     await login()
 

@@ -19,7 +19,7 @@ import { test, expect } from './fixtures/offline'
 
 
 
-test.describe.skip('11.1 Multiple Tabs Offline', () => {
+test.describe('11.1 Multiple Tabs Offline', () => {
   test('changes in one offline tab appear in another offline tab', async ({ context, login }) => {
     // Login in first page
     const page1 = await context.newPage()

@@ -16,7 +16,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('30.1 Access Revoked During Offline Period', () => {
+test.describe('30.1 Access Revoked During Offline Period', () => {
   test('handles 403 Forbidden when syncing document user lost access to', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 

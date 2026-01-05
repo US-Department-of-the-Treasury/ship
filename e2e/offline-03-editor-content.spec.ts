@@ -12,7 +12,7 @@
  */
 import { test, expect } from './fixtures/offline'
 
-test.describe.skip('3.1 Editor Content Persists Offline', () => {
+test.describe('3.1 Editor Content Persists Offline', () => {
   test('typing in editor while offline is preserved', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 

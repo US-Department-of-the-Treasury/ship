@@ -16,7 +16,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('12.1 Long Offline Duration', () => {
+test.describe('12.1 Long Offline Duration', () => {
   test('cached data remains usable after extended offline period', async ({ page, goOffline, login }) => {
     await login()
 

@@ -15,7 +15,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('22.1 Tab Visibility Changes', () => {
+test.describe('22.1 Tab Visibility Changes', () => {
   test('stale data refetches when tab becomes visible', async ({ page, login }) => {
     await login()
 

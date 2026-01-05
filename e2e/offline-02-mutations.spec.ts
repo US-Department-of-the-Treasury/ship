@@ -2,23 +2,14 @@
  * Category 2: Offline Mutations (Create/Update/Delete Queue)
  * Tests that mutations are queued offline and sync when back online.
  *
- * SKIP REASON: These tests require an offline mutation queue which is
- * NOT YET IMPLEMENTED. The app currently has no mutation queue - all
- * mutations go directly to the server API.
- *
- * INFRASTRUCTURE NEEDED:
- * 1. Implement IndexedDB-backed mutation queue
- * 2. Queue mutations when offline (detect via navigator.onLine)
- * 3. Process queue in FIFO order when online
- * 4. Add pending indicator UI (data-testid="pending-sync-icon")
- * 5. Generate temporary IDs for offline-created documents
- * 6. Replace temporary IDs with server IDs after sync
- *
- * See: docs/application-architecture.md "Offline Mutation Queue"
+ * INFRASTRUCTURE: Implemented in web/src/lib/queryClient.ts and syncHandlers.ts
+ * - IndexedDB-backed mutation queue via idb-keyval
+ * - PendingSyncIcon component with data-testid="pending-sync-icon"
+ * - Temp ID to real ID mapping for offline-created documents
  */
 import { test, expect } from './fixtures/offline'
 
-test.describe.skip('2.1 Create Document Queues When Offline', () => {
+test.describe('2.1 Create Document Queues When Offline', () => {
   test('creating a wiki document offline adds it to queue and shows pending state', async ({ page, goOffline, login }) => {
     await login()
 
@@ -88,7 +79,7 @@ test.describe.skip('2.1 Create Document Queues When Offline', () => {
   })
 })
 
-test.describe.skip('2.2 Update Document Queues When Offline', () => {
+test.describe('2.2 Update Document Queues When Offline', () => {
   test('updating document title offline shows pending state', async ({ page, goOffline, login, testData }) => {
     await login()
 
@@ -147,7 +138,7 @@ test.describe.skip('2.2 Update Document Queues When Offline', () => {
   })
 })
 
-test.describe.skip('2.3 Delete Document Queues When Offline', () => {
+test.describe('2.3 Delete Document Queues When Offline', () => {
   // SKIP: These tests require a delete button in the document tree UI, which is NOT YET IMPLEMENTED
   // The DocumentTreeItem component only has an "Add sub-document" button, no delete functionality
   // Infrastructure needed:

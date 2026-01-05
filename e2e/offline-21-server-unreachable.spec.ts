@@ -16,7 +16,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('21.1 Network Online But Server Down', () => {
+test.describe('21.1 Network Online But Server Down', () => {
   test('detects server unreachable when navigator.onLine is true', async ({ page, login }) => {
     await login()
 

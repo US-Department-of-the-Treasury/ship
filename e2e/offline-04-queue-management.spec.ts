@@ -16,7 +16,7 @@
  */
 import { test, expect } from './fixtures/offline'
 
-test.describe.skip('4.1 Queue Persistence Across Page Reloads', () => {
+test.describe('4.1 Queue Persistence Across Page Reloads', () => {
   test('pending mutations survive page reload', async ({ page, goOffline, login }) => {
     await login()
 
@@ -64,7 +64,7 @@ test.describe.skip('4.1 Queue Persistence Across Page Reloads', () => {
   })
 })
 
-test.describe.skip('4.2 Queue Processing Order', () => {
+test.describe('4.2 Queue Processing Order', () => {
   test('mutations sync in FIFO order', async ({ page, goOffline, goOnline, login }) => {
     await login()
 

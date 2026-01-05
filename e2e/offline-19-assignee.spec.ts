@@ -15,7 +15,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('19.4 Assignee Operations Offline', () => {
+test.describe('19.4 Assignee Operations Offline', () => {
   test('assign issue to person offline', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 

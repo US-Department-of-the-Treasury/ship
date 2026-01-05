@@ -16,7 +16,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('24.1 Mutation Debouncing and Deduplication', () => {
+test.describe('24.1 Mutation Debouncing and Deduplication', () => {
   test('rapid title changes debounce to minimal mutations', async ({ page, goOffline, login, testData }) => {
     await login()
 

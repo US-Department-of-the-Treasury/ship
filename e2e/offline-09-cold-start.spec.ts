@@ -17,7 +17,7 @@ import { test, expect } from './fixtures/offline'
 
 
 
-test.describe.skip('9.1 First Visit While Offline', () => {
+test.describe('9.1 First Visit While Offline', () => {
   test('app shows meaningful error on first visit while offline', async ({ browser }) => {
     // GIVEN: Fresh browser with no cache (simulating first visit)
     const context = await browser.newContext()
@@ -60,7 +60,7 @@ test.describe.skip('9.1 First Visit While Offline', () => {
   })
 })
 
-test.describe.skip('9.2 Navigation to Uncached Pages', () => {
+test.describe('9.2 Navigation to Uncached Pages', () => {
   test('navigating to uncached page shows appropriate message', async ({ page, goOffline, login }) => {
     await login()
 

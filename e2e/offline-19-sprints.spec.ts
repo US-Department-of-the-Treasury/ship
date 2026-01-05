@@ -15,7 +15,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('19.2 Sprint Operations Offline', () => {
+test.describe('19.2 Sprint Operations Offline', () => {
   test('create sprint offline', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 

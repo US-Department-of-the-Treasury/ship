@@ -2,22 +2,14 @@
  * Category 1: Document List Cache (TanStack Query + IndexedDB)
  * Tests that document lists load from cache when offline.
  *
- * SKIP REASON: These tests require TanStack Query + IndexedDB infrastructure
- * which is NOT YET IMPLEMENTED. The app currently uses React Context + useState
- * with no persistence layer.
- *
- * INFRASTRUCTURE NEEDED:
- * 1. Replace React Context with TanStack Query for data fetching
- * 2. Add IndexedDB persistence adapter for TanStack Query cache
- * 3. Implement stale-while-revalidate pattern for offline-first UX
- * 4. Add offline indicator component with data-testid="offline-indicator"
- *
- * See: docs/application-architecture.md "Layer 2: Lists/Metadata (Planned)"
+ * INFRASTRUCTURE: Implemented in web/src/lib/queryClient.ts
+ * - TanStack Query with IndexedDB persistence via idb-keyval
+ * - OfflineIndicator component with data-testid="offline-indicator"
  */
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('1.1 Lists Load from Cache When Offline', () => {
+test.describe('1.1 Lists Load from Cache When Offline', () => {
   test('document list loads from IndexedDB when offline after previous visit', async ({ page, goOffline, login }) => {
     // Login first
     await login()
@@ -80,7 +72,7 @@ test.describe.skip('1.1 Lists Load from Cache When Offline', () => {
   })
 })
 
-test.describe.skip('1.2 Empty Cache Shows Offline Message', () => {
+test.describe('1.2 Empty Cache Shows Offline Message', () => {
   test('shows offline message when cache is empty and network unavailable', async ({ page, goOffline, login }) => {
     // GIVEN: User has visited before (app shell cached by service worker)
     await login()
