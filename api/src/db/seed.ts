@@ -454,6 +454,48 @@ async function seed() {
       console.log('ℹ️  All issues already exist');
     }
 
+    // Seed external/triage issues for feedback consolidation testing
+    // These represent issues submitted via public feedback form
+    const externalIssues = [
+      // Triage state: awaiting accept/reject
+      { title: 'External feature request from user', state: 'triage', source: 'external', rejection_reason: null },
+      { title: 'Bug report from customer', state: 'triage', source: 'external', rejection_reason: null },
+      // Accepted: moved to backlog
+      { title: 'Accepted user suggestion', state: 'backlog', source: 'external', rejection_reason: null },
+      // Rejected: moved to cancelled with reason
+      { title: 'Rejected spam submission', state: 'cancelled', source: 'external', rejection_reason: 'Not relevant to product' },
+    ];
+
+    let externalIssuesCreated = 0;
+    for (const issue of externalIssues) {
+      const existingIssue = await pool.query(
+        `SELECT id FROM documents WHERE workspace_id = $1 AND program_id = $2 AND title = $3 AND document_type = 'issue'`,
+        [workspaceId, shipCoreProgram.id, issue.title]
+      );
+
+      if (!existingIssue.rows[0]) {
+        maxTickets[shipCoreProgram.id]!++;
+        const issueProperties = {
+          state: issue.state,
+          priority: 'medium',
+          source: issue.source,
+          assignee_id: null,
+          feedback_status: null,
+          rejection_reason: issue.rejection_reason,
+        };
+        await pool.query(
+          `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number)
+           VALUES ($1, 'issue', $2, $3, $4, $5, $6)`,
+          [workspaceId, issue.title, shipCoreProgram.id, null, JSON.stringify(issueProperties), maxTickets[shipCoreProgram.id]]
+        );
+        externalIssuesCreated++;
+      }
+    }
+
+    if (externalIssuesCreated > 0) {
+      console.log(`✅ Created ${externalIssuesCreated} external/triage issues`);
+    }
+
     // Create welcome/tutorial wiki document
     const existingTutorial = await pool.query(
       'SELECT id FROM documents WHERE workspace_id = $1 AND document_type = $2 AND title = $3',

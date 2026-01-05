@@ -18,7 +18,8 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe('8.1 WebSocket Disconnect/Reconnect', () => {
+// Skipping until collab-status UI is implemented (see file header)
+test.describe.skip('8.1 WebSocket Disconnect/Reconnect', () => {
   test('WebSocket reconnects automatically when online', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 

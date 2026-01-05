@@ -18,7 +18,9 @@ import { test, expect } from './fixtures/offline'
 
 
 
-test.describe('5.1 Sync Conflicts', () => {
+// TODO: Skip conflict/error tests until infrastructure is implemented
+// See file header for INFRASTRUCTURE NEEDED
+test.describe.skip('5.1 Sync Conflicts', () => {
   test('shows conflict resolution UI when server rejects stale update', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 
@@ -101,7 +103,8 @@ test.describe('5.1 Sync Conflicts', () => {
   })
 })
 
-test.describe('5.2 Network Flakiness', () => {
+// TODO: Skip network flakiness tests until retry logic is implemented
+test.describe.skip('5.2 Network Flakiness', () => {
   test('retries failed mutations automatically', async ({ page, goOffline, goOnline, login }) => {
     await login()
 

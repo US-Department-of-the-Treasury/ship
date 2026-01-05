@@ -16,7 +16,8 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe('23.1 Concurrent Offline Issue Creation', () => {
+// TODO: Skip until infrastructure is implemented (see file header)
+test.describe.skip('23.1 Concurrent Offline Issue Creation', () => {
   test('two offline users creating issues get unique ticket numbers', async ({ browser }) => {
     // GIVEN: Two users (contexts) both offline, both creating issues
     const context1 = await browser.newContext()

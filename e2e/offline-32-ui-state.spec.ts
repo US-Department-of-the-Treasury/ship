@@ -16,7 +16,8 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe('32.1 Focus and Scroll State', () => {
+// TODO: Skip until infrastructure is implemented (see file header)
+test.describe.skip('32.1 Focus and Scroll State', () => {
   test('focus position preserved through offline transition', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 

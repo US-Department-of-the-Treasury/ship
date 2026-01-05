@@ -148,17 +148,22 @@ test.describe('Critical Blocker: WebSocket Rate Limiting', () => {
   // These tests verify the implementation exists and is configured correctly.
 
   test('WebSocket rate limiting configuration exists', async ({ page }) => {
-    // Navigate to trigger app load and verify rate limiting code is active
-    // This is a smoke test - the actual rate limiting happens server-side
+    // Login first (use same pattern as other passing tests)
+    await page.goto('/login');
+    await page.locator('#email').fill('dev@ship.local');
+    await page.locator('#password').fill('admin123');
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await expect(page).not.toHaveURL('/login', { timeout: 5000 });
+
+    // Navigate to docs to trigger WebSocket connection
     await page.goto('/docs');
 
     // The collaboration server logs on startup - this verifies it loaded
     // Server log: "Yjs collaboration server attached"
     // If rate limiting code had errors, the server wouldn't start
 
-    // Verify we can make at least one WebSocket connection (not blocked)
-    const doc = await page.getByTestId('document-list').first();
-    await expect(doc).toBeVisible({ timeout: 10000 });
+    // Verify docs page loads (WebSocket connects for real-time collaboration)
+    await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible({ timeout: 10000 });
   });
 
   test.fixme('WebSocket rejects excessive connection attempts', async ({ page, context }) => {

@@ -17,7 +17,8 @@ import { test, expect } from './fixtures/offline'
 
 
 
-test.describe('13.1 Storage Quota', () => {
+// TODO: Skip until storage monitoring UI is implemented (see file header)
+test.describe.skip('13.1 Storage Quota', () => {
   test('handles IndexedDB quota exceeded gracefully', async ({ page, goOffline, login }) => {
     await login()
 

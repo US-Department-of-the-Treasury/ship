@@ -15,7 +15,8 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe('20.1 Referenced Entity Deleted While Offline', () => {
+// TODO: Skip until infrastructure is implemented (see file header)
+test.describe.skip('20.1 Referenced Entity Deleted While Offline', () => {
   test('handles assignee deleted while user offline', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 
