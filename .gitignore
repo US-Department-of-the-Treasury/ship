@@ -78,3 +78,4 @@ api/uploads/
 
 # Research notes
 research/
+.claude/deploy-logs/

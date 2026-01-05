@@ -13,15 +13,15 @@ if ! command -v terraform &> /dev/null; then
     exit 1
 fi
 
-# Navigate to terraform directory
-cd "$(dirname "$0")/../terraform"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Check if terraform.tfvars exists
-if [ ! -f terraform.tfvars ]; then
-    echo "Error: terraform.tfvars not found"
-    echo "Copy terraform.tfvars.example to terraform.tfvars and fill in your values"
-    exit 1
-fi
+# Sync terraform config from SSM (source of truth)
+echo "Syncing Terraform config from SSM..."
+"$SCRIPT_DIR/sync-terraform-config.sh"
+echo ""
+
+# Navigate to terraform directory
+cd "$SCRIPT_DIR/../terraform"
 
 echo "Step 1: Initializing Terraform..."
 terraform init
