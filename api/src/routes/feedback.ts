@@ -4,12 +4,18 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 
 type RouterType = ReturnType<typeof Router>;
+
+// Public routes - no auth/CSRF required
+export const publicFeedbackRouter: RouterType = Router();
+
+// Protected routes - auth/CSRF required
 const router: RouterType = Router();
 
 // Validation schemas
 const createFeedbackSchema = z.object({
   title: z.string().min(1).max(500),
   program_id: z.string().uuid(),
+  submitter_email: z.string().email().optional(),
   content: z.any().optional(),
 });
 
@@ -23,10 +29,9 @@ function extractFeedbackFromRow(row: any, programPrefix?: string | null) {
   return {
     id: row.id,
     title: row.title,
-    state: props.state || 'backlog',
+    state: props.state || 'triage',
     priority: props.priority || 'medium',
-    source: props.source || 'feedback',
-    feedback_status: props.feedback_status || null,
+    source: props.source || 'external',
     rejection_reason: props.rejection_reason || null,
     assignee_id: props.assignee_id || null,
     ticket_number: row.ticket_number,
@@ -43,8 +48,9 @@ function extractFeedbackFromRow(row: any, programPrefix?: string | null) {
   };
 }
 
-// Create feedback (creates an issue with source='feedback', feedback_status='draft')
-router.post('/', authMiddleware, async (req: Request, res: Response) => {
+// Create feedback - PUBLIC endpoint (no auth required)
+// Creates an issue with source='external', state='triage'
+publicFeedbackRouter.post('/', async (req: Request, res: Response) => {
   try {
     const parsed = createFeedbackSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -52,12 +58,12 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, program_id, content } = parsed.data;
+    const { title, program_id, submitter_email, content } = parsed.data;
 
-    // Verify program exists and belongs to workspace
+    // Verify program exists and get its workspace_id
     const programResult = await pool.query(
-      `SELECT id, properties->>'prefix' as prefix FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
-      [program_id, req.workspaceId]
+      `SELECT id, workspace_id, properties->>'prefix' as prefix FROM documents WHERE id = $1 AND document_type = 'program'`,
+      [program_id]
     );
 
     if (programResult.rows.length === 0) {
@@ -65,6 +71,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
+    const workspaceId = programResult.rows[0].workspace_id;
     const programPrefix = programResult.rows[0].prefix;
 
     // Get next ticket number for workspace
@@ -72,31 +79,61 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
        FROM documents
        WHERE workspace_id = $1 AND document_type = 'issue'`,
-      [req.workspaceId]
+      [workspaceId]
     );
     const ticketNumber = ticketResult.rows[0].next_number;
 
-    // Build properties JSONB
+    // Build properties JSONB - external feedback goes directly to triage
     const properties = {
-      state: 'backlog',
+      state: 'triage',
       priority: 'medium',
-      source: 'feedback',
-      feedback_status: 'draft',
+      source: 'external',
+      submitter_email: submitter_email || null,
       assignee_id: null,
       rejection_reason: null,
     };
 
-    // Create the feedback issue
+    // Create the feedback issue (no created_by for public submissions)
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, properties, program_id, ticket_number, created_by, content)
-       VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7)
+      `INSERT INTO documents (workspace_id, document_type, title, properties, program_id, ticket_number, content)
+       VALUES ($1, 'issue', $2, $3, $4, $5, $6)
        RETURNING *`,
-      [req.workspaceId, title, JSON.stringify(properties), program_id, ticketNumber, req.userId, content ? JSON.stringify(content) : null]
+      [workspaceId, title, JSON.stringify(properties), program_id, ticketNumber, content ? JSON.stringify(content) : null]
     );
 
     res.status(201).json(extractFeedbackFromRow(result.rows[0], programPrefix));
   } catch (err) {
     console.error('Create feedback error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get program info for public feedback form (no auth required)
+publicFeedbackRouter.get('/program/:programId', async (req: Request, res: Response) => {
+  try {
+    const programId = req.params.programId as string;
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(programId)) {
+      res.status(404).json({ error: 'Program not found' });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT id, title as name, properties->>'prefix' as prefix, properties->>'color' as color
+       FROM documents WHERE id = $1 AND document_type = 'program'`,
+      [programId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Program not found' });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Get program for feedback error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -123,7 +160,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
        FROM documents d
        LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
        LEFT JOIN users creator ON d.created_by = creator.id
-       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'issue' AND d.properties->>'source' = 'feedback'`,
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'issue' AND d.properties->>'source' = 'external'`,
       [id, req.workspaceId]
     );
 
@@ -139,198 +176,6 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// Submit feedback (changes feedback_status from 'draft' to 'submitted')
-router.post('/:id/submit', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const id = req.params.id as string;
-
-    // Validate UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-      res.status(404).json({ error: 'Feedback not found' });
-      return;
-    }
-
-    // Verify it's a feedback item in draft status
-    const existing = await pool.query(
-      `SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
-      [id, req.workspaceId]
-    );
-
-    if (existing.rows.length === 0) {
-      res.status(404).json({ error: 'Feedback not found' });
-      return;
-    }
-
-    const props = existing.rows[0].properties || {};
-    if (props.source !== 'feedback') {
-      res.status(400).json({ error: 'This is not a feedback item' });
-      return;
-    }
-
-    if (props.feedback_status !== 'draft') {
-      res.status(400).json({ error: 'Feedback is not in draft status' });
-      return;
-    }
-
-    // Update feedback_status to submitted
-    const newProps = { ...props, feedback_status: 'submitted' };
-    const result = await pool.query(
-      `UPDATE documents
-       SET properties = $3, updated_at = now()
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING *`,
-      [id, req.workspaceId, JSON.stringify(newProps)]
-    );
-
-    // Get program prefix for display_id
-    const feedback = result.rows[0];
-    let programPrefix = null;
-    if (feedback.program_id) {
-      const programResult = await pool.query(
-        `SELECT properties->>'prefix' as prefix FROM documents WHERE id = $1 AND document_type = 'program'`,
-        [feedback.program_id]
-      );
-      programPrefix = programResult.rows[0]?.prefix || null;
-    }
-
-    res.json(extractFeedbackFromRow(feedback, programPrefix));
-  } catch (err) {
-    console.error('Submit feedback error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Accept feedback (clears feedback_status, keeps state as backlog - becomes regular issue)
-router.post('/:id/accept', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const id = req.params.id as string;
-
-    // Validate UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-      res.status(404).json({ error: 'Feedback not found' });
-      return;
-    }
-
-    // Verify it's a feedback item in submitted status
-    const existing = await pool.query(
-      `SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
-      [id, req.workspaceId]
-    );
-
-    if (existing.rows.length === 0) {
-      res.status(404).json({ error: 'Feedback not found' });
-      return;
-    }
-
-    const props = existing.rows[0].properties || {};
-    if (props.source !== 'feedback') {
-      res.status(400).json({ error: 'This is not a feedback item' });
-      return;
-    }
-
-    if (props.feedback_status !== 'submitted') {
-      res.status(400).json({ error: 'Feedback must be submitted before it can be accepted' });
-      return;
-    }
-
-    // Clear feedback_status (becomes regular backlog issue)
-    const newProps = { ...props, feedback_status: null };
-    const result = await pool.query(
-      `UPDATE documents
-       SET properties = $3, updated_at = now()
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING *`,
-      [id, req.workspaceId, JSON.stringify(newProps)]
-    );
-
-    // Get program prefix for display_id
-    const feedback = result.rows[0];
-    let programPrefix = null;
-    if (feedback.program_id) {
-      const programResult = await pool.query(
-        `SELECT properties->>'prefix' as prefix FROM documents WHERE id = $1 AND document_type = 'program'`,
-        [feedback.program_id]
-      );
-      programPrefix = programResult.rows[0]?.prefix || null;
-    }
-
-    res.json(extractFeedbackFromRow(feedback, programPrefix));
-  } catch (err) {
-    console.error('Accept feedback error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Reject feedback (clears feedback_status, stores rejection reason)
-router.post('/:id/reject', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const id = req.params.id as string;
-
-    // Validate UUID format
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id)) {
-      res.status(404).json({ error: 'Feedback not found' });
-      return;
-    }
-
-    const parsed = rejectFeedbackSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: 'Rejection reason is required' });
-      return;
-    }
-
-    const { reason } = parsed.data;
-
-    // Verify it's a feedback item in submitted status
-    const existing = await pool.query(
-      `SELECT id, properties FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'`,
-      [id, req.workspaceId]
-    );
-
-    if (existing.rows.length === 0) {
-      res.status(404).json({ error: 'Feedback not found' });
-      return;
-    }
-
-    const props = existing.rows[0].properties || {};
-    if (props.source !== 'feedback') {
-      res.status(400).json({ error: 'This is not a feedback item' });
-      return;
-    }
-
-    if (props.feedback_status !== 'submitted') {
-      res.status(400).json({ error: 'Feedback must be submitted before it can be rejected' });
-      return;
-    }
-
-    // Clear feedback_status and store rejection reason
-    const newProps = { ...props, feedback_status: null, rejection_reason: reason };
-    const result = await pool.query(
-      `UPDATE documents
-       SET properties = $3, updated_at = now()
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING *`,
-      [id, req.workspaceId, JSON.stringify(newProps)]
-    );
-
-    // Get program prefix for display_id
-    const feedback = result.rows[0];
-    let programPrefix = null;
-    if (feedback.program_id) {
-      const programResult = await pool.query(
-        `SELECT properties->>'prefix' as prefix FROM documents WHERE id = $1 AND document_type = 'program'`,
-        [feedback.program_id]
-      );
-      programPrefix = programResult.rows[0]?.prefix || null;
-    }
-
-    res.json(extractFeedbackFromRow(feedback, programPrefix));
-  } catch (err) {
-    console.error('Reject feedback error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// Note: Accept and reject actions are now handled via /api/issues/:id/accept and /api/issues/:id/reject
 
 export default router;

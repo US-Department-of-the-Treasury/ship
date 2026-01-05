@@ -1,14 +1,15 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KanbanBoard } from '@/components/KanbanBoard';
+import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useBulkUpdateIssues } from '@/hooks/useIssuesQuery';
-import { useSelection } from '@/hooks/useSelection';
 import { IssuesListSkeleton } from '@/components/ui/Skeleton';
 import { Combobox } from '@/components/ui/Combobox';
 import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { cn } from '@/lib/cn';
+import { issueStatusColors, priorityColors } from '@/lib/statusColors';
 
 const SORT_OPTIONS = [
   { value: 'updated', label: 'Updated' },
@@ -20,11 +21,18 @@ const SORT_OPTIONS = [
 type ViewMode = 'list' | 'kanban';
 
 const STATE_LABELS: Record<string, string> = {
+  triage: 'Needs Triage',
   backlog: 'Backlog',
   todo: 'Todo',
   in_progress: 'In Progress',
+  in_review: 'In Review',
   done: 'Done',
   cancelled: 'Cancelled',
+};
+
+const SOURCE_STYLES: Record<string, string> = {
+  internal: 'bg-blue-500/20 text-blue-300',
+  external: 'bg-purple-500/20 text-purple-300',
 };
 
 const PRIORITY_LABELS: Record<string, string> = {
@@ -36,10 +44,7 @@ const PRIORITY_LABELS: Record<string, string> = {
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  urgent: 'text-red-400',
-  high: 'text-orange-400',
-  medium: 'text-yellow-400',
-  low: 'text-blue-400',
+  ...priorityColors,
   none: 'text-muted',
 };
 
@@ -51,12 +56,9 @@ export function IssuesPage() {
   const { showToast } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sortBy, setSortBy] = useState<string>('updated');
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const tableRef = useRef<HTMLTableElement>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
 
   const stateFilter = searchParams.get('state') || '';
-  const prevStateFilter = useRef(stateFilter);
 
   // Filter issues client-side based on state filter
   const issues = useMemo(() => {
@@ -64,21 +66,6 @@ export function IssuesPage() {
     const states = stateFilter.split(',');
     return allIssues.filter(issue => states.includes(issue.state));
   }, [allIssues, stateFilter]);
-
-  // Selection state
-  const selection = useSelection({
-    items: issues,
-    getItemId: (issue) => issue.id,
-    hoveredId,
-  });
-
-  // Clear selection when filter changes
-  useEffect(() => {
-    if (prevStateFilter.current !== stateFilter) {
-      selection.clearSelection();
-      prevStateFilter.current = stateFilter;
-    }
-  }, [stateFilter, selection]);
 
   const handleCreateIssue = useCallback(async () => {
     const issue = await contextCreateIssue();
@@ -102,62 +89,60 @@ export function IssuesPage() {
     await contextUpdateIssue(id, updates);
   };
 
-  // Bulk action handlers
+  // Bulk action handlers - use selection from contextMenu state
   const handleBulkArchive = useCallback(() => {
-    const ids = Array.from(selection.selectedIds);
+    if (!contextMenu) return;
+    const ids = Array.from(contextMenu.selection.selectedIds);
     const count = ids.length;
     bulkUpdate.mutate({ ids, action: 'archive' }, {
       onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} archived`, 'success'),
       onError: () => showToast('Failed to archive issues', 'error'),
     });
-    selection.clearSelection();
+    contextMenu.selection.clearSelection();
     setContextMenu(null);
-  }, [selection, bulkUpdate, showToast]);
+  }, [contextMenu, bulkUpdate, showToast]);
 
   const handleBulkDelete = useCallback(() => {
-    const ids = Array.from(selection.selectedIds);
+    if (!contextMenu) return;
+    const ids = Array.from(contextMenu.selection.selectedIds);
     const count = ids.length;
     bulkUpdate.mutate({ ids, action: 'delete' }, {
       onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} deleted`, 'success'),
       onError: () => showToast('Failed to delete issues', 'error'),
     });
-    selection.clearSelection();
+    contextMenu.selection.clearSelection();
     setContextMenu(null);
-  }, [selection, bulkUpdate, showToast]);
+  }, [contextMenu, bulkUpdate, showToast]);
 
   const handleBulkMoveToSprint = useCallback((sprintId: string | null) => {
-    const ids = Array.from(selection.selectedIds);
+    if (!contextMenu) return;
+    const ids = Array.from(contextMenu.selection.selectedIds);
     const count = ids.length;
     bulkUpdate.mutate({ ids, action: 'update', updates: { sprint_id: sprintId } }, {
       onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} moved`, 'success'),
       onError: () => showToast('Failed to move issues', 'error'),
     });
-    selection.clearSelection();
+    contextMenu.selection.clearSelection();
     setContextMenu(null);
-  }, [selection, bulkUpdate, showToast]);
+  }, [contextMenu, bulkUpdate, showToast]);
 
   const handleBulkChangeStatus = useCallback((status: string) => {
-    const ids = Array.from(selection.selectedIds);
+    if (!contextMenu) return;
+    const ids = Array.from(contextMenu.selection.selectedIds);
     const count = ids.length;
     const statusLabel = STATE_LABELS[status] || status;
     bulkUpdate.mutate({ ids, action: 'update', updates: { state: status } }, {
       onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} changed to ${statusLabel}`, 'success'),
       onError: () => showToast('Failed to update issues', 'error'),
     });
-    selection.clearSelection();
+    contextMenu.selection.clearSelection();
     setContextMenu(null);
-  }, [selection, bulkUpdate, showToast]);
+  }, [contextMenu, bulkUpdate, showToast]);
 
-  // Context menu handler
-  const handleContextMenu = useCallback((e: React.MouseEvent, issueId: string) => {
-    e.preventDefault();
-    // If right-clicked item is not selected, select only that item
-    if (!selection.isSelected(issueId)) {
-      selection.clearSelection();
-      selection.handleClick(issueId, e);
-    }
-    setContextMenu({ x: e.clientX, y: e.clientY });
-  }, [selection]);
+  // Context menu handler - receives selection from SelectableList
+  const handleContextMenu = useCallback((e: React.MouseEvent, _item: Issue, selection: UseSelectionReturn) => {
+    setContextMenu({ x: e.clientX, y: e.clientY, selection });
+  }, []);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -172,21 +157,40 @@ export function IssuesPage() {
         e.preventDefault();
         handleCreateIssue();
       }
-
-      // Shift+Arrow extends selection (Superhuman-style)
-      // Only handle globally if the table doesn't have focus (otherwise table's onKeyDown handles it)
-      if (e.shiftKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-        const tableHasFocus = tableRef.current?.contains(document.activeElement);
-        if (!tableHasFocus && (hoveredId || selection.hasSelection)) {
-          e.preventDefault();
-          selection.extendSelection(e.key === 'ArrowDown' ? 'down' : 'up');
-        }
-      }
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleCreateIssue, hoveredId, selection]);
+  }, [handleCreateIssue]);
+
+  // Column definitions for the issues list
+  const columns = useMemo(() => [
+    { key: 'id', label: 'ID' },
+    { key: 'title', label: 'Title' },
+    { key: 'status', label: 'Status' },
+    { key: 'source', label: 'Source' },
+    { key: 'priority', label: 'Priority' },
+    { key: 'assignee', label: 'Assignee' },
+    { key: 'updated', label: 'Updated' },
+  ], []);
+
+  // Render function for issue rows
+  const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => (
+    <IssueRowContent issue={issue} isSelected={isSelected} />
+  ), []);
+
+  // Empty state for the list
+  const emptyState = useMemo(() => (
+    <div className="text-center">
+      <p className="text-muted">No issues yet</p>
+      <button
+        onClick={handleCreateIssue}
+        className="mt-2 text-sm text-accent hover:underline"
+      >
+        Create your first issue
+      </button>
+    </div>
+  ), [handleCreateIssue]);
 
   if (loading) {
     return <IssuesListSkeleton />;
@@ -247,9 +251,11 @@ export function IssuesPage() {
       {/* Filter tabs */}
       <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Issue filters">
         <FilterTab label="All" active={!stateFilter} onClick={() => setFilter('')} id="filter-all" />
-        <FilterTab label="Active" active={stateFilter === 'todo,in_progress'} onClick={() => setFilter('todo,in_progress')} id="filter-active" />
+        <FilterTab label="Needs Triage" active={stateFilter === 'triage'} onClick={() => setFilter('triage')} id="filter-triage" />
+        <FilterTab label="Active" active={stateFilter === 'todo,in_progress,in_review'} onClick={() => setFilter('todo,in_progress,in_review')} id="filter-active" />
         <FilterTab label="Backlog" active={stateFilter === 'backlog'} onClick={() => setFilter('backlog')} id="filter-backlog" />
         <FilterTab label="Done" active={stateFilter === 'done'} onClick={() => setFilter('done')} id="filter-done" />
+        <FilterTab label="Cancelled" active={stateFilter === 'cancelled'} onClick={() => setFilter('cancelled')} id="filter-cancelled" />
       </div>
 
       {/* Content */}
@@ -258,87 +264,26 @@ export function IssuesPage() {
           issues={issues}
           onUpdateIssue={handleUpdateIssue}
           onIssueClick={(id) => navigate(`/issues/${id}`)}
-          selectedIds={selection.selectedIds}
-          onSelectionChange={(ids) => {
-            // Sync kanban selection with our selection state
-            if (ids.size === 0) {
-              selection.clearSelection();
-            }
-          }}
-          onCheckboxClick={(id, e) => selection.handleClick(id, e)}
         />
       ) : (
         <div className="flex-1 overflow-auto">
-          {issues.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-center">
-                <p className="text-muted">No issues yet</p>
-                <button
-                  onClick={handleCreateIssue}
-                  className="mt-2 text-sm text-accent hover:underline"
-                >
-                  Create your first issue
-                </button>
-              </div>
-            </div>
-          ) : (
-            <table
-              ref={tableRef}
-              className="w-full"
-              role="grid"
-              aria-multiselectable="true"
-              aria-label="Issues list"
-              tabIndex={0}
-              onKeyDown={selection.handleKeyDown}
-            >
-              <thead className="sticky top-0 bg-background z-10">
-                <tr className="border-b border-border text-left text-xs text-muted">
-                  <th className="w-10 px-2 py-2" aria-label="Selection"></th>
-                  <th className="px-4 py-2 font-medium">ID</th>
-                  <th className="px-4 py-2 font-medium">Title</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium">Priority</th>
-                  <th className="px-4 py-2 font-medium">Assignee</th>
-                  <th className="px-4 py-2 font-medium">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {issues.map((issue) => (
-                  <SelectableRow
-                    key={issue.id}
-                    issue={issue}
-                    isSelected={selection.isSelected(issue.id)}
-                    isFocused={selection.isFocused(issue.id)}
-                    onCheckboxClick={(e) => selection.handleClick(issue.id, e)}
-                    onRowClick={() => navigate(`/issues/${issue.id}`)}
-                    onFocus={() => selection.setFocusedId(issue.id)}
-                    onMouseEnter={() => setHoveredId(issue.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                    onContextMenu={(e) => handleContextMenu(e, issue.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          )}
+          <SelectableList
+            items={issues}
+            renderRow={renderIssueRow}
+            columns={columns}
+            emptyState={emptyState}
+            onItemClick={(issue) => navigate(`/issues/${issue.id}`)}
+            onContextMenu={handleContextMenu}
+            ariaLabel="Issues list"
+          />
         </div>
       )}
 
-      {/* Selection announcer for screen readers */}
-      <div
-        id="selection-announcer"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        className="sr-only"
-      >
-        {selection.hasSelection ? `${selection.selectedCount} items selected` : ''}
-      </div>
-
       {/* Context Menu */}
-      {contextMenu && selection.hasSelection && (
+      {contextMenu && contextMenu.selection.hasSelection && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
           <div className="px-3 py-1.5 text-xs text-muted border-b border-border mb-1">
-            {selection.selectedCount} selected
+            {contextMenu.selection.selectedCount} selected
           </div>
           <ContextMenuItem onClick={handleBulkArchive}>
             <ArchiveIcon className="h-4 w-4" />
@@ -364,110 +309,47 @@ export function IssuesPage() {
   );
 }
 
-interface SelectableRowProps {
+/**
+ * IssueRowContent - Renders the content cells for an issue row
+ * Used by SelectableList which handles the <tr>, checkbox, and selection state
+ */
+interface IssueRowContentProps {
   issue: Issue;
   isSelected: boolean;
-  isFocused: boolean;
-  onCheckboxClick: (e: React.MouseEvent) => void;
-  onRowClick: () => void;
-  onFocus: () => void;
-  onMouseEnter: () => void;
-  onMouseLeave: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function SelectableRow({ issue, isSelected, isFocused, onCheckboxClick, onRowClick, onFocus, onMouseEnter, onMouseLeave, onContextMenu }: SelectableRowProps) {
+function IssueRowContent({ issue }: IssueRowContentProps) {
   return (
-    <tr
-      role="row"
-      aria-selected={isSelected}
-      tabIndex={isFocused ? 0 : -1}
-      onFocus={onFocus}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      onContextMenu={onContextMenu}
-      data-selected={isSelected}
-      className={cn(
-        'group cursor-pointer border-b border-border/50 transition-colors',
-        isSelected && 'bg-accent/10',
-        isFocused && 'ring-2 ring-accent ring-inset',
-        !isSelected && 'hover:bg-border/30'
-      )}
-    >
-      {/* Checkbox cell */}
-      <td className="w-10 px-2 py-3" role="gridcell">
-        <div
-          className={cn(
-            'flex items-center justify-center transition-opacity',
-            isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          )}
-        >
-          <button
-            type="button"
-            role="checkbox"
-            aria-checked={isSelected}
-            onClick={(e) => {
-              e.stopPropagation();
-              onCheckboxClick(e);
-            }}
-            aria-label={`Select issue #${issue.ticket_number}`}
-            className={cn(
-              'h-4 w-4 rounded flex items-center justify-center transition-all',
-              'border focus:outline-none focus:ring-2 focus:ring-accent/50',
-              isSelected
-                ? 'bg-accent border-accent text-white'
-                : 'border-muted/50 hover:border-muted bg-transparent'
-            )}
-          >
-            {isSelected && (
-              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            )}
-          </button>
-        </div>
-      </td>
+    <>
       {/* ID */}
-      <td
-        className="px-4 py-3 text-sm text-muted"
-        onClick={onRowClick}
-        role="gridcell"
-      >
+      <td className="px-4 py-3 text-sm text-muted" role="gridcell">
         #{issue.ticket_number}
       </td>
       {/* Title */}
-      <td
-        className="px-4 py-3 text-sm text-foreground"
-        onClick={onRowClick}
-        role="gridcell"
-      >
+      <td className="px-4 py-3 text-sm text-foreground" role="gridcell">
         {issue.title}
       </td>
       {/* Status */}
-      <td className="px-4 py-3" onClick={onRowClick} role="gridcell">
+      <td className="px-4 py-3" role="gridcell">
         <StatusBadge state={issue.state} />
       </td>
+      {/* Source */}
+      <td className="px-4 py-3" role="gridcell">
+        <SourceBadge source={issue.source} />
+      </td>
       {/* Priority */}
-      <td className="px-4 py-3" onClick={onRowClick} role="gridcell">
+      <td className="px-4 py-3" role="gridcell">
         <PriorityBadge priority={issue.priority} />
       </td>
       {/* Assignee */}
-      <td
-        className="px-4 py-3 text-sm text-muted"
-        onClick={onRowClick}
-        role="gridcell"
-      >
+      <td className="px-4 py-3 text-sm text-muted" role="gridcell">
         {issue.assignee_name || 'Unassigned'}
       </td>
       {/* Updated */}
-      <td
-        className="px-4 py-3 text-sm text-muted"
-        onClick={onRowClick}
-        role="gridcell"
-      >
+      <td className="px-4 py-3 text-sm text-muted" role="gridcell">
         {issue.updated_at ? formatDate(issue.updated_at) : '-'}
       </td>
-    </tr>
+    </>
   );
 }
 
@@ -491,14 +373,6 @@ function FilterTab({ label, active, onClick, id }: { label: string; active: bool
 }
 
 function StatusBadge({ state }: { state: string }) {
-  const colors: Record<string, string> = {
-    backlog: 'bg-gray-500/20 text-gray-400',
-    todo: 'bg-blue-500/20 text-blue-400',
-    in_progress: 'bg-yellow-500/20 text-yellow-400',
-    done: 'bg-green-500/20 text-green-400',
-    cancelled: 'bg-red-500/20 text-red-400',
-  };
-
   const label = STATE_LABELS[state] || state;
 
   return (
@@ -506,7 +380,7 @@ function StatusBadge({ state }: { state: string }) {
       data-status-indicator
       data-status={state}
       aria-label={`Status: ${label}`}
-      className={cn('inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium', colors[state] || colors.backlog)}
+      className={cn('inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[state] || issueStatusColors.backlog)}
     >
       <StatusIcon state={state} />
       {label}
@@ -519,6 +393,12 @@ function StatusIcon({ state }: { state: string }) {
   const iconProps = { className: 'h-3 w-3', 'aria-hidden': 'true' as const };
 
   switch (state) {
+    case 'triage':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" strokeDasharray="3 2" />
+        </svg>
+      );
     case 'backlog':
       return (
         <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
@@ -537,6 +417,13 @@ function StatusIcon({ state }: { state: string }) {
         <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
           <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
           <path d="M8 2 A6 6 0 1 1 2 8" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'in_review':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+          <circle cx="8" cy="8" r="3" fill="currentColor" stroke="none" />
         </svg>
       );
     case 'done':
@@ -566,6 +453,20 @@ function PriorityBadge({ priority }: { priority: string }) {
   return (
     <span className={cn('text-sm', PRIORITY_COLORS[priority] || PRIORITY_COLORS.none)}>
       {PRIORITY_LABELS[priority] || priority}
+    </span>
+  );
+}
+
+function SourceBadge({ source }: { source: 'internal' | 'external' }) {
+  const label = source === 'internal' ? 'Internal' : 'External';
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded px-2 py-0.5 text-xs font-medium',
+        SOURCE_STYLES[source] || SOURCE_STYLES.internal
+      )}
+    >
+      {label}
     </span>
   );
 }

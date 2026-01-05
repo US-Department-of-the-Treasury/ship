@@ -15,16 +15,13 @@ export type DocumentType =
   | 'sprint_retro';
 
 // Issue states
-export type IssueState = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done';
+export type IssueState = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
 
 // Issue priorities
 export type IssuePriority = 'low' | 'medium' | 'high' | 'urgent';
 
 // Issue source - provenance, never changes after creation
-export type IssueSource = 'internal' | 'feedback';
-
-// Feedback status - tracks lifecycle for feedback-sourced issues
-export type FeedbackStatus = 'draft' | 'submitted' | null;
+export type IssueSource = 'internal' | 'external';
 
 // Sprint status - computed from dates, not stored
 export type SprintStatus = 'active' | 'upcoming' | 'completed';
@@ -37,7 +34,6 @@ export interface IssueProperties {
   assignee_id?: string | null;
   estimate?: number | null;
   source: IssueSource;
-  feedback_status?: FeedbackStatus;
   rejection_reason?: string | null;
   [key: string]: unknown;
 }
@@ -215,7 +211,6 @@ export const DEFAULT_ISSUE_PROPERTIES: IssueProperties = {
   priority: 'medium',
   source: 'internal',
   assignee_id: null,
-  feedback_status: null,
   rejection_reason: null,
 };
 

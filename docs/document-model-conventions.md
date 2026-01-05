@@ -360,6 +360,84 @@ Every document editor view follows the same 4-panel layout. This is the canonica
 - Properties sidebar content varies by document type (via `sidebar` prop on Editor)
 - Header shows sync status and connected users for real-time collaboration
 
+## Canonical UI Patterns
+
+Ship has exactly **4 canonical patterns** for displaying collections of items. When building UI that shows a list of things, you must use one of these patterns—do not create new ones or duplicate existing implementations.
+
+### The 4 Patterns
+
+| Pattern | Component | Purpose | Key Features |
+|---------|-----------|---------|--------------|
+| **SelectableList** | `<SelectableList>` | Tables/lists with selection | Hover checkboxes, multi-select, keyboard nav, context menu, bulk actions |
+| **Tree** | `<DocumentTreeItem>` | Hierarchical data | Expand/collapse, indentation, parent-child relationships |
+| **Kanban** | `<KanbanBoard>` | Status-based columns | Drag-and-drop between columns, cards grouped by state |
+| **CardGrid** | `<CardGrid>` | Navigable card collections | Responsive grid, click-to-navigate, visual cards |
+
+### Decision Tree: Which Pattern?
+
+```
+Is the data hierarchical (parent-child)?
+  └─ Yes → Tree
+  └─ No → Is this a status-based workflow?
+            └─ Yes → Kanban
+            └─ No → Do users need to select/act on multiple items?
+                      └─ Yes → SelectableList
+                      └─ No → CardGrid
+```
+
+### Pattern Details
+
+#### SelectableList
+Use for tabular data where users need to select items and perform bulk actions.
+
+**Features:**
+- Checkboxes appear on row hover, stay visible when selected
+- Shift+Click for range selection
+- Ctrl/Cmd+Click for toggle selection
+- Arrow keys for navigation, Shift+Arrow to extend selection
+- Right-click context menu for bulk actions
+- Space to toggle selection on focused row
+
+**When to use:** Issues list, any list with bulk operations
+
+#### Tree
+Use for hierarchical data with parent-child relationships.
+
+**Features:**
+- Expand/collapse with chevron
+- Visual indentation shows hierarchy
+- Click to navigate to item
+
+**When to use:** Documents (nested pages), any hierarchical structure
+
+#### Kanban
+Use for workflow visualization where items move through states.
+
+**Features:**
+- Columns represent states/categories
+- Drag-and-drop between columns
+- Cards show item summary
+
+**When to use:** Issue status workflow, any state machine visualization
+
+#### CardGrid
+Use for browsable collections where users navigate to items.
+
+**Features:**
+- Responsive grid (fewer columns on mobile)
+- Visual cards with key information
+- Click to navigate
+
+**When to use:** Programs list, team directory, any visual collection
+
+### Why This Matters
+
+**User expectation:** When UI looks similar, users expect it to behave similarly. If the Issues page has hover checkboxes, users expect the Program→Issues tab to work the same way.
+
+**Maintenance:** One well-tested component is better than multiple similar implementations with subtle differences.
+
+**Philosophy alignment:** This follows Ship's principle of consistency over specialization.
+
 ## Editor Conventions
 
 All document types share a single `Editor` component. This ensures consistent UX across docs, issues, projects, and sprints.

@@ -17,7 +17,7 @@ export interface Issue {
   program_name: string | null;
   program_prefix: string | null;
   sprint_name: string | null;
-  source: 'internal' | 'feedback';
+  source: 'internal' | 'external';
   rejection_reason: string | null;
   created_at?: string;
   updated_at?: string;

@@ -67,6 +67,10 @@ terraform/bootstrap/.terraform.lock.hcl
 terraform/bootstrap/terraform.tfstate
 terraform/bootstrap/terraform.tfstate.backup
 terraform/.tfbackend
+terraform/test-runner/.terraform/
+terraform/test-runner/.terraform.lock.hcl
+terraform/test-runner/terraform.tfstate
+terraform/test-runner/terraform.tfstate.backup
 
 # Elastic Beanstalk
 api/.elasticbeanstalk/
@@ -78,3 +82,4 @@ api/uploads/
 
 # Research notes
 research/
+.claude/deploy-logs/

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
-import { ProgramsListSkeleton } from '@/components/ui/Skeleton';
+import { CardGrid } from '@/components/CardGrid';
 import { getContrastTextColor } from '@/lib/cn';
 
 export function ProgramsPage() {
@@ -25,10 +25,6 @@ export function ProgramsPage() {
     }
   };
 
-  if (loading) {
-    return <ProgramsListSkeleton />;
-  }
-
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -45,8 +41,13 @@ export function ProgramsPage() {
 
       {/* Programs Grid */}
       <div className="flex-1 overflow-auto p-6">
-        {programs.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
+        <CardGrid
+          items={programs}
+          loading={loading}
+          columns={{ sm: 1, md: 2, lg: 3, xl: 3 }}
+          renderCard={(program) => <ProgramCard program={program} />}
+          onItemClick={(program) => navigate(`/programs/${program.id}`)}
+          emptyState={
             <div className="text-center">
               <p className="text-muted">No programs yet</p>
               <button
@@ -57,18 +58,8 @@ export function ProgramsPage() {
                 Create your first program
               </button>
             </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {programs.map((program) => (
-              <ProgramCard
-                key={program.id}
-                program={program}
-                onClick={() => navigate(`/programs/${program.id}`)}
-              />
-            ))}
-          </div>
-        )}
+          }
+        />
       </div>
     </div>
   );
@@ -83,15 +74,12 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-function ProgramCard({ program, onClick }: { program: Program; onClick: () => void }) {
+function ProgramCard({ program }: { program: Program }) {
   // Show emoji if set, otherwise show first letter of name
   const badge = program.emoji || program.name?.[0]?.toUpperCase() || '?';
 
   return (
-    <button
-      onClick={onClick}
-      className="flex flex-col rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-border/30"
-    >
+    <div className="flex flex-col rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-border/30">
       <div className="flex items-center gap-3">
         <div
           className="flex h-10 w-10 items-center justify-center rounded-lg text-lg"
@@ -112,6 +100,6 @@ function ProgramCard({ program, onClick }: { program: Program; onClick: () => vo
           <span className="text-xs text-muted truncate">{program.owner.name}</span>
         </div>
       )}
-    </button>
+    </div>
   );
 }

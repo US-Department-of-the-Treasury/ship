@@ -97,7 +97,7 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
 
     const dbSprintsResult = await pool.query(
       `SELECT d.id, d.title as name, d.properties->>'start_date' as start_date, d.properties->>'end_date' as end_date, d.program_id,
-              p.title as program_name, p.properties->>'prefix' as program_prefix, p.properties->>'color' as program_color
+              p.title as program_name, p.properties->>'emoji' as program_emoji, p.properties->>'color' as program_color
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        WHERE d.workspace_id = $1 AND d.document_type = 'sprint'
@@ -110,7 +110,7 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
     const issuesResult = await pool.query(
       `SELECT i.id, i.title, i.sprint_id, i.properties->>'assignee_id' as assignee_id, i.properties->>'state' as state, i.ticket_number,
               s.properties->>'start_date' as sprint_start, s.properties->>'end_date' as sprint_end,
-              p.id as program_id, p.title as program_name, p.properties->>'prefix' as program_prefix, p.properties->>'color' as program_color
+              p.id as program_id, p.title as program_name, p.properties->>'emoji' as program_emoji, p.properties->>'color' as program_color
        FROM documents i
        JOIN documents s ON i.sprint_id = s.id
        JOIN documents p ON i.program_id = p.id
@@ -121,7 +121,7 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
 
     // Build associations: user_id -> sprint_number -> { programs: [...], issues: [...] }
     const associations: Record<string, Record<number, {
-      programs: Array<{ id: string; name: string; prefix: string; color: string; issueCount: number }>;
+      programs: Array<{ id: string; name: string; emoji?: string | null; color: string; issueCount: number }>;
       issues: Array<{ id: string; title: string; displayId: string; state: string }>;
     }>> = {};
 
@@ -162,7 +162,7 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
         cell.programs.push({
           id: issue.program_id,
           name: issue.program_name,
-          prefix: issue.program_prefix,
+          emoji: issue.program_emoji,
           color: issue.program_color,
           issueCount: 1,
         });
@@ -191,7 +191,7 @@ router.get('/programs', authMiddleware, async (req: Request, res: Response) => {
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     const result = await pool.query(
-      `SELECT id, title as name, properties->>'prefix' as prefix, properties->>'color' as color
+      `SELECT id, title as name, properties->>'emoji' as emoji, properties->>'color' as color
        FROM documents
        WHERE workspace_id = $1 AND document_type = 'program'
          AND ${VISIBILITY_FILTER_SQL('documents', '$2', '$3')}
@@ -221,7 +221,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
       `SELECT s.id as sprint_id, s.properties->>'sprint_number' as sprint_number,
               s.properties->>'owner_id' as owner_id,
               p.id as program_id, p.title as program_name,
-              p.properties->>'prefix' as prefix, p.properties->>'color' as color
+              p.properties->>'emoji' as emoji, p.properties->>'color' as color
        FROM documents s
        JOIN documents p ON s.program_id = p.id
        WHERE s.workspace_id = $1 AND s.document_type = 'sprint'
@@ -234,7 +234,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
     const assignments: Record<string, Record<number, {
       programId: string;
       programName: string;
-      prefix: string;
+      emoji?: string | null;
       color: string;
       sprintDocId: string;
     }>> = {};
@@ -253,7 +253,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
       assignments[userId][sprintNumber] = {
         programId: sprint.program_id,
         programName: sprint.program_name,
-        prefix: sprint.prefix,
+        emoji: sprint.emoji,
         color: sprint.color,
         sprintDocId: sprint.sprint_id,
       };

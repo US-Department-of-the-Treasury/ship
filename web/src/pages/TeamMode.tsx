@@ -35,7 +35,7 @@ interface Sprint {
 interface Assignment {
   programId: string;
   programName: string;
-  prefix: string;
+  emoji?: string | null;
   color: string;
   sprintDocId: string;
 }
@@ -191,7 +191,7 @@ export function TeamModePage() {
             [sprintNumber]: {
               programId,
               programName: program.name,
-              prefix: program.prefix,
+              emoji: program.emoji,
               color: program.color,
               sprintDocId: json.sprintId,
             },
@@ -542,7 +542,7 @@ export function TeamModePage() {
                 className="rounded px-1.5 py-0.5 text-xs font-bold text-white"
                 style={{ backgroundColor: confirmDialog?.newProgram?.color || '#666' }}
               >
-                {confirmDialog?.newProgram?.prefix}
+                {confirmDialog?.newProgram?.emoji || confirmDialog?.newProgram?.name?.[0]}
               </span>
               <span className="text-sm text-foreground">{confirmDialog?.newProgram?.name}</span>
             </div>

@@ -54,6 +54,54 @@ if [ "$SRC_COUNT" != "$DIST_COUNT" ]; then
 fi
 echo "✓ SQL files verified ($DIST_COUNT migrations)"
 
+# CRITICAL: Test Docker build BEFORE deploying
+# This catches dependency issues that only manifest in production (--prod install)
+echo "Testing Docker build locally..."
+if ! docker build -t ship-api:pre-deploy-test . --quiet 2>/dev/null; then
+  echo ""
+  echo "============================================"
+  echo "ERROR: Docker build FAILED"
+  echo "============================================"
+  echo "This would have crashed production!"
+  echo ""
+  echo "Common causes:"
+  echo "  - Dependency in devDependencies that should be in dependencies"
+  echo "  - Missing package in package.json"
+  echo "  - Dockerfile syntax error"
+  echo ""
+  echo "Debug: docker build -t ship-api:debug ."
+  echo "============================================"
+  exit 1
+fi
+
+# Verify container can start and imports work
+# Provide minimal env vars for import test (actual values come from EB environment)
+echo "Verifying container starts..."
+IMPORT_TEST=$(docker run --rm \
+  -e SESSION_SECRET=test-secret-for-import-check \
+  -e DATABASE_URL=postgres://test:test@localhost/test \
+  ship-api:pre-deploy-test node -e "
+  import('./dist/app.js')
+    .then(() => console.log('OK'))
+    .catch(e => { console.error('FAIL:', e.message); process.exit(1); })
+" 2>&1)
+
+if [ "$IMPORT_TEST" != "OK" ]; then
+  echo ""
+  echo "============================================"
+  echo "ERROR: Container failed to start"
+  echo "============================================"
+  echo "$IMPORT_TEST"
+  echo ""
+  echo "The container built but crashed on import."
+  echo "This usually means a runtime dependency is missing."
+  echo ""
+  echo "Debug: docker run -it ship-api:pre-deploy-test sh"
+  echo "============================================"
+  exit 1
+fi
+echo "✓ Docker build and import test passed"
+
 # Create deployment bundle
 # Dockerfile is at repo root, EB finds it automatically
 BUNDLE="/tmp/api-${VERSION}.zip"

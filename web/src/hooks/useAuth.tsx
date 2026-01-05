@@ -105,7 +105,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         // Network error - try to use cached auth if offline
-        if (!getIsOnline()) {
+        // Check both navigator.onLine and getIsOnline() to handle race conditions
+        // (Playwright's setOffline may block network before dispatching offline event)
+        if (!navigator.onLine || !getIsOnline()) {
           const cached = getCachedAuthData();
           if (cached) {
             console.log('[Auth] Using cached auth data (offline)');
