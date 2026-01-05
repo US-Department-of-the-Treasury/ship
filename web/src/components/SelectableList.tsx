@@ -199,6 +199,7 @@ function SelectableRow({
       role="row"
       aria-selected={isSelected}
       tabIndex={isFocused ? 0 : -1}
+      onClick={onRowClick}
       onFocus={onFocus}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
