@@ -153,29 +153,13 @@ export function IssueEditorPage() {
     return () => { cancelled = true; };
   }, [issue?.program_id]);
 
-  // Track whether we've attempted a refresh for this ID
-  const [refreshAttempted, setRefreshAttempted] = useState(false);
-
-  // Reset refresh attempt when ID changes
-  useEffect(() => {
-    setRefreshAttempted(false);
-  }, [id]);
-
   // Redirect if issue not found after loading
   // Skip redirect for temp IDs (pending offline creation) - give cache time to sync
-  // First attempt a refresh in case the issue was just created from another page
   useEffect(() => {
     if (!issuesLoading && id && !issue && !id.startsWith('temp-')) {
-      if (!refreshAttempted) {
-        // Try refreshing the issues list - issue might have been created elsewhere
-        setRefreshAttempted(true);
-        refreshIssues();
-      } else {
-        // Already refreshed and still not found - redirect
-        navigate('/issues');
-      }
+      navigate('/issues');
     }
-  }, [issuesLoading, id, issue, navigate, refreshAttempted, refreshIssues]);
+  }, [issuesLoading, id, issue, navigate]);
 
   // Update handler using shared context
   const handleUpdateIssue = useCallback(async (updates: Partial<Issue>) => {

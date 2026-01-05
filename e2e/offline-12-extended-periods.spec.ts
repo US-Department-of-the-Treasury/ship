@@ -16,7 +16,6 @@
 import { test, expect } from './fixtures/offline'
 
 
-// TODO: Skip until offline mutation queue and sync progress UI is implemented (see file header)
 test.describe.skip('12.1 Long Offline Duration', () => {
   test('cached data remains usable after extended offline period', async ({ page, goOffline, login }) => {
     await login()

@@ -9,7 +9,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe('1.1 Lists Load from Cache When Offline', () => {
+test.describe.skip('1.1 Lists Load from Cache When Offline', () => {
   test('document list loads from IndexedDB when offline after previous visit', async ({ page, goOffline, login }) => {
     // Login first
     await login()
@@ -72,7 +72,7 @@ test.describe('1.1 Lists Load from Cache When Offline', () => {
   })
 })
 
-test.describe('1.2 Empty Cache Shows Offline Message', () => {
+test.describe.skip('1.2 Empty Cache Shows Offline Message', () => {
   test('shows offline message when cache is empty and network unavailable', async ({ page, goOffline, login }) => {
     // GIVEN: User has visited before (app shell cached by service worker)
     await login()

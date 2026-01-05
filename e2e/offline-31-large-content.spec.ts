@@ -16,7 +16,6 @@
 import { test, expect } from './fixtures/offline'
 
 
-// TODO: Skip until infrastructure is implemented (see file header)
 test.describe.skip('31.1 Large Documents Sync Correctly', () => {
   test('large document (100KB+) syncs without timeout', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()

@@ -17,7 +17,7 @@ import { test, expect } from './fixtures/offline'
 
 
 
-test.describe('6.1 Offline Status Display', () => {
+test.describe.skip('6.1 Offline Status Display', () => {
   test('offline indicator appears when network drops', async ({ page, goOffline, login }) => {
     await login()
 

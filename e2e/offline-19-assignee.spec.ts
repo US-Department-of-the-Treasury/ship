@@ -15,7 +15,6 @@
 import { test, expect } from './fixtures/offline'
 
 
-// TODO: Skip until infrastructure is implemented (see file header)
 test.describe.skip('19.4 Assignee Operations Offline', () => {
   test('assign issue to person offline', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()

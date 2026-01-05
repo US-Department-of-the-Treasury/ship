@@ -14,7 +14,6 @@
 import { test, expect } from './fixtures/offline'
 
 
-// TODO: Skip until infrastructure is implemented (see file header)
 test.describe.skip('19.1 Program Operations Offline', () => {
   test('create program offline', async ({ page, goOffline, goOnline, login }) => {
     await login()

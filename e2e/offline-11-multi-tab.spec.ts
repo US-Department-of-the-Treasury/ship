@@ -19,7 +19,6 @@ import { test, expect } from './fixtures/offline'
 
 
 
-// Skipping until mutation queue is implemented (see file header)
 test.describe.skip('11.1 Multiple Tabs Offline', () => {
   test('changes in one offline tab appear in another offline tab', async ({ context, login }) => {
     // Login in first page

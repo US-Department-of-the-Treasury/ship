@@ -17,7 +17,6 @@ import { test, expect } from './fixtures/offline'
 
 
 
-// TODO: Skip until user-facing sync control UI is implemented (see file header)
 test.describe.skip('17.1 Manual Sync Controls', () => {
   test('user can manually trigger sync', async ({ page, goOffline, goOnline, login }) => {
     await login()

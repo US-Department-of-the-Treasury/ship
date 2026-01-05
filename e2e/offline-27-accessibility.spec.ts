@@ -16,7 +16,6 @@
 import { test, expect } from './fixtures/offline'
 
 
-// TODO: Skip until infrastructure is implemented (see file header)
 test.describe.skip('27.1 Screen Reader Announcements', () => {
   test('offline status announced to screen readers', async ({ page, goOffline, login }) => {
     await login()

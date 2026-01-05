@@ -16,7 +16,6 @@
 import { test, expect } from './fixtures/offline'
 
 
-// Skipping until infrastructure is implemented (see file header)
 test.describe.skip('7.1 Session Expiry While Offline', () => {
   test('session expiry during offline does not lose local changes', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()

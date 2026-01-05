@@ -15,7 +15,6 @@
 import { test, expect } from './fixtures/offline'
 
 
-// TODO: Skip until infrastructure is implemented (see file header)
 test.describe.skip('26.1 Old Cache Format After App Update', () => {
   test('old cache format handled after app update', async ({ page }) => {
     // GIVEN: User has old cache format (simulating pre-update state)

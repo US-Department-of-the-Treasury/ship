@@ -16,7 +16,6 @@
 import { test, expect } from './fixtures/offline'
 
 
-// TODO: Skip until infrastructure is implemented (see file header)
 test.describe.skip('28.1 Request Timeout During Sync', () => {
   test('handles request timeout during mutation sync', async ({ page, login }) => {
     await login()

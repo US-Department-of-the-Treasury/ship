@@ -11,9 +11,8 @@ test.describe('Content Caching - High Performance Navigation', () => {
     await page.waitForURL(/\/(issues|docs)/);
   });
 
-  // Infrastructure exists (Yjs IndexedDB persistence) but editor waits for WebSocket
-  // before rendering content. This test requires pre-rendering cached content.
-  // TODO: Update Editor component to render cached Yjs state before WebSocket connects
+  // Skip: This test requires offline cache infrastructure (Phase 3) that persists
+  // document content to IndexedDB for instant loading without WebSocket round-trip.
   test.skip('document content loads instantly from cache on revisit', async ({ page }) => {
     // Navigate to documents
     await page.goto('/docs');
@@ -52,9 +51,8 @@ test.describe('Content Caching - High Performance Navigation', () => {
     console.log(`Content load time: ${loadTime}ms`);
   });
 
-  // Infrastructure exists (Yjs IndexedDB persistence) but editor waits for WebSocket
-  // before rendering content. Rapid toggling shows blank flash during WebSocket reconnect.
-  // TODO: Update Editor component to render cached Yjs state before WebSocket connects
+  // Skip: This test requires offline cache infrastructure (Phase 3) that persists
+  // document content so rapid navigation shows cached content without WebSocket sync.
   test.skip('toggling between two documents shows no blank flash', async ({ page }) => {
     await page.goto('/docs');
 
@@ -141,9 +139,9 @@ test.describe('Content Caching - High Performance Navigation', () => {
     expect(hasCache).toBe(true);
   });
 
-  // Infrastructure exists (Yjs IndexedDB persistence) but editor waits for WebSocket
-  // before rendering content. With slow WebSocket, content doesn't appear until connected.
-  // TODO: Update Editor component to render cached Yjs state before WebSocket connects
+  // Skip: This test requires offline cache infrastructure (Phase 3) that persists
+  // document content to IndexedDB and loads it before WebSocket connects.
+  // Currently, content only loads via WebSocket, so this test can't pass.
   test.skip('cached content is available even when WebSocket is slow', async ({ page }) => {
     await page.goto('/docs');
 

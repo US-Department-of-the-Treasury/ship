@@ -17,7 +17,6 @@
 import { test, expect } from './fixtures/offline'
 
 
-// TODO: Skip until offline mutation queue with operation collapsing is implemented (see file header)
 test.describe.skip('15.1 Create-Edit-Delete Chains', () => {
   test('create then edit then delete same document offline', async ({ page, goOffline, goOnline, login }) => {
     await login()
