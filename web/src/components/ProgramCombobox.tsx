@@ -6,8 +6,8 @@ import { cn } from '@/lib/cn';
 export interface Program {
   id: string;
   name: string;
-  prefix: string;
   color: string;
+  emoji?: string | null;
 }
 
 interface ProgramComboboxProps {
@@ -77,7 +77,7 @@ export function ProgramCombobox({
                 className="shrink-0 rounded px-1.5 py-0.5 text-xs font-bold text-white"
                 style={{ backgroundColor: selectedProgram.color }}
               >
-                {selectedProgram.prefix}
+                {selectedProgram.emoji || selectedProgram.name[0]}
               </span>
               <span className="truncate text-foreground">{selectedProgram.name}</span>
             </button>
@@ -123,9 +123,8 @@ export function ProgramCombobox({
               const program = programs.find((p) => p.id === value);
               if (!program) return 0;
               const name = program.name.toLowerCase();
-              const prefix = program.prefix.toLowerCase();
               const s = search.toLowerCase();
-              if (name.includes(s) || prefix.includes(s)) return 1;
+              if (name.includes(s)) return 1;
               return 0;
             }}
           >
@@ -178,7 +177,7 @@ export function ProgramCombobox({
                     className="rounded px-1.5 py-0.5 text-xs font-bold text-white"
                     style={{ backgroundColor: program.color }}
                   >
-                    {program.prefix}
+                    {program.emoji || program.name[0]}
                   </span>
                   <span className="truncate">{program.name}</span>
                   {value === program.id && (

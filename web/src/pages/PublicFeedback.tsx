@@ -6,7 +6,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? '';
 interface Program {
   id: string;
   name: string;
-  prefix: string;
+  emoji?: string | null;
   color: string;
 }
 

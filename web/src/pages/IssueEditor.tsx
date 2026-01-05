@@ -17,7 +17,7 @@ interface TeamMember {
 interface Program {
   id: string;
   name: string;
-  prefix: string;
+  emoji?: string | null;
   color: string;
 }
 
@@ -333,7 +333,7 @@ export function IssueEditorPage() {
 
             <PropertyRow label="Program">
               <Combobox
-                options={programs.map((p) => ({ value: p.id, label: p.name, description: p.prefix }))}
+                options={programs.map((p) => ({ value: p.id, label: p.name, description: p.emoji || '' }))}
                 value={issue.program_id}
                 onChange={handleProgramChange}
                 placeholder="No Program"
