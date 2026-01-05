@@ -34,6 +34,54 @@ pnpm type-check       # Check all packages
 pnpm db:seed          # Seed database with test data
 ```
 
+## E2E Testing
+
+**ALWAYS use `/e2e-test-runner` when running E2E tests.** Never run `pnpm test:e2e` directly.
+
+### Why This Matters
+
+Running `pnpm test:e2e` directly causes two problems:
+1. **Output explosion** - 600+ tests produce thousands of lines, crashing Claude Code
+2. **No progress visibility** - You can't report status to the user during long runs
+
+### The Correct Approach
+
+The `/e2e-test-runner` skill:
+1. Runs tests in background with output redirected
+2. Polls `test-results/summary.json` for progress (report every 30s: "**Progress: 145/639 passed, 3 failed**")
+3. Uses `--last-failed` for iterative fixing (avoids re-running passing tests)
+4. Reads error details from `test-results/errors/*.log` only when investigating failures
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `test-results/summary.json` | Poll this for pass/fail counts (6 lines, safe to read) |
+| `test-results/errors/*.log` | Detailed error logs per failure |
+| `e2e/progress-reporter.ts` | Custom reporter that writes progress |
+| `scripts/watch-tests.sh` | Terminal watcher for humans |
+
+### Quick Reference
+
+```bash
+# WRONG - Don't do this
+pnpm test:e2e                           # Output explosion, no progress
+
+# RIGHT - Use the skill
+/e2e-test-runner                        # Handles everything correctly
+
+# Or manually with background + polling
+pnpm test:e2e > /tmp/tests.log 2>&1 &   # Background
+cat test-results/summary.json           # Poll progress
+pnpm test:e2e --last-failed             # Verify fixes
+```
+
+### Anti-Patterns
+
+- **Never** run full test suite after each fix - use `--last-failed`
+- **Never** read raw test output - poll `summary.json` instead
+- **Never** skip progress updates - user needs visibility during 5+ min runs
+
 ## Architecture
 
 **Monorepo Structure** (pnpm workspaces):

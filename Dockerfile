@@ -4,16 +4,16 @@ FROM public.ecr.aws/docker/library/node:20-slim
 # Set working directory
 WORKDIR /app
 
+# Disable SSL strict mode for government VPN environments (MUST be before any npm commands)
+RUN npm config set strict-ssl false
+
 # Install pnpm
-RUN npm install -g pnpm@9.15.4
+RUN npm install -g pnpm@9.15.4 && pnpm config set strict-ssl false
 
 # Copy package files for dependency installation
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY api/package.json ./api/
 COPY shared/package.json ./shared/
-
-# Disable SSL strict mode for government VPN environments
-RUN npm config set strict-ssl false
 
 # Install production dependencies only (ignore prepare scripts that require dev deps)
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
