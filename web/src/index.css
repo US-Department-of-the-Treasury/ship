@@ -678,7 +678,7 @@ span[data-emoji] {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-top: 0.25em;
+  height: 1.5em; /* Match line-height of text */
 }
 
 .ProseMirror ul.task-list li.task-item > label input[type="checkbox"] {
