@@ -104,7 +104,10 @@ docker-compose up -d
 # 5. Create sample data
 pnpm db:seed
 
-# 6. Start the application
+# 6. Run database migrations
+pnpm db:migrate
+
+# 7. Start the application
 pnpm dev
 ```
 
@@ -133,6 +136,7 @@ pnpm dev          # Start everything
 pnpm dev:web      # Start just the web app
 pnpm dev:api      # Start just the API
 pnpm db:seed      # Reset database with sample data
+pnpm db:migrate   # Run database migrations
 pnpm test         # Run tests
 ```
 
