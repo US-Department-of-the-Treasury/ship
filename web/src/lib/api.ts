@@ -162,15 +162,25 @@ async function request<T>(
 
   // CloudFront may intercept errors and return HTML - detect and redirect
   if (!isJsonResponse(response)) {
+    // On public routes like /invite, return error response instead of redirecting
+    if (window.location.pathname.startsWith('/invite')) {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: 'Server returned non-JSON response' },
+      } as ApiResponse<T>;
+    }
     handleSessionExpired(); // never returns
   }
 
   const data: ApiResponse<T> = await response.json();
 
   // Handle session expiration - redirect to login
+  // Skip for public routes like /invite where 401 is expected for unauthenticated users
   if (response.status === 401) {
     if (data.error?.code === 'SESSION_EXPIRED' || data.error?.code === 'UNAUTHORIZED') {
-      handleSessionExpired(); // never returns
+      if (!window.location.pathname.startsWith('/invite')) {
+        handleSessionExpired(); // never returns
+      }
     }
     return data;
   }
