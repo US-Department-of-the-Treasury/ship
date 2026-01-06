@@ -47,16 +47,22 @@ export async function loadProductionSecrets(): Promise<void> {
 
   console.log(`Loading secrets from SSM path: ${basePath}`);
 
-  const [databaseUrl, sessionSecret, corsOrigin] = await Promise.all([
+  const [databaseUrl, sessionSecret, corsOrigin, cdnDomain, appBaseUrl] = await Promise.all([
     getSSMSecret(`${basePath}/DATABASE_URL`),
     getSSMSecret(`${basePath}/SESSION_SECRET`),
     getSSMSecret(`${basePath}/CORS_ORIGIN`),
+    getSSMSecret(`${basePath}/CDN_DOMAIN`),
+    getSSMSecret(`${basePath}/APP_BASE_URL`),
   ]);
 
   process.env.DATABASE_URL = databaseUrl;
   process.env.SESSION_SECRET = sessionSecret;
   process.env.CORS_ORIGIN = corsOrigin;
+  process.env.CDN_DOMAIN = cdnDomain;
+  process.env.APP_BASE_URL = appBaseUrl;
 
   console.log('Secrets loaded from SSM Parameter Store');
   console.log(`CORS_ORIGIN: ${corsOrigin}`);
+  console.log(`CDN_DOMAIN: ${cdnDomain}`);
+  console.log(`APP_BASE_URL: ${appBaseUrl}`);
 }
