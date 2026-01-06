@@ -19,7 +19,6 @@ COPY shared/package.json ./shared/
 COPY vendor/ ./vendor/
 
 # Install production dependencies only (ignore prepare scripts that require dev deps)
-# Cache bust: v20260106-0655 - Display PIV error messages on login page
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts && pnpm store prune
 
 # Copy pre-built dist directories (built locally before deployment)
