@@ -70,6 +70,11 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
   // Handle OAuth errors from the authorization server
   if (error) {
     console.error('PIV OAuth error:', error, error_description);
+    await logAuditEvent({
+      action: 'auth.piv_login_failed',
+      details: { reason: 'oauth_error', error: String(error), errorDescription: String(error_description || '') },
+      req,
+    });
     res.redirect(`/login?error=${encodeURIComponent(String(error_description || error))}`);
     return;
   }
@@ -77,6 +82,11 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
   // Validate state parameter (CSRF protection)
   if (state !== req.session.pivState) {
     console.error('PIV state mismatch:', { received: state, expected: req.session.pivState });
+    await logAuditEvent({
+      action: 'auth.piv_login_failed',
+      details: { reason: 'state_mismatch' },
+      req,
+    });
     res.redirect('/login?error=Invalid+state');
     return;
   }
@@ -87,6 +97,11 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
   if (!pivState || !pivNonce || !codeVerifier) {
     console.error('PIV OAuth state missing from session');
+    await logAuditEvent({
+      action: 'auth.piv_login_failed',
+      details: { reason: 'missing_oauth_state' },
+      req,
+    });
     res.redirect('/login?error=Missing+OAuth+state');
     return;
   }
@@ -105,6 +120,11 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
     if (!email) {
       console.error('PIV callback: No email in userInfo', userInfo);
+      await logAuditEvent({
+        action: 'auth.piv_login_failed',
+        details: { reason: 'no_email_in_certificate', x509Subject },
+        req,
+      });
       res.redirect('/login?error=No+email+in+certificate');
       return;
     }
@@ -147,6 +167,12 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
     // Super-admins can log in without workspace membership
     if (!workspaceId && !user.is_super_admin && workspaces.length === 0) {
       console.log(`PIV user ${email} has no workspace access`);
+      await logAuditEvent({
+        actorUserId: user.id,
+        action: 'auth.piv_login_failed',
+        details: { reason: 'no_workspace_access', email, x509Subject },
+        req,
+      });
       res.redirect('/login?error=' + encodeURIComponent('You are not authorized to access this application. Please contact an administrator to request access.'));
       return;
     }
@@ -209,6 +235,7 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
     // Extract specific error message for user feedback
     let errorMessage = 'Authentication failed';
     const fpkiError = error as { code?: string; details?: { originalError?: { error_description?: string } } };
+    let errorCode = fpkiError.code || 'unknown';
 
     if (fpkiError.code === 'TOKEN_EXCHANGE_FAILED') {
       const desc = fpkiError.details?.originalError?.error_description;
@@ -218,6 +245,12 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
         errorMessage = desc;
       }
     }
+
+    await logAuditEvent({
+      action: 'auth.piv_login_failed',
+      details: { reason: 'callback_error', errorCode, errorMessage },
+      req,
+    });
 
     res.redirect(`/login?error=${encodeURIComponent(errorMessage)}`);
   }
