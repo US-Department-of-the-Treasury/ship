@@ -22,8 +22,18 @@ function isJsonResponse(response: Response): boolean {
   return contentType?.includes('application/json') ?? false;
 }
 
-// Handle session expiration - redirect to login with returnTo URL
-// Returns `never` because it always redirects or throws
+/**
+ * Handle session expiration - redirect to login with expired=true flag
+ *
+ * IMPORTANT: Only call this for actual session expiration (SESSION_EXPIRED error code),
+ * NOT for missing sessions (UNAUTHORIZED). Fresh visitors with no session should get
+ * a clean redirect via ProtectedRoute without the "session expired" message.
+ *
+ * The expired=true flag triggers the yellow "session expired" modal on the login page.
+ * Fresh visitors shouldn't see this - it would be confusing UX.
+ *
+ * Returns `never` because it always redirects or throws.
+ */
 function handleSessionExpired(): never {
   // Don't redirect to login when offline - let TanStack Query handle retries
   // Check both navigator.onLine and our tracked state to handle race conditions
@@ -174,14 +184,16 @@ async function request<T>(
 
   const data: ApiResponse<T> = await response.json();
 
-  // Handle session expiration - redirect to login
+  // Handle session expiration - redirect to login with expired=true
+  // Only for SESSION_EXPIRED (actual expiration), not UNAUTHORIZED (no session existed)
   // Skip for public routes like /invite where 401 is expected for unauthenticated users
   if (response.status === 401) {
-    if (data.error?.code === 'SESSION_EXPIRED' || data.error?.code === 'UNAUTHORIZED') {
+    if (data.error?.code === 'SESSION_EXPIRED') {
       if (!window.location.pathname.startsWith('/invite')) {
-        handleSessionExpired(); // never returns
+        handleSessionExpired(); // never returns - shows "session expired" message
       }
     }
+    // UNAUTHORIZED (no session) just returns error - ProtectedRoute will redirect without expired message
     return data;
   }
 

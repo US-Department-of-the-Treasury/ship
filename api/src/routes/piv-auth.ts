@@ -345,7 +345,22 @@ function extractNameFromX509Subject(subject: string): string | null {
 
 /**
  * Find user by email OR X.509 subject DN (case-insensitive email match)
- * When duplicates exist (same email, different case), prefer the user with workspace memberships
+ *
+ * DUPLICATE USER HANDLING:
+ * PIV certificates may return email with different casing than what was originally
+ * stored (e.g., "Sean.McBride@treasury.gov" vs "sean.mcbride@treasury.gov").
+ * If duplicates exist, we prefer the user with workspace memberships to ensure
+ * the user can actually access the application.
+ *
+ * ORDER BY priority:
+ *   1. has_membership DESC - users with workspace access first
+ *   2. is_super_admin DESC - super admins next
+ *   3. created_at ASC - oldest user as tiebreaker
+ *
+ * FUTURE CONSIDERATION:
+ * Treasury users may have multiple email addresses (role-based, contractor, etc.).
+ * A user_emails table could support this use case, allowing PIV login to match
+ * any of a user's registered emails. See migration 013 for schema sketch.
  */
 async function findUserByEmailOrSubjectDn(email: string | undefined, subjectDn: string | undefined): Promise<{
   id: string;
