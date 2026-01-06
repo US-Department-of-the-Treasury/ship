@@ -62,6 +62,7 @@ router.get('/', redirectOnAuthFailure, authMiddleware, superAdminMiddleware, (re
     saveEndpoint: '/api/federation/save-credentials',
     generateKeyEndpoint: '/api/federation/generate-keypair',
     discoverEndpoint: '/api/federation/discover',
+    csrfTokenEndpoint: '/api/csrf-token',
     error,
     errorDescription,
   });

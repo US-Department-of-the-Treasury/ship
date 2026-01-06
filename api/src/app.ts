@@ -166,8 +166,10 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   // PIV auth routes - no CSRF protection (OAuth flow with external callback)
   app.use('/api/auth/piv', pivAuthRoutes);
 
-  // Federation routes - no CSRF protection (DCR flow with external mTLS)
-  app.use('/api/federation', federationRoutes);
+  // Federation routes - CSRF protected (admin credential management)
+  // Note: mTLS happens between browser and FPKI Validator, not browser and this API.
+  // These endpoints are standard POSTs from our frontend and need CSRF protection.
+  app.use('/api/federation', csrfSynchronisedProtection, federationRoutes);
 
   // JWKS endpoint for private_key_jwt - public, no auth needed
   app.get('/.well-known/jwks.json', jwksHandler);
