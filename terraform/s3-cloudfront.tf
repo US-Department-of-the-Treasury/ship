@@ -150,6 +150,29 @@ resource "aws_cloudfront_distribution" "frontend" {
     }
   }
 
+  # Well-known endpoints for OAuth/OIDC (JWKS, etc.) - only when EB is configured
+  dynamic "ordered_cache_behavior" {
+    for_each = var.eb_environment_cname != "" ? [1] : []
+    content {
+      path_pattern           = "/.well-known/*"
+      target_origin_id       = "EB-API"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["GET", "HEAD"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = true
+      min_ttl                = 0
+      default_ttl            = 3600  # Cache JWKS for 1 hour
+      max_ttl                = 86400
+
+      forwarded_values {
+        query_string = false
+        cookies {
+          forward = "none"
+        }
+      }
+    }
+  }
+
   default_cache_behavior {
     allowed_methods        = ["GET", "HEAD", "OPTIONS"]
     cached_methods         = ["GET", "HEAD"]

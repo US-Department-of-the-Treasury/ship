@@ -19,6 +19,9 @@ import setupRoutes from './routes/setup.js';
 import backlinksRoutes from './routes/backlinks.js';
 import { searchRouter } from './routes/search.js';
 import { filesRouter } from './routes/files.js';
+import pivAuthRoutes from './routes/piv-auth.js';
+import federationRoutes, { jwksHandler } from './routes/federation.js';
+import { initializeFPKI } from './services/fpki.js';
 
 // Validate SESSION_SECRET in production
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -160,8 +163,22 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   // Search routes are read-only GET endpoints - no CSRF needed
   app.use('/api/search', searchRouter);
 
+  // PIV auth routes - no CSRF protection (OAuth flow with external callback)
+  app.use('/api/auth/piv', pivAuthRoutes);
+
+  // Federation routes - no CSRF protection (DCR flow with external mTLS)
+  app.use('/api/federation', federationRoutes);
+
+  // JWKS endpoint for private_key_jwt - public, no auth needed
+  app.get('/.well-known/jwks.json', jwksHandler);
+
   // File upload routes (CSRF protected for POST endpoints)
   app.use('/api/files', csrfSynchronisedProtection, filesRouter);
+
+  // Initialize FPKI credentials from Secrets Manager at startup
+  initializeFPKI().catch((err) => {
+    console.warn('FPKI initialization failed:', err);
+  });
 
   return app;
 }

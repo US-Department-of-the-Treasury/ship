@@ -15,8 +15,12 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY api/package.json ./api/
 COPY shared/package.json ./shared/
 
+# Copy vendored dependencies (SDK linked via file: protocol)
+COPY vendor/ ./vendor/
+
 # Install production dependencies only (ignore prepare scripts that require dev deps)
-RUN pnpm install --frozen-lockfile --prod --ignore-scripts
+# Cache bust: v20260106-0655 - Display PIV error messages on login page
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts && pnpm store prune
 
 # Copy pre-built dist directories (built locally before deployment)
 COPY shared/dist/ ./shared/dist/

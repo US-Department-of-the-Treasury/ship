@@ -114,6 +114,7 @@ zip -r "$BUNDLE" \
   api/package.json \
   shared/dist \
   shared/package.json \
+  vendor \
   -x "*.git*"
 
 echo "Bundle: $BUNDLE"
