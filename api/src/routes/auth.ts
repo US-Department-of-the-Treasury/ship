@@ -56,7 +56,23 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Verify password
+    // Verify password (PIV-only users have null password_hash)
+    if (!user.password_hash) {
+      await logAuditEvent({
+        action: 'auth.login_failed',
+        details: { email, reason: 'piv_only_user' },
+        req,
+      });
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.INVALID_CREDENTIALS,
+          message: 'This account uses PIV authentication only',
+        },
+      });
+      return;
+    }
+
     const validPassword = await bcrypt.compare(password, user.password_hash);
 
     if (!validPassword) {

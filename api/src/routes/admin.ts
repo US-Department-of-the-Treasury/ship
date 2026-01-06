@@ -1345,10 +1345,10 @@ router.delete('/workspaces/:workspaceId/members/:userId', async (req: Request, r
       }
     }
 
-    // Clear assignee fields for this user's assigned documents
+    // Clear assignee fields for this user's assigned documents (assignee_id is in properties JSONB)
     await pool.query(
-      `UPDATE documents SET assignee_id = NULL, updated_at = NOW()
-       WHERE workspace_id = $1 AND assignee_id = $2`,
+      `UPDATE documents SET properties = properties - 'assignee_id', updated_at = NOW()
+       WHERE workspace_id = $1 AND properties->>'assignee_id' = $2`,
       [workspaceId, userId]
     );
 

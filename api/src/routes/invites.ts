@@ -61,10 +61,29 @@ router.get('/:token', async (req: Request, res: Response): Promise<void> => {
 
     // Check if user already exists
     const existingUserResult = await pool.query(
-      'SELECT id FROM users WHERE email = $1',
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1)',
       [invite.email]
     );
-    const userExists = !!existingUserResult.rows[0];
+    const existingUser = existingUserResult.rows[0];
+    const userExists = !!existingUser;
+
+    // Check if user is already a member of this workspace
+    let alreadyMember = false;
+    if (existingUser) {
+      const membershipResult = await pool.query(
+        'SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+        [invite.workspace_id, existingUser.id]
+      );
+      alreadyMember = !!membershipResult.rows[0];
+
+      if (alreadyMember) {
+        // Mark invite as used since user is already a member
+        await pool.query(
+          'UPDATE workspace_invites SET used_at = NOW() WHERE id = $1',
+          [invite.id]
+        );
+      }
+    }
 
     res.json({
       success: true,
@@ -77,6 +96,7 @@ router.get('/:token', async (req: Request, res: Response): Promise<void> => {
         invitedBy: invite.invited_by_name,
         expiresAt: invite.expires_at,
         userExists,
+        alreadyMember,
       },
     });
   } catch (error) {
@@ -157,11 +177,17 @@ router.post('/:token/accept', async (req: Request, res: Response): Promise<void>
       );
 
       if (existingMemberResult.rows[0]) {
+        // User is already a member - mark invite as used to clean it up
+        await pool.query(
+          'UPDATE workspace_invites SET used_at = NOW() WHERE id = $1',
+          [invite.id]
+        );
+
         res.status(HTTP_STATUS.BAD_REQUEST).json({
           success: false,
           error: {
             code: ERROR_CODES.VALIDATION_ERROR,
-            message: 'You are already a member of this workspace',
+            message: 'You are already a member of this workspace. Please log in instead.',
           },
         });
         return;

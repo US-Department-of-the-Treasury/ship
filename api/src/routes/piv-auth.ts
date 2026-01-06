@@ -166,6 +166,7 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
     // Find existing user by email OR X.509 subject DN
     let user = await findUserByEmailOrSubjectDn(email, x509Subject);
+    console.log(`[PIV DEBUG] User lookup for ${email}:`, user ? { id: user.id, email: user.email, is_super_admin: user.is_super_admin, last_workspace_id: user.last_workspace_id } : 'NOT FOUND');
 
     if (!user) {
       // No existing user - check for pending invite matching certificate identity
@@ -222,6 +223,7 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
     const workspaces = workspacesResult.rows;
     let workspaceId = user.last_workspace_id;
+    console.log(`[PIV DEBUG] Workspaces for user ${user.id}:`, { count: workspaces.length, workspaces, is_super_admin: user.is_super_admin });
 
     // Validate workspace access
     if (workspaceId && !workspaces.some((w: { id: string }) => w.id === workspaceId)) {
@@ -343,6 +345,7 @@ function extractNameFromX509Subject(subject: string): string | null {
 
 /**
  * Find user by email OR X.509 subject DN (case-insensitive email match)
+ * When duplicates exist (same email, different case), prefer the user with workspace memberships
  */
 async function findUserByEmailOrSubjectDn(email: string | undefined, subjectDn: string | undefined): Promise<{
   id: string;
@@ -353,10 +356,13 @@ async function findUserByEmailOrSubjectDn(email: string | undefined, subjectDn: 
   x509_subject_dn: string | null;
 } | null> {
   const result = await pool.query(
-    `SELECT id, email, name, is_super_admin, last_workspace_id, x509_subject_dn
-     FROM users
-     WHERE ($1::TEXT IS NOT NULL AND LOWER(email) = LOWER($1))
-        OR ($2::TEXT IS NOT NULL AND x509_subject_dn = $2)`,
+    `SELECT u.id, u.email, u.name, u.is_super_admin, u.last_workspace_id, u.x509_subject_dn,
+            EXISTS(SELECT 1 FROM workspace_memberships wm WHERE wm.user_id = u.id) as has_membership
+     FROM users u
+     WHERE ($1::TEXT IS NOT NULL AND LOWER(u.email) = LOWER($1))
+        OR ($2::TEXT IS NOT NULL AND u.x509_subject_dn = $2)
+     ORDER BY has_membership DESC, u.is_super_admin DESC, u.created_at ASC
+     LIMIT 1`,
     [email || null, subjectDn || null]
   );
   return result.rows[0] || null;

@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 
-type InviteStatus = 'loading' | 'valid' | 'invalid' | 'expired' | 'accepted' | 'error';
+type InviteStatus = 'loading' | 'valid' | 'invalid' | 'expired' | 'accepted' | 'already_member' | 'error';
 
 interface InviteInfo {
   workspaceName: string;
@@ -11,6 +11,7 @@ interface InviteInfo {
   role: 'admin' | 'member';
   email: string;
   userExists: boolean;
+  alreadyMember?: boolean;
 }
 
 export function InviteAcceptPage() {
@@ -39,7 +40,12 @@ export function InviteAcceptPage() {
     const res = await api.invites.validate(token);
     if (res.success && res.data) {
       setInviteInfo(res.data);
-      setStatus('valid');
+      // Check if user is already a member - invite was auto-consumed
+      if (res.data.alreadyMember) {
+        setStatus('already_member');
+      } else {
+        setStatus('valid');
+      }
     } else {
       const errorMsg = res.error?.message || '';
       if (errorMsg.includes('expired')) {
@@ -149,6 +155,31 @@ export function InviteAcceptPage() {
               className="mt-6 inline-block px-4 py-2 bg-accent text-white rounded-md hover:bg-accent/90 transition-colors"
             >
               Go to Documents
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // User is already a member of this workspace
+  if (status === 'already_member') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="w-full max-w-md px-6">
+          <div className="rounded-lg border border-border bg-surface p-8 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10">
+              <CheckIcon className="h-6 w-6 text-green-500" />
+            </div>
+            <h1 className="text-xl font-semibold text-foreground">Already a Member</h1>
+            <p className="mt-2 text-sm text-muted">
+              You're already a member of <span className="font-medium text-foreground">{inviteInfo?.workspaceName}</span>.
+            </p>
+            <Link
+              to="/login"
+              className="mt-6 inline-block px-4 py-2 bg-accent text-white rounded-md hover:bg-accent/90 transition-colors"
+            >
+              Log In
             </Link>
           </div>
         </div>
