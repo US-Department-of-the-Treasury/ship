@@ -18,12 +18,21 @@ import { authMiddleware, superAdminMiddleware } from '../middleware/auth.js';
 
 const router: RouterType = Router();
 
-// Redirect to login if no session cookie (for HTML pages)
-function redirectIfNoSession(req: Request, res: Response, next: NextFunction): void {
-  if (!req.cookies?.session_id) {
-    res.redirect('/login?redirect=/api/federation');
-    return;
-  }
+// For HTML pages: intercept 401/403 JSON responses and redirect to login instead
+// This lets us reuse authMiddleware/superAdminMiddleware while giving proper UX for HTML
+function redirectOnAuthFailure(req: Request, res: Response, next: NextFunction): void {
+  const redirectPath = '/login?redirect=/api/federation';
+
+  // Intercept JSON responses - if auth failed (401/403), redirect instead
+  const originalJson = res.json.bind(res);
+  res.json = function(body: unknown): Response {
+    if (res.statusCode === 401 || res.statusCode === 403) {
+      res.redirect(redirectPath);
+      return res; // Return res to satisfy type, but redirect already sent
+    }
+    return originalJson(body);
+  };
+
   next();
 }
 
@@ -36,8 +45,8 @@ function getBaseUrl(req: Request): string {
   return `${protocol}://${req.headers.host}`;
 }
 
-// GET /federation - DCR registration page (HTML - redirects to login if no session)
-router.get('/', redirectIfNoSession, authMiddleware, superAdminMiddleware, (req: Request, res: Response): void => {
+// GET /federation - DCR registration page (HTML - redirects to login on any auth failure)
+router.get('/', redirectOnAuthFailure, authMiddleware, superAdminMiddleware, (req: Request, res: Response): void => {
   const baseUrl = getBaseUrl(req);
   const error = req.query.error as string | undefined;
   const errorDescription = req.query.error_description as string | undefined;
