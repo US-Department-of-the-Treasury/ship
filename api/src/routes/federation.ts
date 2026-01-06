@@ -46,6 +46,130 @@ function getBaseUrl(req: Request): string {
   return `${protocol}://${req.headers.host}`;
 }
 
+// ============================================================================
+// Input Validation for Federation Credentials (SEC-05)
+// ============================================================================
+
+const VALID_AUTH_METHODS = ['private_key_jwt', 'client_secret_post', 'client_secret_basic'] as const;
+
+/**
+ * Validate issuerUrl is a proper HTTPS URL
+ */
+function validateIssuerUrl(url: unknown): { valid: boolean; error?: string } {
+  if (typeof url !== 'string') {
+    return { valid: false, error: 'issuerUrl must be a string' };
+  }
+  try {
+    const parsed = new URL(url);
+    // In production, require HTTPS
+    if (process.env.NODE_ENV === 'production' && parsed.protocol !== 'https:') {
+      return { valid: false, error: 'issuerUrl must use HTTPS in production' };
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { valid: false, error: 'issuerUrl must be HTTP or HTTPS' };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, error: 'issuerUrl must be a valid URL' };
+  }
+}
+
+/**
+ * Validate clientId is safe (alphanumeric + limited special chars)
+ */
+function validateClientId(clientId: unknown): { valid: boolean; error?: string } {
+  if (typeof clientId !== 'string') {
+    return { valid: false, error: 'clientId must be a string' };
+  }
+  if (clientId.length < 1 || clientId.length > 256) {
+    return { valid: false, error: 'clientId must be 1-256 characters' };
+  }
+  // Allow alphanumeric, hyphens, underscores, and periods (common OAuth client ID formats)
+  if (!/^[a-zA-Z0-9._-]+$/.test(clientId)) {
+    return { valid: false, error: 'clientId must be alphanumeric with dots, hyphens, or underscores' };
+  }
+  return { valid: true };
+}
+
+/**
+ * Validate tokenEndpointAuthMethod is from allowed list
+ */
+function validateAuthMethod(method: unknown): { valid: boolean; error?: string } {
+  if (typeof method !== 'string') {
+    return { valid: false, error: 'tokenEndpointAuthMethod must be a string' };
+  }
+  if (!VALID_AUTH_METHODS.includes(method as typeof VALID_AUTH_METHODS[number])) {
+    return { valid: false, error: `tokenEndpointAuthMethod must be one of: ${VALID_AUTH_METHODS.join(', ')}` };
+  }
+  return { valid: true };
+}
+
+/**
+ * Validate privateKeyPem is a valid PEM-formatted RSA private key
+ */
+function validatePrivateKeyPem(pem: unknown): { valid: boolean; error?: string } {
+  if (typeof pem !== 'string') {
+    return { valid: false, error: 'privateKeyPem must be a string' };
+  }
+  // Check for PEM header/footer
+  const pemRegex = /^-----BEGIN (RSA |EC |)PRIVATE KEY-----[\s\S]+-----END (RSA |EC |)PRIVATE KEY-----\s*$/;
+  if (!pemRegex.test(pem)) {
+    return { valid: false, error: 'privateKeyPem must be a valid PEM-formatted private key' };
+  }
+  // Basic size check (RSA 2048+ should be at least 1500 chars)
+  if (pem.length < 500 || pem.length > 10000) {
+    return { valid: false, error: 'privateKeyPem has invalid length' };
+  }
+  return { valid: true };
+}
+
+/**
+ * Validate publicJwk is a valid JWK object
+ */
+function validatePublicJwk(jwk: unknown): { valid: boolean; error?: string } {
+  if (typeof jwk !== 'object' || jwk === null) {
+    return { valid: false, error: 'publicJwk must be an object' };
+  }
+  const j = jwk as Record<string, unknown>;
+  // Must have kty (key type)
+  if (typeof j.kty !== 'string' || !['RSA', 'EC'].includes(j.kty)) {
+    return { valid: false, error: 'publicJwk must have kty of RSA or EC' };
+  }
+  // Must have kid (key id)
+  if (typeof j.kid !== 'string' || j.kid.length === 0) {
+    return { valid: false, error: 'publicJwk must have a kid' };
+  }
+  // RSA keys need n and e
+  if (j.kty === 'RSA') {
+    if (typeof j.n !== 'string' || typeof j.e !== 'string') {
+      return { valid: false, error: 'RSA publicJwk must have n and e' };
+    }
+  }
+  // EC keys need x, y, crv
+  if (j.kty === 'EC') {
+    if (typeof j.x !== 'string' || typeof j.y !== 'string' || typeof j.crv !== 'string') {
+      return { valid: false, error: 'EC publicJwk must have x, y, and crv' };
+    }
+  }
+  return { valid: true };
+}
+
+/**
+ * Validate clientSecret is reasonable
+ */
+function validateClientSecret(secret: unknown): { valid: boolean; error?: string } {
+  if (typeof secret !== 'string') {
+    return { valid: false, error: 'clientSecret must be a string' };
+  }
+  if (secret.length < 16) {
+    return { valid: false, error: 'clientSecret must be at least 16 characters' };
+  }
+  if (secret.length > 512) {
+    return { valid: false, error: 'clientSecret must be at most 512 characters' };
+  }
+  return { valid: true };
+}
+
 // GET /federation - DCR registration page (HTML - redirects to login on any auth failure)
 router.get('/', redirectOnAuthFailure, authMiddleware, superAdminMiddleware, (req: Request, res: Response): void => {
   const baseUrl = getBaseUrl(req);
@@ -143,30 +267,42 @@ router.post('/save-credentials', authMiddleware, superAdminMiddleware, async (re
   const authMethod = req.body.tokenEndpointAuthMethod || 'client_secret_post';
   const issuerUrl = req.body.issuerUrl;
 
-  if (!clientId) {
-    res.status(400).json({ error: 'Missing clientId' });
+  // Validate all inputs (SEC-05)
+  const clientIdValidation = validateClientId(clientId);
+  if (!clientIdValidation.valid) {
+    res.status(400).json({ error: clientIdValidation.error });
     return;
   }
 
-  if (!issuerUrl) {
-    res.status(400).json({ error: 'Missing issuerUrl' });
+  const issuerValidation = validateIssuerUrl(issuerUrl);
+  if (!issuerValidation.valid) {
+    res.status(400).json({ error: issuerValidation.error });
+    return;
+  }
+
+  const authMethodValidation = validateAuthMethod(authMethod);
+  if (!authMethodValidation.valid) {
+    res.status(400).json({ error: authMethodValidation.error });
     return;
   }
 
   // Validate auth method specific fields
   if (authMethod === 'private_key_jwt') {
-    if (!req.body.privateKeyPem) {
-      res.status(400).json({ error: 'Missing privateKeyPem for private_key_jwt' });
+    const pemValidation = validatePrivateKeyPem(req.body.privateKeyPem);
+    if (!pemValidation.valid) {
+      res.status(400).json({ error: pemValidation.error });
       return;
     }
-    if (!req.body.publicJwk) {
-      res.status(400).json({ error: 'Missing publicJwk for private_key_jwt' });
+    const jwkValidation = validatePublicJwk(req.body.publicJwk);
+    if (!jwkValidation.valid) {
+      res.status(400).json({ error: jwkValidation.error });
       return;
     }
-  } else if (authMethod === 'client_secret_post') {
+  } else if (authMethod === 'client_secret_post' || authMethod === 'client_secret_basic') {
     const secret = req.body.clientSecret || req.body.client_secret;
-    if (!secret) {
-      res.status(400).json({ error: 'Missing clientSecret for client_secret_post' });
+    const secretValidation = validateClientSecret(secret);
+    if (!secretValidation.valid) {
+      res.status(400).json({ error: secretValidation.error });
       return;
     }
   }

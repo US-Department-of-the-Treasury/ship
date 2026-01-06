@@ -5,7 +5,6 @@
  * These routes are only active when FPKI environment variables are configured.
  */
 
-import '../types/session.js'; // Session type extensions for PIV OAuth state
 import { Router, Request, Response } from 'express';
 import type { Router as RouterType } from 'express';
 import crypto from 'crypto';
@@ -16,9 +15,48 @@ import { logAuditEvent } from '../services/audit.js';
 
 const router: RouterType = Router();
 
+// OAuth state expiry (10 minutes - OAuth flows should complete quickly)
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
 // Generate cryptographically secure session ID (same as auth.ts)
 function generateSecureSessionId(): string {
   return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Store OAuth state in database (survives server restarts)
+ */
+async function storeOAuthState(state: string, nonce: string, codeVerifier: string): Promise<void> {
+  const expiresAt = new Date(Date.now() + OAUTH_STATE_TTL_MS);
+
+  // Clean up expired states opportunistically (every ~10th request)
+  if (Math.random() < 0.1) {
+    await pool.query('DELETE FROM oauth_state WHERE expires_at < NOW()').catch(() => {});
+  }
+
+  await pool.query(
+    'INSERT INTO oauth_state (state_id, nonce, code_verifier, expires_at) VALUES ($1, $2, $3, $4)',
+    [state, nonce, codeVerifier, expiresAt]
+  );
+}
+
+/**
+ * Retrieve and delete OAuth state from database (one-time use)
+ */
+async function consumeOAuthState(state: string): Promise<{ nonce: string; codeVerifier: string } | null> {
+  const result = await pool.query(
+    'DELETE FROM oauth_state WHERE state_id = $1 AND expires_at > NOW() RETURNING nonce, code_verifier',
+    [state]
+  );
+
+  if (result.rows.length === 0) {
+    return null;
+  }
+
+  return {
+    nonce: result.rows[0].nonce,
+    codeVerifier: result.rows[0].code_verifier,
+  };
 }
 
 // GET /api/auth/piv/status - Check if PIV auth is available
@@ -45,10 +83,8 @@ router.get('/login', async (req: Request, res: Response): Promise<void> => {
     const client = getFPKIClient();
     const { url, state, nonce, codeVerifier } = await client.getAuthorizationUrl();
 
-    // Store OAuth state in session for callback validation
-    req.session.pivState = state;
-    req.session.pivNonce = nonce;
-    req.session.pivCodeVerifier = codeVerifier;
+    // Store OAuth state in database (survives server restarts)
+    await storeOAuthState(state, nonce, codeVerifier);
 
     res.json({
       success: true,
@@ -79,38 +115,37 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  // Validate state parameter (CSRF protection)
-  if (state !== req.session.pivState) {
-    console.error('PIV state mismatch:', { received: state, expected: req.session.pivState });
+  // Validate and consume state from database (one-time use)
+  if (!state || typeof state !== 'string') {
+    console.error('PIV callback: Missing state parameter');
     await logAuditEvent({
       action: 'auth.piv_login_failed',
-      details: { reason: 'state_mismatch' },
+      details: { reason: 'missing_state_param' },
       req,
     });
-    res.redirect('/login?error=Invalid+state');
+    res.redirect('/login?error=Missing+state');
     return;
   }
 
-  const pivState = req.session.pivState;
-  const pivNonce = req.session.pivNonce;
-  const codeVerifier = req.session.pivCodeVerifier;
-
-  if (!pivState || !pivNonce || !codeVerifier) {
-    console.error('PIV OAuth state missing from session');
+  const oauthState = await consumeOAuthState(state);
+  if (!oauthState) {
+    console.error('PIV state not found or expired:', { state });
     await logAuditEvent({
       action: 'auth.piv_login_failed',
-      details: { reason: 'missing_oauth_state' },
+      details: { reason: 'invalid_or_expired_state' },
       req,
     });
-    res.redirect('/login?error=Missing+OAuth+state');
+    res.redirect('/login?error=Invalid+or+expired+state');
     return;
   }
+
+  const { nonce: pivNonce, codeVerifier } = oauthState;
 
   try {
     const client = getFPKIClient();
     const { user: userInfo } = await client.handleCallback(
       String(code),
-      { state: pivState, nonce: pivNonce, codeVerifier }
+      { state, nonce: pivNonce, codeVerifier }
     );
 
     // Extract user identity from PIV certificate claims
@@ -221,12 +256,7 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
       path: '/',
     });
 
-    // Clean up OAuth state from session
-    delete req.session.pivState;
-    delete req.session.pivNonce;
-    delete req.session.pivCodeVerifier;
-
-    // Redirect to app
+    // Redirect to app (OAuth state was already consumed from database above)
     res.redirect('/');
 
   } catch (error) {

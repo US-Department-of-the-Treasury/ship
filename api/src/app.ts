@@ -60,6 +60,16 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests. Please slow down.' },
 });
 
+// JWKS endpoint rate limit (30 req/min) - prevent enumeration/DoS attacks
+// JWKS is cached by clients, so legitimate traffic is low
+const jwksLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: isTestEnv ? 1000 : 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many JWKS requests. Please cache the response.' },
+});
+
 export function createApp(corsOrigin: string = 'http://localhost:5173'): express.Express {
   const app = express();
 
@@ -172,7 +182,8 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/federation', csrfSynchronisedProtection, federationRoutes);
 
   // JWKS endpoint for private_key_jwt - public, no auth needed
-  app.get('/.well-known/jwks.json', jwksHandler);
+  // Rate limited to prevent enumeration/DoS attacks
+  app.get('/.well-known/jwks.json', jwksLimiter, jwksHandler);
 
   // File upload routes (CSRF protected for POST endpoints)
   app.use('/api/files', csrfSynchronisedProtection, filesRouter);
