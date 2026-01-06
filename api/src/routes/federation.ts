@@ -15,71 +15,16 @@ import {
 import { saveCredentials, getPublicJwk, getCachedCredentials, type StoredCredentials } from '../services/credential-store.js';
 import { resetFPKIClient } from '../services/fpki.js';
 import { authMiddleware, superAdminMiddleware } from '../middleware/auth.js';
-import { pool } from '../db/client.js';
-import { SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS } from '@ship/shared';
 
 const router: RouterType = Router();
 
-// HTML page auth middleware - redirects to login instead of returning JSON
-async function htmlPageAuthMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const sessionId = req.cookies?.session_id;
-
-  if (!sessionId) {
+// Redirect to login if no session cookie (for HTML pages)
+function redirectIfNoSession(req: Request, res: Response, next: NextFunction): void {
+  if (!req.cookies?.session_id) {
     res.redirect('/login?redirect=/api/federation');
     return;
   }
-
-  try {
-    const result = await pool.query(
-      `SELECT s.id, s.user_id, s.last_activity, s.created_at, u.is_super_admin
-       FROM sessions s
-       JOIN users u ON s.user_id = u.id
-       WHERE s.id = $1`,
-      [sessionId]
-    );
-
-    const session = result.rows[0];
-
-    if (!session) {
-      res.redirect('/login?redirect=/api/federation');
-      return;
-    }
-
-    // Check session timeouts
-    const now = new Date();
-    const lastActivity = new Date(session.last_activity);
-    const createdAt = new Date(session.created_at);
-    const inactivityMs = now.getTime() - lastActivity.getTime();
-    const sessionAgeMs = now.getTime() - createdAt.getTime();
-
-    if (sessionAgeMs > ABSOLUTE_SESSION_TIMEOUT_MS || inactivityMs > SESSION_TIMEOUT_MS) {
-      await pool.query('DELETE FROM sessions WHERE id = $1', [sessionId]);
-      res.redirect('/login?redirect=/api/federation');
-      return;
-    }
-
-    // Check super-admin
-    if (!session.is_super_admin) {
-      res.status(403).send(`
-        <!DOCTYPE html>
-        <html><head><title>Access Denied</title></head>
-        <body style="font-family: system-ui; padding: 40px; text-align: center;">
-          <h1>Access Denied</h1>
-          <p>Super-admin access is required to configure federation.</p>
-          <a href="/">Return to Home</a>
-        </body></html>
-      `);
-      return;
-    }
-
-    // Update last activity
-    await pool.query('UPDATE sessions SET last_activity = $1 WHERE id = $2', [now, sessionId]);
-
-    next();
-  } catch (error) {
-    console.error('Federation auth error:', error);
-    res.redirect('/login?redirect=/api/federation');
-  }
+  next();
 }
 
 // Get base URL from environment or derive from request
@@ -91,8 +36,8 @@ function getBaseUrl(req: Request): string {
   return `${protocol}://${req.headers.host}`;
 }
 
-// GET /federation - DCR registration page (HTML - redirects to login if not authenticated)
-router.get('/', htmlPageAuthMiddleware, (req: Request, res: Response): void => {
+// GET /federation - DCR registration page (HTML - redirects to login if no session)
+router.get('/', redirectIfNoSession, authMiddleware, superAdminMiddleware, (req: Request, res: Response): void => {
   const baseUrl = getBaseUrl(req);
   const error = req.query.error as string | undefined;
   const errorDescription = req.query.error_description as string | undefined;
