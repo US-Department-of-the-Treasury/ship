@@ -14,8 +14,13 @@ import {
 } from '@fpki/auth-client';
 import { saveCredentials, getPublicJwk, getCachedCredentials, type StoredCredentials } from '../services/credential-store.js';
 import { resetFPKIClient } from '../services/fpki.js';
+import { authMiddleware, superAdminMiddleware } from '../middleware/auth.js';
 
 const router: RouterType = Router();
+
+// All federation routes require super-admin authentication
+// This prevents unauthorized users from re-registering the app with a malicious IdP
+router.use(authMiddleware, superAdminMiddleware);
 
 // Get base URL from environment or derive from request
 function getBaseUrl(req: Request): string {
