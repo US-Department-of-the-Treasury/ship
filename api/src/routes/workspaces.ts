@@ -593,10 +593,13 @@ router.get('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req:
 });
 
 // POST /api/workspaces/:id/invites - Create invite (admin only)
+// Email is always required (it's the login identifier)
+// x509SubjectDn is optional - for PIV certificate matching when cert doesn't contain email
 router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
   const { id: workspaceId } = req.params;
-  const { email, role = 'member' } = req.body;
+  const { email, x509SubjectDn, role = 'member' } = req.body;
 
+  // Email is always required
   if (!email) {
     res.status(HTTP_STATUS.BAD_REQUEST).json({
       success: false,
@@ -609,12 +612,14 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
   }
 
   try {
-    // Check if user already exists and is a member
+    // Check if user already exists and is a member (by email or subject DN)
     const existingUserResult = await pool.query(
       `SELECT u.id FROM users u
        JOIN workspace_memberships wm ON u.id = wm.user_id
-       WHERE u.email = $1 AND wm.workspace_id = $2`,
-      [email, workspaceId]
+       WHERE wm.workspace_id = $1
+         AND (($2::TEXT IS NOT NULL AND LOWER(u.email) = LOWER($2))
+              OR ($3::TEXT IS NOT NULL AND u.x509_subject_dn = $3))`,
+      [workspaceId, email || null, x509SubjectDn || null]
     );
 
     if (existingUserResult.rows[0]) {
@@ -628,11 +633,15 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
       return;
     }
 
-    // Check for existing pending invite
+    // Check for existing pending invite (by email or subject DN)
     const existingInviteResult = await pool.query(
       `SELECT id FROM workspace_invites
-       WHERE workspace_id = $1 AND email = $2 AND used_at IS NULL AND expires_at > NOW()`,
-      [workspaceId, email]
+       WHERE workspace_id = $1
+         AND used_at IS NULL
+         AND expires_at > NOW()
+         AND (($2::TEXT IS NOT NULL AND LOWER(email) = LOWER($2))
+              OR ($3::TEXT IS NOT NULL AND x509_subject_dn = $3))`,
+      [workspaceId, email || null, x509SubjectDn || null]
     );
 
     if (existingInviteResult.rows[0]) {
@@ -640,22 +649,22 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
         success: false,
         error: {
           code: ERROR_CODES.VALIDATION_ERROR,
-          message: 'An invite is already pending for this email',
+          message: 'An invite is already pending for this identity',
         },
       });
       return;
     }
 
-    // Generate unique token
+    // Generate unique invite token (email-based invites use the link)
     const { v4: uuidv4 } = await import('uuid');
     const token = uuidv4();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
     const result = await pool.query(
-      `INSERT INTO workspace_invites (workspace_id, email, token, role, invited_by_user_id, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, email, role, expires_at, created_at`,
-      [workspaceId, email, token, role, req.userId, expiresAt]
+      `INSERT INTO workspace_invites (workspace_id, email, x509_subject_dn, token, role, invited_by_user_id, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, email, x509_subject_dn, role, expires_at, created_at`,
+      [workspaceId, email, x509SubjectDn || null, token, role, req.userId, expiresAt]
     );
 
     await logAuditEvent({
@@ -664,7 +673,7 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
       action: 'invite.create',
       resourceType: 'invite',
       resourceId: result.rows[0].id,
-      details: { email, role },
+      details: { email: email || null, x509SubjectDn: x509SubjectDn || null, role },
       req,
     });
 
@@ -674,8 +683,9 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
         invite: {
           id: result.rows[0].id,
           email: result.rows[0].email,
+          x509SubjectDn: result.rows[0].x509_subject_dn,
           role: result.rows[0].role,
-          token, // Include token for the admin to share
+          token, // Include token for the admin to share (null for PIV-only invites)
           expiresAt: result.rows[0].expires_at,
           createdAt: result.rows[0].created_at,
         },

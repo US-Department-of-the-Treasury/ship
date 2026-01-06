@@ -851,11 +851,14 @@ router.get('/workspaces/:id/invites', async (req: Request, res: Response): Promi
 });
 
 // POST /api/admin/workspaces/:id/invites - Create invite
+// Email is always required (it's the login identifier)
+// x509SubjectDn is optional - for PIV certificate matching when cert doesn't contain email
 router.post('/workspaces/:id/invites', async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { email, role = 'member' } = req.body;
+  const { email, x509SubjectDn, role = 'member' } = req.body;
 
-  if (!email || typeof email !== 'string') {
+  // Email is always required
+  if (!email) {
     res.status(HTTP_STATUS.BAD_REQUEST).json({
       success: false,
       error: {
@@ -866,6 +869,17 @@ router.post('/workspaces/:id/invites', async (req: Request, res: Response): Prom
     return;
   }
 
+  // Validate email format
+  if (typeof email !== 'string') {
+    res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: 'Email must be a string',
+      },
+    });
+    return;
+  }
   const emailLower = email.toLowerCase().trim();
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(emailLower)) {
@@ -904,12 +918,14 @@ router.post('/workspaces/:id/invites', async (req: Request, res: Response): Prom
       return;
     }
 
-    // Check if user is already a member
+    // Check if user is already a member (by email or subject DN)
     const memberCheck = await pool.query(
       `SELECT wm.id FROM workspace_memberships wm
        JOIN users u ON wm.user_id = u.id
-       WHERE wm.workspace_id = $1 AND LOWER(u.email) = $2`,
-      [id, emailLower]
+       WHERE wm.workspace_id = $1
+         AND (($2::TEXT IS NOT NULL AND LOWER(u.email) = $2)
+              OR ($3::TEXT IS NOT NULL AND u.x509_subject_dn = $3))`,
+      [id, emailLower, x509SubjectDn || null]
     );
     if (memberCheck.rows[0]) {
       res.status(HTTP_STATUS.CONFLICT).json({
@@ -922,33 +938,37 @@ router.post('/workspaces/:id/invites', async (req: Request, res: Response): Prom
       return;
     }
 
-    // Check for existing pending invite
+    // Check for existing pending invite (by email or subject DN)
     const inviteCheck = await pool.query(
       `SELECT id FROM workspace_invites
-       WHERE workspace_id = $1 AND LOWER(email) = $2 AND used_at IS NULL AND expires_at > NOW()`,
-      [id, emailLower]
+       WHERE workspace_id = $1
+         AND used_at IS NULL
+         AND expires_at > NOW()
+         AND (($2::TEXT IS NOT NULL AND LOWER(email) = $2)
+              OR ($3::TEXT IS NOT NULL AND x509_subject_dn = $3))`,
+      [id, emailLower, x509SubjectDn || null]
     );
     if (inviteCheck.rows[0]) {
       res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
         error: {
           code: ERROR_CODES.ALREADY_EXISTS,
-          message: 'Invitation already pending for this email',
+          message: 'Invitation already pending for this identity',
         },
       });
       return;
     }
 
-    // Generate token and create invite (expires in 7 days)
+    // Generate unique invite token
     const token = crypto.randomUUID();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     const result = await pool.query(
-      `INSERT INTO workspace_invites (workspace_id, email, role, token, expires_at, invited_by_user_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, email, role, token, created_at`,
-      [id, emailLower, role, token, expiresAt, req.userId]
+      `INSERT INTO workspace_invites (workspace_id, email, x509_subject_dn, role, token, expires_at, invited_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, email, x509_subject_dn, role, token, created_at`,
+      [id, emailLower, x509SubjectDn || null, role, token, expiresAt, req.userId]
     );
 
     const invite = result.rows[0];
@@ -959,7 +979,7 @@ router.post('/workspaces/:id/invites', async (req: Request, res: Response): Prom
       action: 'workspace.invite_create',
       resourceType: 'workspace_invite',
       resourceId: invite.id,
-      details: { email: emailLower, role },
+      details: { email: emailLower, x509SubjectDn: x509SubjectDn || null, role },
       req,
     });
 
@@ -969,8 +989,9 @@ router.post('/workspaces/:id/invites', async (req: Request, res: Response): Prom
         invite: {
           id: invite.id,
           email: invite.email,
+          x509SubjectDn: invite.x509_subject_dn,
           role: invite.role,
-          token: invite.token,
+          token: invite.token, // null for PIV-only invites
           createdAt: invite.created_at,
         },
       },

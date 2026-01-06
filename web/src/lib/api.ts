@@ -226,6 +226,7 @@ export interface WorkspaceInvite {
   id: string;
   workspaceId: string;
   email: string;
+  x509SubjectDn: string | null;
   token: string;
   role: 'admin' | 'member';
   expiresAt: string;
@@ -335,7 +336,7 @@ export const api = {
     getInvites: (workspaceId: string) =>
       request<{ invites: WorkspaceInvite[] }>(`/api/workspaces/${workspaceId}/invites`),
 
-    createInvite: (workspaceId: string, data: { email: string; role?: 'admin' | 'member' }) =>
+    createInvite: (workspaceId: string, data: { email: string; x509SubjectDn?: string; role?: 'admin' | 'member' }) =>
       request<{ invite: WorkspaceInvite }>(`/api/workspaces/${workspaceId}/invites`, {
         method: 'POST',
         body: JSON.stringify(data),
@@ -383,10 +384,10 @@ export const api = {
       request<{ members: Array<{ userId: string; email: string; name: string; role: 'admin' | 'member' }> }>(`/api/admin/workspaces/${workspaceId}/members`),
 
     getWorkspaceInvites: (workspaceId: string) =>
-      request<{ invites: Array<{ id: string; email: string; role: 'admin' | 'member'; token: string; createdAt: string }> }>(`/api/admin/workspaces/${workspaceId}/invites`),
+      request<{ invites: Array<{ id: string; email: string; x509SubjectDn: string | null; role: 'admin' | 'member'; token: string; createdAt: string }> }>(`/api/admin/workspaces/${workspaceId}/invites`),
 
-    createWorkspaceInvite: (workspaceId: string, data: { email: string; role?: 'admin' | 'member' }) =>
-      request<{ invite: { id: string; email: string; role: 'admin' | 'member'; token: string; createdAt: string } }>(`/api/admin/workspaces/${workspaceId}/invites`, {
+    createWorkspaceInvite: (workspaceId: string, data: { email: string; x509SubjectDn?: string; role?: 'admin' | 'member' }) =>
+      request<{ invite: { id: string; email: string; x509SubjectDn: string | null; role: 'admin' | 'member'; token: string; createdAt: string } }>(`/api/admin/workspaces/${workspaceId}/invites`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),

@@ -164,12 +164,44 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Find or create user by email
-    let user = await findUserByEmail(email);
+    // Find existing user by email OR X.509 subject DN
+    let user = await findUserByEmailOrSubjectDn(email, x509Subject);
 
     if (!user) {
-      // Auto-provision new PIV users (they'll need workspace access separately)
-      user = await createPIVUser(email, name, x509Subject);
+      // No existing user - check for pending invite matching certificate identity
+      const invite = await findPendingInvite(email, x509Subject);
+
+      if (!invite) {
+        // No invite = no access (PIV users must be pre-invited)
+        console.log(`PIV login rejected: No invite found for ${email} / ${x509Subject}`);
+        await logAuditEvent({
+          action: 'auth.piv_login_failed',
+          details: { reason: 'no_invite', email, x509Subject },
+          req,
+        });
+        res.redirect('/login?error=' + encodeURIComponent('No invitation found. Please contact an administrator to request access.'));
+        return;
+      }
+
+      // Create user from invite
+      user = await createUserFromInvite(invite, email, name, x509Subject);
+
+      // Log the invite acceptance
+      await logAuditEvent({
+        workspaceId: invite.workspace_id,
+        actorUserId: user.id,
+        action: 'invite.accept_piv',
+        resourceType: 'invite',
+        resourceId: invite.id,
+        details: { email, x509Subject, role: invite.role },
+        req,
+      });
+    } else if (!user.x509_subject_dn && x509Subject) {
+      // Update existing user with X.509 subject DN on first PIV login
+      await pool.query(
+        'UPDATE users SET x509_subject_dn = $1, piv_first_login_at = COALESCE(piv_first_login_at, NOW()), updated_at = NOW() WHERE id = $2',
+        [x509Subject, user.id]
+      );
     }
 
     // Session fixation prevention: delete any existing session
@@ -310,41 +342,103 @@ function extractNameFromX509Subject(subject: string): string | null {
 }
 
 /**
- * Find user by email (case-insensitive)
+ * Find user by email OR X.509 subject DN (case-insensitive email match)
  */
-async function findUserByEmail(email: string): Promise<{
+async function findUserByEmailOrSubjectDn(email: string | undefined, subjectDn: string | undefined): Promise<{
   id: string;
   email: string;
   name: string;
   is_super_admin: boolean;
   last_workspace_id: string | null;
+  x509_subject_dn: string | null;
 } | null> {
   const result = await pool.query(
-    'SELECT id, email, name, is_super_admin, last_workspace_id FROM users WHERE LOWER(email) = LOWER($1)',
-    [email]
+    `SELECT id, email, name, is_super_admin, last_workspace_id, x509_subject_dn
+     FROM users
+     WHERE ($1::TEXT IS NOT NULL AND LOWER(email) = LOWER($1))
+        OR ($2::TEXT IS NOT NULL AND x509_subject_dn = $2)`,
+    [email || null, subjectDn || null]
   );
   return result.rows[0] || null;
 }
 
 /**
- * Create a new PIV-only user (no password)
+ * Invite record from database
  */
-async function createPIVUser(email: string, name: string, x509Subject: string): Promise<{
+interface PendingInvite {
+  id: string;
+  workspace_id: string;
+  workspace_name: string;
+  email: string | null;
+  x509_subject_dn: string | null;
+  role: 'admin' | 'member';
+}
+
+/**
+ * Find a pending invite matching certificate identity (by email OR subject DN)
+ */
+async function findPendingInvite(email: string | undefined, subjectDn: string | undefined): Promise<PendingInvite | null> {
+  const result = await pool.query(
+    `SELECT wi.id, wi.workspace_id, w.name as workspace_name, wi.email, wi.x509_subject_dn, wi.role
+     FROM workspace_invites wi
+     JOIN workspaces w ON wi.workspace_id = w.id
+     WHERE wi.used_at IS NULL
+       AND wi.expires_at > NOW()
+       AND (
+         ($1::TEXT IS NOT NULL AND LOWER(wi.email) = LOWER($1))
+         OR ($2::TEXT IS NOT NULL AND wi.x509_subject_dn = $2)
+       )
+     ORDER BY wi.created_at DESC
+     LIMIT 1`,
+    [email || null, subjectDn || null]
+  );
+  return result.rows[0] || null;
+}
+
+/**
+ * Create a new user from an invite and set up workspace membership
+ */
+async function createUserFromInvite(
+  invite: PendingInvite,
+  email: string,
+  name: string,
+  x509Subject: string
+): Promise<{
   id: string;
   email: string;
   name: string;
   is_super_admin: boolean;
   last_workspace_id: string | null;
+  x509_subject_dn: string | null;
 }> {
-  const result = await pool.query(
-    `INSERT INTO users (email, name, password_hash)
-     VALUES ($1, $2, NULL)
-     RETURNING id, email, name, is_super_admin, last_workspace_id`,
-    [email, name]
+  // Create user (no password - PIV only)
+  const userResult = await pool.query(
+    `INSERT INTO users (email, name, x509_subject_dn, password_hash, last_workspace_id, piv_first_login_at)
+     VALUES ($1, $2, $3, NULL, $4, NOW())
+     RETURNING id, email, name, is_super_admin, last_workspace_id, x509_subject_dn`,
+    [email, name, x509Subject, invite.workspace_id]
+  );
+  const user = userResult.rows[0];
+
+  // Create workspace membership with invited role
+  await pool.query(
+    `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+     VALUES ($1, $2, $3)`,
+    [invite.workspace_id, user.id, invite.role]
   );
 
-  console.log(`Created PIV user: ${email} (${x509Subject})`);
-  return result.rows[0];
+  // Create Person document for this user in this workspace (links via properties.user_id)
+  await pool.query(
+    `INSERT INTO documents (workspace_id, document_type, title, properties)
+     VALUES ($1, 'person', $2, $3)`,
+    [invite.workspace_id, user.name, JSON.stringify({ user_id: user.id, email })]
+  );
+
+  // Mark invite as used
+  await pool.query('UPDATE workspace_invites SET used_at = NOW() WHERE id = $1', [invite.id]);
+
+  console.log(`Created PIV user from invite: ${email} (${x509Subject}) -> workspace ${invite.workspace_name}`);
+  return user;
 }
 
 export default router;
