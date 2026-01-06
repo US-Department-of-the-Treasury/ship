@@ -15,6 +15,7 @@ import {
 import { saveCredentials, getPublicJwk, getCachedCredentials, type StoredCredentials } from '../services/credential-store.js';
 import { resetFPKIClient } from '../services/fpki.js';
 import { authMiddleware, superAdminMiddleware } from '../middleware/auth.js';
+import { logAuditEvent } from '../services/audit.js';
 
 const router: RouterType = Router();
 
@@ -87,15 +88,48 @@ router.get('/', redirectOnAuthFailure, authMiddleware, superAdminMiddleware, (re
 
 // POST /federation/discover - Server-side OIDC discovery
 // Returns registration_endpoint for browser to POST directly with mTLS
-router.post('/discover', authMiddleware, superAdminMiddleware, createFederationDiscoveryHandler({
+const discoveryHandler = createFederationDiscoveryHandler({
   rejectUnauthorized: process.env.NODE_ENV === 'production',
   internalUrl: process.env.FPKI_INTERNAL_URL,
-}));
+});
+
+router.post('/discover', authMiddleware, superAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const issuerUrl = req.body.issuerUrl;
+
+  // Wrap the response to capture success/failure for audit logging
+  const originalJson = res.json.bind(res);
+  res.json = function(body: unknown): Response {
+    // Log after the SDK handler completes
+    const success = res.statusCode >= 200 && res.statusCode < 300;
+    logAuditEvent({
+      actorUserId: req.userId!,
+      action: 'federation.discover',
+      details: {
+        issuerUrl,
+        success,
+        registrationEndpoint: success ? (body as { registrationEndpoint?: string })?.registrationEndpoint : undefined,
+      },
+      req,
+    }).catch(err => console.error('Failed to log audit event:', err));
+
+    return originalJson(body);
+  };
+
+  await discoveryHandler(req, res);
+});
 
 // POST /federation/generate-keypair - Create RSA keypair for private_key_jwt
-router.post('/generate-keypair', authMiddleware, superAdminMiddleware, async (_req: Request, res: Response): Promise<void> => {
+router.post('/generate-keypair', authMiddleware, superAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const { privateKeyPem, jwk } = await generateRsaKeypair();
+
+    await logAuditEvent({
+      actorUserId: req.userId!,
+      action: 'federation.generate_keypair',
+      details: { algorithm: 'RS256', keyId: jwk.kid },
+      req,
+    });
+
     res.json({ privateKeyPem, jwk });
   } catch (err) {
     console.error('Failed to generate keypair:', err);
@@ -163,6 +197,18 @@ router.post('/save-credentials', authMiddleware, superAdminMiddleware, async (re
 
     // Reset the FPKI client to pick up new credentials
     resetFPKIClient();
+
+    await logAuditEvent({
+      actorUserId: req.userId!,
+      action: 'federation.save_credentials',
+      details: {
+        clientId,
+        issuerUrl,
+        authMethod,
+        // Note: privateKeyPem and clientSecret are intentionally NOT logged
+      },
+      req,
+    });
 
     console.log('OAuth credentials saved:', clientId, 'issuer:', issuerUrl, '(method:', authMethod + ')');
     res.json({ success: true, message: 'Credentials saved' });
