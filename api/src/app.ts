@@ -20,7 +20,9 @@ import backlinksRoutes from './routes/backlinks.js';
 import { searchRouter } from './routes/search.js';
 import { filesRouter } from './routes/files.js';
 import pivAuthRoutes from './routes/piv-auth.js';
-import federationRoutes, { jwksHandler } from './routes/federation.js';
+import federationRoutes from './routes/federation.js';
+import { createJwksHandler } from '@fpki/auth-client';
+import { getPublicJwk } from './services/credential-store.js';
 import { initializeFPKI } from './services/fpki.js';
 
 // Validate SESSION_SECRET in production
@@ -60,14 +62,10 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests. Please slow down.' },
 });
 
-// JWKS endpoint rate limit (30 req/min) - prevent enumeration/DoS attacks
-// JWKS is cached by clients, so legitimate traffic is low
-const jwksLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: isTestEnv ? 1000 : 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many JWKS requests. Please cache the response.' },
+// JWKS handler with built-in rate limiting from SDK (30 req/min)
+const jwksHandler = createJwksHandler({
+  getPublicJwk,
+  rateLimit: isTestEnv ? false : { windowMs: 60000, maxRequests: 30 },
 });
 
 export function createApp(corsOrigin: string = 'http://localhost:5173'): express.Express {
@@ -182,8 +180,8 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/federation', csrfSynchronisedProtection, federationRoutes);
 
   // JWKS endpoint for private_key_jwt - public, no auth needed
-  // Rate limited to prevent enumeration/DoS attacks
-  app.get('/.well-known/jwks.json', jwksLimiter, jwksHandler);
+  // Rate limiting is built into the SDK handler
+  app.get('/.well-known/jwks.json', jwksHandler);
 
   // File upload routes (CSRF protected for POST endpoints)
   app.use('/api/files', csrfSynchronisedProtection, filesRouter);
