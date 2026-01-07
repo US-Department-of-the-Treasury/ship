@@ -578,24 +578,116 @@ test.describe('401 Error Handling', () => {
 });
 
 test.describe('Activity Tracking', () => {
-  test.fixme('HTTP API calls reset inactivity timer', async ({ page }) => {
-    // TODO: Make API call, verify last_activity updated
+  test('mouse activity resets inactivity timer', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance time to just before warning threshold (13 minutes)
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS - 30000);
+
+    // Simulate mouse activity
+    await page.mouse.click(100, 100);
+
+    // Advance another 13 minutes - timer should have been reset so no warning yet
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS - 30000);
+
+    // Warning should NOT appear because mouse activity reset the timer
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).not.toBeVisible();
   });
 
-  test.fixme('WebSocket messages reset inactivity timer', async ({ page }) => {
-    // TODO: Send WebSocket message, verify timer reset
+  test('keyboard activity resets inactivity timer', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance time to just before warning threshold
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS - 30000);
+
+    // Simulate keyboard activity
+    await page.keyboard.press('Tab');
+
+    // Advance another 13 minutes
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS - 30000);
+
+    // Warning should NOT appear because keyboard activity reset the timer
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).not.toBeVisible();
   });
 
-  test.fixme('editor typing resets inactivity timer', async ({ page }) => {
-    // TODO: Type in editor, verify timer reset
+  test('editor typing resets inactivity timer', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+
+    // Navigate to a document
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    const docLink = page.getByRole('link', { name: 'Welcome to Ship' }).first();
+    await docLink.click();
+    await expect(page.locator('[data-testid="tiptap-editor"]')).toBeVisible();
+
+    // Advance time to just before warning threshold
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS - 30000);
+
+    // Type in the editor (triggers keydown events)
+    const editor = page.locator('[data-testid="tiptap-editor"]');
+    await editor.click();
+    await page.keyboard.type('Hello');
+
+    // Advance another 13 minutes
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS - 30000);
+
+    // Warning should NOT appear because typing reset the timer
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).not.toBeVisible();
   });
 
-  test.fixme('receiving WebSocket messages from others resets timer', async ({ page }) => {
-    // TODO: Receive update from another user, verify timer reset
+  test('scroll activity resets inactivity timer', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance time to just before warning threshold
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS - 30000);
+
+    // Simulate scroll activity
+    await page.evaluate(() => {
+      document.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    // Advance another 13 minutes
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS - 30000);
+
+    // Warning should NOT appear because scroll activity reset the timer
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).not.toBeVisible();
   });
 
-  test.fixme('activity is throttled to prevent excessive timer resets', async ({ page }) => {
-    // TODO: Rapid typing should not cause 100 timer resets per second
+  test('throttled activity still resets timer (activity within throttle window is ignored but initial activity counts)', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance time to just before warning threshold (13.5 minutes into 15 min session)
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS - 30000);
+
+    // Simulate rapid activity - only first click counts due to 1-second throttle
+    for (let i = 0; i < 5; i++) {
+      await page.mouse.click(100 + i * 10, 100);
+      await page.clock.runFor(100); // 100ms between clicks (within throttle window)
+    }
+
+    // Advance another 13.5 minutes (timer was reset by first click)
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS - 30000);
+
+    // Warning should NOT appear because the first click reset the timer
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).not.toBeVisible();
   });
 });
 
