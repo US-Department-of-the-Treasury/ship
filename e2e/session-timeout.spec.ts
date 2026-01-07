@@ -11,6 +11,10 @@ import { test, expect } from './fixtures/offline';
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
 // Warning appears 60 seconds before timeout
 const WARNING_THRESHOLD_MS = 60 * 1000;
+// 12 hours in ms (matching ABSOLUTE_SESSION_TIMEOUT_MS)
+const ABSOLUTE_SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
+// Absolute warning appears 5 minutes before timeout
+const ABSOLUTE_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
 
 test.describe('Session Timeout Warning', () => {
   test('shows warning modal when 60 seconds remain before timeout', async ({ page, login }) => {
@@ -367,28 +371,124 @@ test.describe('Timer Reset Behavior', () => {
 });
 
 test.describe('12-Hour Absolute Timeout', () => {
-  test.fixme('shows 5-minute warning before absolute session timeout', async ({ page }) => {
-    // TODO: Advance clock to 11:55 into session, verify warning modal appears
+  test('shows 5-minute warning before absolute session timeout', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance to 11 hours 55 minutes (5 minutes before absolute timeout)
+    // Using runFor to ensure setTimeout callbacks fire properly
+    await page.clock.runFor(ABSOLUTE_SESSION_TIMEOUT_MS - ABSOLUTE_WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
   });
 
-  test.fixme('absolute timeout warning has different message than inactivity warning', async ({ page }) => {
-    // TODO: Verify message mentions "security" and "session will end" not "inactivity"
+  test('absolute timeout warning has different message than inactivity warning', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance to absolute warning time
+    await page.clock.runFor(ABSOLUTE_SESSION_TIMEOUT_MS - ABSOLUTE_WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Check for absolute timeout message (mentions security, not inactivity)
+    await expect(modal.getByText(/For security/i)).toBeVisible();
+    // The title for absolute timeout is "Your session will end soon"
+    await expect(modal.getByRole('heading', { name: /session will end soon/i })).toBeVisible();
   });
 
-  test.fixme('absolute timeout warning says session WILL end, not can be extended', async ({ page }) => {
-    // TODO: Verify wording indicates this cannot be prevented
+  test('absolute timeout warning says session WILL end, not can be extended', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance to absolute warning time
+    await page.clock.runFor(ABSOLUTE_SESSION_TIMEOUT_MS - ABSOLUTE_WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Check for absolute timeout message (WILL end, cannot be prevented)
+    await expect(modal.getByRole('heading', { name: /will end/i })).toBeVisible();
+    // The modal has text "This timeout cannot be extended"
+    await expect(modal.getByText(/This timeout cannot be extended/i)).toBeVisible();
   });
 
-  test.fixme('clicking Stay Logged In on absolute warning does NOT extend session', async ({ page }) => {
-    // TODO: Click button, verify session still expires at 12hr mark
+  test('clicking I Understand on absolute warning does NOT extend session', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance to absolute warning time
+    await page.clock.runFor(ABSOLUTE_SESSION_TIMEOUT_MS - ABSOLUTE_WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Click "I Understand" button (button text for absolute timeout)
+    const button = page.getByRole('button', { name: /I Understand/i });
+    await button.click();
+
+    // Modal should dismiss but session still ends at 12hr mark
+    // Advance remaining 5 minutes
+    await page.clock.runFor(ABSOLUTE_WARNING_THRESHOLD_MS);
+
+    // Should be redirected to login page
+    await expect(page).toHaveURL(/\/login/);
   });
 
-  test.fixme('logs user out at 12-hour mark regardless of activity', async ({ page }) => {
-    // TODO: Advance to 12 hours, verify logout even with recent activity
+  test('logs user out at 12-hour mark regardless of activity', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance time in chunks, simulating activity to prevent inactivity timeout
+    // We need to keep active every 14 minutes (before the 15-minute inactivity warning)
+    const chunkSize = 10 * 60 * 1000; // 10 minutes
+    const totalTime = ABSOLUTE_SESSION_TIMEOUT_MS;
+
+    for (let elapsed = 0; elapsed < totalTime; elapsed += chunkSize) {
+      const remaining = totalTime - elapsed;
+      const toAdvance = Math.min(chunkSize, remaining);
+      await page.clock.runFor(toAdvance);
+
+      // Don't try activity after logout
+      if (elapsed + toAdvance < totalTime) {
+        // Simulate activity to prevent inactivity timeout
+        await page.evaluate(() => {
+          document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+        });
+      }
+    }
+
+    // Should be redirected to login page despite activity
+    await expect(page).toHaveURL(/\/login/);
   });
 
-  test.fixme('absolute timeout takes precedence if it occurs before inactivity timeout', async ({ page }) => {
-    // TODO: If both happen close together, absolute wins
+  test('absolute timeout takes precedence if it occurs before inactivity timeout', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance to absolute warning time (11:55)
+    await page.clock.runFor(ABSOLUTE_SESSION_TIMEOUT_MS - ABSOLUTE_WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Check it's the absolute timeout warning (not inactivity)
+    // Absolute warning shows "For security" and "This timeout cannot be extended"
+    await expect(modal.getByText(/For security/i)).toBeVisible();
   });
 });
 
