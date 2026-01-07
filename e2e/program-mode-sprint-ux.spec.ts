@@ -179,8 +179,7 @@ test.describe('Phase 1: Data Model & Status Computation', () => {
     expect(uniqueNumbers.length).toBeGreaterThan(1)
   })
 
-  // TODO: Test flaky - times out waiting for program navigation in some environments
-  test.skip('sprints compute to different statuses (completed, active, upcoming)', async ({ page }) => {
+  test('sprints compute to different statuses (completed, active, upcoming)', async ({ page }) => {
     await navigateToProgram(page)
     await clickSprintsTab(page)
 
