@@ -39,6 +39,8 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
   const onTimeoutRef = useRef(onTimeout);
   // Ref to break circular dependency between resetTimer and scheduleInactivityWarning
   const scheduleInactivityWarningRef = useRef<() => void>(() => {});
+  // Guard to prevent duplicate extend-session API calls
+  const extendingSessionRef = useRef(false);
 
   // Keep onTimeout ref updated
   useEffect(() => {
@@ -83,7 +85,14 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
   }, []);
 
   // Reset timer - dismisses warning, resets inactivity tracking, and schedules next warning
-  const resetTimer = useCallback(() => {
+  // Also calls the extend-session API to extend the server-side session
+  const resetTimer = useCallback(async () => {
+    // Prevent duplicate API calls
+    if (extendingSessionRef.current) {
+      return;
+    }
+    extendingSessionRef.current = true;
+
     const now = Date.now();
     setLastActivity(now);
     lastActivityRef.current = now;
@@ -93,6 +102,25 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
     clearAllTimers();
     // Schedule the next inactivity warning
     scheduleInactivityWarningRef.current();
+
+    // Call extend-session API to extend server-side session
+    try {
+      const response = await fetch('/api/auth/extend-session', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        // API call failed - force logout
+        console.error('Failed to extend session - forcing logout');
+        onTimeoutRef.current();
+      }
+    } catch {
+      // Network error - force logout
+      console.error('Network error extending session - forcing logout');
+      onTimeoutRef.current();
+    } finally {
+      extendingSessionRef.current = false;
+    }
   }, [clearAllTimers]);
 
   // Schedule inactivity warning

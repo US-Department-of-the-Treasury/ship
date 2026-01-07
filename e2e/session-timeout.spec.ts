@@ -293,9 +293,7 @@ test.describe('Timer Reset Behavior', () => {
     await expect(modal).toBeVisible({ timeout: 5000 });
   });
 
-  // This test requires the extend-session API which is implemented in a later story
-  // Re-enable when "Enable Extend Session API tests" story is complete
-  test.fixme('rapid clicks on Stay Logged In do not cause duplicate API calls', async ({ page, login }) => {
+  test('rapid clicks on Stay Logged In do not cause duplicate API calls', async ({ page, login }) => {
     await page.clock.install();
     await login();
     await page.goto('/docs');
@@ -305,11 +303,21 @@ test.describe('Timer Reset Behavior', () => {
     const extendCalls: string[] = [];
     await page.route('**/api/auth/extend-session', async (route) => {
       extendCalls.push(route.request().url());
-      await route.continue();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            expiresAt: new Date(Date.now() + SESSION_TIMEOUT_MS).toISOString(),
+            lastActivity: new Date().toISOString(),
+          },
+        }),
+      });
     });
 
     // Advance to warning
-    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
 
     const modal = page.getByRole('alertdialog');
     await expect(modal).toBeVisible({ timeout: 5000 });
@@ -692,16 +700,102 @@ test.describe('Activity Tracking', () => {
 });
 
 test.describe('Extend Session API', () => {
-  test.fixme('Stay Logged In calls extend session endpoint', async ({ page }) => {
-    // TODO: Click button, verify API call to extend session
+  test('Stay Logged In calls extend session endpoint', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Track API calls
+    const extendCalls: string[] = [];
+    await page.route('**/api/auth/extend-session', async (route) => {
+      extendCalls.push(route.request().url());
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            expiresAt: new Date(Date.now() + SESSION_TIMEOUT_MS).toISOString(),
+            lastActivity: new Date().toISOString(),
+          },
+        }),
+      });
+    });
+
+    // Advance to warning
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Click Stay Logged In button
+    const button = page.getByRole('button', { name: /stay logged in/i });
+    await button.click();
+
+    // Wait for modal to dismiss
+    await expect(modal).not.toBeVisible();
+
+    // Verify API call was made
+    expect(extendCalls.length).toBe(1);
+    expect(extendCalls[0]).toContain('/api/auth/extend-session');
   });
 
-  test.fixme('extend session failure shows error and forces logout', async ({ page }) => {
-    // TODO: Mock API failure, verify user is logged out
+  test('extend session failure shows error and forces logout', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Mock API failure
+    await page.route('**/api/auth/extend-session', async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: 'Server error' },
+        }),
+      });
+    });
+
+    // Advance to warning
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Click Stay Logged In button
+    const button = page.getByRole('button', { name: /stay logged in/i });
+    await button.click();
+
+    // User should be redirected to login due to API failure
+    await expect(page).toHaveURL(/\/login/);
   });
 
-  test.fixme('extend session failure on network error forces logout', async ({ page }) => {
-    // TODO: Simulate offline, click button, verify logout
+  test('extend session failure on network error forces logout', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Simulate network error
+    await page.route('**/api/auth/extend-session', async (route) => {
+      await route.abort('failed');
+    });
+
+    // Advance to warning
+    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Click Stay Logged In button
+    const button = page.getByRole('button', { name: /stay logged in/i });
+    await button.click();
+
+    // User should be redirected to login due to network error
+    await expect(page).toHaveURL(/\/login/);
   });
 });
 
