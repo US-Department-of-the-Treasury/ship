@@ -225,11 +225,16 @@ router.post('/:token/accept', async (req: Request, res: Response): Promise<void>
       [invite.workspace_id, user.id, invite.role]
     );
 
-    // Create Person document for this user in this workspace (links via properties.user_id)
+    // Update the pending person document created at invite time
+    // Set user_id, remove pending flag, update title to user's chosen name
     await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, properties)
-       VALUES ($1, 'person', $2, $3)`,
-      [invite.workspace_id, user.name, JSON.stringify({ user_id: user.id, email: invite.email })]
+      `UPDATE documents
+       SET title = $1,
+           properties = properties || $2::jsonb - 'pending'
+       WHERE workspace_id = $3
+         AND document_type = 'person'
+         AND properties->>'invite_id' = $4`,
+      [user.name, JSON.stringify({ user_id: user.id }), invite.workspace_id, invite.id]
     );
 
     // Mark invite as used

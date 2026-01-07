@@ -364,12 +364,33 @@ importers:
       '@testing-library/react':
         specifier: ^16.3.1
         version: 16.3.1(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.27))(@types/react@18.3.27)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/cookiejar':
+        specifier: ^2.1.5
+        version: 2.1.5
+      '@types/docker-modem':
+        specifier: ^3.0.6
+        version: 3.0.6
+      '@types/dockerode':
+        specifier: ^3.3.47
+        version: 3.3.47
+      '@types/methods':
+        specifier: ^1.1.4
+        version: 1.1.4
+      '@types/node':
+        specifier: ^22.19.3
+        version: 22.19.3
       '@types/react':
         specifier: ^18.3.18
         version: 18.3.27
       '@types/react-dom':
         specifier: ^18.3.5
         version: 18.3.7(@types/react@18.3.27)
+      '@types/ssh2':
+        specifier: ^1.15.5
+        version: 1.15.5
+      '@types/superagent':
+        specifier: ^8.1.9
+        version: 8.1.9
       '@vitejs/plugin-react':
         specifier: ^4.3.4
         version: 4.7.0(vite@6.4.1(@types/node@22.19.3)(jiti@1.21.7)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
