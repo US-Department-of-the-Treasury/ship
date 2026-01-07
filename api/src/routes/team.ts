@@ -415,4 +415,128 @@ router.get('/people', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/team/accountability - Get sprint completion metrics per person (admin only)
+// Returns: { people, sprints, metrics } where metrics[userId][sprintNumber] = { committed, completed }
+router.get('/accountability', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Check if user is admin
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    // Get workspace sprint start date
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
+    const sprintDurationDays = 14;
+    const today = new Date();
+
+    let startDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      startDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      startDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      startDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
+
+    // Calculate current sprint number
+    const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
+
+    // Get last 6 sprints (including current)
+    const fromSprint = Math.max(1, currentSprintNumber - 5);
+    const toSprint = currentSprintNumber;
+
+    // Generate sprint info
+    const sprints = [];
+    for (let i = fromSprint; i <= toSprint; i++) {
+      const sprintStart = new Date(startDate);
+      sprintStart.setUTCDate(sprintStart.getUTCDate() + (i - 1) * sprintDurationDays);
+      const sprintEnd = new Date(sprintStart);
+      sprintEnd.setUTCDate(sprintEnd.getUTCDate() + sprintDurationDays - 1);
+
+      sprints.push({
+        number: i,
+        name: `Sprint ${i}`,
+        startDate: sprintStart.toISOString().split('T')[0],
+        endDate: sprintEnd.toISOString().split('T')[0],
+        isCurrent: i === currentSprintNumber,
+      });
+    }
+
+    // Get all people in workspace
+    const peopleResult = await pool.query(
+      `SELECT
+         d.properties->>'user_id' as id,
+         d.title as name
+       FROM documents d
+       WHERE d.workspace_id = $1
+         AND d.document_type = 'person'
+         AND d.archived_at IS NULL
+       ORDER BY d.title`,
+      [workspaceId]
+    );
+
+    // Get all issues with estimates, assignees, sprint info, and completion state
+    const issuesResult = await pool.query(
+      `SELECT
+         i.properties->>'assignee_id' as assignee_id,
+         i.sprint_id,
+         COALESCE((i.properties->>'estimate')::numeric, 0) as estimate,
+         i.properties->>'state' as state,
+         s.properties->>'sprint_number' as sprint_number
+       FROM documents i
+       JOIN documents s ON i.sprint_id = s.id
+       WHERE i.workspace_id = $1
+         AND i.document_type = 'issue'
+         AND i.sprint_id IS NOT NULL
+         AND i.properties->>'assignee_id' IS NOT NULL`,
+      [workspaceId]
+    );
+
+    // Calculate metrics: userId -> sprintNumber -> { committed, completed }
+    const metrics: Record<string, Record<number, { committed: number; completed: number }>> = {};
+
+    for (const issue of issuesResult.rows) {
+      const assigneeId = issue.assignee_id;
+      const sprintNumber = parseInt(issue.sprint_number, 10);
+      const estimate = parseFloat(issue.estimate) || 0;
+      const isDone = issue.state === 'done';
+
+      // Skip if outside our range
+      if (sprintNumber < fromSprint || sprintNumber > toSprint) continue;
+
+      if (!metrics[assigneeId]) {
+        metrics[assigneeId] = {};
+      }
+      if (!metrics[assigneeId][sprintNumber]) {
+        metrics[assigneeId][sprintNumber] = { committed: 0, completed: 0 };
+      }
+
+      metrics[assigneeId][sprintNumber].committed += estimate;
+      if (isDone) {
+        metrics[assigneeId][sprintNumber].completed += estimate;
+      }
+    }
+
+    res.json({
+      people: peopleResult.rows,
+      sprints,
+      metrics,
+    });
+  } catch (err) {
+    console.error('Get accountability error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ProgramCombobox, Program } from '@/components/ProgramCombobox';
 import { cn } from '@/lib/cn';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+type TeamTab = 'assignments' | 'accountability';
 
 // CSRF token cache
 let csrfToken: string | null = null;
@@ -51,6 +53,10 @@ const SCROLL_THRESHOLD = 200;
 
 export function TeamModePage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<TeamTab>(
+    (searchParams.get('tab') as TeamTab) || 'assignments'
+  );
   const [data, setData] = useState<TeamGridData | null>(null);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [assignments, setAssignments] = useState<Record<string, Record<number, Assignment>>>({});
@@ -60,6 +66,11 @@ export function TeamModePage() {
   const [sprintRange, setSprintRange] = useState<{ min: number; max: number } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
+
+  const handleTabChange = (tab: TeamTab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
 
   // Dialog states
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -417,18 +428,48 @@ export function TeamModePage() {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header with Tabs */}
       <header className="flex h-10 items-center justify-between border-b border-border px-4">
-        <h1 className="text-sm font-medium text-foreground">Teams</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-sm font-medium text-foreground">Teams</h1>
+          <div className="flex gap-1">
+            <button
+              onClick={() => handleTabChange('assignments')}
+              className={cn(
+                'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+                activeTab === 'assignments'
+                  ? 'bg-accent text-white'
+                  : 'text-muted hover:text-foreground hover:bg-border/50'
+              )}
+            >
+              Assignments
+            </button>
+            <button
+              onClick={() => handleTabChange('accountability')}
+              className={cn(
+                'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+                activeTab === 'accountability'
+                  ? 'bg-accent text-white'
+                  : 'text-muted hover:text-foreground hover:bg-border/50'
+              )}
+            >
+              Accountability
+            </button>
+          </div>
+        </div>
         <span className="text-xs text-muted">
           {data.users.length} team members &middot; {programs.length} programs
         </span>
       </header>
 
-      {/* Grid container */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Fixed user column */}
-        <div className="flex flex-col border-r border-border bg-background">
+      {/* Tab Content */}
+      {activeTab === 'accountability' ? (
+        <AccountabilityTable />
+      ) : (
+        /* Assignments Grid container */
+        <div className="flex flex-1 overflow-hidden">
+          {/* Fixed user column */}
+          <div className="flex flex-col border-r border-border bg-background">
           <div className="flex h-[41.5px] w-[180px] items-center justify-center border-b border-border px-3">
             <span className="text-xs font-medium text-muted">Team Member</span>
           </div>
@@ -521,6 +562,7 @@ export function TeamModePage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Confirmation Dialog for Reassignment */}
       <Dialog.Root open={confirmDialog?.open || false} onOpenChange={(open: boolean) => !open && setConfirmDialog(null)}>
@@ -667,4 +709,152 @@ function formatDateRange(startDate: string, endDate: string): string {
     return `${startMonth} ${startDay}-${endDay}`;
   }
   return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
+}
+
+// Accountability Table Component - shows sprint completion metrics per person
+interface AccountabilitySprint {
+  number: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  isCurrent: boolean;
+}
+
+interface AccountabilityPerson {
+  id: string;
+  name: string;
+}
+
+interface AccountabilityMetrics {
+  committed: number;
+  completed: number;
+}
+
+function AccountabilityTable() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [people, setPeople] = useState<AccountabilityPerson[]>([]);
+  const [sprints, setSprints] = useState<AccountabilitySprint[]>([]);
+  const [metrics, setMetrics] = useState<Record<string, Record<number, AccountabilityMetrics>>>({});
+
+  useEffect(() => {
+    async function fetchAccountability() {
+      try {
+        const res = await fetch(`${API_URL}/api/team/accountability`, { credentials: 'include' });
+        if (!res.ok) {
+          if (res.status === 403) {
+            setError('Admin access required to view accountability metrics');
+          } else {
+            setError('Failed to load accountability data');
+          }
+          return;
+        }
+        const data = await res.json();
+        setPeople(data.people);
+        setSprints(data.sprints);
+        setMetrics(data.metrics);
+      } catch (err) {
+        setError('Failed to load accountability data');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchAccountability();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <span className="text-sm text-muted">Loading accountability data...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <span className="text-sm text-red-500">{error}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-1 overflow-auto">
+      <table className="min-w-full border-collapse">
+        <thead>
+          <tr>
+            <th className="sticky left-0 top-0 z-20 bg-background border-b border-r border-border px-4 py-2 text-left text-xs font-medium text-muted w-[180px]">
+              Team Member
+            </th>
+            {sprints.map((sprint) => (
+              <th
+                key={sprint.number}
+                className={cn(
+                  'sticky top-0 z-10 bg-background border-b border-r border-border px-3 py-2 text-center text-xs font-medium min-w-[100px]',
+                  sprint.isCurrent ? 'text-accent' : 'text-muted'
+                )}
+              >
+                <div>{sprint.name}</div>
+                <div className="text-[10px] font-normal">
+                  {formatDateRange(sprint.startDate, sprint.endDate)}
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {people.map((person) => (
+            <tr key={person.id}>
+              <td className="sticky left-0 z-10 bg-background border-b border-r border-border px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent/80 text-xs font-medium text-white">
+                    {person.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="truncate text-sm text-foreground">{person.name}</span>
+                </div>
+              </td>
+              {sprints.map((sprint) => {
+                const cellMetrics = metrics[person.id]?.[sprint.number];
+                const committed = cellMetrics?.committed || 0;
+                const completed = cellMetrics?.completed || 0;
+                const percentage = committed > 0 ? Math.round((completed / committed) * 100) : null;
+                const isLow = percentage !== null && percentage < 60;
+
+                return (
+                  <td
+                    key={sprint.number}
+                    className={cn(
+                      'border-b border-r border-border px-3 py-2 text-center text-sm',
+                      sprint.isCurrent && 'bg-accent/5',
+                      isLow && 'bg-red-500/10'
+                    )}
+                  >
+                    {committed > 0 ? (
+                      <div className="flex flex-col items-center">
+                        <span className={cn(
+                          'font-medium',
+                          isLow ? 'text-red-500' : 'text-foreground'
+                        )}>
+                          {completed}/{committed}
+                        </span>
+                        <span className={cn(
+                          'text-xs',
+                          isLow ? 'text-red-400' : 'text-muted'
+                        )}>
+                          {percentage}%
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-muted">-</span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
