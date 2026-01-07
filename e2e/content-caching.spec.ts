@@ -11,9 +11,7 @@ test.describe('Content Caching - High Performance Navigation', () => {
     await page.waitForURL(/\/(issues|docs)/);
   });
 
-  // Skip: This test requires offline cache infrastructure (Phase 3) that persists
-  // document content to IndexedDB for instant loading without WebSocket round-trip.
-  test.skip('document content loads instantly from cache on revisit', async ({ page }) => {
+  test('document content loads instantly from cache on revisit', async ({ page }) => {
     // Navigate to documents
     await page.goto('/docs');
     await page.waitForTimeout(1000);
@@ -51,9 +49,7 @@ test.describe('Content Caching - High Performance Navigation', () => {
     console.log(`Content load time: ${loadTime}ms`);
   });
 
-  // Skip: This test requires offline cache infrastructure (Phase 3) that persists
-  // document content so rapid navigation shows cached content without WebSocket sync.
-  test.skip('toggling between two documents shows no blank flash', async ({ page }) => {
+  test('toggling between two documents shows no blank flash', async ({ page }) => {
     await page.goto('/docs');
 
     // Wait for the document tree to load (tree has aria-label="Workspace documents" or "Documents")
@@ -139,10 +135,7 @@ test.describe('Content Caching - High Performance Navigation', () => {
     expect(hasCache).toBe(true);
   });
 
-  // Skip: This test requires offline cache infrastructure (Phase 3) that persists
-  // document content to IndexedDB and loads it before WebSocket connects.
-  // Currently, content only loads via WebSocket, so this test can't pass.
-  test.skip('cached content is available even when WebSocket is slow', async ({ page }) => {
+  test('cached content is available even when WebSocket is slow', async ({ page }) => {
     await page.goto('/docs');
 
     // Visit a document first to cache it (tree has aria-label="Workspace documents" or "Documents")

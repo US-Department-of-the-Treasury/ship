@@ -510,11 +510,19 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
   }
 
   // Create wiki documents with nested structure for tree testing
+  // Include content for content-caching tests to work
+  const welcomeContent = {
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [{ type: 'text', text: 'Ship helps your team track work, plan sprints, and write documentation—all in one place.' }] },
+      { type: 'paragraph', content: [{ type: 'text', text: 'This is the welcome document with example content for testing.' }] },
+    ],
+  };
   const parentDocResult = await pool.query(
-    `INSERT INTO documents (workspace_id, document_type, title, created_by)
-     VALUES ($1, 'wiki', 'Welcome to Ship', $2)
+    `INSERT INTO documents (workspace_id, document_type, title, content, created_by)
+     VALUES ($1, 'wiki', 'Welcome to Ship', $2, $3)
      RETURNING id`,
-    [workspaceId, userId]
+    [workspaceId, JSON.stringify(welcomeContent), userId]
   );
   const parentDocId = parentDocResult.rows[0].id;
 

@@ -173,74 +173,102 @@ export function Editor({
 
   // Setup IndexedDB persistence and WebSocket provider
   useEffect(() => {
+    let wsProvider: WebsocketProvider | null = null;
+    let hasCachedContent = false;
+    let cancelled = false;
+
     // Create IndexedDB persistence for content caching
-    // This loads cached content instantly while WebSocket syncs
+    // This loads cached content BEFORE WebSocket connects for instant navigation
     const indexeddbProvider = new IndexeddbPersistence(`ship-${roomPrefix}-${documentId}`, ydoc);
 
-    // Track if we got cached content
-    let hasCachedContent = false;
-
-    indexeddbProvider.on('synced', () => {
-      // Content loaded from IndexedDB cache
-      hasCachedContent = true;
-      // Show 'cached' status if WebSocket hasn't connected yet
-      setSyncStatus((prev) => prev === 'connecting' ? 'cached' : prev);
-      console.log(`[Editor] IndexedDB synced for ${roomPrefix}:${documentId}`);
-    });
-
-    // In production, use current host with wss:// (through CloudFront)
-    // In development, Vite proxy handles /collaboration WebSocket (see vite.config.ts)
-    const apiUrl = import.meta.env.VITE_API_URL ?? '';
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = apiUrl
-      ? apiUrl.replace(/^http/, 'ws') + '/collaboration'
-      : `${wsProtocol}//${window.location.host}/collaboration`;
-    const wsProvider = new WebsocketProvider(wsUrl, `${roomPrefix}:${documentId}`, ydoc, {
-      connect: true,
-    });
-
-    wsProvider.on('status', (event: { status: string }) => {
-      console.log(`[Editor] WebSocket status: ${event.status} for ${roomPrefix}:${documentId}`);
-      if (event.status === 'connected') {
-        setSyncStatus('synced');
-      } else if (event.status === 'disconnected') {
-        // If we have cached content, show 'cached' instead of 'disconnected'
-        setSyncStatus(hasCachedContent ? 'cached' : 'disconnected');
+    // Wait for IndexedDB to load cached content (with timeout)
+    // This ensures cached content shows instantly before WebSocket syncs
+    const waitForCache = new Promise<void>((resolve) => {
+      // Resolve immediately if already synced
+      if (indexeddbProvider.synced) {
+        hasCachedContent = true;
+        setSyncStatus('cached');
+        resolve();
+        return;
       }
+
+      // Wait for sync event
+      const onSynced = () => {
+        hasCachedContent = true;
+        setSyncStatus((prev) => prev === 'connecting' ? 'cached' : prev);
+        console.log(`[Editor] IndexedDB synced for ${roomPrefix}:${documentId}`);
+        resolve();
+      };
+      indexeddbProvider.on('synced', onSynced);
+
+      // Timeout after 300ms - don't block forever if no cache exists
+      setTimeout(() => {
+        indexeddbProvider.off('synced', onSynced);
+        resolve();
+      }, 300);
     });
 
-    wsProvider.on('sync', (isSynced: boolean) => {
-      console.log(`[Editor] WebSocket sync: ${isSynced} for ${roomPrefix}:${documentId}`);
-      if (isSynced) {
-        setSyncStatus('synced');
-      }
-    });
+    // Connect WebSocket AFTER cache loads (or timeout)
+    waitForCache.then(() => {
+      if (cancelled) return;
 
-    // Set awareness info
-    wsProvider.awareness.setLocalStateField('user', {
-      name: userName,
-      color: color,
-    });
+      // In production, use current host with wss:// (through CloudFront)
+      // In development, Vite proxy handles /collaboration WebSocket (see vite.config.ts)
+      const apiUrl = import.meta.env.VITE_API_URL ?? '';
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = apiUrl
+        ? apiUrl.replace(/^http/, 'ws') + '/collaboration'
+        : `${wsProtocol}//${window.location.host}/collaboration`;
+      wsProvider = new WebsocketProvider(wsUrl, `${roomPrefix}:${documentId}`, ydoc, {
+        connect: true,
+      });
 
-    // Track connected users
-    const updateUsers = () => {
-      const users: { name: string; color: string }[] = [];
-      wsProvider.awareness.getStates().forEach((state) => {
-        if (state.user) {
-          users.push(state.user);
+      wsProvider.on('status', (event: { status: string }) => {
+        console.log(`[Editor] WebSocket status: ${event.status} for ${roomPrefix}:${documentId}`);
+        if (event.status === 'connected') {
+          setSyncStatus('synced');
+        } else if (event.status === 'disconnected') {
+          // If we have cached content, show 'cached' instead of 'disconnected'
+          setSyncStatus(hasCachedContent ? 'cached' : 'disconnected');
         }
       });
-      setConnectedUsers(users);
-    };
 
-    wsProvider.awareness.on('change', updateUsers);
-    updateUsers();
+      wsProvider.on('sync', (isSynced: boolean) => {
+        console.log(`[Editor] WebSocket sync: ${isSynced} for ${roomPrefix}:${documentId}`);
+        if (isSynced) {
+          setSyncStatus('synced');
+        }
+      });
 
-    setProvider(wsProvider);
+      // Set awareness info
+      wsProvider.awareness.setLocalStateField('user', {
+        name: userName,
+        color: color,
+      });
+
+      // Track connected users
+      const updateUsers = () => {
+        const users: { name: string; color: string }[] = [];
+        wsProvider!.awareness.getStates().forEach((state) => {
+          if (state.user) {
+            users.push(state.user);
+          }
+        });
+        setConnectedUsers(users);
+      };
+
+      wsProvider.awareness.on('change', updateUsers);
+      updateUsers();
+
+      setProvider(wsProvider);
+    });
 
     return () => {
-      wsProvider.awareness.off('change', updateUsers);
-      wsProvider.destroy();
+      cancelled = true;
+      if (wsProvider) {
+        wsProvider.awareness.off('change', () => {});
+        wsProvider.destroy();
+      }
       indexeddbProvider.destroy();
     };
   }, [documentId, userName, color, ydoc, roomPrefix]);
