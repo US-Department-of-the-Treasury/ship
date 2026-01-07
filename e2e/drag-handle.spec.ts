@@ -13,7 +13,7 @@ test.describe('Drag Handle - Block Reordering', () => {
     await page.goto('/login')
     await page.getByRole('textbox', { name: /email/i }).fill('dev@ship.local')
     await page.getByRole('textbox', { name: /password/i }).fill('admin123')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
     await expect(page).not.toHaveURL('/login', { timeout: 5000 })
   }
 

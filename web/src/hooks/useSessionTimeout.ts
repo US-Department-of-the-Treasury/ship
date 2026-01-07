@@ -37,6 +37,10 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const absoluteWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTimeoutRef = useRef(onTimeout);
+  // Ref to break circular dependency between resetTimer and scheduleInactivityWarning
+  const scheduleInactivityWarningRef = useRef<() => void>(() => {});
+  // Guard to prevent duplicate extend-session API calls
+  const extendingSessionRef = useRef(false);
 
   // Keep onTimeout ref updated
   useEffect(() => {
@@ -80,8 +84,15 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
     }
   }, []);
 
-  // Reset timer - dismisses warning and resets inactivity tracking
-  const resetTimer = useCallback(() => {
+  // Reset timer - dismisses warning, resets inactivity tracking, and schedules next warning
+  // Also calls the extend-session API to extend the server-side session
+  const resetTimer = useCallback(async () => {
+    // Prevent duplicate API calls
+    if (extendingSessionRef.current) {
+      return;
+    }
+    extendingSessionRef.current = true;
+
     const now = Date.now();
     setLastActivity(now);
     lastActivityRef.current = now;
@@ -89,6 +100,27 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
     setTimeRemaining(null);
     setWarningType(null);
     clearAllTimers();
+    // Schedule the next inactivity warning
+    scheduleInactivityWarningRef.current();
+
+    // Call extend-session API to extend server-side session
+    try {
+      const response = await fetch('/api/auth/extend-session', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        // API call failed - force logout
+        console.error('Failed to extend session - forcing logout');
+        onTimeoutRef.current();
+      }
+    } catch {
+      // Network error - force logout
+      console.error('Network error extending session - forcing logout');
+      onTimeoutRef.current();
+    } finally {
+      extendingSessionRef.current = false;
+    }
   }, [clearAllTimers]);
 
   // Schedule inactivity warning
@@ -128,6 +160,9 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
       }
     }, timeUntilWarning);
   }, []);
+
+  // Keep the ref updated for resetTimer to use
+  scheduleInactivityWarningRef.current = scheduleInactivityWarning;
 
   // Schedule absolute timeout warning
   const scheduleAbsoluteWarning = useCallback(() => {
@@ -203,16 +238,16 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
     lastThrottledActivityRef.current = now;
 
     // If showing inactivity warning, dismiss it and reset timer
+    // Note: resetTimer() now automatically schedules the next warning
     if (showWarning && warningType === 'inactivity') {
       resetTimer();
-      scheduleInactivityWarning();
     } else if (!showWarning) {
       // Just update last activity
       setLastActivity(now);
       lastActivityRef.current = now;
     }
     // Don't reset for absolute warning - it can't be extended
-  }, [showWarning, warningType, resetTimer, scheduleInactivityWarning]);
+  }, [showWarning, warningType, resetTimer]);
 
   // Set up activity listeners
   useEffect(() => {

@@ -333,6 +333,44 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
   }
 });
 
+// POST /api/auth/extend-session - Explicitly extend session (called by "Stay Logged In" button)
+router.post('/extend-session', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + SESSION_TIMEOUT_MS);
+
+    // Update session's last_activity and expires_at
+    await pool.query(
+      `UPDATE sessions SET last_activity = $1, expires_at = $2 WHERE id = $3`,
+      [now, expiresAt, req.sessionId]
+    );
+
+    await logAuditEvent({
+      workspaceId: req.workspaceId,
+      actorUserId: req.userId!,
+      action: 'auth.extend_session',
+      req,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        expiresAt: expiresAt.toISOString(),
+        lastActivity: now.toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Extend session error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to extend session',
+      },
+    });
+  }
+});
+
 // GET /api/auth/session - Get session info for timeout tracking
 router.get('/session', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {

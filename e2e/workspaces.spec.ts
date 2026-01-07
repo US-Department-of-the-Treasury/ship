@@ -6,7 +6,7 @@ async function login(page: Page, email: string, password: string) {
   await page.goto('/login')
   await page.locator('#email').fill(email)
   await page.locator('#password').fill(password)
-  await page.getByRole('button', { name: /sign in/i }).click()
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page).not.toHaveURL('/login', { timeout: 10000 })
 }
 

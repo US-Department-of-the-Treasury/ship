@@ -11,7 +11,7 @@ async function login(page: Page) {
   await page.goto('/login')
   await page.locator('#email').fill('dev@ship.local')
   await page.locator('#password').fill('admin123')
-  await page.getByRole('button', { name: /sign in/i }).click()
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page).not.toHaveURL('/login', { timeout: 5000 })
 }
 
@@ -294,7 +294,7 @@ test.describe('Backlinks', () => {
     await page2.goto('/login')
     await page2.locator('#email').fill('dev@ship.local')
     await page2.locator('#password').fill('admin123')
-    await page2.getByRole('button', { name: /sign in/i }).click()
+    await page2.getByRole('button', { name: 'Sign in', exact: true }).click()
     await expect(page2).not.toHaveURL('/login', { timeout: 5000 })
 
     // Create Document Q in second tab

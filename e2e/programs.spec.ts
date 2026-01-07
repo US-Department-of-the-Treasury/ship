@@ -6,7 +6,7 @@ test.describe('Programs', () => {
     await page.goto('/login')
     await page.locator('#email').fill('dev@ship.local')
     await page.locator('#password').fill('admin123')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Wait for app to load
     await expect(page).not.toHaveURL('/login', { timeout: 5000 })
@@ -76,7 +76,7 @@ test.describe('Programs', () => {
     await expect(page.getByText('Color')).toBeVisible({ timeout: 5000 })
   })
 
-  test('program editor has tabbed navigation (Overview, Issues, Sprints, Feedback)', async ({ page }) => {
+  test('program editor has tabbed navigation (Overview, Issues, Sprints)', async ({ page }) => {
     await page.goto('/programs')
 
     // Create new program
@@ -88,7 +88,6 @@ test.describe('Programs', () => {
     await expect(main.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
     await expect(main.getByRole('tab', { name: 'Issues' })).toBeVisible({ timeout: 5000 })
     await expect(main.getByRole('tab', { name: 'Sprints' })).toBeVisible({ timeout: 5000 })
-    await expect(main.getByRole('tab', { name: 'Feedback' })).toBeVisible({ timeout: 5000 })
   })
 
   test('can switch between program tabs', async ({ page }) => {
@@ -112,12 +111,6 @@ test.describe('Programs', () => {
 
     // Should see Create sprint link in the timeline
     await expect(page.getByText(/\+ Create sprint/).first()).toBeVisible({ timeout: 5000 })
-
-    // Click Feedback tab
-    await main.getByRole('tab', { name: 'Feedback' }).click()
-
-    // Should see Give Feedback button
-    await expect(page.getByRole('button', { name: /give feedback/i })).toBeVisible({ timeout: 5000 })
   })
 
   test('Issues tab shows list and kanban view toggle', async ({ page }) => {
@@ -279,39 +272,14 @@ test.describe('Programs', () => {
     await expect(editor).toBeVisible({ timeout: 5000 })
   })
 
-  test('Feedback tab shows filter options', async ({ page }) => {
-    await page.goto('/programs')
-
-    // Create new program
-    await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Click Feedback tab
-    await page.getByRole('tab', { name: 'Feedback' }).click()
-
-    // Should see filter buttons (New, Accepted, Rejected, All, Drafts)
-    await expect(page.getByRole('button', { name: 'New' })).toBeVisible({ timeout: 5000 })
-    await expect(page.getByRole('button', { name: 'Accepted' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Rejected' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'All' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Drafts' })).toBeVisible()
+  // Feedback tab has been removed from the program editor
+  // These tests are skipped as the feature no longer exists
+  test.skip('Feedback tab shows filter options', async ({ page }) => {
+    // Test disabled - Feedback tab removed from program editor
   })
 
-  test('can give feedback from program Feedback tab', async ({ page }) => {
-    await page.goto('/programs')
-
-    // Create new program
-    await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Click Feedback tab
-    await page.getByRole('tab', { name: 'Feedback' }).click()
-
-    // Click Give Feedback button
-    await page.getByRole('button', { name: /give feedback/i }).click()
-
-    // Should navigate to feedback editor
-    await expect(page).toHaveURL(/\/feedback\/[a-f0-9-]+/, { timeout: 5000 })
+  test.skip('can give feedback from program Feedback tab', async ({ page }) => {
+    // Test disabled - Feedback tab removed from program editor
   })
 
   test('program cards show emoji or initial badges', async ({ page }) => {
