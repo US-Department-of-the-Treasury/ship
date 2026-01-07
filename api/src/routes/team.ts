@@ -528,10 +528,55 @@ router.get('/accountability', authMiddleware, async (req: Request, res: Response
       }
     }
 
+    // Detect pattern alerts: 2+ consecutive sprints below 60% completion
+    const patternAlerts: Record<string, {
+      hasAlert: boolean;
+      consecutiveCount: number;
+      trend: number[]; // completion percentages for last N sprints
+    }> = {};
+
+    for (const person of peopleResult.rows) {
+      const personMetrics = metrics[person.id];
+      if (!personMetrics) {
+        patternAlerts[person.id] = { hasAlert: false, consecutiveCount: 0, trend: [] };
+        continue;
+      }
+
+      // Build trend array (completion percentages in sprint order)
+      const trend: number[] = [];
+      let consecutiveLow = 0;
+      let maxConsecutiveLow = 0;
+
+      for (let i = fromSprint; i <= toSprint; i++) {
+        const sprintMetrics = personMetrics[i];
+        if (sprintMetrics && sprintMetrics.committed > 0) {
+          const rate = Math.round((sprintMetrics.completed / sprintMetrics.committed) * 100);
+          trend.push(rate);
+
+          if (rate < 60) {
+            consecutiveLow++;
+            maxConsecutiveLow = Math.max(maxConsecutiveLow, consecutiveLow);
+          } else {
+            consecutiveLow = 0;
+          }
+        } else {
+          trend.push(-1); // -1 indicates no data
+          consecutiveLow = 0; // Reset streak on no data
+        }
+      }
+
+      patternAlerts[person.id] = {
+        hasAlert: maxConsecutiveLow >= 2,
+        consecutiveCount: maxConsecutiveLow,
+        trend,
+      };
+    }
+
     res.json({
       people: peopleResult.rows,
       sprints,
       metrics,
+      patternAlerts,
     });
   } catch (err) {
     console.error('Get accountability error:', err);

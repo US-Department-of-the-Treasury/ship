@@ -730,12 +730,19 @@ interface AccountabilityMetrics {
   completed: number;
 }
 
+interface PatternAlert {
+  hasAlert: boolean;
+  consecutiveCount: number;
+  trend: number[]; // -1 means no data for that sprint
+}
+
 function AccountabilityTable() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [people, setPeople] = useState<AccountabilityPerson[]>([]);
   const [sprints, setSprints] = useState<AccountabilitySprint[]>([]);
   const [metrics, setMetrics] = useState<Record<string, Record<number, AccountabilityMetrics>>>({});
+  const [patternAlerts, setPatternAlerts] = useState<Record<string, PatternAlert>>({});
 
   useEffect(() => {
     async function fetchAccountability() {
@@ -753,6 +760,7 @@ function AccountabilityTable() {
         setPeople(data.people);
         setSprints(data.sprints);
         setMetrics(data.metrics);
+        setPatternAlerts(data.patternAlerts || {});
       } catch (err) {
         setError('Failed to load accountability data');
       } finally {
@@ -804,7 +812,14 @@ function AccountabilityTable() {
           </tr>
         </thead>
         <tbody>
-          {people.map((person) => (
+          {people.map((person) => {
+            const alert = patternAlerts[person.id];
+            const hasPatternAlert = alert?.hasAlert;
+            const trendString = alert?.trend
+              .map(t => t === -1 ? '-' : `${t}%`)
+              .join(' → ');
+
+            return (
             <tr key={person.id}>
               <td className="sticky left-0 z-10 bg-background border-b border-r border-border px-4 py-2">
                 <div className="flex items-center gap-2">
@@ -812,6 +827,14 @@ function AccountabilityTable() {
                     {person.name.charAt(0).toUpperCase()}
                   </div>
                   <span className="truncate text-sm text-foreground">{person.name}</span>
+                  {hasPatternAlert && (
+                    <span
+                      className="ml-1 text-orange-500 cursor-help"
+                      title={`⚠️ Low completion pattern: ${alert.consecutiveCount} consecutive sprints below 60%\nTrend: ${trendString}`}
+                    >
+                      ⚠
+                    </span>
+                  )}
                 </div>
               </td>
               {sprints.map((sprint) => {
@@ -852,7 +875,8 @@ function AccountabilityTable() {
                 );
               })}
             </tr>
-          ))}
+          );
+          })}
         </tbody>
       </table>
     </div>
