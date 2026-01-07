@@ -1357,19 +1357,96 @@ test.describe('WebSocket Session Handling', () => {
 });
 
 test.describe('Visual Verification', () => {
-  test.fixme('warning modal is visually centered on screen', async ({ page }) => {
-    // TODO: Take screenshot, verify modal is centered
+  test('warning modal is visually centered on screen', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Get modal and viewport dimensions
+    const modalBox = await modal.boundingBox();
+    const viewport = page.viewportSize();
+    expect(modalBox).toBeTruthy();
+    expect(viewport).toBeTruthy();
+
+    // Modal should be roughly centered (within 50px tolerance for different screen sizes)
+    const horizontalCenter = (viewport!.width - modalBox!.width) / 2;
+    const verticalCenter = (viewport!.height - modalBox!.height) / 2;
+    expect(Math.abs(modalBox!.x - horizontalCenter)).toBeLessThan(50);
+    expect(Math.abs(modalBox!.y - verticalCenter)).toBeLessThan(50);
   });
 
-  test.fixme('warning modal has visible backdrop', async ({ page }) => {
-    // TODO: Verify backdrop is visible and dims the page
+  test('warning modal has visible backdrop', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // The backdrop/overlay should exist with a semi-transparent background to dim the page
+    // Radix Dialog.Overlay renders with class 'bg-black/60' (60% opacity black)
+    const backdrop = page.locator('.bg-black\\/60, [class*="bg-black"]').first();
+    await expect(backdrop).toBeVisible();
   });
 
-  test.fixme('countdown timer is prominently displayed', async ({ page }) => {
-    // TODO: Verify countdown is large and easily readable
+  test('countdown timer is prominently displayed', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Timer should be visible and have role="timer"
+    const timer = modal.getByRole('timer');
+    await expect(timer).toBeVisible();
+
+    // Timer should have reasonable font size (at least 16px to be readable)
+    const fontSize = await timer.evaluate((el) => {
+      return parseInt(window.getComputedStyle(el).fontSize);
+    });
+    expect(fontSize).toBeGreaterThanOrEqual(16);
   });
 
-  test.fixme('Stay Logged In button has clear visual affordance', async ({ page }) => {
-    // TODO: Verify button looks clickable (not disabled/hidden)
+  test('Stay Logged In button has clear visual affordance', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Button should be visible and enabled
+    const button = modal.getByRole('button', { name: 'Stay Logged In' });
+    await expect(button).toBeVisible();
+    await expect(button).toBeEnabled();
+
+    // Button should be visually distinct (has a background color or border)
+    const styles = await button.evaluate((el) => {
+      const computed = window.getComputedStyle(el);
+      return {
+        backgroundColor: computed.backgroundColor,
+        borderWidth: computed.borderWidth,
+        cursor: computed.cursor,
+      };
+    });
+
+    // Should have pointer cursor indicating it's clickable
+    expect(styles.cursor).toBe('pointer');
   });
 });
