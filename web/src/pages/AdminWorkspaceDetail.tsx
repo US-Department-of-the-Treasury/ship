@@ -14,6 +14,7 @@ interface Member {
 interface Invite {
   id: string;
   email: string;
+  x509SubjectDn: string | null;
   role: 'admin' | 'member';
   token: string;
   createdAt: string;
@@ -40,6 +41,8 @@ export function AdminWorkspaceDetailPage() {
 
   // Invite form state
   const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteSubjectDn, setInviteSubjectDn] = useState('');
+  const [showPivField, setShowPivField] = useState(false);
   const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -114,12 +117,15 @@ export function AdminWorkspaceDetailPage() {
 
     const res = await api.admin.createWorkspaceInvite(id, {
       email: inviteEmail.trim(),
+      x509SubjectDn: inviteSubjectDn.trim() || undefined,
       role: inviteRole,
     });
 
     if (res.success && res.data) {
       setInvites(prev => [res.data!.invite, ...prev]);
       setInviteEmail('');
+      setInviteSubjectDn('');
+      setShowPivField(false);
       setInviteRole('member');
     } else {
       setInviteError(res.error?.message || 'Failed to create invite');
@@ -306,6 +312,7 @@ export function AdminWorkspaceDetailPage() {
                 <thead className="bg-border/30">
                   <tr>
                     <th className="px-4 py-3 text-left text-sm font-medium text-muted">Email</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-muted">PIV Identity</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-muted">Role</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-muted">Sent</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-muted">Actions</th>
@@ -315,6 +322,13 @@ export function AdminWorkspaceDetailPage() {
                   {invites.map((invite) => (
                     <tr key={invite.id}>
                       <td className="px-4 py-3 text-sm text-foreground">{invite.email}</td>
+                      <td className="px-4 py-3 text-sm text-muted">
+                        {invite.x509SubjectDn ? (
+                          <span className="font-mono text-xs">{invite.x509SubjectDn}</span>
+                        ) : (
+                          <span className="text-muted/50">-</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-sm text-muted capitalize">{invite.role}</td>
                       <td className="px-4 py-3 text-sm text-muted">
                         {formatDate(invite.createdAt)}
@@ -432,33 +446,60 @@ export function AdminWorkspaceDetailPage() {
         {/* Invite Form Section */}
         <section>
           <h2 className="text-sm font-medium text-foreground mb-3">Invite New Member</h2>
-          <form onSubmit={handleInvite} className="flex items-center gap-3 p-4 bg-border/20 rounded-lg">
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="email@example.com"
-              required
-              className={cn(
-                "flex-1 max-w-sm px-3 py-2 bg-background border rounded-md text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent",
-                inviteError ? "border-red-500" : "border-border"
+          <form onSubmit={handleInvite} className="p-4 bg-border/20 rounded-lg space-y-3">
+            <div className="flex items-center gap-3">
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="email@example.com"
+                required
+                className={cn(
+                  "flex-1 max-w-sm px-3 py-2 bg-background border rounded-md text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent",
+                  inviteError ? "border-red-500" : "border-border"
+                )}
+              />
+              <select
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
+                className="px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+              <button
+                type="submit"
+                disabled={inviting || !inviteEmail.trim()}
+                className="px-4 py-2 text-sm bg-accent text-white rounded-md hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {inviting ? 'Sending...' : 'Send Invite'}
+              </button>
+            </div>
+
+            {/* PIV Subject DN field (collapsible) */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowPivField(!showPivField)}
+                className="text-xs text-muted hover:text-foreground transition-colors"
+              >
+                {showPivField ? '- Hide PIV options' : '+ Add PIV certificate identity'}
+              </button>
+              {showPivField && (
+                <div className="mt-2">
+                  <input
+                    type="text"
+                    value={inviteSubjectDn}
+                    onChange={(e) => setInviteSubjectDn(e.target.value)}
+                    placeholder="X.509 Subject DN (e.g., CN=LASTNAME.FIRSTNAME.MIDDLE.1234567890)"
+                    className="w-full max-w-lg px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent font-mono"
+                  />
+                  <p className="mt-1 text-xs text-muted">
+                    Optional: For PIV users whose certificate may not contain an email address.
+                  </p>
+                </div>
               )}
-            />
-            <select
-              value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
-              className="px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
-            >
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-            </select>
-            <button
-              type="submit"
-              disabled={inviting || !inviteEmail.trim()}
-              className="px-4 py-2 text-sm bg-accent text-white rounded-md hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {inviting ? 'Sending...' : 'Send Invite'}
-            </button>
+            </div>
           </form>
           {inviteError && (
             <p className="mt-2 text-sm text-red-500">{inviteError}</p>

@@ -82,4 +82,12 @@ api/uploads/
 
 # Research notes
 research/
+.research/
 .claude/deploy-logs/
+.claude/deploy-config.json
+
+# Deployment artifacts
+ship-api-*.zip
+
+# Vendor (local SDK links)
+vendor/

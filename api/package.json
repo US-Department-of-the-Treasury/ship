@@ -18,7 +18,10 @@
     "db:migrate": "tsx src/db/migrate.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.962.0",
     "@aws-sdk/client-ssm": "^3.958.0",
+    "@fpki/auth-client": "file:../vendor/@fpki/auth-client",
+    "undici": "^6.0.0",
     "@ship/shared": "workspace:*",
     "@types/cookie": "^1.0.0",
     "bcrypt": "^6.0.0",

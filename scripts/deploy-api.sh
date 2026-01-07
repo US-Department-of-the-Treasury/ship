@@ -67,7 +67,7 @@ DEPLOY_DIR=$(mktemp -d)
 trap "rm -rf $DEPLOY_DIR" EXIT
 
 # Copy Dockerfile to root (required by EB Docker platform)
-cp "$PROJECT_ROOT/api/Dockerfile" "$DEPLOY_DIR/Dockerfile"
+cp "$PROJECT_ROOT/Dockerfile" "$DEPLOY_DIR/Dockerfile"
 
 # Copy root package files
 cp "$PROJECT_ROOT/package.json" "$DEPLOY_DIR/"
@@ -85,6 +85,10 @@ cp -r "$PROJECT_ROOT/api/dist/"* "$DEPLOY_DIR/api/dist/"
 # Copy shared package.json and built dist
 cp "$PROJECT_ROOT/shared/package.json" "$DEPLOY_DIR/shared/"
 cp -r "$PROJECT_ROOT/shared/dist/"* "$DEPLOY_DIR/shared/dist/"
+
+# Copy vendor dependencies (SDK linked via file: protocol)
+mkdir -p "$DEPLOY_DIR/vendor"
+cp -r "$PROJECT_ROOT/vendor/"* "$DEPLOY_DIR/vendor/"
 
 # Create the deployment ZIP
 ZIP_FILE="$PROJECT_ROOT/deploy-api-${VERSION_LABEL}.zip"

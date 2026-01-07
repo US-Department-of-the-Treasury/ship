@@ -1,3 +1,25 @@
+/**
+ * SSM Parameter Store - Application Configuration
+ *
+ * This file loads application configuration from AWS SSM Parameter Store.
+ *
+ * Secrets Storage Strategy:
+ * ─────────────────────────
+ * SSM Parameter Store (/ship/{env}/):
+ *   - DATABASE_URL, SESSION_SECRET, CORS_ORIGIN
+ *   - Application config that changes per environment
+ *
+ * Secrets Manager (ship/fpki-oauth-credentials):
+ *   - FPKI OAuth credentials (issuer_url, client_id, private_key_pem)
+ *   - Loaded by SecretsManagerCredentialStore in services/credential-store.ts
+ *   - Cryptographic credentials requiring stricter access controls
+ *
+ * Why the split?
+ *   - Secrets Manager provides automatic rotation, fine-grained IAM policies,
+ *     and audit logging appropriate for cryptographic credentials
+ *   - SSM Parameter Store is simpler for application config that doesn't
+ *     require rotation or cross-account access patterns
+ */
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 
 const client = new SSMClient({ region: process.env.AWS_REGION || 'us-east-1' });
@@ -25,16 +47,22 @@ export async function loadProductionSecrets(): Promise<void> {
 
   console.log(`Loading secrets from SSM path: ${basePath}`);
 
-  const [databaseUrl, sessionSecret, corsOrigin] = await Promise.all([
+  const [databaseUrl, sessionSecret, corsOrigin, cdnDomain, appBaseUrl] = await Promise.all([
     getSSMSecret(`${basePath}/DATABASE_URL`),
     getSSMSecret(`${basePath}/SESSION_SECRET`),
     getSSMSecret(`${basePath}/CORS_ORIGIN`),
+    getSSMSecret(`${basePath}/CDN_DOMAIN`),
+    getSSMSecret(`${basePath}/APP_BASE_URL`),
   ]);
 
   process.env.DATABASE_URL = databaseUrl;
   process.env.SESSION_SECRET = sessionSecret;
   process.env.CORS_ORIGIN = corsOrigin;
+  process.env.CDN_DOMAIN = cdnDomain;
+  process.env.APP_BASE_URL = appBaseUrl;
 
   console.log('Secrets loaded from SSM Parameter Store');
   console.log(`CORS_ORIGIN: ${corsOrigin}`);
+  console.log(`CDN_DOMAIN: ${cdnDomain}`);
+  console.log(`APP_BASE_URL: ${appBaseUrl}`);
 }

@@ -15,6 +15,8 @@ export function WorkspaceSettingsPage() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteSubjectDn, setInviteSubjectDn] = useState('');
+  const [showPivField, setShowPivField] = useState(false);
   const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
   const [inviting, setInviting] = useState(false);
 
@@ -46,12 +48,15 @@ export function WorkspaceSettingsPage() {
     setInviting(true);
     const res = await api.workspaces.createInvite(currentWorkspace.id, {
       email: inviteEmail.trim(),
+      x509SubjectDn: inviteSubjectDn.trim() || undefined,
       role: inviteRole,
     });
     if (res.success && res.data) {
       const { invite } = res.data;
       setInvites(prev => [...prev, invite]);
       setInviteEmail('');
+      setInviteSubjectDn('');
+      setShowPivField(false);
     }
     setInviting(false);
   }
@@ -161,6 +166,10 @@ export function WorkspaceSettingsPage() {
                 invites={invites}
                 inviteEmail={inviteEmail}
                 setInviteEmail={setInviteEmail}
+                inviteSubjectDn={inviteSubjectDn}
+                setInviteSubjectDn={setInviteSubjectDn}
+                showPivField={showPivField}
+                setShowPivField={setShowPivField}
                 inviteRole={inviteRole}
                 setInviteRole={setInviteRole}
                 inviting={inviting}
@@ -272,6 +281,10 @@ function InvitesTab({
   invites,
   inviteEmail,
   setInviteEmail,
+  inviteSubjectDn,
+  setInviteSubjectDn,
+  showPivField,
+  setShowPivField,
   inviteRole,
   setInviteRole,
   inviting,
@@ -281,6 +294,10 @@ function InvitesTab({
   invites: WorkspaceInvite[];
   inviteEmail: string;
   setInviteEmail: (v: string) => void;
+  inviteSubjectDn: string;
+  setInviteSubjectDn: (v: string) => void;
+  showPivField: boolean;
+  setShowPivField: (v: boolean) => void;
   inviteRole: 'admin' | 'member';
   setInviteRole: (v: 'admin' | 'member') => void;
   inviting: boolean;
@@ -290,10 +307,6 @@ function InvitesTab({
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   function handleCopyLink(invite: WorkspaceInvite) {
-    if (!invite.token) {
-      console.error('Invite token is missing:', invite);
-      return;
-    }
     const url = `${window.location.origin}/invite/${invite.token}`;
     navigator.clipboard.writeText(url);
     setCopiedId(invite.id);
@@ -303,29 +316,58 @@ function InvitesTab({
   return (
     <div className="space-y-6">
       {/* Invite form */}
-      <form onSubmit={onInvite} className="flex gap-3">
-        <input
-          type="email"
-          value={inviteEmail}
-          onChange={(e) => setInviteEmail(e.target.value)}
-          placeholder="Email address"
-          className="flex-1 max-w-md px-3 py-2 bg-background border border-border rounded-md text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
-        />
-        <select
-          value={inviteRole}
-          onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
-          className="px-3 py-2 bg-background border border-border rounded-md text-foreground"
-        >
-          <option value="member">Member</option>
-          <option value="admin">Admin</option>
-        </select>
-        <button
-          type="submit"
-          disabled={inviting || !inviteEmail.trim()}
-          className="px-4 py-2 bg-accent text-white rounded-md hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {inviting ? 'Inviting...' : 'Send Invite'}
-        </button>
+      <form onSubmit={onInvite} className="space-y-3">
+        <div className="flex gap-3">
+          <input
+            type="email"
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            placeholder="Email address"
+            className="flex-1 max-w-md px-3 py-2 bg-background border border-border rounded-md text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
+            required
+          />
+          <select
+            value={inviteRole}
+            onChange={(e) => setInviteRole(e.target.value as 'admin' | 'member')}
+            className="px-3 py-2 bg-background border border-border rounded-md text-foreground"
+          >
+            <option value="member">Member</option>
+            <option value="admin">Admin</option>
+          </select>
+          <button
+            type="submit"
+            disabled={inviting || !inviteEmail.trim()}
+            className="px-4 py-2 bg-accent text-white rounded-md hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {inviting ? 'Inviting...' : 'Send Invite'}
+          </button>
+        </div>
+
+        {/* PIV Subject DN field (collapsible) */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowPivField(!showPivField)}
+            className="text-xs text-muted hover:text-foreground transition-colors"
+          >
+            {showPivField ? '- Hide PIV options' : '+ Add PIV certificate identity'}
+          </button>
+          {showPivField && (
+            <div className="mt-2">
+              <input
+                type="text"
+                value={inviteSubjectDn}
+                onChange={(e) => setInviteSubjectDn(e.target.value)}
+                placeholder="X.509 Subject DN (e.g., CN=LASTNAME.FIRSTNAME.MIDDLE.1234567890)"
+                className="w-full max-w-lg px-3 py-2 bg-background border border-border rounded-md text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent font-mono text-sm"
+              />
+              <p className="mt-1 text-xs text-muted">
+                Optional: For PIV users whose certificate may not contain an email address.
+                The certificate Subject DN will be matched during PIV login.
+              </p>
+            </div>
+          )}
+        </div>
       </form>
 
       {/* Pending invites */}
@@ -337,6 +379,7 @@ function InvitesTab({
             <thead className="bg-border/30">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-muted">Email</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-muted">PIV Identity</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-muted">Role</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-muted">Expires</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-muted">Actions</th>
@@ -346,6 +389,13 @@ function InvitesTab({
               {invites.map((invite) => (
                 <tr key={invite.id}>
                   <td className="px-4 py-3 text-sm text-foreground">{invite.email}</td>
+                  <td className="px-4 py-3 text-sm text-muted">
+                    {invite.x509SubjectDn ? (
+                      <span className="font-mono text-xs">{invite.x509SubjectDn}</span>
+                    ) : (
+                      <span className="text-muted/50">-</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-muted capitalize">{invite.role}</td>
                   <td className="px-4 py-3 text-sm text-muted">
                     {new Date(invite.expiresAt).toLocaleDateString()}

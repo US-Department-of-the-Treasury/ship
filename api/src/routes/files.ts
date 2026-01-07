@@ -238,10 +238,16 @@ filesRouter.post('/:id/confirm', authMiddleware, async (req: Request, res: Respo
 
     // Generate CDN URL
     const isProduction = process.env.NODE_ENV === 'production';
-    const cdnDomain = process.env.CDN_DOMAIN || 'localhost:3000';
-    const cdnUrl = isProduction
-      ? `https://${cdnDomain}/${file.s3_key}`
-      : `/api/files/${fileId}/serve`;
+    let cdnUrl: string;
+    if (isProduction) {
+      const cdnDomain = process.env.CDN_DOMAIN;
+      if (!cdnDomain) {
+        throw new Error('CDN_DOMAIN environment variable is required in production');
+      }
+      cdnUrl = `https://${cdnDomain}/${file.s3_key}`;
+    } else {
+      cdnUrl = `/api/files/${fileId}/serve`;
+    }
 
     // Update file status
     await pool.query(

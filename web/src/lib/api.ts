@@ -22,8 +22,18 @@ function isJsonResponse(response: Response): boolean {
   return contentType?.includes('application/json') ?? false;
 }
 
-// Handle session expiration - redirect to login with returnTo URL
-// Returns `never` because it always redirects or throws
+/**
+ * Handle session expiration - redirect to login with expired=true flag
+ *
+ * IMPORTANT: Only call this for actual session expiration (SESSION_EXPIRED error code),
+ * NOT for missing sessions (UNAUTHORIZED). Fresh visitors with no session should get
+ * a clean redirect via ProtectedRoute without the "session expired" message.
+ *
+ * The expired=true flag triggers the yellow "session expired" modal on the login page.
+ * Fresh visitors shouldn't see this - it would be confusing UX.
+ *
+ * Returns `never` because it always redirects or throws.
+ */
 function handleSessionExpired(): never {
   // Don't redirect to login when offline - let TanStack Query handle retries
   // Check both navigator.onLine and our tracked state to handle race conditions
@@ -162,16 +172,28 @@ async function request<T>(
 
   // CloudFront may intercept errors and return HTML - detect and redirect
   if (!isJsonResponse(response)) {
+    // On public routes like /invite, return error response instead of redirecting
+    if (window.location.pathname.startsWith('/invite')) {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: 'Server returned non-JSON response' },
+      } as ApiResponse<T>;
+    }
     handleSessionExpired(); // never returns
   }
 
   const data: ApiResponse<T> = await response.json();
 
-  // Handle session expiration - redirect to login
+  // Handle session expiration - redirect to login with expired=true
+  // Only for SESSION_EXPIRED (actual expiration), not UNAUTHORIZED (no session existed)
+  // Skip for public routes like /invite where 401 is expected for unauthenticated users
   if (response.status === 401) {
-    if (data.error?.code === 'SESSION_EXPIRED' || data.error?.code === 'UNAUTHORIZED') {
-      handleSessionExpired(); // never returns
+    if (data.error?.code === 'SESSION_EXPIRED') {
+      if (!window.location.pathname.startsWith('/invite')) {
+        handleSessionExpired(); // never returns - shows "session expired" message
+      }
     }
+    // UNAUTHORIZED (no session) just returns error - ProtectedRoute will redirect without expired message
     return data;
   }
 
@@ -216,6 +238,7 @@ export interface WorkspaceInvite {
   id: string;
   workspaceId: string;
   email: string;
+  x509SubjectDn: string | null;
   token: string;
   role: 'admin' | 'member';
   expiresAt: string;
@@ -325,7 +348,7 @@ export const api = {
     getInvites: (workspaceId: string) =>
       request<{ invites: WorkspaceInvite[] }>(`/api/workspaces/${workspaceId}/invites`),
 
-    createInvite: (workspaceId: string, data: { email: string; role?: 'admin' | 'member' }) =>
+    createInvite: (workspaceId: string, data: { email: string; x509SubjectDn?: string; role?: 'admin' | 'member' }) =>
       request<{ invite: WorkspaceInvite }>(`/api/workspaces/${workspaceId}/invites`, {
         method: 'POST',
         body: JSON.stringify(data),
@@ -373,10 +396,10 @@ export const api = {
       request<{ members: Array<{ userId: string; email: string; name: string; role: 'admin' | 'member' }> }>(`/api/admin/workspaces/${workspaceId}/members`),
 
     getWorkspaceInvites: (workspaceId: string) =>
-      request<{ invites: Array<{ id: string; email: string; role: 'admin' | 'member'; token: string; createdAt: string }> }>(`/api/admin/workspaces/${workspaceId}/invites`),
+      request<{ invites: Array<{ id: string; email: string; x509SubjectDn: string | null; role: 'admin' | 'member'; token: string; createdAt: string }> }>(`/api/admin/workspaces/${workspaceId}/invites`),
 
-    createWorkspaceInvite: (workspaceId: string, data: { email: string; role?: 'admin' | 'member' }) =>
-      request<{ invite: { id: string; email: string; role: 'admin' | 'member'; token: string; createdAt: string } }>(`/api/admin/workspaces/${workspaceId}/invites`, {
+    createWorkspaceInvite: (workspaceId: string, data: { email: string; x509SubjectDn?: string; role?: 'admin' | 'member' }) =>
+      request<{ invite: { id: string; email: string; x509SubjectDn: string | null; role: 'admin' | 'member'; token: string; createdAt: string } }>(`/api/admin/workspaces/${workspaceId}/invites`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
@@ -441,7 +464,7 @@ export const api = {
   invites: {
     // Public invite operations
     validate: (token: string) =>
-      request<{ email: string; workspaceName: string; invitedBy: string; role: 'admin' | 'member'; userExists: boolean }>(`/api/invites/${token}`),
+      request<{ email: string; workspaceName: string; invitedBy: string; role: 'admin' | 'member'; userExists: boolean; alreadyMember?: boolean }>(`/api/invites/${token}`),
 
     accept: (token: string, data?: { password?: string; name?: string }) =>
       request<LoginResponse>(`/api/invites/${token}/accept`, {

@@ -41,6 +41,11 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const user = userResult.rows[0];
 
     if (!user) {
+      await logAuditEvent({
+        action: 'auth.login_failed',
+        details: { email, reason: 'user_not_found' },
+        req,
+      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         error: {
@@ -51,10 +56,31 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Verify password
+    // Verify password (PIV-only users have null password_hash)
+    if (!user.password_hash) {
+      await logAuditEvent({
+        action: 'auth.login_failed',
+        details: { email, reason: 'piv_only_user' },
+        req,
+      });
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.INVALID_CREDENTIALS,
+          message: 'This account uses PIV authentication only',
+        },
+      });
+      return;
+    }
+
     const validPassword = await bcrypt.compare(password, user.password_hash);
 
     if (!validPassword) {
+      await logAuditEvent({
+        action: 'auth.login_failed',
+        details: { email, reason: 'invalid_password' },
+        req,
+      });
       res.status(HTTP_STATUS.UNAUTHORIZED).json({
         success: false,
         error: {
@@ -96,6 +122,12 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     // Super-admins can log in even without workspace membership
     // They'll need to select a workspace after login
     if (!workspaceId && !user.is_super_admin && workspaces.length === 0) {
+      await logAuditEvent({
+        actorUserId: user.id,
+        action: 'auth.login_failed',
+        details: { email, reason: 'no_workspace_access' },
+        req,
+      });
       res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
         error: {

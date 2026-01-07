@@ -77,6 +77,30 @@ resource "aws_ssm_parameter" "cors_origin" {
   }
 }
 
+# SSM Parameter - CDN Domain (for file upload URLs)
+resource "aws_ssm_parameter" "cdn_domain" {
+  name        = "/${var.project_name}/${var.environment}/CDN_DOMAIN"
+  description = "CDN domain for serving uploaded files"
+  type        = "String"
+  value       = var.app_domain_name != "" ? var.app_domain_name : aws_cloudfront_distribution.frontend.domain_name
+
+  tags = {
+    Name = "${var.project_name}-cdn-domain"
+  }
+}
+
+# SSM Parameter - App Base URL (for OAuth redirect URIs)
+resource "aws_ssm_parameter" "app_base_url" {
+  name        = "/${var.project_name}/${var.environment}/APP_BASE_URL"
+  description = "Base URL for the application (used in OAuth callbacks)"
+  type        = "String"
+  value       = var.app_domain_name != "" ? "https://${var.app_domain_name}" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
+
+  tags = {
+    Name = "${var.project_name}-app-base-url"
+  }
+}
+
 # Generate random session secret
 resource "random_password" "session_secret" {
   length  = 64
@@ -129,3 +153,38 @@ resource "aws_iam_role_policy" "eb_ssm_access" {
 }
 
 data "aws_caller_identity" "current" {}
+
+# IAM Role for EB instances to access Secrets Manager (FPKI OAuth credentials)
+resource "aws_iam_role_policy" "eb_secrets_manager_access" {
+  name = "${var.project_name}-eb-secrets-manager-access"
+  role = aws_iam_role.eb_instance.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:CreateSecret",
+          "secretsmanager:UpdateSecret",
+          "secretsmanager:TagResource"
+        ]
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "secretsmanager.${var.aws_region}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+}
