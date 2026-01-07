@@ -431,25 +431,22 @@ test.describe('Security - CSRF Protection', () => {
 })
 
 test.describe('Security - Authentication and Authorization', () => {
-  // TODO: Test failing - with offline support enabled, unauthenticated users may see cached content
-  // or client-side routing may not immediately redirect to login.
-  // Need to investigate the auth guard behavior with offline/caching enabled.
-  test.skip('authenticated routes require auth', async ({ browser, baseURL }) => {
-    // Use a fresh browser context with no prior state to truly test unauthenticated access
-    // This avoids any IndexedDB/localStorage caching issues from previous tests
-    const context = await browser.newContext()
-    const page = await context.newPage()
-
-    // Try to access protected routes without any authentication
-    const protectedRoutes = ['/docs', '/issues', '/projects', '/sprints', '/team']
+  test('authenticated routes require auth', async ({ browser, baseURL }) => {
+    // Test each protected route with a fresh browser context to avoid state accumulation
+    // Note: Use actual route names from main.tsx (programs not projects, team/allocation not team)
+    const protectedRoutes = ['/docs', '/issues', '/programs', '/team/allocation']
 
     for (const route of protectedRoutes) {
-      await page.goto(`${baseURL}${route}`)
-      // Should redirect to login (may include query params like ?expired=true&returnTo=...)
-      await expect(page).toHaveURL(/\/login/, { timeout: 5000 })
-    }
+      // Create fresh context for each route to avoid IndexedDB/localStorage caching
+      const context = await browser.newContext()
+      const page = await context.newPage()
 
-    await context.close()
+      await page.goto(`${baseURL}${route}`)
+      // Should redirect to login - give React time to initialize, check auth, and redirect
+      await expect(page).toHaveURL(/\/login/, { timeout: 10000 })
+
+      await context.close()
+    }
   })
 
   test('API routes require authentication', async ({ request }) => {
