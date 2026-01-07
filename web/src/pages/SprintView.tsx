@@ -99,6 +99,9 @@ export function SprintViewPage() {
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalText, setGoalText] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Estimate modal state
+  const [pendingIssue, setPendingIssue] = useState<Issue | null>(null);
+  const [estimateInput, setEstimateInput] = useState('');
 
   // Drag-and-drop sensors
   const sensors = useSensors(
@@ -201,26 +204,63 @@ export function SprintViewPage() {
     return () => { cancelled = true; };
   }, [id, navigate]);
 
-  const moveToSprint = async (issueId: string) => {
+  // Check if issue needs estimate before adding to sprint
+  const initiateAddToSprint = (issueId: string) => {
+    const issue = backlogIssues.find(i => i.id === issueId);
+    if (!issue) return;
+
+    if (!issue.estimate) {
+      // Show estimate modal
+      setPendingIssue(issue);
+      setEstimateInput('');
+    } else {
+      // Has estimate, move directly
+      moveToSprint(issue);
+    }
+  };
+
+  // Actually move the issue to sprint (called after estimate is set)
+  const moveToSprint = async (issue: Issue, newEstimate?: number) => {
     if (!id) return;
     try {
-      const res = await fetch(`${API_URL}/api/issues/${issueId}`, {
+      // Build update payload
+      const payload: { sprint_id: string; properties?: { estimate: number } } = { sprint_id: id };
+      if (newEstimate !== undefined) {
+        payload.properties = { estimate: newEstimate };
+      }
+
+      const res = await fetch(`${API_URL}/api/issues/${issue.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ sprint_id: id }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
-        const issue = backlogIssues.find(i => i.id === issueId);
-        if (issue) {
-          setBacklogIssues(prev => prev.filter(i => i.id !== issueId));
-          setSprintIssues(prev => [...prev, issue]);
-        }
+        // Update local state
+        const updatedIssue = { ...issue, estimate: newEstimate ?? issue.estimate };
+        setBacklogIssues(prev => prev.filter(i => i.id !== issue.id));
+        setSprintIssues(prev => [...prev, updatedIssue]);
       }
     } catch (err) {
       console.error('Failed to move issue:', err);
     }
+  };
+
+  // Handle estimate submission from modal
+  const handleEstimateSubmit = () => {
+    if (!pendingIssue) return;
+    const estimate = parseFloat(estimateInput);
+    if (isNaN(estimate) || estimate <= 0) return;
+
+    moveToSprint(pendingIssue, estimate);
+    setPendingIssue(null);
+    setEstimateInput('');
+  };
+
+  const cancelEstimateModal = () => {
+    setPendingIssue(null);
+    setEstimateInput('');
   };
 
   const moveToBacklog = async (issueId: string) => {
@@ -332,11 +372,12 @@ export function SprintViewPage() {
     const droppedOnBacklog = overId === 'backlog-column' || backlogIssues.some(i => i.id === overId);
 
     if (isInBacklog && droppedOnSprint) {
-      moveToSprint(activeIssueId);
+      // Use initiateAddToSprint to check for estimate
+      initiateAddToSprint(activeIssueId);
     } else if (isInSprint && droppedOnBacklog) {
       moveToBacklog(activeIssueId);
     }
-  }, [backlogIssues, sprintIssues, moveToSprint, moveToBacklog]);
+  }, [backlogIssues, sprintIssues, initiateAddToSprint, moveToBacklog]);
 
   // Get active issue for drag overlay
   const activeIssue = activeId
@@ -482,7 +523,7 @@ export function SprintViewPage() {
             issues={backlogIssues}
             emptyMessage="No issues in backlog"
             onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
-            onIssueAction={moveToSprint}
+            onIssueAction={initiateAddToSprint}
             actionType="add"
             className="border-r border-border"
           />
@@ -507,6 +548,56 @@ export function SprintViewPage() {
           {activeIssue ? <IssueCardPreview issue={activeIssue} /> : null}
         </DragOverlay>
       </DndContext>
+
+      {/* Estimate Required Modal */}
+      {pendingIssue && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-96 rounded-lg border border-border bg-background p-6 shadow-lg">
+            <h3 className="text-lg font-semibold text-foreground">Estimate Required</h3>
+            <p className="mt-2 text-sm text-muted">
+              Please enter an estimate for this issue before adding it to the sprint:
+            </p>
+            <div className="mt-3 rounded-md border border-border bg-border/30 p-3">
+              <span className="text-xs font-mono text-muted">{pendingIssue.display_id}</span>
+              <p className="mt-1 text-sm text-foreground">{pendingIssue.title}</p>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-foreground">
+                Estimate (hours)
+              </label>
+              <input
+                type="number"
+                min="0.5"
+                step="0.5"
+                value={estimateInput}
+                onChange={(e) => setEstimateInput(e.target.value)}
+                placeholder="e.g., 4"
+                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleEstimateSubmit();
+                  if (e.key === 'Escape') cancelEstimateModal();
+                }}
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={cancelEstimateModal}
+                className="rounded-md px-4 py-2 text-sm text-muted hover:bg-border"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEstimateSubmit}
+                disabled={!estimateInput || parseFloat(estimateInput) <= 0}
+                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add to Sprint
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
