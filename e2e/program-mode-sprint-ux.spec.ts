@@ -681,8 +681,7 @@ test.describe('Phase 4: Issues Tab Filtering', () => {
     expect(text?.match(/Sprint \d+|—/)).toBeTruthy()
   })
 
-  // TODO: Test incorrect - ProgramEditor issues table doesn't have ⋮ menu buttons
-  test.skip('issue row has quick menu (⋮) button', async ({ page }) => {
+  test('issue row has quick menu (⋮) button', async ({ page }) => {
     await clickIssuesTab(page)
 
     const firstRow = page.locator('tbody tr').first()
@@ -695,8 +694,7 @@ test.describe('Phase 4: Issues Tab Filtering', () => {
     await expect(menuButton).toBeVisible({ timeout: 3000 })
   })
 
-  // TODO: Test incorrect - ProgramEditor issues table doesn't have ⋮ menu buttons
-  test.skip('quick menu has "Assign to Sprint" option', async ({ page }) => {
+  test('quick menu has "Assign to Sprint" option', async ({ page }) => {
     await clickIssuesTab(page)
 
     const firstRow = page.locator('tbody tr').first()
@@ -710,8 +708,7 @@ test.describe('Phase 4: Issues Tab Filtering', () => {
     await expect(page.getByText(/Assign to Sprint|Move to Sprint/i).first()).toBeVisible({ timeout: 3000 })
   })
 
-  // TODO: Test incorrect - ProgramEditor issues table doesn't have ⋮ menu buttons
-  test.skip('quick menu "Assign to Sprint" shows available sprints', async ({ page }) => {
+  test('quick menu "Assign to Sprint" shows available sprints', async ({ page }) => {
     await clickIssuesTab(page)
 
     const firstRow = page.locator('tbody tr').first()
@@ -720,19 +717,19 @@ test.describe('Phase 4: Issues Tab Filtering', () => {
     ).first()
     await menuButton.click()
 
-    const assignOption = page.getByText(/Assign to Sprint|Move to Sprint/i).first()
-    await assignOption.click()
+    // Hover over "Assign to Sprint" to open submenu
+    const assignOption = page.getByRole('menuitem', { name: /Assign to Sprint/i })
+    await assignOption.hover()
 
-    // Look for sprint options within the dropdown (buttons, not hidden select options)
-    const dropdown = page.locator('.absolute.right-0.top-full')
-    await expect(dropdown.getByRole('button').filter({ hasText: /Sprint \d+|Backlog/i }).first()).toBeVisible({ timeout: 3000 })
+    // Look for sprint options in the submenu (role="menu" contains menuitem children)
+    await expect(page.getByRole('menuitem', { name: /Sprint \d+|Backlog/i }).first()).toBeVisible({ timeout: 3000 })
   })
 
-  // TODO: Test incorrect - ProgramEditor issues table doesn't have ⋮ menu buttons
-  test.skip('quick menu can assign issue to a sprint (full flow)', async ({ page }) => {
+  test('quick menu can assign issue to a sprint (full flow)', async ({ page }) => {
     await clickIssuesTab(page)
 
-    await page.locator('select').first().selectOption('backlog')
+    // Filter to active sprint issues (they have estimates, which is required for sprint assignment)
+    await page.locator('select').first().selectOption('active')
     await page.waitForTimeout(500)
 
     const rows = page.locator('tbody tr')
@@ -747,10 +744,12 @@ test.describe('Phase 4: Issues Tab Filtering', () => {
       if (await menuButton.isVisible()) {
         await menuButton.click()
 
-        const assignOption = page.getByText(/Assign to Sprint|Move to Sprint/i).first()
-        await assignOption.click()
+        // Hover over "Assign to Sprint" to open submenu
+        const assignOption = page.getByRole('menuitem', { name: /Assign to Sprint/i })
+        await assignOption.hover()
 
-        const sprintOption = page.getByText(/Sprint \d+/).first()
+        // Wait for submenu and click a sprint option (different from current)
+        const sprintOption = page.getByRole('menuitem', { name: /Sprint \d+/ }).first()
         if (await sprintOption.isVisible({ timeout: 2000 })) {
           const [response] = await Promise.all([
             page.waitForResponse(resp => resp.url().includes('/api/issues/') && resp.request().method() === 'PATCH'),
