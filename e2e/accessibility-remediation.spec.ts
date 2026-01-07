@@ -110,8 +110,7 @@ test.describe('Phase 1: Critical Violations', () => {
       expect(ariaLabel!.toLowerCase()).toContain('keyboard')
     })
 
-    // TODO: Test flaky - Escape key doesn't reliably cancel keyboard drag mode
-    test.skip('draggable issues can be moved with keyboard', async ({ page }) => {
+    test('draggable issues can be moved with keyboard', async ({ page }) => {
       await login(page)
       await page.goto('/issues')
       await page.waitForLoadState('networkidle')
@@ -127,32 +126,20 @@ test.describe('Phase 1: Critical Violations', () => {
 
       // MUST be focusable
       await issueCard.focus()
-      const isFocused = await page.evaluate(() => {
-        return document.activeElement?.hasAttribute('draggable') ||
-               document.activeElement?.hasAttribute('data-draggable')
-      })
-      expect(isFocused).toBeTruthy()
+      await expect(issueCard).toBeFocused({ timeout: 2000 })
 
       // MUST enter drag mode with Space
       await page.keyboard.press('Space')
 
-      // MUST have indication of drag mode (aria-grabbed, class, or data attribute)
-      const isDragging = await issueCard.evaluate((el) => {
-        return el.getAttribute('aria-grabbed') === 'true' ||
-               el.classList.contains('dragging') ||
-               el.getAttribute('data-dragging') === 'true'
-      })
-      expect(isDragging).toBeTruthy()
+      // Wait for drag mode indication (aria-grabbed="true" or data-dragging="true")
+      // Use Playwright's auto-retry assertions instead of immediate evaluate()
+      await expect(issueCard).toHaveAttribute('aria-grabbed', 'true', { timeout: 5000 })
 
       // MUST be able to cancel with Escape
       await page.keyboard.press('Escape')
 
-      const isStillDragging = await issueCard.evaluate((el) => {
-        return el.getAttribute('aria-grabbed') === 'true' ||
-               el.classList.contains('dragging') ||
-               el.getAttribute('data-dragging') === 'true'
-      })
-      expect(isStillDragging).toBeFalsy()
+      // Wait for drag mode to be cancelled (aria-grabbed returns to "false")
+      await expect(issueCard).toHaveAttribute('aria-grabbed', 'false', { timeout: 5000 })
     })
   })
 
