@@ -37,6 +37,8 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const absoluteWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTimeoutRef = useRef(onTimeout);
+  // Ref to break circular dependency between resetTimer and scheduleInactivityWarning
+  const scheduleInactivityWarningRef = useRef<() => void>(() => {});
 
   // Keep onTimeout ref updated
   useEffect(() => {
@@ -80,7 +82,7 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
     }
   }, []);
 
-  // Reset timer - dismisses warning and resets inactivity tracking
+  // Reset timer - dismisses warning, resets inactivity tracking, and schedules next warning
   const resetTimer = useCallback(() => {
     const now = Date.now();
     setLastActivity(now);
@@ -89,6 +91,8 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
     setTimeRemaining(null);
     setWarningType(null);
     clearAllTimers();
+    // Schedule the next inactivity warning
+    scheduleInactivityWarningRef.current();
   }, [clearAllTimers]);
 
   // Schedule inactivity warning
@@ -128,6 +132,9 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
       }
     }, timeUntilWarning);
   }, []);
+
+  // Keep the ref updated for resetTimer to use
+  scheduleInactivityWarningRef.current = scheduleInactivityWarning;
 
   // Schedule absolute timeout warning
   const scheduleAbsoluteWarning = useCallback(() => {
@@ -203,16 +210,16 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
     lastThrottledActivityRef.current = now;
 
     // If showing inactivity warning, dismiss it and reset timer
+    // Note: resetTimer() now automatically schedules the next warning
     if (showWarning && warningType === 'inactivity') {
       resetTimer();
-      scheduleInactivityWarning();
     } else if (!showWarning) {
       // Just update last activity
       setLastActivity(now);
       lastActivityRef.current = now;
     }
     // Don't reset for absolute warning - it can't be extended
-  }, [showWarning, warningType, resetTimer, scheduleInactivityWarning]);
+  }, [showWarning, warningType, resetTimer]);
 
   // Set up activity listeners
   useEffect(() => {
