@@ -102,6 +102,10 @@ interface Sprint {
   completed_count: number;
   started_count: number;
   total_estimate_hours?: number;
+  has_plan?: boolean;
+  has_retro?: boolean;
+  plan_created_at?: string | null;
+  retro_created_at?: string | null;
   _pending?: boolean;
   _pendingId?: string;
 }
@@ -1591,6 +1595,34 @@ function SprintTimeline({
   );
 }
 
+// Get plan status color and tooltip based on sprint status and whether plan exists
+function getPlanStatus(hasPlan: boolean, status: 'active' | 'upcoming' | 'completed'): { color: string; tooltip: string } {
+  if (hasPlan) {
+    return { color: 'text-green-500', tooltip: 'Plan exists' };
+  }
+  if (status === 'upcoming') {
+    return { color: 'text-yellow-500', tooltip: 'Plan needed before sprint starts' };
+  }
+  // active or completed without plan
+  return { color: 'text-red-500', tooltip: 'Missing plan - sprint already started' };
+}
+
+// Get retro status color and tooltip based on sprint status and days since end
+function getRetroStatus(hasRetro: boolean, status: 'active' | 'upcoming' | 'completed', endDate: Date): { color: string; tooltip: string } {
+  if (hasRetro) {
+    return { color: 'text-green-500', tooltip: 'Retro exists' };
+  }
+  if (status === 'upcoming' || status === 'active') {
+    return { color: 'text-muted', tooltip: 'Retro not yet due' };
+  }
+  // completed without retro - check how long ago
+  const daysSinceEnd = Math.floor((Date.now() - endDate.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysSinceEnd >= 14) {
+    return { color: 'text-red-500', tooltip: `Retro overdue (${daysSinceEnd} days since sprint ended)` };
+  }
+  return { color: 'text-yellow-500', tooltip: `Retro needed (${daysSinceEnd} days since sprint ended)` };
+}
+
 // Individual sprint window card
 function SprintWindowCard({
   window,
@@ -1615,6 +1647,10 @@ function SprintWindowCard({
     const progress = sprint.issue_count > 0
       ? Math.round((sprint.completed_count / sprint.issue_count) * 100)
       : 0;
+
+    // Get plan and retro status
+    const planStatus = getPlanStatus(sprint.has_plan ?? false, status);
+    const retroStatus = getRetroStatus(sprint.has_retro ?? false, status, end_date);
 
     return (
       <button
@@ -1659,13 +1695,21 @@ function SprintWindowCard({
             </div>
           </>
         )}
-        <div className="mt-2 text-xs">
+        <div className="mt-2 flex items-center justify-between text-xs">
           <span className={cn(
             'rounded px-1.5 py-0.5',
             status === 'active' ? 'bg-accent/20 text-accent' : sprintStatusColors[status]
           )}>
             {status.charAt(0).toUpperCase() + status.slice(1)}
           </span>
+          <div className="flex items-center gap-1.5">
+            <span className={cn(planStatus.color)} title={planStatus.tooltip}>
+              {sprint.has_plan ? '✓' : '○'} Plan
+            </span>
+            <span className={cn(retroStatus.color)} title={retroStatus.tooltip}>
+              {sprint.has_retro ? '✓' : '○'} Retro
+            </span>
+          </div>
         </div>
       </button>
     );

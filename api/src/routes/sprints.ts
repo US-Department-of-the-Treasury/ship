@@ -42,6 +42,8 @@ function extractSprintFromRow(row: any) {
     issue_count: parseInt(row.issue_count) || 0,
     completed_count: parseInt(row.completed_count) || 0,
     started_count: parseInt(row.started_count) || 0,
+    has_plan: row.has_plan === true || row.has_plan === 't',
+    has_retro: row.has_retro === true || row.has_retro === 't',
   };
 }
 
@@ -62,7 +64,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.parent_id = d.id AND rt.document_type = 'sprint_retro') as has_retro
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id

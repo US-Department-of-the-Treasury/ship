@@ -412,13 +412,18 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
     const sprintStartDate = programCheck.rows[0].sprint_start_date;
 
     // Also filter sprints by visibility
+    // Include subqueries for sprint_plan and sprint_retro existence
     const result = await pool.query(
       `SELECT d.id, d.title as name, d.properties,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
-              (SELECT COALESCE(SUM((i.properties->>'estimate')::numeric), 0) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as total_estimate_hours
+              (SELECT COALESCE(SUM((i.properties->>'estimate')::numeric), 0) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as total_estimate_hours,
+              (SELECT COUNT(*) > 0 FROM documents p WHERE p.parent_id = d.id AND p.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents r WHERE r.parent_id = d.id AND r.document_type = 'sprint_retro') as has_retro,
+              (SELECT created_at FROM documents p WHERE p.parent_id = d.id AND p.document_type = 'sprint_plan' LIMIT 1) as plan_created_at,
+              (SELECT created_at FROM documents r WHERE r.parent_id = d.id AND r.document_type = 'sprint_retro' LIMIT 1) as retro_created_at
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
        WHERE d.program_id = $1 AND d.document_type = 'sprint'
@@ -443,6 +448,10 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
         completed_count: parseInt(row.completed_count) || 0,
         started_count: parseInt(row.started_count) || 0,
         total_estimate_hours: parseFloat(row.total_estimate_hours) || 0,
+        has_plan: row.has_plan === true || row.has_plan === 't',
+        has_retro: row.has_retro === true || row.has_retro === 't',
+        plan_created_at: row.plan_created_at || null,
+        retro_created_at: row.retro_created_at || null,
       };
     });
 

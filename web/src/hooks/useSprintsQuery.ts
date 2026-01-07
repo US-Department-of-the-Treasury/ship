@@ -17,6 +17,10 @@ export interface Sprint {
   completed_count: number;
   started_count: number;
   total_estimate_hours?: number;
+  has_plan?: boolean;
+  has_retro?: boolean;
+  plan_created_at?: string | null;
+  retro_created_at?: string | null;
   _pending?: boolean;
   _pendingId?: string;
 }
