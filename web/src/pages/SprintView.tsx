@@ -104,6 +104,19 @@ export function SprintViewPage() {
   // Estimate modal state
   const [pendingIssue, setPendingIssue] = useState<Issue | null>(null);
   const [estimateInput, setEstimateInput] = useState('');
+  // Scope change tracking
+  const [scopeData, setScopeData] = useState<{
+    originalScope: number;
+    currentScope: number;
+    scopeChangePercent: number;
+    sprintStartDate: string;
+    scopeChanges: Array<{
+      timestamp: string;
+      scopeAfter: number;
+      changeType: 'added' | 'removed';
+      estimateChange: number;
+    }>;
+  } | null>(null);
 
   // Drag-and-drop sensors
   const sensors = useSensors(
@@ -149,6 +162,7 @@ export function SprintViewPage() {
     setBacklogIssues([]);
     setLoading(true);
     setEditingGoal(false);
+    setScopeData(null);
 
     let cancelled = false;
 
@@ -187,10 +201,11 @@ export function SprintViewPage() {
         });
         setGoalText(sprintData.goal || '');
 
-        // Fetch sprint issues and backlog (program issues not in any sprint)
-        const [sprintIssuesRes, backlogRes] = await Promise.all([
+        // Fetch sprint issues, backlog, and scope changes
+        const [sprintIssuesRes, backlogRes, scopeRes] = await Promise.all([
           fetch(`${API_URL}/api/sprints/${id}/issues`, { credentials: 'include' }),
           fetch(`${API_URL}/api/programs/${sprintData.program_id}/issues`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/sprints/${id}/scope-changes`, { credentials: 'include' }),
         ]);
 
         if (cancelled) return;
@@ -203,6 +218,10 @@ export function SprintViewPage() {
           const programIssues = await backlogRes.json();
           // Filter to only show issues not in any sprint
           setBacklogIssues(programIssues.filter((i: Issue & { sprint_id: string | null }) => !i.sprint_id));
+        }
+
+        if (scopeRes.ok) {
+          setScopeData(await scopeRes.json());
         }
       } catch (err) {
         if (!cancelled) console.error('Failed to fetch sprint:', err);
@@ -477,6 +496,21 @@ export function SprintViewPage() {
           </span>
         </div>
 
+        {/* Scope Change Indicator */}
+        {scopeData && scopeData.scopeChangePercent !== 0 && (
+          <div className="mt-2 text-sm">
+            <span
+              className={cn(
+                'font-medium',
+                scopeData.scopeChangePercent > 0 ? 'text-orange-500' : 'text-green-500'
+              )}
+              title={`Original scope: ${scopeData.originalScope}h → Current: ${scopeData.currentScope}h`}
+            >
+              Scope change: {scopeData.scopeChangePercent > 0 ? '+' : ''}{scopeData.scopeChangePercent}%
+            </span>
+          </div>
+        )}
+
         {/* Sprint Progress Graph */}
         {sprintEstimate > 0 && (
           <SprintProgressGraph
@@ -485,6 +519,8 @@ export function SprintViewPage() {
             scopeHours={sprintEstimate}
             completedHours={completedEstimate}
             status={sprint.status}
+            originalScope={scopeData?.originalScope}
+            scopeChanges={scopeData?.scopeChanges}
           />
         )}
 
@@ -889,12 +925,21 @@ function SprintProgressGraph({
   scopeHours,
   completedHours,
   status,
+  originalScope,
+  scopeChanges,
 }: {
   startDate: string;
   endDate: string;
   scopeHours: number;
   completedHours: number;
   status: 'planned' | 'active' | 'completed';
+  originalScope?: number;
+  scopeChanges?: Array<{
+    timestamp: string;
+    scopeAfter: number;
+    changeType: 'added' | 'removed';
+    estimateChange: number;
+  }>;
 }) {
   // Calculate progress through sprint
   const start = new Date(startDate).getTime();
@@ -989,15 +1034,97 @@ function SprintProgressGraph({
           ))}
         </g>
 
-        {/* Scope line (horizontal at max) */}
-        <line
-          x1={xScale(0)}
-          y1={yScale(scopeHours)}
-          x2={xScale(100)}
-          y2={yScale(scopeHours)}
-          stroke="#6B7280"
-          strokeWidth={2}
-        />
+        {/* Scope line - shows scope changes over time if available */}
+        {scopeChanges && scopeChanges.length > 0 && originalScope !== undefined ? (
+          // Draw stepped scope line showing changes
+          <g>
+            {(() => {
+              const segments: JSX.Element[] = [];
+              let prevX = xScale(0);
+              let prevScope = originalScope;
+
+              // Draw initial horizontal segment from start to first change
+              const firstChange = scopeChanges[0];
+              const firstChangeTime = new Date(firstChange.timestamp).getTime();
+              const firstChangePercent = ((firstChangeTime - start) / totalDuration) * 100;
+
+              segments.push(
+                <line
+                  key="initial"
+                  x1={prevX}
+                  y1={yScale(prevScope)}
+                  x2={xScale(Math.min(firstChangePercent, 100))}
+                  y2={yScale(prevScope)}
+                  stroke="#6B7280"
+                  strokeWidth={2}
+                />
+              );
+
+              // Draw scope changes
+              for (let i = 0; i < scopeChanges.length; i++) {
+                const change = scopeChanges[i];
+                const changeTime = new Date(change.timestamp).getTime();
+                const changePercent = Math.min(((changeTime - start) / totalDuration) * 100, 100);
+                const nextChange = scopeChanges[i + 1];
+                const nextChangePercent = nextChange
+                  ? Math.min(((new Date(nextChange.timestamp).getTime() - start) / totalDuration) * 100, 100)
+                  : 100;
+
+                // Vertical line showing scope jump
+                segments.push(
+                  <line
+                    key={`v-${i}`}
+                    x1={xScale(changePercent)}
+                    y1={yScale(prevScope)}
+                    x2={xScale(changePercent)}
+                    y2={yScale(change.scopeAfter)}
+                    stroke="#F97316"
+                    strokeWidth={1.5}
+                    strokeDasharray="2,2"
+                  />
+                );
+
+                // Horizontal line at new scope level
+                segments.push(
+                  <line
+                    key={`h-${i}`}
+                    x1={xScale(changePercent)}
+                    y1={yScale(change.scopeAfter)}
+                    x2={xScale(nextChangePercent)}
+                    y2={yScale(change.scopeAfter)}
+                    stroke="#6B7280"
+                    strokeWidth={2}
+                  />
+                );
+
+                // Small marker at change point
+                segments.push(
+                  <circle
+                    key={`m-${i}`}
+                    cx={xScale(changePercent)}
+                    cy={yScale(change.scopeAfter)}
+                    r={3}
+                    fill="#F97316"
+                  />
+                );
+
+                prevScope = change.scopeAfter;
+              }
+
+              return segments;
+            })()}
+          </g>
+        ) : (
+          // Simple horizontal scope line (no changes)
+          <line
+            x1={xScale(0)}
+            y1={yScale(scopeHours)}
+            x2={xScale(100)}
+            y2={yScale(scopeHours)}
+            stroke="#6B7280"
+            strokeWidth={2}
+          />
+        )}
 
         {/* Target pace line (diagonal from 0 to scope) */}
         <line

@@ -424,4 +424,176 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
   }
 });
 
+// Get sprint scope changes
+// Returns: { originalScope, currentScope, scopeChangePercent, scopeChanges }
+router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Get sprint info including sprint_number and workspace start date
+    const sprintResult = await pool.query(
+      `SELECT d.id, d.properties->>'sprint_number' as sprint_number,
+              w.sprint_start_date as workspace_sprint_start_date
+       FROM documents d
+       JOIN workspaces w ON d.workspace_id = w.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintResult.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    const sprintNumber = parseInt(sprintResult.rows[0].sprint_number, 10);
+    const rawStartDate = sprintResult.rows[0].workspace_sprint_start_date;
+    const sprintDuration = 14;
+
+    // Calculate sprint start date
+    let workspaceStartDate: Date;
+    if (rawStartDate instanceof Date) {
+      workspaceStartDate = new Date(Date.UTC(rawStartDate.getFullYear(), rawStartDate.getMonth(), rawStartDate.getDate()));
+    } else if (typeof rawStartDate === 'string') {
+      workspaceStartDate = new Date(rawStartDate + 'T00:00:00Z');
+    } else {
+      workspaceStartDate = new Date();
+    }
+
+    const sprintStartDate = new Date(workspaceStartDate);
+    sprintStartDate.setUTCDate(sprintStartDate.getUTCDate() + (sprintNumber - 1) * sprintDuration);
+
+    // Get all issues currently in the sprint with their estimates
+    const issuesResult = await pool.query(
+      `SELECT d.id, COALESCE((d.properties->>'estimate')::numeric, 0) as estimate
+       FROM documents d
+       WHERE d.sprint_id = $1 AND d.document_type = 'issue'`,
+      [id]
+    );
+
+    // Get when each issue was added to this sprint from document_history
+    // field = 'sprint_id' and new_value = sprint_id means issue was added to sprint
+    const historyResult = await pool.query(
+      `SELECT document_id, changed_at, old_value, new_value
+       FROM document_history
+       WHERE field = 'sprint_id' AND new_value = $1
+       ORDER BY changed_at ASC`,
+      [id]
+    );
+
+    // Build a map of issue_id -> first_added_at (when issue was added to this sprint)
+    const issueAddedAtMap: Record<string, Date> = {};
+    for (const row of historyResult.rows) {
+      if (!issueAddedAtMap[row.document_id]) {
+        issueAddedAtMap[row.document_id] = new Date(row.changed_at);
+      }
+    }
+
+    // Calculate original scope (issues added before or at sprint start)
+    // and current scope (all issues)
+    let originalScope = 0;
+    let currentScope = 0;
+
+    for (const issue of issuesResult.rows) {
+      const estimate = parseFloat(issue.estimate) || 0;
+      currentScope += estimate;
+
+      const addedAt = issueAddedAtMap[issue.id];
+      // If no history record, assume it was always there (original)
+      // If added before or at sprint start, it's original scope
+      if (!addedAt || addedAt <= sprintStartDate) {
+        originalScope += estimate;
+      }
+    }
+
+    // Build scope changes timeline for the graph
+    // Each entry: { timestamp, newScope, changeType, estimateChange }
+    const scopeChanges: Array<{
+      timestamp: string;
+      scopeAfter: number;
+      changeType: 'added' | 'removed';
+      estimateChange: number;
+    }> = [];
+
+    // Get estimates for issues when they were added
+    const issueEstimateMap: Record<string, number> = {};
+    for (const issue of issuesResult.rows) {
+      issueEstimateMap[issue.id] = parseFloat(issue.estimate) || 0;
+    }
+
+    // Only track changes after sprint starts
+    let runningScope = originalScope;
+    for (const row of historyResult.rows) {
+      const changedAt = new Date(row.changed_at);
+      if (changedAt > sprintStartDate) {
+        const estimate = issueEstimateMap[row.document_id] || 0;
+        runningScope += estimate;
+        scopeChanges.push({
+          timestamp: changedAt.toISOString(),
+          scopeAfter: runningScope,
+          changeType: 'added',
+          estimateChange: estimate,
+        });
+      }
+    }
+
+    // Also check for issues removed from sprint (sprint_id changed away from this sprint)
+    const removedResult = await pool.query(
+      `SELECT document_id, changed_at, old_value, new_value
+       FROM document_history
+       WHERE field = 'sprint_id' AND old_value = $1 AND changed_at > $2
+       ORDER BY changed_at ASC`,
+      [id, sprintStartDate.toISOString()]
+    );
+
+    for (const row of removedResult.rows) {
+      // We need the estimate of the issue at time of removal
+      // For simplicity, we'll use the current estimate (or 0 if issue no longer in sprint)
+      // In a real system, you might want to track historical estimates
+      const issueResult = await pool.query(
+        `SELECT COALESCE((properties->>'estimate')::numeric, 0) as estimate
+         FROM documents WHERE id = $1`,
+        [row.document_id]
+      );
+      const estimate = issueResult.rows[0] ? parseFloat(issueResult.rows[0].estimate) : 0;
+
+      scopeChanges.push({
+        timestamp: new Date(row.changed_at).toISOString(),
+        scopeAfter: -1, // Will be recalculated when sorting
+        changeType: 'removed',
+        estimateChange: -estimate,
+      });
+    }
+
+    // Sort scope changes by timestamp and recalculate running scope
+    scopeChanges.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    runningScope = originalScope;
+    for (const change of scopeChanges) {
+      runningScope += change.estimateChange;
+      change.scopeAfter = runningScope;
+    }
+
+    // Calculate scope change percentage
+    const scopeChangePercent = originalScope > 0
+      ? Math.round(((currentScope - originalScope) / originalScope) * 100)
+      : 0;
+
+    res.json({
+      originalScope,
+      currentScope,
+      scopeChangePercent,
+      sprintStartDate: sprintStartDate.toISOString(),
+      scopeChanges,
+    });
+  } catch (err) {
+    console.error('Get sprint scope changes error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
