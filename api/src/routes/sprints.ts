@@ -373,8 +373,26 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
       [id, userId, isAdmin]
     );
 
+    // Get carryover sprint names for issues that have carryover_from_sprint_id
+    const carryoverSprintIds = result.rows
+      .map(row => row.properties?.carryover_from_sprint_id)
+      .filter(Boolean);
+
+    let carryoverSprintNames: Record<string, string> = {};
+    if (carryoverSprintIds.length > 0) {
+      const uniqueIds = [...new Set(carryoverSprintIds)];
+      const sprintNamesResult = await pool.query(
+        `SELECT id, title FROM documents WHERE id = ANY($1) AND document_type = 'sprint'`,
+        [uniqueIds]
+      );
+      carryoverSprintNames = Object.fromEntries(
+        sprintNamesResult.rows.map(r => [r.id, r.title])
+      );
+    }
+
     const issues = result.rows.map(row => {
       const props = row.properties || {};
+      const carryoverFromSprintId = props.carryover_from_sprint_id || null;
       return {
         id: row.id,
         title: row.title,
@@ -387,7 +405,11 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
         updated_at: row.updated_at,
         created_by: row.created_by,
         assignee_name: row.assignee_name,
-        display_id: `#${row.ticket_number}`
+        display_id: `#${row.ticket_number}`,
+        carryover_from_sprint_id: carryoverFromSprintId,
+        carryover_from_sprint_name: carryoverFromSprintId
+          ? carryoverSprintNames[carryoverFromSprintId] || null
+          : null,
       };
     });
 

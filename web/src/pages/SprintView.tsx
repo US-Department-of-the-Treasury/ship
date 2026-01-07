@@ -85,6 +85,8 @@ interface Issue {
   display_id: string;
   estimate: number | null;
   sprint_id?: string | null;
+  carryover_from_sprint_id?: string | null;
+  carryover_from_sprint_name?: string | null;
 }
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -126,6 +128,15 @@ export function SprintViewPage() {
     return sprintIssues
       .filter(issue => issue.state === 'done')
       .reduce((sum, issue) => sum + (issue.estimate || 0), 0);
+  }, [sprintIssues]);
+
+  // Separate carryover issues from regular issues
+  const carryoverIssues = useMemo(() => {
+    return sprintIssues.filter(issue => issue.carryover_from_sprint_id);
+  }, [sprintIssues]);
+
+  const regularSprintIssues = useMemo(() => {
+    return sprintIssues.filter(issue => !issue.carryover_from_sprint_id);
   }, [sprintIssues]);
 
   // Reset state and fetch data when sprint ID changes
@@ -546,7 +557,8 @@ export function SprintViewPage() {
             issueCount={sprintIssues.length}
             estimateHours={sprintEstimate}
             completedHours={completedEstimate}
-            issues={sprintIssues}
+            issues={regularSprintIssues}
+            carryoverIssues={carryoverIssues}
             emptyMessage="Drag issues from backlog to add"
             onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
             onIssueAction={moveToBacklog}
@@ -629,6 +641,7 @@ function DroppableColumn({
   estimateHours,
   completedHours,
   issues,
+  carryoverIssues,
   emptyMessage,
   onIssueClick,
   onIssueAction,
@@ -641,6 +654,7 @@ function DroppableColumn({
   estimateHours: number;
   completedHours?: number;
   issues: Issue[];
+  carryoverIssues?: Issue[];
   emptyMessage: string;
   onIssueClick: (id: string) => void;
   onIssueAction: (id: string) => void;
@@ -648,6 +662,18 @@ function DroppableColumn({
   className?: string;
 }) {
   const { setNodeRef, isOver } = useSortable({ id });
+
+  // Group carryover issues by source sprint
+  const carryoverGroups = carryoverIssues?.reduce((acc, issue) => {
+    const sprintName = issue.carryover_from_sprint_name || 'Previous Sprint';
+    if (!acc[sprintName]) {
+      acc[sprintName] = [];
+    }
+    acc[sprintName].push(issue);
+    return acc;
+  }, {} as Record<string, Issue[]>) || {};
+
+  const allIssues = [...(carryoverIssues || []), ...issues];
 
   return (
     <div className={cn('flex w-1/2 flex-col', className)}>
@@ -677,9 +703,32 @@ function DroppableColumn({
         )}
       >
         <SortableContext
-          items={issues.map(i => i.id)}
+          items={allIssues.map(i => i.id)}
           strategy={verticalListSortingStrategy}
         >
+          {/* Carryover sections */}
+          {Object.entries(carryoverGroups).map(([sprintName, groupIssues]) => (
+            <div key={sprintName} className="mb-4">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-orange-500" />
+                <span className="text-xs font-medium text-orange-500">
+                  Carryover from {sprintName}
+                </span>
+              </div>
+              {groupIssues.map((issue) => (
+                <DraggableIssueCard
+                  key={issue.id}
+                  issue={issue}
+                  action={actionType}
+                  onClick={() => onIssueClick(issue.id)}
+                  onAction={() => onIssueAction(issue.id)}
+                  isCarryover
+                />
+              ))}
+            </div>
+          ))}
+
+          {/* Regular issues */}
           {issues.map((issue) => (
             <DraggableIssueCard
               key={issue.id}
@@ -690,7 +739,7 @@ function DroppableColumn({
             />
           ))}
         </SortableContext>
-        {issues.length === 0 && (
+        {allIssues.length === 0 && (
           <p className="text-center text-sm text-muted py-8">{emptyMessage}</p>
         )}
       </div>
@@ -704,11 +753,13 @@ function DraggableIssueCard({
   action,
   onClick,
   onAction,
+  isCarryover,
 }: {
   issue: Issue;
   action: 'add' | 'remove';
   onClick: () => void;
   onAction: () => void;
+  isCarryover?: boolean;
 }) {
   const {
     attributes,
@@ -737,6 +788,7 @@ function DraggableIssueCard({
         action={action}
         onClick={onClick}
         onAction={onAction}
+        isCarryover={isCarryover}
       />
     </div>
   );
@@ -770,11 +822,13 @@ function IssueCard({
   action,
   onClick,
   onAction,
+  isCarryover,
 }: {
   issue: Issue;
   action: 'add' | 'remove';
   onClick: () => void;
   onAction: () => void;
+  isCarryover?: boolean;
 }) {
   const localPriorityColors: Record<string, string> = {
     ...priorityColors,
@@ -782,7 +836,10 @@ function IssueCard({
   };
 
   return (
-    <div className="group flex items-center gap-2 rounded-lg border border-border bg-background p-3 hover:bg-border/30 transition-colors cursor-grab active:cursor-grabbing">
+    <div className={cn(
+      "group flex items-center gap-2 rounded-lg border bg-background p-3 hover:bg-border/30 transition-colors cursor-grab active:cursor-grabbing",
+      isCarryover ? "border-orange-500/50" : "border-border"
+    )}>
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -803,6 +860,11 @@ function IssueCard({
         <div className="flex items-center gap-2">
           <span className={cn('h-2 w-2 rounded-full flex-shrink-0', STATE_COLORS[issue.state])} />
           <span className="text-xs font-mono text-muted">{issue.display_id}</span>
+          {isCarryover && (
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/20 text-orange-500" title={`Carried over from ${issue.carryover_from_sprint_name || 'previous sprint'}`}>
+              Carryover
+            </span>
+          )}
           <span className={cn('text-xs', localPriorityColors[issue.priority])}>
             {issue.priority !== 'none' && issue.priority.charAt(0).toUpperCase()}
           </span>

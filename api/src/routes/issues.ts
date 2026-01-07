@@ -431,6 +431,47 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       changes.push({ field: 'sprint_id', oldValue: existingIssue.sprint_id || null, newValue: data.sprint_id });
       updates.push(`sprint_id = $${paramIndex++}`);
       values.push(data.sprint_id);
+
+      // Track carryover when moving from a completed sprint while issue is not done
+      if (existingIssue.sprint_id && data.sprint_id && currentProps.state !== 'done') {
+        // Check if the old sprint is completed (based on end date)
+        const oldSprintResult = await pool.query(
+          `SELECT properties->>'sprint_number' as sprint_number, w.sprint_start_date
+           FROM documents d
+           JOIN workspaces w ON d.workspace_id = w.id
+           WHERE d.id = $1 AND d.document_type = 'sprint'`,
+          [existingIssue.sprint_id]
+        );
+
+        if (oldSprintResult.rows[0]) {
+          const sprintNumber = parseInt(oldSprintResult.rows[0].sprint_number, 10);
+          const rawStartDate = oldSprintResult.rows[0].sprint_start_date;
+          const sprintDuration = 14;
+
+          let startDate: Date;
+          if (rawStartDate instanceof Date) {
+            startDate = new Date(Date.UTC(rawStartDate.getFullYear(), rawStartDate.getMonth(), rawStartDate.getDate()));
+          } else if (typeof rawStartDate === 'string') {
+            startDate = new Date(rawStartDate + 'T00:00:00Z');
+          } else {
+            startDate = new Date();
+          }
+
+          // Calculate sprint end date
+          const sprintEndDate = new Date(startDate);
+          sprintEndDate.setUTCDate(sprintEndDate.getUTCDate() + (sprintNumber * sprintDuration) - 1);
+
+          // If the old sprint has ended, mark this as a carryover
+          if (new Date() > sprintEndDate) {
+            newProps.carryover_from_sprint_id = existingIssue.sprint_id;
+            propsChanged = true;
+          }
+        }
+      } else if (data.sprint_id === null) {
+        // Removing from sprint clears carryover
+        delete newProps.carryover_from_sprint_id;
+        propsChanged = true;
+      }
     }
 
     if (updates.length === 0) {
