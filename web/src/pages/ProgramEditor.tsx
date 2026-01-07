@@ -449,11 +449,11 @@ function OverviewTab({
 }) {
   const [people, setPeople] = useState<Person[]>([]);
 
-  // Fetch team members
+  // Fetch team members (filter out pending users who don't have user_id yet)
   useEffect(() => {
     fetch(`${API_URL}/api/team/people`, { credentials: 'include' })
       .then(res => res.ok ? res.json() : [])
-      .then(setPeople)
+      .then((data: Person[]) => setPeople(data.filter(p => p.user_id)))
       .catch(console.error);
   }, []);
 
@@ -730,11 +730,11 @@ function SprintsTab({
   const [sprintIssues, setSprintIssues] = useState<SprintIssue[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
 
-  // Fetch team members for owner selection
+  // Fetch team members for owner selection (filter out pending users)
   useEffect(() => {
     fetch(`${API_URL}/api/team/people`, { credentials: 'include' })
       .then(res => res.ok ? res.json() : [])
-      .then(setPeople)
+      .then((data: Person[]) => setPeople(data.filter(p => p.user_id)))
       .catch(console.error);
   }, []);
 

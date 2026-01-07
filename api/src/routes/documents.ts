@@ -73,6 +73,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
              created_at, updated_at, created_by, visibility
       FROM documents
       WHERE workspace_id = $1
+        AND archived_at IS NULL
         AND (visibility = 'workspace' OR created_by = $2 OR $3 = TRUE)
     `;
     const params: (string | boolean | null)[] = [workspaceId, userId, isAdmin];

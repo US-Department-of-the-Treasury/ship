@@ -239,9 +239,79 @@ describe('Workspaces API', () => {
       expect(response.body.success).toBe(true)
     })
 
+    it('POST /api/workspaces/:id/invites should create pending person document', async () => {
+      const testEmail = 'pending-person-test@test.com'
+
+      const response = await request(app)
+        .post(`/api/workspaces/${testWorkspaceId}/invites`)
+        .set('Cookie', superAdminSessionCookie)
+        .set('x-csrf-token', superAdminCsrfToken)
+        .send({ email: testEmail, role: 'member' })
+
+      expect(response.status).toBe(201)
+      const newInviteId = response.body.data.invite.id
+
+      // Verify pending person document was created
+      const personResult = await pool.query(
+        `SELECT * FROM documents
+         WHERE workspace_id = $1
+           AND document_type = 'person'
+           AND properties->>'invite_id' = $2`,
+        [testWorkspaceId, newInviteId]
+      )
+
+      expect(personResult.rows.length).toBe(1)
+      expect(personResult.rows[0].title).toBe('pending-person-test') // email prefix
+      expect(personResult.rows[0].properties.pending).toBe(true)
+      expect(personResult.rows[0].properties.email).toBe(testEmail)
+      expect(personResult.rows[0].properties.invite_id).toBe(newInviteId)
+    })
+
+    it('DELETE /api/workspaces/:id/invites/:inviteId should archive person document', async () => {
+      const testEmail = 'archive-person-test@test.com'
+
+      // Create invite (which creates pending person doc)
+      const createResponse = await request(app)
+        .post(`/api/workspaces/${testWorkspaceId}/invites`)
+        .set('Cookie', superAdminSessionCookie)
+        .set('x-csrf-token', superAdminCsrfToken)
+        .send({ email: testEmail, role: 'member' })
+
+      const archiveInviteId = createResponse.body.data.invite.id
+
+      // Verify person doc exists and is not archived
+      const beforeResult = await pool.query(
+        `SELECT * FROM documents
+         WHERE workspace_id = $1
+           AND document_type = 'person'
+           AND properties->>'invite_id' = $2`,
+        [testWorkspaceId, archiveInviteId]
+      )
+      expect(beforeResult.rows.length).toBe(1)
+      expect(beforeResult.rows[0].archived_at).toBeNull()
+
+      // Revoke invite
+      await request(app)
+        .delete(`/api/workspaces/${testWorkspaceId}/invites/${archiveInviteId}`)
+        .set('Cookie', superAdminSessionCookie)
+        .set('x-csrf-token', superAdminCsrfToken)
+
+      // Verify person doc is now archived
+      const afterResult = await pool.query(
+        `SELECT * FROM documents
+         WHERE workspace_id = $1
+           AND document_type = 'person'
+           AND properties->>'invite_id' = $2`,
+        [testWorkspaceId, archiveInviteId]
+      )
+      expect(afterResult.rows.length).toBe(1)
+      expect(afterResult.rows[0].archived_at).not.toBeNull()
+    })
+
     // Cleanup after invite tests
     afterAll(async () => {
       await pool.query('DELETE FROM workspace_invites WHERE workspace_id = $1', [testWorkspaceId])
+      await pool.query(`DELETE FROM documents WHERE workspace_id = $1 AND document_type = 'person' AND properties->>'invite_id' IS NOT NULL`, [testWorkspaceId])
     })
   })
 

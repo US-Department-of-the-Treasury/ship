@@ -667,6 +667,19 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
       [workspaceId, email, x509SubjectDn || null, token, role, req.userId, expiresAt]
     );
 
+    // Create pending person document for the invited user
+    // This allows them to appear in team lists and assignment dropdowns immediately
+    const personTitle = email.split('@')[0]; // Use email prefix as name
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, properties)
+       VALUES ($1, 'person', $2, $3)`,
+      [workspaceId, personTitle, JSON.stringify({
+        pending: true,
+        invite_id: result.rows[0].id,
+        email: email
+      })]
+    );
+
     await logAuditEvent({
       workspaceId,
       actorUserId: req.userId!,
@@ -723,6 +736,15 @@ router.delete('/:id/invites/:inviteId', authMiddleware, workspaceAdminMiddleware
       });
       return;
     }
+
+    // Archive the pending person document associated with this invite
+    await pool.query(
+      `UPDATE documents SET archived_at = NOW()
+       WHERE workspace_id = $1
+         AND document_type = 'person'
+         AND properties->>'invite_id' = $2`,
+      [workspaceId, inviteId]
+    );
 
     await logAuditEvent({
       workspaceId,
