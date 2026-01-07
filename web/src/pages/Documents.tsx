@@ -4,12 +4,14 @@ import { useDocuments } from '@/contexts/DocumentsContext';
 import { buildDocumentTree } from '@/lib/documentTree';
 import { DocumentTreeItem } from '@/components/DocumentTreeItem';
 import { DocumentsListSkeleton } from '@/components/ui/Skeleton';
+import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
 import { cn } from '@/lib/cn';
 
 type VisibilityFilter = 'all' | 'workspace' | 'private';
 
 export function DocumentsPage() {
   const { documents, loading, createDocument } = useDocuments();
+  const isOfflineEmpty = useOfflineEmptyState(documents, loading);
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
@@ -64,6 +66,15 @@ export function DocumentsPage() {
       searchParams.set('filter', filter);
     }
     setSearchParams(searchParams);
+  }
+
+  // Show offline empty state when offline with no cached data
+  if (isOfflineEmpty) {
+    return (
+      <div className="p-6 max-w-4xl">
+        <OfflineEmptyState resourceName="documents" />
+      </div>
+    );
   }
 
   if (loading) {

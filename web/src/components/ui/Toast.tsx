@@ -1,15 +1,21 @@
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
+interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: string;
   message: string;
   type: 'success' | 'error' | 'info';
   duration?: number;
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
-  showToast: (message: string, type?: Toast['type'], duration?: number) => void;
+  showToast: (message: string, type?: Toast['type'], duration?: number, action?: ToastAction) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -25,9 +31,11 @@ export function useToast() {
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const showToast = useCallback((message: string, type: Toast['type'] = 'success', duration = 3000) => {
+  const showToast = useCallback((message: string, type: Toast['type'] = 'success', duration = 3000, action?: ToastAction) => {
     const id = crypto.randomUUID();
-    setToasts((prev) => [...prev, { id, message, type, duration }]);
+    // If there's an action (like undo), extend duration to give user time to click
+    const finalDuration = action ? Math.max(duration, 5000) : duration;
+    setToasts((prev) => [...prev, { id, message, type, duration: finalDuration, action }]);
   }, []);
 
   const removeToast = useCallback((id: string) => {
@@ -52,6 +60,11 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
     return () => clearTimeout(timer);
   }, [toast.duration, onClose]);
 
+  const handleActionClick = () => {
+    toast.action?.onClick();
+    onClose();
+  };
+
   return (
     <div
       role="alert"
@@ -67,6 +80,14 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
       {toast.type === 'success' && <CheckIcon className="h-4 w-4" />}
       {toast.type === 'error' && <XIcon className="h-4 w-4" />}
       <span>{toast.message}</span>
+      {toast.action && (
+        <button
+          onClick={handleActionClick}
+          className="ml-2 rounded px-2 py-0.5 text-sm font-medium bg-white/20 hover:bg-white/30 transition-colors"
+        >
+          {toast.action.label}
+        </button>
+      )}
       <button
         onClick={onClose}
         className="ml-auto text-white/70 hover:text-white"

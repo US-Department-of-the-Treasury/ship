@@ -6,6 +6,11 @@ import { pool } from '../db/client.js';
 
 describe('Files API', () => {
   const app = createApp('http://localhost:5173');
+  // Use unique identifiers to avoid conflicts between concurrent test runs
+  const testRunId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const testEmail = `files-${testRunId}@ship.local`;
+  const testWorkspaceName = `Files Test ${testRunId}`;
+
   let sessionCookie: string;
   let csrfToken: string;
   let testWorkspaceId: string;
@@ -15,16 +20,18 @@ describe('Files API', () => {
   beforeAll(async () => {
     // Create test workspace
     const workspaceResult = await pool.query(
-      `INSERT INTO workspaces (name) VALUES ('Files Test Workspace')
-       RETURNING id`
+      `INSERT INTO workspaces (name) VALUES ($1)
+       RETURNING id`,
+      [testWorkspaceName]
     );
     testWorkspaceId = workspaceResult.rows[0].id;
 
     // Create test user
     const userResult = await pool.query(
       `INSERT INTO users (email, password_hash, name)
-       VALUES ('files-test@ship.local', 'test-hash', 'Files Test User')
-       RETURNING id`
+       VALUES ($1, 'test-hash', 'Files Test User')
+       RETURNING id`,
+      [testEmail]
     );
     testUserId = userResult.rows[0].id;
 
@@ -63,7 +70,7 @@ describe('Files API', () => {
     await pool.query('DELETE FROM workspace_memberships WHERE user_id = $1', [testUserId]);
     await pool.query('DELETE FROM users WHERE id = $1', [testUserId]);
     await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId]);
-    await pool.end();
+    // Don't close pool - it's shared across test files
   });
 
   it('POST /api/files/upload returns 403 without valid session (CSRF blocks first)', async () => {

@@ -15,6 +15,10 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { SessionTimeoutModal } from '@/components/SessionTimeoutModal';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
+import { StorageWarning } from '@/components/StorageWarning';
+import { CacheCorruptionAlert } from '@/components/CacheCorruptionAlert';
+import { PrivateModeWarning } from '@/components/PrivateModeWarning';
+import { ManualSyncButton } from '@/components/ManualSyncButton';
 import { PendingSyncCount } from '@/components/PendingSyncCount';
 import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
 
@@ -127,6 +131,15 @@ export function AppLayout() {
       <div className="flex justify-center">
         <OfflineIndicator />
       </div>
+
+      {/* Storage quota warning banner */}
+      <StorageWarning />
+
+      {/* Cache corruption alert */}
+      <CacheCorruptionAlert />
+
+      {/* Private browsing mode warning */}
+      <PrivateModeWarning />
 
       {/* Impersonation banner */}
       {impersonating && (
@@ -334,8 +347,11 @@ export function AppLayout() {
               )}
             </div>
 
-            {/* Subtle sync status at bottom */}
-            <PendingSyncCount />
+            {/* Sync controls at bottom */}
+            <div className="flex items-center gap-2">
+              <ManualSyncButton />
+              <PendingSyncCount />
+            </div>
           </div>
         </aside>
 

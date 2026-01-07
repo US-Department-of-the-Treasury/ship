@@ -1,4 +1,4 @@
-import { useState, useCallback, ReactNode } from 'react';
+import { useState, useCallback, useEffect, ReactNode } from 'react';
 import { useSelection, UseSelectionReturn } from '@/hooks/useSelection';
 import { cn } from '@/lib/cn';
 
@@ -21,8 +21,8 @@ export interface SelectableListProps<T extends { id: string }> {
   /** Enable selection features (checkboxes, multi-select) */
   selectable?: boolean;
 
-  /** Callback when selection changes */
-  onSelectionChange?: (selectedIds: Set<string>) => void;
+  /** Callback when selection changes - receives both selectedIds and selection object */
+  onSelectionChange?: (selectedIds: Set<string>, selection: UseSelectionReturn) => void;
 
   /** Callback when item is clicked (not checkbox) */
   onItemClick?: (item: T) => void;
@@ -71,9 +71,13 @@ export function SelectableList<T extends { id: string }>({
   const selection = useSelection({
     items,
     getItemId,
-    onSelectionChange,
     hoveredId,
   });
+
+  // Notify parent of selection changes with both IDs and selection object
+  useEffect(() => {
+    onSelectionChange?.(selection.selectedIds, selection);
+  }, [selection.selectedIds, selection, onSelectionChange]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, item: T) => {
     e.preventDefault();

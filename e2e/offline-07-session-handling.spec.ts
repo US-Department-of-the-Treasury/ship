@@ -2,21 +2,15 @@
  * Category 7: Session/Auth During Offline
  * Tests session expiry handling during offline periods.
  *
- * SKIP REASON: These tests require offline mutation queue and session expiry
- * handling UI which are NOT YET IMPLEMENTED.
- *
- * INFRASTRUCTURE NEEDED:
- * 1. Offline mutation queue with IndexedDB persistence
- * 2. Session expiry detection while offline
- * 3. Re-authentication flow that preserves pending mutations
- * 4. Cached data access after session expiry
- *
- * See: docs/application-architecture.md "Offline Mutation Queue"
+ * IMPLEMENTATION STATUS: Complete
+ * - Offline mutation queue with IndexedDB persistence
+ * - SessionTimeoutModal handles session expiry
+ * - TanStack Query + IndexedDB provides cached data access
  */
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('7.1 Session Expiry While Offline', () => {
+test.describe('7.1 Session Expiry While Offline', () => {
   test('session expiry during offline does not lose local changes', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 

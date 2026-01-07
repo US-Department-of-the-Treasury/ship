@@ -6,6 +6,11 @@ import { pool } from '../db/client.js';
 
 describe('Backlinks API', () => {
   const app = createApp('http://localhost:5173');
+  // Use unique identifiers to avoid conflicts between concurrent test runs
+  const testRunId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const testEmail = `backlinks-${testRunId}@ship.local`;
+  const testWorkspaceName = `Backlinks Test ${testRunId}`;
+
   let sessionCookie: string;
   let csrfToken: string;
   let testWorkspaceId: string;
@@ -18,16 +23,18 @@ describe('Backlinks API', () => {
   beforeAll(async () => {
     // Create test workspace
     const workspaceResult = await pool.query(
-      `INSERT INTO workspaces (name) VALUES ('Backlinks Test Workspace')
-       RETURNING id`
+      `INSERT INTO workspaces (name) VALUES ($1)
+       RETURNING id`,
+      [testWorkspaceName]
     );
     testWorkspaceId = workspaceResult.rows[0].id;
 
     // Create test user
     const userResult = await pool.query(
       `INSERT INTO users (email, password_hash, name)
-       VALUES ('backlinks-test@ship.local', 'test-hash', 'Backlinks Test User')
-       RETURNING id`
+       VALUES ($1, 'test-hash', 'Backlinks Test User')
+       RETURNING id`,
+      [testEmail]
     );
     testUserId = userResult.rows[0].id;
 

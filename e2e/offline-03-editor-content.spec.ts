@@ -12,7 +12,7 @@
  */
 import { test, expect } from './fixtures/offline'
 
-test.describe.skip('3.1 Editor Content Persists Offline', () => {
+test.describe('3.1 Editor Content Persists Offline', () => {
   test('typing in editor while offline is preserved', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 
@@ -117,10 +117,9 @@ test.describe.skip('3.1 Editor Content Persists Offline', () => {
     await expect(editor).toContainText('Cycle 3 online')
   })
 
-  // SKIP: This test requires document metadata caching (TanStack Query + IndexedDB)
-  // which is NOT YET IMPLEMENTED. The Yjs editor DOES cache content, but the page
-  // itself needs to fetch document metadata from the API to render.
-  test.skip('editor content loads from IndexedDB when offline', async ({ page, goOffline, login, testData }) => {
+  // Document metadata caching via TanStack Query + IndexedDB is now implemented
+  // along with Yjs editor content caching
+  test('editor content loads from IndexedDB when offline', async ({ page, goOffline, login, testData }) => {
     await login()
 
     // GIVEN: User previously edited a document (Yjs state cached)
