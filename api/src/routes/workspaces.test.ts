@@ -6,6 +6,12 @@ import { pool } from '../db/client.js'
 
 describe('Workspaces API', () => {
   const app = createApp()
+  // Use unique identifiers to avoid conflicts between concurrent test runs
+  const testRunId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  const testUserEmail = `ws-user-${testRunId}@ship.local`
+  const superAdminEmail = `ws-admin-${testRunId}@ship.local`
+  const testWorkspaceName = `Workspaces Test ${testRunId}`
+
   let sessionCookie: string
   let superAdminSessionCookie: string
   let csrfToken: string
@@ -18,16 +24,18 @@ describe('Workspaces API', () => {
   beforeAll(async () => {
     // Create test workspace
     const workspaceResult = await pool.query(
-      `INSERT INTO workspaces (name) VALUES ('Test Workspace')
-       RETURNING id`
+      `INSERT INTO workspaces (name) VALUES ($1)
+       RETURNING id`,
+      [testWorkspaceName]
     )
     testWorkspaceId = workspaceResult.rows[0].id
 
     // Create regular test user
     const userResult = await pool.query(
       `INSERT INTO users (email, password_hash, name)
-       VALUES ('test-workspace@ship.local', 'test-hash', 'Test User')
-       RETURNING id`
+       VALUES ($1, 'test-hash', 'Test User')
+       RETURNING id`,
+      [testUserEmail]
     )
     testUserId = userResult.rows[0].id
 
@@ -50,8 +58,9 @@ describe('Workspaces API', () => {
     // Create super admin user
     const superAdminResult = await pool.query(
       `INSERT INTO users (email, password_hash, name, is_super_admin)
-       VALUES ('super-admin@ship.local', 'test-hash', 'Super Admin', true)
-       RETURNING id`
+       VALUES ($1, 'test-hash', 'Super Admin', true)
+       RETURNING id`,
+      [superAdminEmail]
     )
     superAdminUserId = superAdminResult.rows[0].id
 
@@ -339,6 +348,12 @@ describe('Workspaces API', () => {
 
 describe('Admin API', () => {
   const app = createApp()
+  // Use unique identifiers to avoid conflicts between concurrent test runs
+  const testRunId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  const superAdminEmail = `admin-${testRunId}@ship.local`
+  const regularEmail = `regular-${testRunId}@ship.local`
+  const testWorkspaceName = `Admin Test ${testRunId}`
+
   let superAdminSessionCookie: string
   let regularSessionCookie: string
   let superAdminCsrfToken: string
@@ -350,15 +365,17 @@ describe('Admin API', () => {
   beforeAll(async () => {
     // Create test workspace
     const workspaceResult = await pool.query(
-      `INSERT INTO workspaces (name) VALUES ('Admin Test Workspace') RETURNING id`
+      `INSERT INTO workspaces (name) VALUES ($1) RETURNING id`,
+      [testWorkspaceName]
     )
     testWorkspaceId = workspaceResult.rows[0].id
 
     // Create super admin user
     const superAdminResult = await pool.query(
       `INSERT INTO users (email, password_hash, name, is_super_admin)
-       VALUES ('admin-test@ship.local', 'test-hash', 'Admin Test', true)
-       RETURNING id`
+       VALUES ($1, 'test-hash', 'Admin Test', true)
+       RETURNING id`,
+      [superAdminEmail]
     )
     superAdminUserId = superAdminResult.rows[0].id
 
@@ -380,8 +397,9 @@ describe('Admin API', () => {
     // Create regular user
     const regularResult = await pool.query(
       `INSERT INTO users (email, password_hash, name)
-       VALUES ('regular-test@ship.local', 'test-hash', 'Regular Test')
-       RETURNING id`
+       VALUES ($1, 'test-hash', 'Regular Test')
+       RETURNING id`,
+      [regularEmail]
     )
     regularUserId = regularResult.rows[0].id
 
@@ -518,6 +536,13 @@ describe('Admin API', () => {
 
 describe('Invite Validation API', () => {
   const app = createApp()
+  // Use unique identifiers to avoid conflicts between concurrent test runs
+  const testRunId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  const testEmail = `invite-admin-${testRunId}@ship.local`
+  const testWorkspaceName = `Invite Test ${testRunId}`
+  const validTokenSuffix = `valid-${testRunId}`
+  const expiredTokenSuffix = `expired-${testRunId}`
+
   let testWorkspaceId: string
   let testUserId: string
   let sessionCookie: string
@@ -526,15 +551,17 @@ describe('Invite Validation API', () => {
   beforeAll(async () => {
     // Create test workspace
     const workspaceResult = await pool.query(
-      `INSERT INTO workspaces (name) VALUES ('Invite Test Workspace') RETURNING id`
+      `INSERT INTO workspaces (name) VALUES ($1) RETURNING id`,
+      [testWorkspaceName]
     )
     testWorkspaceId = workspaceResult.rows[0].id
 
     // Create test user (admin)
     const userResult = await pool.query(
       `INSERT INTO users (email, password_hash, name, is_super_admin)
-       VALUES ('invite-admin@ship.local', 'test-hash', 'Invite Admin', true)
-       RETURNING id`
+       VALUES ($1, 'test-hash', 'Invite Admin', true)
+       RETURNING id`,
+      [testEmail]
     )
     testUserId = userResult.rows[0].id
 
@@ -553,12 +580,12 @@ describe('Invite Validation API', () => {
     )
     sessionCookie = `session_id=${sessionId}`
 
-    // Create a valid invite
+    // Create a valid invite with unique token
     const inviteResult = await pool.query(
       `INSERT INTO workspace_invites (workspace_id, email, role, invited_by_user_id, token, expires_at)
-       VALUES ($1, 'invited@test.com', 'member', $2, 'test-valid-token', now() + interval '7 days')
+       VALUES ($1, $2, 'member', $3, $4, now() + interval '7 days')
        RETURNING token`,
-      [testWorkspaceId, testUserId]
+      [testWorkspaceId, `invited-${testRunId}@test.com`, testUserId, validTokenSuffix]
     )
     validInviteToken = inviteResult.rows[0].token
   })
@@ -577,7 +604,7 @@ describe('Invite Validation API', () => {
 
       expect(response.status).toBe(200)
       expect(response.body.success).toBe(true)
-      expect(response.body.data).toHaveProperty('email', 'invited@test.com')
+      expect(response.body.data).toHaveProperty('email', `invited-${testRunId}@test.com`)
       expect(response.body.data).toHaveProperty('workspaceName')
       expect(response.body.data).toHaveProperty('role', 'member')
     })
@@ -589,14 +616,14 @@ describe('Invite Validation API', () => {
     })
 
     it('should return 400 for expired token', async () => {
-      // Create expired invite
+      // Create expired invite with unique token
       await pool.query(
         `INSERT INTO workspace_invites (workspace_id, email, role, invited_by_user_id, token, expires_at)
-         VALUES ($1, 'expired@test.com', 'member', $2, 'expired-token', now() - interval '1 day')`,
-        [testWorkspaceId, testUserId]
+         VALUES ($1, $2, 'member', $3, $4, now() - interval '1 day')`,
+        [testWorkspaceId, `expired-${testRunId}@test.com`, testUserId, expiredTokenSuffix]
       )
 
-      const response = await request(app).get('/api/invites/expired-token')
+      const response = await request(app).get(`/api/invites/${expiredTokenSuffix}`)
 
       expect(response.status).toBe(400)
     })

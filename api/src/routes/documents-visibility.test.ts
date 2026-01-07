@@ -6,6 +6,13 @@ import { pool } from '../db/client.js';
 
 describe('Document Visibility', () => {
   const app = createApp();
+  // Use unique identifiers to avoid conflicts between concurrent test runs
+  const testRunId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const user1Email = `user1-vis-${testRunId}@ship.local`;
+  const user2Email = `user2-vis-${testRunId}@ship.local`;
+  const adminEmail = `admin-vis-${testRunId}@ship.local`;
+  const testWorkspaceName = `Visibility Test ${testRunId}`;
+
   let user1SessionCookie: string;
   let user1CsrfToken: string;
   let user2SessionCookie: string;
@@ -21,32 +28,36 @@ describe('Document Visibility', () => {
   beforeAll(async () => {
     // Create test workspace
     const workspaceResult = await pool.query(
-      `INSERT INTO workspaces (name) VALUES ('Test Workspace Visibility')
-       RETURNING id`
+      `INSERT INTO workspaces (name) VALUES ($1)
+       RETURNING id`,
+      [testWorkspaceName]
     );
     testWorkspaceId = workspaceResult.rows[0].id;
 
     // Create user 1 (regular member)
     const user1Result = await pool.query(
       `INSERT INTO users (email, password_hash, name)
-       VALUES ('user1-visibility@ship.local', 'test-hash', 'User One')
-       RETURNING id`
+       VALUES ($1, 'test-hash', 'User One')
+       RETURNING id`,
+      [user1Email]
     );
     user1Id = user1Result.rows[0].id;
 
     // Create user 2 (regular member)
     const user2Result = await pool.query(
       `INSERT INTO users (email, password_hash, name)
-       VALUES ('user2-visibility@ship.local', 'test-hash', 'User Two')
-       RETURNING id`
+       VALUES ($1, 'test-hash', 'User Two')
+       RETURNING id`,
+      [user2Email]
     );
     user2Id = user2Result.rows[0].id;
 
     // Create admin user
     const adminResult = await pool.query(
       `INSERT INTO users (email, password_hash, name)
-       VALUES ('admin-visibility@ship.local', 'test-hash', 'Admin User')
-       RETURNING id`
+       VALUES ($1, 'test-hash', 'Admin User')
+       RETURNING id`,
+      [adminEmail]
     );
     adminId = adminResult.rows[0].id;
 
