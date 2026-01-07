@@ -737,6 +737,15 @@ router.delete('/:id/invites/:inviteId', authMiddleware, workspaceAdminMiddleware
       return;
     }
 
+    // Archive the pending person document associated with this invite
+    await pool.query(
+      `UPDATE documents SET archived_at = NOW()
+       WHERE workspace_id = $1
+         AND document_type = 'person'
+         AND properties->>'invite_id' = $2`,
+      [workspaceId, inviteId]
+    );
+
     await logAuditEvent({
       workspaceId,
       actorUserId: req.userId!,
