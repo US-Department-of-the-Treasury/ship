@@ -68,12 +68,29 @@ export function SessionTimeoutModal({
     }
   }, [warningType, onStayLoggedIn]);
 
-  // Handle keyboard events
+  // Handle keyboard events including focus trap
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Escape' && warningType === 'inactivity') {
         e.preventDefault();
         onStayLoggedIn();
+      }
+
+      // Focus trap: keep Tab within modal
+      if (e.key === 'Tab') {
+        const focusableElements = e.currentTarget.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        const firstFocusable = focusableElements[0];
+        const lastFocusable = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey && document.activeElement === firstFocusable) {
+          e.preventDefault();
+          lastFocusable?.focus();
+        } else if (!e.shiftKey && document.activeElement === lastFocusable) {
+          e.preventDefault();
+          firstFocusable?.focus();
+        }
       }
     },
     [warningType, onStayLoggedIn]
