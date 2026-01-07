@@ -4,6 +4,7 @@ import { Editor } from '@/components/Editor';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
+import { useSprints, Sprint as SprintFromHook } from '@/hooks/useSprintsQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { issueStatusColors, sprintStatusColors } from '@/lib/statusColors';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
@@ -99,7 +100,9 @@ interface Sprint {
   issue_count: number;
   completed_count: number;
   started_count: number;
-  total_estimate_hours: number;
+  total_estimate_hours?: number;
+  _pending?: boolean;
+  _pendingId?: string;
 }
 
 interface SprintsResponse {
@@ -129,19 +132,23 @@ export function ProgramEditorPage() {
   const tabParam = searchParams.get('tab') as Tab | null;
   const [activeTab, setActiveTab] = useState<Tab>(tabParam && ['overview', 'issues', 'sprints'].includes(tabParam) ? tabParam : 'overview');
   const [issues, setIssues] = useState<Issue[]>([]);
-  const [sprints, setSprints] = useState<Sprint[]>([]);
-  const [workspaceSprintStartDate, setWorkspaceSprintStartDate] = useState<Date | null>(null);
   const [issuesLoading, setIssuesLoading] = useState(false);
-  const [sprintsLoading, setSprintsLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [sprintFilter, setSprintFilter] = useState<SprintFilter>('all');
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
 
+  // Use TanStack Query for sprints
+  const {
+    sprints,
+    loading: sprintsLoading,
+    workspaceSprintStartDate,
+    createSprint: createSprintMutation,
+  } = useSprints(id);
+
   // Reset tab data when program ID changes
   useEffect(() => {
     setIssues([]);
-    setSprints([]);
   }, [id]);
 
   // Get the current program from context
@@ -166,20 +173,7 @@ export function ProgramEditorPage() {
     }
   }, [activeTab, id, issues.length]);
 
-  // Fetch sprints when switching to sprints or issues tab (needed for filtering)
-  useEffect(() => {
-    if ((activeTab === 'sprints' || activeTab === 'issues') && id && sprints.length === 0) {
-      setSprintsLoading(true);
-      fetch(`${API_URL}/api/programs/${id}/sprints`, { credentials: 'include' })
-        .then(res => res.ok ? res.json() : { workspace_sprint_start_date: new Date().toISOString(), sprints: [] })
-        .then((data: SprintsResponse) => {
-          setSprints(data.sprints);
-          setWorkspaceSprintStartDate(new Date(data.workspace_sprint_start_date));
-        })
-        .catch(console.error)
-        .finally(() => setSprintsLoading(false));
-    }
-  }, [activeTab, id, sprints.length]);
+  // Sprints are now loaded via TanStack Query (useSprints hook)
 
   const handleUpdateProgram = useCallback(async (updates: Partial<Program>) => {
     if (!id) return;
@@ -423,7 +417,7 @@ export function ProgramEditorPage() {
                 workspaceSprintStartDate={workspaceSprintStartDate}
                 programId={id!}
                 onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
-                onSprintCreated={(sprint) => setSprints(prev => [...prev, sprint].sort((a, b) => a.sprint_number - b.sprint_number))}
+                createSprint={createSprintMutation}
               />
             ) : null}
           </div>
@@ -716,13 +710,13 @@ function SprintsTab({
   workspaceSprintStartDate,
   programId,
   onSprintClick,
-  onSprintCreated,
+  createSprint,
 }: {
   sprints: Sprint[];
   workspaceSprintStartDate: Date;
   programId: string;
   onSprintClick: (id: string) => void;
-  onSprintCreated: (sprint: Sprint) => void;
+  createSprint: (sprintNumber: number, ownerId: string, title?: string) => Promise<Sprint | null>;
 }) {
   const navigate = useNavigate();
   const [showOwnerPrompt, setShowOwnerPrompt] = useState<number | null>(null);
@@ -784,37 +778,18 @@ function SprintsTab({
     setSelectedSprintNumber(sprintNumber);
   };
 
-  // Handle sprint creation
+  // Handle sprint creation using TanStack Query mutation
   const handleCreateSprint = async (sprintNumber: number, ownerId: string) => {
     try {
-      const token = await getCsrfToken();
-      const res = await fetch(`${API_URL}/api/sprints`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': token,
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          program_id: programId,
-          title: `Sprint ${sprintNumber}`,
-          sprint_number: sprintNumber,
-          owner_id: ownerId,
-        }),
-      });
-
-      if (res.ok) {
-        const newSprint = await res.json();
-        onSprintCreated(newSprint);
+      const newSprint = await createSprint(sprintNumber, ownerId, `Sprint ${sprintNumber}`);
+      if (newSprint) {
         setShowOwnerPrompt(null);
         // Navigate to the new sprint (Create & Open)
         onSprintClick(newSprint.id);
-      } else {
-        const error = await res.json();
-        alert(error.error || 'Failed to create sprint');
       }
     } catch (err) {
       console.error('Failed to create sprint:', err);
+      alert('Failed to create sprint');
     }
   };
 
@@ -1132,7 +1107,7 @@ function ActiveSprintProgress({
             <div className="h-3 w-3 rounded-sm bg-accent" />
             <span className="text-muted">Completed: {sprint.completed_count}</span>
           </div>
-          {sprint.total_estimate_hours > 0 && (
+          {(sprint.total_estimate_hours ?? 0) > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-muted">·</span>
               <span className="text-muted">{sprint.total_estimate_hours}h estimated</span>
@@ -1478,13 +1453,13 @@ function SprintWindowCard({
         {status === 'completed' ? (
           <div className="text-xs text-muted">
             {sprint.completed_count}/{sprint.issue_count} ✓
-            {sprint.total_estimate_hours > 0 && ` · ${sprint.total_estimate_hours}h`}
+            {(sprint.total_estimate_hours ?? 0) > 0 && ` · ${sprint.total_estimate_hours}h`}
           </div>
         ) : (
           <>
             <div className="text-xs text-muted mb-1">
               {sprint.completed_count}/{sprint.issue_count} done
-              {sprint.total_estimate_hours > 0 && ` · ${sprint.total_estimate_hours}h`}
+              {(sprint.total_estimate_hours ?? 0) > 0 && ` · ${sprint.total_estimate_hours}h`}
             </div>
             <div className="h-1.5 rounded-full bg-border overflow-hidden">
               <div
