@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, JSONContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
@@ -20,6 +20,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { cn } from '@/lib/cn';
+import { apiPost } from '@/lib/api';
 import { createSlashCommands } from './editor/SlashCommands';
 import { DocumentEmbed } from './editor/DocumentEmbed';
 import { DragHandleExtension } from './editor/DragHandle';
@@ -71,6 +72,25 @@ function stringToColor(str: string): string {
   }
   const hue = hash % 360;
   return `hsl(${hue}, 70%, 60%)`;
+}
+
+// Extract document mention IDs from TipTap JSON content
+function extractDocumentMentionIds(content: JSONContent): string[] {
+  const mentionIds: string[] = [];
+
+  function traverse(node: JSONContent) {
+    if (node.type === 'mention' && node.attrs?.mentionType === 'document' && node.attrs?.id) {
+      mentionIds.push(node.attrs.id);
+    }
+    if (node.content) {
+      for (const child of node.content) {
+        traverse(child);
+      }
+    }
+  }
+
+  traverse(content);
+  return [...new Set(mentionIds)]; // Deduplicate
 }
 
 export function Editor({
@@ -326,6 +346,49 @@ export function Editor({
       },
     },
   }, [provider]);
+
+  // Sync document links when editor content changes (for backlinks feature)
+  const lastSyncedLinksRef = useRef<string>('');
+  useEffect(() => {
+    if (!editor) return;
+
+    const syncLinks = () => {
+      const json = editor.getJSON();
+      const targetIds = extractDocumentMentionIds(json);
+      const targetIdsKey = targetIds.sort().join(',');
+
+      // Only sync if links have changed
+      if (targetIdsKey === lastSyncedLinksRef.current) {
+        return;
+      }
+      lastSyncedLinksRef.current = targetIdsKey;
+
+      // POST to update links (uses target_ids for API compatibility)
+      // Use apiPost to handle CSRF token automatically
+      apiPost(`/api/documents/${documentId}/links`, { target_ids: targetIds })
+        .catch(err => {
+          console.error('[LinkSync] POST error:', err);
+        });
+    };
+
+    // Debounce during editing
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const debouncedSync = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(syncLinks, 500);
+    };
+
+    editor.on('update', debouncedSync);
+    // Sync on initial load
+    syncLinks();
+
+    return () => {
+      clearTimeout(debounceTimer);
+      editor.off('update', debouncedSync);
+      // Flush any pending sync - but this won't complete if navigating away
+      syncLinks();
+    };
+  }, [editor, documentId]);
 
   // Handle title changes
   const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
