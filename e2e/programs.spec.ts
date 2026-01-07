@@ -271,6 +271,16 @@ test.describe('Programs', () => {
     await expect(editor).toBeVisible({ timeout: 5000 })
   })
 
+  // Feedback tab has been removed from the program editor
+  // These tests are skipped as the feature no longer exists
+  test.skip('Feedback tab shows filter options', async ({ page }) => {
+    // Test disabled - Feedback tab removed from program editor
+  })
+
+  test.skip('can give feedback from program Feedback tab', async ({ page }) => {
+    // Test disabled - Feedback tab removed from program editor
+  })
+
   test('program cards show emoji or initial badges', async ({ page }) => {
     await page.goto('/programs')
 
