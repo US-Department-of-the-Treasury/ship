@@ -128,9 +128,7 @@ test.describe('Programs', () => {
     await expect(viewToggle.first()).toBeVisible({ timeout: 5000 })
   })
 
-  // TODO: This test has a navigation race condition - clicking tab navigates to global Issues
-  // The other tab tests pass, so this is likely a specific timing issue
-  test.skip('can create issue from program Issues tab', async ({ page }) => {
+  test('can create issue from program Issues tab', async ({ page }) => {
     await page.goto('/programs')
 
     // Create new program
@@ -138,20 +136,21 @@ test.describe('Programs', () => {
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Wait for program editor to fully load - verify we have the tab bar
-    const main = page.locator('main')
-    await expect(main.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
 
-    // Click Issues tab
+    // Click Issues tab - scope to main to avoid sidebar
+    const main = page.locator('main')
     await main.getByRole('tab', { name: 'Issues' }).click()
 
-    // Should see New Issue button in the tab content
-    await expect(main.getByRole('button', { name: 'New Issue' })).toBeVisible({ timeout: 5000 })
+    // Wait for Issues tab panel to be active before looking for New Issue button
+    // Use data-testid to ensure we click the program's New Issue button, not sidebar
+    await expect(page.getByTestId('program-new-issue')).toBeVisible({ timeout: 5000 })
 
-    // Verify we're still on the program page
+    // Verify we're still on the program page (not global /issues)
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/)
 
-    // Click New Issue button within main content
-    await main.getByRole('button', { name: 'New Issue' }).click()
+    // Click New Issue button using data-testid
+    await page.getByTestId('program-new-issue').click()
 
     // Should navigate to issue editor
     await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
@@ -270,16 +269,6 @@ test.describe('Programs', () => {
     // Should see editor with editable title area
     const editor = page.locator('.ProseMirror, .tiptap, [data-testid="editor"]')
     await expect(editor).toBeVisible({ timeout: 5000 })
-  })
-
-  // Feedback tab has been removed from the program editor
-  // These tests are skipped as the feature no longer exists
-  test.skip('Feedback tab shows filter options', async ({ page }) => {
-    // Test disabled - Feedback tab removed from program editor
-  })
-
-  test.skip('can give feedback from program Feedback tab', async ({ page }) => {
-    // Test disabled - Feedback tab removed from program editor
   })
 
   test('program cards show emoji or initial badges', async ({ page }) => {

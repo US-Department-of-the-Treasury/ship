@@ -1,12 +1,12 @@
 import { createContext, useContext, ReactNode } from 'react';
-import { useIssues as useIssuesQuery, Issue } from '@/hooks/useIssuesQuery';
+import { useIssues as useIssuesQuery, Issue, CreateIssueOptions } from '@/hooks/useIssuesQuery';
 
-export type { Issue };
+export type { Issue, CreateIssueOptions };
 
 interface IssuesContextValue {
   issues: Issue[];
   loading: boolean;
-  createIssue: () => Promise<Issue | null>;
+  createIssue: (options?: CreateIssueOptions) => Promise<Issue | null>;
   updateIssue: (id: string, updates: Partial<Issue>) => Promise<Issue | null>;
   refreshIssues: () => Promise<void>;
 }

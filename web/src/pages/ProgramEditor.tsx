@@ -4,6 +4,7 @@ import { Editor } from '@/components/Editor';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
+import { useIssues } from '@/contexts/IssuesContext';
 import { useSprints, Sprint as SprintFromHook } from '@/hooks/useSprintsQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { issueStatusColors, sprintStatusColors } from '@/lib/statusColors';
@@ -127,6 +128,7 @@ export function ProgramEditorPage() {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { programs, loading, updateProgram: contextUpdateProgram } = usePrograms();
+  const { createIssue: contextCreateIssue } = useIssues();
 
   // Initialize activeTab from URL param or default to 'overview'
   const tabParam = searchParams.get('tab') as Tab | null;
@@ -189,14 +191,9 @@ export function ProgramEditorPage() {
 
   const createIssue = async () => {
     if (!id) return;
-    try {
-      const res = await apiPost('/api/issues', { title: 'Untitled', program_id: id });
-      if (res.ok) {
-        const issue = await res.json();
-        navigate(`/issues/${issue.id}`);
-      }
-    } catch (err) {
-      console.error('Failed to create issue:', err);
+    const issue = await contextCreateIssue({ program_id: id });
+    if (issue) {
+      navigate(`/issues/${issue.id}`);
     }
   };
 
@@ -322,6 +319,7 @@ export function ProgramEditorPage() {
           <button
             onClick={createIssue}
             className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
+            data-testid="program-new-issue"
           >
             New Issue
           </button>
