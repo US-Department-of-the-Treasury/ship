@@ -504,8 +504,8 @@ test.describe('Program View: Feedback Tab Removed', () => {
     // Navigate to a program using the helper
     await getProgramId(page);
 
-    // Wait for program editor to load
-    await expect(page.locator('[role="tablist"], nav')).toBeVisible({ timeout: 10000 });
+    // Wait for program editor to load (use specific tablist to avoid matching nav)
+    await expect(page.getByRole('tablist', { name: 'Content tabs' })).toBeVisible({ timeout: 10000 });
 
     // Should have Overview, Issues, Sprints tabs
     await expect(page.getByRole('tab', { name: /overview/i })).toBeVisible();

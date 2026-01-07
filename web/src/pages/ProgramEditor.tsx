@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, FormEvent } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
@@ -103,6 +103,10 @@ interface Sprint {
   completed_count: number;
   started_count: number;
   total_estimate_hours?: number;
+  has_plan?: boolean;
+  has_retro?: boolean;
+  plan_created_at?: string | null;
+  retro_created_at?: string | null;
   _pending?: boolean;
   _pendingId?: string;
 }
@@ -140,6 +144,7 @@ export function ProgramEditorPage() {
   const [sprintFilter, setSprintFilter] = useState<SprintFilter>('all');
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  const [showQuickAddModal, setShowQuickAddModal] = useState(false);
 
   // Use TanStack Query for sprints
   const {
@@ -178,6 +183,32 @@ export function ProgramEditorPage() {
 
   // Sprints are now loaded via TanStack Query (useSprints hook)
 
+  // Keyboard shortcut: 'C' to quick-add issue
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if typing in an input, textarea, or contenteditable
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey
+      ) {
+        return;
+      }
+
+      if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        setShowQuickAddModal(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleUpdateProgram = useCallback(async (updates: Partial<Program>) => {
     if (!id) return;
     await contextUpdateProgram(id, updates);
@@ -196,6 +227,34 @@ export function ProgramEditorPage() {
     if (issue) {
       navigate(`/issues/${issue.id}`);
     }
+  };
+
+  // Quick add issue handler
+  const handleQuickAddIssue = async (data: { title: string; estimate: number; assignee_id: string | null }) => {
+    if (!id) return;
+    try {
+      const res = await apiPost('/api/issues', {
+        program_id: id,
+        title: data.title,
+        properties: {
+          estimate: data.estimate,
+          ...(data.assignee_id && { assignee_id: data.assignee_id }),
+        },
+      });
+      if (res.ok) {
+        const issue = await res.json();
+        setToast(`Created ${issue.display_id}`);
+        setTimeout(() => setToast(null), 3000);
+        // Refresh issues if on issues tab
+        if (activeTab === 'issues') {
+          const issuesRes = await fetch(`${API_URL}/api/programs/${id}/issues`, { credentials: 'include' });
+          if (issuesRes.ok) setIssues(await issuesRes.json());
+        }
+      }
+    } catch (err) {
+      console.error('Failed to create issue:', err);
+    }
+    setShowQuickAddModal(false);
   };
 
   const updateIssue = async (issueId: string, updates: { state: string }) => {
@@ -437,7 +496,144 @@ export function ProgramEditorPage() {
       </div>
 
       </div>
+
+      {/* Quick Add Issue Modal (triggered by 'C' key) */}
+      {showQuickAddModal && (
+        <QuickAddIssueModal
+          programId={id!}
+          onSubmit={handleQuickAddIssue}
+          onClose={() => setShowQuickAddModal(false)}
+        />
+      )}
     </>
+  );
+}
+
+// Quick Add Issue Modal component
+function QuickAddIssueModal({
+  programId,
+  onSubmit,
+  onClose,
+}: {
+  programId: string;
+  onSubmit: (data: { title: string; estimate: number; assignee_id: string | null }) => void;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [estimate, setEstimate] = useState('');
+  const [assigneeId, setAssigneeId] = useState<string | null>(null);
+  const [people, setPeople] = useState<Person[]>([]);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch team members (filter out pending users)
+  useEffect(() => {
+    fetch(`${API_URL}/api/team/people`, { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then((data: Person[]) => setPeople(data.filter(p => p.user_id)))
+      .catch(console.error);
+  }, []);
+
+  // Focus title input on mount
+  useEffect(() => {
+    titleInputRef.current?.focus();
+  }, []);
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    const estimateNum = parseFloat(estimate);
+    if (!title.trim()) return;
+    if (!estimate || isNaN(estimateNum) || estimateNum <= 0) return;
+    onSubmit({ title: title.trim(), estimate: estimateNum, assignee_id: assigneeId });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onClick={onClose}
+      onKeyDown={handleKeyDown}
+    >
+      <div
+        className="w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-foreground">Quick Add Issue</h2>
+          <span className="text-xs text-muted bg-border/50 rounded px-2 py-1">
+            Press C to open
+          </span>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              ref={titleInputRef}
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Issue title..."
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Estimate (hours) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              min="0.5"
+              step="0.5"
+              value={estimate}
+              onChange={(e) => setEstimate(e.target.value)}
+              placeholder="e.g., 4"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Assignee (optional)
+            </label>
+            <PersonCombobox
+              people={people}
+              value={assigneeId}
+              onChange={setAssigneeId}
+              placeholder="Select assignee..."
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md px-4 py-2 text-sm text-muted hover:bg-border transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!title.trim() || !estimate || parseFloat(estimate) <= 0}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Create Issue
+            </button>
+          </div>
+        </form>
+
+        <p className="mt-4 text-xs text-muted text-center">
+          Issue will be created in backlog · Press Enter to create
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -1462,6 +1658,34 @@ function SprintTimeline({
   );
 }
 
+// Get plan status color and tooltip based on sprint status and whether plan exists
+function getPlanStatus(hasPlan: boolean, status: 'active' | 'upcoming' | 'completed'): { color: string; tooltip: string } {
+  if (hasPlan) {
+    return { color: 'text-green-500', tooltip: 'Plan exists' };
+  }
+  if (status === 'upcoming') {
+    return { color: 'text-yellow-500', tooltip: 'Plan needed before sprint starts' };
+  }
+  // active or completed without plan
+  return { color: 'text-red-500', tooltip: 'Missing plan - sprint already started' };
+}
+
+// Get retro status color and tooltip based on sprint status and days since end
+function getRetroStatus(hasRetro: boolean, status: 'active' | 'upcoming' | 'completed', endDate: Date): { color: string; tooltip: string } {
+  if (hasRetro) {
+    return { color: 'text-green-500', tooltip: 'Retro exists' };
+  }
+  if (status === 'upcoming' || status === 'active') {
+    return { color: 'text-muted', tooltip: 'Retro not yet due' };
+  }
+  // completed without retro - check how long ago
+  const daysSinceEnd = Math.floor((Date.now() - endDate.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysSinceEnd >= 14) {
+    return { color: 'text-red-500', tooltip: `Retro overdue (${daysSinceEnd} days since sprint ended)` };
+  }
+  return { color: 'text-yellow-500', tooltip: `Retro needed (${daysSinceEnd} days since sprint ended)` };
+}
+
 // Individual sprint window card
 function SprintWindowCard({
   window,
@@ -1486,6 +1710,10 @@ function SprintWindowCard({
     const progress = sprint.issue_count > 0
       ? Math.round((sprint.completed_count / sprint.issue_count) * 100)
       : 0;
+
+    // Get plan and retro status
+    const planStatus = getPlanStatus(sprint.has_plan ?? false, status);
+    const retroStatus = getRetroStatus(sprint.has_retro ?? false, status, end_date);
 
     return (
       <button
@@ -1530,13 +1758,21 @@ function SprintWindowCard({
             </div>
           </>
         )}
-        <div className="mt-2 text-xs">
+        <div className="mt-2 flex items-center justify-between text-xs">
           <span className={cn(
             'rounded px-1.5 py-0.5',
             status === 'active' ? 'bg-accent/20 text-accent' : sprintStatusColors[status]
           )}>
             {status.charAt(0).toUpperCase() + status.slice(1)}
           </span>
+          <div className="flex items-center gap-1.5">
+            <span className={cn(planStatus.color)} title={planStatus.tooltip}>
+              {sprint.has_plan ? '✓' : '○'} Plan
+            </span>
+            <span className={cn(retroStatus.color)} title={retroStatus.tooltip}>
+              {sprint.has_retro ? '✓' : '○'} Retro
+            </span>
+          </div>
         </div>
       </button>
     );

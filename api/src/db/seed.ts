@@ -285,67 +285,68 @@ async function seed() {
 
     // Comprehensive issue templates for Ship Core covering all sprint/state combinations
     // This gives us realistic data to test all views
+    // estimate_hours added for sprint planning features (progress graph, accountability)
     const shipCoreIssues = [
       // Sprint -3 (completed, older history): All done
-      { title: 'Initial project setup', state: 'done', sprintOffset: -3, priority: 'high' },
-      { title: 'Database schema design', state: 'done', sprintOffset: -3, priority: 'high' },
-      { title: 'Set up development environment', state: 'done', sprintOffset: -3, priority: 'medium' },
-      { title: 'Create basic API structure', state: 'done', sprintOffset: -3, priority: 'medium' },
+      { title: 'Initial project setup', state: 'done', sprintOffset: -3, priority: 'high', estimate: 8 },
+      { title: 'Database schema design', state: 'done', sprintOffset: -3, priority: 'high', estimate: 6 },
+      { title: 'Set up development environment', state: 'done', sprintOffset: -3, priority: 'medium', estimate: 4 },
+      { title: 'Create basic API structure', state: 'done', sprintOffset: -3, priority: 'medium', estimate: 4 },
 
-      // Sprint -2 (completed): All done
-      { title: 'Implement user authentication', state: 'done', sprintOffset: -2, priority: 'high' },
-      { title: 'Add password hashing', state: 'done', sprintOffset: -2, priority: 'high' },
-      { title: 'Create session management', state: 'done', sprintOffset: -2, priority: 'medium' },
-      { title: 'Build login/logout endpoints', state: 'done', sprintOffset: -2, priority: 'medium' },
-      { title: 'Add CSRF protection', state: 'done', sprintOffset: -2, priority: 'medium' },
-      { title: 'Write auth unit tests', state: 'done', sprintOffset: -2, priority: 'low' },
+      // Sprint -2 (completed): Mostly done, some incomplete (tests pattern alert)
+      { title: 'Implement user authentication', state: 'done', sprintOffset: -2, priority: 'high', estimate: 8 },
+      { title: 'Add password hashing', state: 'done', sprintOffset: -2, priority: 'high', estimate: 4 },
+      { title: 'Create session management', state: 'todo', sprintOffset: -2, priority: 'medium', estimate: 6 },
+      { title: 'Build login/logout endpoints', state: 'done', sprintOffset: -2, priority: 'medium', estimate: 4 },
+      { title: 'Add CSRF protection', state: 'todo', sprintOffset: -2, priority: 'medium', estimate: 4 },
+      { title: 'Write auth unit tests', state: 'todo', sprintOffset: -2, priority: 'low', estimate: 3 },
 
-      // Sprint -1 (completed): Mostly done, one cancelled
-      { title: 'Create document model', state: 'done', sprintOffset: -1, priority: 'high' },
-      { title: 'Implement CRUD operations', state: 'done', sprintOffset: -1, priority: 'high' },
-      { title: 'Add real-time collaboration', state: 'done', sprintOffset: -1, priority: 'high' },
-      { title: 'Build WebSocket server', state: 'done', sprintOffset: -1, priority: 'medium' },
-      { title: 'Integrate Yjs for CRDT', state: 'done', sprintOffset: -1, priority: 'medium' },
-      { title: 'Add offline support', state: 'cancelled', sprintOffset: -1, priority: 'low' },
+      // Sprint -1 (completed): Low completion (tests pattern alert - 2 consecutive)
+      { title: 'Create document model', state: 'done', sprintOffset: -1, priority: 'high', estimate: 8 },
+      { title: 'Implement CRUD operations', state: 'todo', sprintOffset: -1, priority: 'high', estimate: 6 },
+      { title: 'Add real-time collaboration', state: 'todo', sprintOffset: -1, priority: 'high', estimate: 8 },
+      { title: 'Build WebSocket server', state: 'done', sprintOffset: -1, priority: 'medium', estimate: 6 },
+      { title: 'Integrate Yjs for CRDT', state: 'todo', sprintOffset: -1, priority: 'medium', estimate: 6 },
+      { title: 'Add offline support', state: 'cancelled', sprintOffset: -1, priority: 'low', estimate: 4 },
 
       // Current sprint: Mix of done, in_progress, todo
-      { title: 'Implement sprint management', state: 'done', sprintOffset: 0, priority: 'high' },
-      { title: 'Create sprint timeline UI', state: 'done', sprintOffset: 0, priority: 'high' },
-      { title: 'Add sprint progress chart', state: 'done', sprintOffset: 0, priority: 'medium' },
-      { title: 'Build issue assignment flow', state: 'in_progress', sprintOffset: 0, priority: 'high' },
-      { title: 'Add bulk issue operations', state: 'in_progress', sprintOffset: 0, priority: 'medium' },
-      { title: 'Create sprint retrospective view', state: 'in_progress', sprintOffset: 0, priority: 'medium' },
-      { title: 'Add sprint velocity metrics', state: 'todo', sprintOffset: 0, priority: 'medium' },
-      { title: 'Implement burndown chart', state: 'todo', sprintOffset: 0, priority: 'medium' },
-      { title: 'Add sprint completion notifications', state: 'todo', sprintOffset: 0, priority: 'low' },
+      { title: 'Implement sprint management', state: 'done', sprintOffset: 0, priority: 'high', estimate: 8 },
+      { title: 'Create sprint timeline UI', state: 'done', sprintOffset: 0, priority: 'high', estimate: 6 },
+      { title: 'Add sprint progress chart', state: 'done', sprintOffset: 0, priority: 'medium', estimate: 4 },
+      { title: 'Build issue assignment flow', state: 'in_progress', sprintOffset: 0, priority: 'high', estimate: 6 },
+      { title: 'Add bulk issue operations', state: 'in_progress', sprintOffset: 0, priority: 'medium', estimate: 4 },
+      { title: 'Create sprint retrospective view', state: 'in_progress', sprintOffset: 0, priority: 'medium', estimate: 4 },
+      { title: 'Add sprint velocity metrics', state: 'todo', sprintOffset: 0, priority: 'medium', estimate: 4 },
+      { title: 'Implement burndown chart', state: 'todo', sprintOffset: 0, priority: 'medium', estimate: 6 },
+      { title: 'Add sprint completion notifications', state: 'todo', sprintOffset: 0, priority: 'low', estimate: 2 },
 
       // Sprint +1 (upcoming): Some planned todo items
-      { title: 'Add team workload view', state: 'todo', sprintOffset: 1, priority: 'high' },
-      { title: 'Create capacity planning', state: 'todo', sprintOffset: 1, priority: 'high' },
-      { title: 'Build resource allocation UI', state: 'todo', sprintOffset: 1, priority: 'medium' },
-      { title: 'Add team availability calendar', state: 'backlog', sprintOffset: 1, priority: 'low' },
+      { title: 'Add team workload view', state: 'todo', sprintOffset: 1, priority: 'high', estimate: 8 },
+      { title: 'Create capacity planning', state: 'todo', sprintOffset: 1, priority: 'high', estimate: 6 },
+      { title: 'Build resource allocation UI', state: 'todo', sprintOffset: 1, priority: 'medium', estimate: 4 },
+      { title: 'Add team availability calendar', state: 'backlog', sprintOffset: 1, priority: 'low', estimate: 3 },
 
       // Sprint +2 (upcoming): Fewer planned items
-      { title: 'Implement reporting dashboard', state: 'todo', sprintOffset: 2, priority: 'medium' },
-      { title: 'Add export to PDF', state: 'backlog', sprintOffset: 2, priority: 'low' },
+      { title: 'Implement reporting dashboard', state: 'todo', sprintOffset: 2, priority: 'medium', estimate: 6 },
+      { title: 'Add export to PDF', state: 'backlog', sprintOffset: 2, priority: 'low', estimate: 4 },
 
       // Sprint +3 (upcoming): Empty - no issues assigned
 
-      // Backlog (no sprint): Ideas for future
-      { title: 'Add dark mode support', state: 'backlog', sprintOffset: null, priority: 'low' },
-      { title: 'Implement keyboard shortcuts', state: 'backlog', sprintOffset: null, priority: 'low' },
-      { title: 'Create mobile app', state: 'backlog', sprintOffset: null, priority: 'low' },
-      { title: 'Add AI-powered suggestions', state: 'backlog', sprintOffset: null, priority: 'low' },
-      { title: 'Build integration with Slack', state: 'backlog', sprintOffset: null, priority: 'medium' },
+      // Backlog (no sprint): Ideas for future (no estimates - tests estimate required modal)
+      { title: 'Add dark mode support', state: 'backlog', sprintOffset: null, priority: 'low', estimate: null },
+      { title: 'Implement keyboard shortcuts', state: 'backlog', sprintOffset: null, priority: 'low', estimate: null },
+      { title: 'Create mobile app', state: 'backlog', sprintOffset: null, priority: 'low', estimate: null },
+      { title: 'Add AI-powered suggestions', state: 'backlog', sprintOffset: null, priority: 'low', estimate: null },
+      { title: 'Build integration with Slack', state: 'backlog', sprintOffset: null, priority: 'medium', estimate: null },
     ];
 
     // Generic issues for other programs (less comprehensive)
     const genericIssueTemplates = [
-      { title: 'Set up project structure', state: 'done' },
-      { title: 'Create initial documentation', state: 'done' },
-      { title: 'Implement core features', state: 'in_progress' },
-      { title: 'Add unit tests', state: 'todo' },
-      { title: 'Performance optimization', state: 'backlog' },
+      { title: 'Set up project structure', state: 'done', estimate: 4 },
+      { title: 'Create initial documentation', state: 'done', estimate: 3 },
+      { title: 'Implement core features', state: 'in_progress', estimate: 8 },
+      { title: 'Add unit tests', state: 'todo', estimate: 4 },
+      { title: 'Performance optimization', state: 'backlog', estimate: 6 },
     ];
 
     let issuesCreated = 0;
@@ -384,7 +385,7 @@ async function seed() {
 
       if (!existingIssue.rows[0]) {
         maxTickets[shipCoreProgram.id]!++;
-        const issueProperties = {
+        const issueProperties: Record<string, unknown> = {
           state: issue.state,
           priority: issue.priority,
           source: 'internal',
@@ -392,6 +393,10 @@ async function seed() {
           feedback_status: null,
           rejection_reason: null,
         };
+        // Add estimate_hours if provided (backlog items have null to test estimate modal)
+        if (issue.estimate !== null) {
+          issueProperties.estimate_hours = issue.estimate;
+        }
         await pool.query(
           `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number)
            VALUES ($1, 'issue', $2, $3, $4, $5, $6)`,
@@ -437,6 +442,7 @@ async function seed() {
             assignee_id: assignee.id,
             feedback_status: null,
             rejection_reason: null,
+            estimate_hours: template.estimate,
           };
           await pool.query(
             `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number)

@@ -415,4 +415,305 @@ router.get('/people', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/team/accountability - Get sprint completion metrics per person (admin only)
+// Returns: { people, sprints, metrics } where metrics[userId][sprintNumber] = { committed, completed }
+router.get('/accountability', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Check if user is admin
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    // Get workspace sprint start date
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
+    const sprintDurationDays = 14;
+    const today = new Date();
+
+    let startDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      startDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      startDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      startDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
+
+    // Calculate current sprint number
+    const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
+
+    // Get last 6 sprints (including current)
+    const fromSprint = Math.max(1, currentSprintNumber - 5);
+    const toSprint = currentSprintNumber;
+
+    // Generate sprint info
+    const sprints = [];
+    for (let i = fromSprint; i <= toSprint; i++) {
+      const sprintStart = new Date(startDate);
+      sprintStart.setUTCDate(sprintStart.getUTCDate() + (i - 1) * sprintDurationDays);
+      const sprintEnd = new Date(sprintStart);
+      sprintEnd.setUTCDate(sprintEnd.getUTCDate() + sprintDurationDays - 1);
+
+      sprints.push({
+        number: i,
+        name: `Sprint ${i}`,
+        startDate: sprintStart.toISOString().split('T')[0],
+        endDate: sprintEnd.toISOString().split('T')[0],
+        isCurrent: i === currentSprintNumber,
+      });
+    }
+
+    // Get all people in workspace
+    const peopleResult = await pool.query(
+      `SELECT
+         d.properties->>'user_id' as id,
+         d.title as name
+       FROM documents d
+       WHERE d.workspace_id = $1
+         AND d.document_type = 'person'
+         AND d.archived_at IS NULL
+       ORDER BY d.title`,
+      [workspaceId]
+    );
+
+    // Get all issues with estimates, assignees, sprint info, and completion state
+    const issuesResult = await pool.query(
+      `SELECT
+         i.properties->>'assignee_id' as assignee_id,
+         i.sprint_id,
+         COALESCE((i.properties->>'estimate')::numeric, 0) as estimate,
+         i.properties->>'state' as state,
+         s.properties->>'sprint_number' as sprint_number
+       FROM documents i
+       JOIN documents s ON i.sprint_id = s.id
+       WHERE i.workspace_id = $1
+         AND i.document_type = 'issue'
+         AND i.sprint_id IS NOT NULL
+         AND i.properties->>'assignee_id' IS NOT NULL`,
+      [workspaceId]
+    );
+
+    // Calculate metrics: userId -> sprintNumber -> { committed, completed }
+    const metrics: Record<string, Record<number, { committed: number; completed: number }>> = {};
+
+    for (const issue of issuesResult.rows) {
+      const assigneeId = issue.assignee_id;
+      const sprintNumber = parseInt(issue.sprint_number, 10);
+      const estimate = parseFloat(issue.estimate) || 0;
+      const isDone = issue.state === 'done';
+
+      // Skip if outside our range
+      if (sprintNumber < fromSprint || sprintNumber > toSprint) continue;
+
+      if (!metrics[assigneeId]) {
+        metrics[assigneeId] = {};
+      }
+      if (!metrics[assigneeId][sprintNumber]) {
+        metrics[assigneeId][sprintNumber] = { committed: 0, completed: 0 };
+      }
+
+      metrics[assigneeId][sprintNumber].committed += estimate;
+      if (isDone) {
+        metrics[assigneeId][sprintNumber].completed += estimate;
+      }
+    }
+
+    // Detect pattern alerts: 2+ consecutive sprints below 60% completion
+    const patternAlerts: Record<string, {
+      hasAlert: boolean;
+      consecutiveCount: number;
+      trend: number[]; // completion percentages for last N sprints
+    }> = {};
+
+    for (const person of peopleResult.rows) {
+      const personMetrics = metrics[person.id];
+      if (!personMetrics) {
+        patternAlerts[person.id] = { hasAlert: false, consecutiveCount: 0, trend: [] };
+        continue;
+      }
+
+      // Build trend array (completion percentages in sprint order)
+      const trend: number[] = [];
+      let consecutiveLow = 0;
+      let maxConsecutiveLow = 0;
+
+      for (let i = fromSprint; i <= toSprint; i++) {
+        const sprintMetrics = personMetrics[i];
+        if (sprintMetrics && sprintMetrics.committed > 0) {
+          const rate = Math.round((sprintMetrics.completed / sprintMetrics.committed) * 100);
+          trend.push(rate);
+
+          if (rate < 60) {
+            consecutiveLow++;
+            maxConsecutiveLow = Math.max(maxConsecutiveLow, consecutiveLow);
+          } else {
+            consecutiveLow = 0;
+          }
+        } else {
+          trend.push(-1); // -1 indicates no data
+          consecutiveLow = 0; // Reset streak on no data
+        }
+      }
+
+      patternAlerts[person.id] = {
+        hasAlert: maxConsecutiveLow >= 2,
+        consecutiveCount: maxConsecutiveLow,
+        trend,
+      };
+    }
+
+    res.json({
+      people: peopleResult.rows,
+      sprints,
+      metrics,
+      patternAlerts,
+    });
+  } catch (err) {
+    console.error('Get accountability error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/team/people/:personId/sprint-metrics - Get sprint completion metrics for a specific person
+// Only visible to the person themselves or workspace admins
+router.get('/people/:personId/sprint-metrics', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+    const { personId } = req.params;
+
+    // Get the person document to find the user_id
+    const personResult = await pool.query(
+      `SELECT properties->>'user_id' as user_id
+       FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'person'`,
+      [personId, workspaceId]
+    );
+
+    if (!personResult.rows[0]) {
+      res.status(404).json({ error: 'Person not found' });
+      return;
+    }
+
+    const targetUserId = personResult.rows[0].user_id;
+
+    // Check if user can view this person's metrics (self or admin)
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+    const isSelf = userId === targetUserId;
+
+    if (!isAdmin && !isSelf) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    // Get workspace sprint start date
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
+    const sprintDurationDays = 14;
+    const today = new Date();
+
+    let startDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      startDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      startDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      startDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
+
+    // Calculate current sprint number
+    const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
+
+    // Get last 6 sprints (including current)
+    const fromSprint = Math.max(1, currentSprintNumber - 5);
+    const toSprint = currentSprintNumber;
+
+    // Generate sprint info
+    const sprints = [];
+    for (let i = fromSprint; i <= toSprint; i++) {
+      const sprintStart = new Date(startDate);
+      sprintStart.setUTCDate(sprintStart.getUTCDate() + (i - 1) * sprintDurationDays);
+      const sprintEnd = new Date(sprintStart);
+      sprintEnd.setUTCDate(sprintEnd.getUTCDate() + sprintDurationDays - 1);
+
+      sprints.push({
+        number: i,
+        name: `Sprint ${i}`,
+        startDate: sprintStart.toISOString().split('T')[0],
+        endDate: sprintEnd.toISOString().split('T')[0],
+        isCurrent: i === currentSprintNumber,
+      });
+    }
+
+    // Get all issues for this person with estimates, sprint info, and completion state
+    const issuesResult = await pool.query(
+      `SELECT
+         COALESCE((i.properties->>'estimate')::numeric, 0) as estimate,
+         i.properties->>'state' as state,
+         s.properties->>'sprint_number' as sprint_number
+       FROM documents i
+       JOIN documents s ON i.sprint_id = s.id
+       WHERE i.workspace_id = $1
+         AND i.document_type = 'issue'
+         AND i.sprint_id IS NOT NULL
+         AND i.properties->>'assignee_id' = $2`,
+      [workspaceId, targetUserId]
+    );
+
+    // Calculate metrics: sprintNumber -> { committed, completed }
+    const metrics: Record<number, { committed: number; completed: number }> = {};
+
+    for (const issue of issuesResult.rows) {
+      const sprintNumber = parseInt(issue.sprint_number, 10);
+      const estimate = parseFloat(issue.estimate) || 0;
+      const isDone = issue.state === 'done';
+
+      // Skip if outside our range
+      if (sprintNumber < fromSprint || sprintNumber > toSprint) continue;
+
+      if (!metrics[sprintNumber]) {
+        metrics[sprintNumber] = { committed: 0, completed: 0 };
+      }
+
+      metrics[sprintNumber].committed += estimate;
+      if (isDone) {
+        metrics[sprintNumber].completed += estimate;
+      }
+    }
+
+    // Calculate average completion rate
+    let totalCommitted = 0;
+    let totalCompleted = 0;
+    for (const data of Object.values(metrics)) {
+      totalCommitted += data.committed;
+      totalCompleted += data.completed;
+    }
+    const averageRate = totalCommitted > 0 ? Math.round((totalCompleted / totalCommitted) * 100) : 0;
+
+    res.json({
+      sprints,
+      metrics,
+      averageRate,
+    });
+  } catch (err) {
+    console.error('Get person sprint metrics error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
