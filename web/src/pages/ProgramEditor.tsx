@@ -14,6 +14,7 @@ import { KanbanBoard } from '@/components/KanbanBoard';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
+import { ContextMenu, ContextMenuItem, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -398,6 +399,18 @@ export function ProgramEditorPage() {
                   if (res.ok) setIssues(await res.json());
                   setSelectedIssues(new Set());
                 }}
+                onAssignToSprint={async (issueId, sprintId) => {
+                  const token = await getCsrfToken();
+                  await fetch(`${API_URL}/api/issues/${issueId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+                    credentials: 'include',
+                    body: JSON.stringify({ sprint_id: sprintId }),
+                  });
+                  // Refresh issues
+                  const res = await fetch(`${API_URL}/api/programs/${id}/issues`, { credentials: 'include' });
+                  if (res.ok) setIssues(await res.json());
+                }}
               />
             )}
           </div>
@@ -531,6 +544,7 @@ function ProgramIssuesList({
   onSelectionChange,
   onIssueClick,
   onBulkMoveToSprint,
+  onAssignToSprint,
 }: {
   issues: Issue[];
   sprints: Sprint[];
@@ -538,17 +552,40 @@ function ProgramIssuesList({
   onSelectionChange: (selected: Set<string>) => void;
   onIssueClick: (id: string) => void;
   onBulkMoveToSprint: (sprintId: string | null) => Promise<void>;
+  onAssignToSprint: (issueId: string, sprintId: string | null) => Promise<void>;
 }) {
   const [isMoving, setIsMoving] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; issueId: string } | null>(null);
 
-  // Column definitions
+  // Column definitions - added Actions column
   const columns = useMemo(() => [
     { key: 'id', label: 'ID' },
     { key: 'title', label: 'Title' },
     { key: 'status', label: 'Status' },
     { key: 'assignee', label: 'Assignee' },
     { key: 'sprint', label: 'Sprint' },
+    { key: 'actions', label: '', className: 'w-12' },
   ], []);
+
+  // Handle menu button click
+  const handleMenuClick = useCallback((e: React.MouseEvent, issueId: string) => {
+    e.stopPropagation();
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    setContextMenu({ x: rect.right, y: rect.bottom, issueId });
+  }, []);
+
+  // Handle right-click context menu
+  const handleContextMenu = useCallback((e: React.MouseEvent, issue: Issue) => {
+    setContextMenu({ x: e.clientX, y: e.clientY, issueId: issue.id });
+  }, []);
+
+  // Handle assign to sprint from context menu
+  const handleAssignToSprint = useCallback(async (sprintId: string | null) => {
+    if (contextMenu) {
+      await onAssignToSprint(contextMenu.issueId, sprintId);
+      setContextMenu(null);
+    }
+  }, [contextMenu, onAssignToSprint]);
 
   // Render function for issue rows
   const renderIssueRow = useCallback((issue: Issue, _props: RowRenderProps) => {
@@ -572,9 +609,18 @@ function ProgramIssuesList({
         <td className="px-4 py-3 text-sm text-muted" role="gridcell">
           {sprint ? `Sprint ${sprint.sprint_number}` : '—'}
         </td>
+        <td className="px-2 py-3 text-center" role="gridcell">
+          <button
+            onClick={(e) => handleMenuClick(e, issue.id)}
+            aria-label="Issue actions menu"
+            className="p-1 text-muted hover:text-foreground hover:bg-border/50 rounded"
+          >
+            ⋮
+          </button>
+        </td>
       </>
     );
-  }, [sprints]);
+  }, [sprints, handleMenuClick]);
 
   const handleMoveToSprint = async (sprintId: string) => {
     setIsMoving(true);
@@ -633,9 +679,26 @@ function ProgramIssuesList({
           emptyState={emptyState}
           onItemClick={(issue) => onIssueClick(issue.id)}
           onSelectionChange={onSelectionChange}
+          onContextMenu={handleContextMenu}
           ariaLabel="Program issues list"
         />
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+          <ContextMenuSubmenu label="Assign to Sprint">
+            <ContextMenuItem onClick={() => handleAssignToSprint(null)}>
+              Backlog (No Sprint)
+            </ContextMenuItem>
+            {sprints.map(sprint => (
+              <ContextMenuItem key={sprint.id} onClick={() => handleAssignToSprint(sprint.id)}>
+                Sprint {sprint.sprint_number}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubmenu>
+        </ContextMenu>
+      )}
     </div>
   );
 }
