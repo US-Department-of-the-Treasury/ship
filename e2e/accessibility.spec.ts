@@ -6,7 +6,7 @@ async function login(page: import('@playwright/test').Page) {
   await page.goto('/login')
   await page.locator('#email').fill('dev@ship.local')
   await page.locator('#password').fill('admin123')
-  await page.getByRole('button', { name: /sign in/i }).click()
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page).not.toHaveURL('/login', { timeout: 5000 })
 }
 
@@ -135,7 +135,7 @@ test.describe('Accessibility - Keyboard Navigation', () => {
 
     // Tab to submit button
     await page.keyboard.press('Tab')
-    const submitButton = page.getByRole('button', { name: /sign in/i })
+    const submitButton = page.getByRole('button', { name: 'Sign in', exact: true })
     await expect(submitButton).toBeFocused()
 
     // Press Enter to submit
@@ -150,7 +150,7 @@ test.describe('Accessibility - Keyboard Navigation', () => {
     await page.goto('/login')
     await page.locator('#email').fill('dev@ship.local')
     await page.locator('#password').fill('admin123')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
     await expect(page).not.toHaveURL('/login', { timeout: 5000 })
 
     // After login, verify we can tab through the app
@@ -205,7 +205,7 @@ test.describe('Accessibility - Keyboard Navigation', () => {
 
     // Tab to submit
     await page.keyboard.press('Tab')
-    await expect(page.getByRole('button', { name: /sign in/i })).toBeFocused()
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeFocused()
   })
 })
 
@@ -216,7 +216,7 @@ test.describe('Accessibility - Screen Reader Announcements', () => {
     // Submit with invalid credentials
     await page.locator('#email').fill('invalid@test.com')
     await page.locator('#password').fill('wrongpassword')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Wait for error to appear
     await page.waitForTimeout(1000)
@@ -260,7 +260,7 @@ test.describe('Accessibility - Loading States', () => {
     await page.locator('#email').fill('dev@ship.local')
     await page.locator('#password').fill('admin123')
 
-    const submitButton = page.getByRole('button', { name: /sign in/i })
+    const submitButton = page.getByRole('button', { name: 'Sign in', exact: true })
 
     // Verify the button exists and has initial text
     const initialText = await submitButton.textContent()

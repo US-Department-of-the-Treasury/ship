@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/isolated-env';
+import { test, expect } from './fixtures/offline';
 
 /**
  * Session Timeout UX Tests
@@ -7,64 +7,232 @@ import { test, expect } from './fixtures/isolated-env';
  * These tests verify the timeout warning modal, countdown, and graceful logout behavior.
  */
 
+// 15 minutes in ms (matching SESSION_TIMEOUT_MS)
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000;
+// Warning appears 60 seconds before timeout
+const WARNING_THRESHOLD_MS = 60 * 1000;
+
 test.describe('Session Timeout Warning', () => {
-  // Note: In real tests, we'll use page.clock() to manipulate time
-  // rather than actually waiting 14+ minutes
+  test('shows warning modal when 60 seconds remain before timeout', async ({ page, login }) => {
+    // Install fake timers BEFORE login/navigation
+    await page.clock.install();
 
-  test.fixme('shows warning modal when 60 seconds remain before timeout', async ({ page }) => {
-    // TODO: Login, advance clock to 14 minutes of inactivity, verify modal appears
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance time to 14 minutes (60 seconds before timeout)
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    // Modal should appear
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
   });
 
-  test.fixme('warning modal displays correct title text', async ({ page }) => {
-    // TODO: Verify modal shows "Your session is about to expire" or similar
+  test('warning modal displays correct title text', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+    await expect(modal.getByText('Your session is about to expire')).toBeVisible();
   });
 
-  test.fixme('warning modal displays explanatory message about inactivity', async ({ page }) => {
-    // TODO: Verify message explains this is due to inactivity
+  test('warning modal displays explanatory message about inactivity', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+    await expect(modal.getByText(/due to inactivity/i)).toBeVisible();
   });
 
-  test.fixme('displays countdown timer in warning modal', async ({ page }) => {
-    // TODO: Verify modal shows countdown (e.g., "0:59", "0:58"...)
+  test('displays countdown timer in warning modal', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+    // Timer should show around 60 seconds (1:00 or 0:59)
+    const timer = modal.getByRole('timer');
+    await expect(timer).toBeVisible();
   });
 
-  test.fixme('countdown timer format is MM:SS or M:SS', async ({ page }) => {
-    // TODO: Verify format like "0:59" not "59" or "00:59"
+  test('countdown timer format is MM:SS or M:SS', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+    // Format should be M:SS (e.g., "1:00" or "0:59")
+    const timer = modal.getByRole('timer');
+    await expect(timer).toHaveText(/^\d:\d{2}$/);
   });
 
-  test.fixme('countdown timer updates every second', async ({ page }) => {
-    // TODO: Wait 2 seconds, verify countdown decreased by 2
+  test('countdown timer updates every second', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    const timer = modal.getByRole('timer');
+    const initialText = await timer.textContent();
+
+    // Advance by 2 seconds
+    await page.clock.fastForward(2000);
+
+    const updatedText = await timer.textContent();
+    expect(updatedText).not.toBe(initialText);
   });
 
-  test.fixme('modal has "Stay Logged In" button', async ({ page }) => {
-    // TODO: Verify button exists and is focusable
+  test('modal has "Stay Logged In" button', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+    await expect(modal.getByRole('button', { name: 'Stay Logged In' })).toBeVisible();
+    await expect(modal.getByRole('button', { name: 'Stay Logged In' })).toBeFocused();
   });
 
-  test.fixme('clicking "Stay Logged In" dismisses modal and resets timer', async ({ page }) => {
-    // TODO: Click button, verify modal closes, verify timer reset
+  test('clicking "Stay Logged In" dismisses modal and resets timer', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    await modal.getByRole('button', { name: 'Stay Logged In' }).click();
+    await expect(modal).not.toBeVisible();
+
+    // Modal should not reappear for another 14 minutes
+    await page.clock.fastForward(5 * 60 * 1000); // 5 minutes
+    await expect(page.getByRole('alertdialog')).not.toBeVisible();
   });
 
-  test.fixme('any user activity (mouse move) dismisses modal and resets timer', async ({ page }) => {
-    // TODO: Move mouse while modal is open, verify modal closes
+  test('any user activity (mouse move) dismisses modal and resets timer', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Move mouse on the modal (activity triggers reset for inactivity warning)
+    await page.mouse.move(100, 100);
+    await expect(modal).not.toBeVisible();
   });
 
-  test.fixme('any user activity (keypress) dismisses modal and resets timer', async ({ page }) => {
-    // TODO: Press key while modal is open, verify modal closes
+  test('any user activity (keypress) dismisses modal and resets timer', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Press a key
+    await page.keyboard.press('Escape');
+    await expect(modal).not.toBeVisible();
   });
 
-  test.fixme('any user activity (scroll) dismisses modal and resets timer', async ({ page }) => {
-    // TODO: Scroll while modal is open, verify modal closes
+  test('any user activity (scroll) dismisses modal and resets timer', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Dispatch a scroll event which triggers the activity handler
+    await page.evaluate(() => {
+      document.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    await expect(modal).not.toBeVisible();
   });
 
-  test.fixme('logs user out when countdown reaches zero', async ({ page }) => {
-    // TODO: Let countdown expire, verify redirect to /login
+  test('logs user out when countdown reaches zero', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Advance to warning
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Advance through the remaining 60 seconds using runFor to ensure interval callbacks fire
+    // runFor processes all timers up to the specified duration
+    await page.clock.runFor(WARNING_THRESHOLD_MS + 2000);
+
+    // Should redirect to login
+    await expect(page).toHaveURL(/\/login/, { timeout: 10000 });
   });
 
-  test.fixme('shows session expired message after forced logout', async ({ page }) => {
-    // TODO: After timeout logout, verify message on login page
+  test('shows session expired message after forced logout', async ({ page, login }) => {
+    await page.clock.install();
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
+
+    const modal = page.getByRole('alertdialog');
+    await expect(modal).toBeVisible({ timeout: 5000 });
+
+    // Use runFor to process all timer callbacks
+    await page.clock.runFor(WARNING_THRESHOLD_MS + 2000);
+
+    await expect(page).toHaveURL(/\/login.*expired=true/, { timeout: 10000 });
   });
 
-  test.fixme('session expired message mentions inactivity as reason', async ({ page }) => {
-    // TODO: Verify message says "due to inactivity" not just generic expiry
+  test('session expired message mentions inactivity as reason', async ({ page }) => {
+    // This test verifies the login page shows the right message when expired=true
+    // The actual timeout flow is tested by other tests - this just checks message content
+    await page.goto('/login?expired=true');
+    await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible({ timeout: 5000 });
+    // The login page should show the expired message with inactivity reason
+    await expect(page.getByText(/session expired.*inactivity/i)).toBeVisible({ timeout: 5000 });
   });
 });
 

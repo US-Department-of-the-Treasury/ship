@@ -3,7 +3,7 @@ import { test, expect } from './fixtures/isolated-env';
 async function login(page: import('@playwright/test').Page) {
   await page.goto('/login')
   const setupButton = page.getByRole('button', { name: /create admin account/i })
-  const signInButton = page.getByRole('button', { name: /sign in/i })
+  const signInButton = page.getByRole('button', { name: 'Sign in', exact: true })
   await expect(setupButton.or(signInButton)).toBeVisible({ timeout: 10000 })
   
   if (await setupButton.isVisible()) {

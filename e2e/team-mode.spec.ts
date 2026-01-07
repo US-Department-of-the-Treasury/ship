@@ -6,7 +6,7 @@ test.describe('Team Mode (Phase 7)', () => {
     await page.goto('/login')
     await page.locator('#email').fill('dev@ship.local')
     await page.locator('#password').fill('admin123')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Wait for app to load
     await expect(page).not.toHaveURL('/login', { timeout: 5000 })
@@ -16,8 +16,8 @@ test.describe('Team Mode (Phase 7)', () => {
     // Click Teams icon in rail
     await page.getByRole('button', { name: 'Teams' }).click()
 
-    // Should navigate to /team
-    await expect(page).toHaveURL('/team', { timeout: 5000 })
+    // Should navigate to /team/allocation (Teams mode default view)
+    await expect(page).toHaveURL(/\/team\/allocation/, { timeout: 5000 })
   })
 
   test('Teams mode shows header with team member count', async ({ page }) => {

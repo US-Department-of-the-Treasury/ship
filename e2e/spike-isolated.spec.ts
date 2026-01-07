@@ -22,7 +22,7 @@ test.describe('Isolated Environment Spike', () => {
     // Should show login form
     await expect(page.locator('#email')).toBeVisible();
     await expect(page.locator('#password')).toBeVisible();
-    await expect(page.getByRole('button', { name: /sign in/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
   });
 
   test('API health endpoint responds (proves API + DB work)', async ({ request, apiServer }) => {
@@ -51,7 +51,7 @@ test.describe('Isolated Environment Spike', () => {
     // Login with seeded credentials
     await page.locator('#email').fill('dev@ship.local');
     await page.locator('#password').fill('admin123');
-    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
     // Should redirect to app after successful login
     await expect(page).not.toHaveURL('/login', { timeout: 10000 });

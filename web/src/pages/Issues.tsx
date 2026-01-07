@@ -394,11 +394,11 @@ export function IssuesPage() {
         </div>
       )}
 
-      {/* Context Menu */}
-      {contextMenu && contextMenu.selection.hasSelection && (
+      {/* Context Menu - always shows when contextMenu is set since right-click auto-selects the item */}
+      {contextMenu && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
           <div className="px-3 py-1.5 text-xs text-muted border-b border-border mb-1">
-            {contextMenu.selection.selectedCount} selected
+            {Math.max(1, contextMenu.selection.selectedCount)} selected
           </div>
           <ContextMenuItem onClick={handleBulkArchive}>
             <ArchiveIcon className="h-4 w-4" />

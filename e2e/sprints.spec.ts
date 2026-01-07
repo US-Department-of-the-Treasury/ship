@@ -13,7 +13,7 @@ test.describe('Sprints - Issue Editor Integration', () => {
     await page.goto('/login')
     await page.locator('#email').fill('dev@ship.local')
     await page.locator('#password').fill('admin123')
-    await page.getByRole('button', { name: /sign in/i }).click()
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
     // Wait for app to load
     await expect(page).not.toHaveURL('/login', { timeout: 5000 })
