@@ -1,7 +1,38 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import {
+  DndContext,
+  DragOverlay,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/cn';
 import { sprintStatusColors, priorityColors } from '@/lib/statusColors';
+
+interface SprintApiResponse {
+  id: string;
+  program_id: string;
+  program_name: string;
+  program_prefix: string;
+  name: string;
+  goal?: string | null;
+  sprint_number: number;
+  workspace_sprint_start_date: string;
+  issue_count: number;
+  completed_count: number;
+}
 
 interface Sprint {
   id: string;
@@ -17,6 +48,33 @@ interface Sprint {
   completed_count: number;
 }
 
+// Compute sprint dates from sprint_number and workspace start date
+function computeSprintDates(sprintNumber: number, workspaceStartDate: string): { startDate: string; endDate: string; status: 'planned' | 'active' | 'completed' } {
+  const baseDate = new Date(workspaceStartDate);
+  const sprintDuration = 14; // 2 weeks
+
+  // Sprint 1 starts on workspace start date
+  const startDate = new Date(baseDate);
+  startDate.setDate(startDate.getDate() + (sprintNumber - 1) * sprintDuration);
+
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + sprintDuration - 1);
+
+  const now = new Date();
+  let status: 'planned' | 'active' | 'completed' = 'planned';
+  if (now >= startDate && now <= endDate) {
+    status = 'active';
+  } else if (now > endDate) {
+    status = 'completed';
+  }
+
+  return {
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+    status,
+  };
+}
+
 interface Issue {
   id: string;
   title: string;
@@ -25,6 +83,8 @@ interface Issue {
   ticket_number: number;
   assignee_name: string | null;
   display_id: string;
+  estimate: number | null;
+  sprint_id?: string | null;
 }
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -38,6 +98,32 @@ export function SprintViewPage() {
   const [loading, setLoading] = useState(true);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalText, setGoalText] = useState('');
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  // Drag-and-drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Calculate estimate totals
+  const backlogEstimate = useMemo(() => {
+    return backlogIssues.reduce((sum, issue) => sum + (issue.estimate || 0), 0);
+  }, [backlogIssues]);
+
+  const sprintEstimate = useMemo(() => {
+    return sprintIssues.reduce((sum, issue) => sum + (issue.estimate || 0), 0);
+  }, [sprintIssues]);
+
+  const completedEstimate = useMemo(() => {
+    return sprintIssues
+      .filter(issue => issue.state === 'done')
+      .reduce((sum, issue) => sum + (issue.estimate || 0), 0);
+  }, [sprintIssues]);
 
   // Reset state and fetch data when sprint ID changes
   useEffect(() => {
@@ -63,10 +149,28 @@ export function SprintViewPage() {
           return;
         }
 
-        const sprintData = await sprintRes.json();
+        const sprintData: SprintApiResponse = await sprintRes.json();
         if (cancelled) return;
 
-        setSprint(sprintData);
+        // Transform API response to Sprint type with computed dates
+        const { startDate, endDate, status } = computeSprintDates(
+          sprintData.sprint_number,
+          sprintData.workspace_sprint_start_date
+        );
+
+        setSprint({
+          id: sprintData.id,
+          program_id: sprintData.program_id,
+          program_name: sprintData.program_name,
+          program_prefix: sprintData.program_prefix,
+          name: sprintData.name,
+          goal: sprintData.goal ?? null,
+          start_date: startDate,
+          end_date: endDate,
+          status,
+          issue_count: sprintData.issue_count,
+          completed_count: sprintData.completed_count,
+        });
         setGoalText(sprintData.goal || '');
 
         // Fetch sprint issues and backlog (program issues not in any sprint)
@@ -204,6 +308,41 @@ export function SprintViewPage() {
     }
   };
 
+  // Drag-and-drop handlers
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over) return;
+
+    const activeIssueId = active.id as string;
+    const overId = over.id as string;
+
+    // Determine source and target
+    const isInBacklog = backlogIssues.some(i => i.id === activeIssueId);
+    const isInSprint = sprintIssues.some(i => i.id === activeIssueId);
+
+    // Check if dropped on sprint column or an issue in sprint
+    const droppedOnSprint = overId === 'sprint-column' || sprintIssues.some(i => i.id === overId);
+    // Check if dropped on backlog column or an issue in backlog
+    const droppedOnBacklog = overId === 'backlog-column' || backlogIssues.some(i => i.id === overId);
+
+    if (isInBacklog && droppedOnSprint) {
+      moveToSprint(activeIssueId);
+    } else if (isInSprint && droppedOnBacklog) {
+      moveToBacklog(activeIssueId);
+    }
+  }, [backlogIssues, sprintIssues, moveToSprint, moveToBacklog]);
+
+  // Get active issue for drag overlay
+  const activeIssue = activeId
+    ? [...backlogIssues, ...sprintIssues].find(i => i.id === activeId)
+    : null;
+
   if (loading || !sprint) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -326,52 +465,48 @@ export function SprintViewPage() {
         </div>
       </div>
 
-      {/* Sprint planning columns */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Backlog column */}
-        <div className="flex w-1/2 flex-col border-r border-border">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h2 className="font-medium text-foreground">Backlog</h2>
-            <span className="text-sm text-muted">{backlogIssues.length} issues</span>
-          </div>
-          <div className="flex-1 overflow-auto p-4 space-y-2">
-            {backlogIssues.map((issue) => (
-              <IssueCard
-                key={issue.id}
-                issue={issue}
-                action="add"
-                onClick={() => navigate(`/issues/${issue.id}`)}
-                onAction={() => moveToSprint(issue.id)}
-              />
-            ))}
-            {backlogIssues.length === 0 && (
-              <p className="text-center text-sm text-muted py-8">No issues in backlog</p>
-            )}
-          </div>
+      {/* Sprint planning columns with drag-and-drop */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="flex flex-1 overflow-hidden">
+          {/* Backlog column */}
+          <DroppableColumn
+            id="backlog-column"
+            title="Backlog"
+            issueCount={backlogIssues.length}
+            estimateHours={backlogEstimate}
+            issues={backlogIssues}
+            emptyMessage="No issues in backlog"
+            onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+            onIssueAction={moveToSprint}
+            actionType="add"
+            className="border-r border-border"
+          />
+
+          {/* Sprint column */}
+          <DroppableColumn
+            id="sprint-column"
+            title="Sprint"
+            issueCount={sprintIssues.length}
+            estimateHours={sprintEstimate}
+            completedHours={completedEstimate}
+            issues={sprintIssues}
+            emptyMessage="Drag issues from backlog to add"
+            onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+            onIssueAction={moveToBacklog}
+            actionType="remove"
+          />
         </div>
 
-        {/* Sprint column */}
-        <div className="flex w-1/2 flex-col">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h2 className="font-medium text-foreground">Sprint</h2>
-            <span className="text-sm text-muted">{sprintIssues.length} issues</span>
-          </div>
-          <div className="flex-1 overflow-auto p-4 space-y-2">
-            {sprintIssues.map((issue) => (
-              <IssueCard
-                key={issue.id}
-                issue={issue}
-                action="remove"
-                onClick={() => navigate(`/issues/${issue.id}`)}
-                onAction={() => moveToBacklog(issue.id)}
-              />
-            ))}
-            {sprintIssues.length === 0 && (
-              <p className="text-center text-sm text-muted py-8">Add issues from the backlog</p>
-            )}
-          </div>
-        </div>
-      </div>
+        {/* Drag overlay */}
+        <DragOverlay>
+          {activeIssue ? <IssueCardPreview issue={activeIssue} /> : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 }
@@ -384,6 +519,150 @@ function StatusBadge({ status }: { status: Sprint['status'] }) {
   );
 }
 
+// Droppable column component
+function DroppableColumn({
+  id,
+  title,
+  issueCount,
+  estimateHours,
+  completedHours,
+  issues,
+  emptyMessage,
+  onIssueClick,
+  onIssueAction,
+  actionType,
+  className,
+}: {
+  id: string;
+  title: string;
+  issueCount: number;
+  estimateHours: number;
+  completedHours?: number;
+  issues: Issue[];
+  emptyMessage: string;
+  onIssueClick: (id: string) => void;
+  onIssueAction: (id: string) => void;
+  actionType: 'add' | 'remove';
+  className?: string;
+}) {
+  const { setNodeRef, isOver } = useSortable({ id });
+
+  return (
+    <div className={cn('flex w-1/2 flex-col', className)}>
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div>
+          <h2 className="font-medium text-foreground">{title}</h2>
+          <p className="text-xs text-muted">
+            {issueCount} issues
+            {estimateHours > 0 && (
+              <> &middot; {estimateHours} hrs{completedHours !== undefined && ` (${completedHours} done)`}</>
+            )}
+          </p>
+        </div>
+        {completedHours !== undefined && estimateHours > 0 && (
+          <div className="text-right">
+            <span className="text-sm font-medium text-foreground">
+              {completedHours}/{estimateHours} hrs
+            </span>
+          </div>
+        )}
+      </div>
+      <div
+        ref={setNodeRef}
+        className={cn(
+          'flex-1 overflow-auto p-4 space-y-2 transition-colors',
+          isOver && 'bg-accent/10'
+        )}
+      >
+        <SortableContext
+          items={issues.map(i => i.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          {issues.map((issue) => (
+            <DraggableIssueCard
+              key={issue.id}
+              issue={issue}
+              action={actionType}
+              onClick={() => onIssueClick(issue.id)}
+              onAction={() => onIssueAction(issue.id)}
+            />
+          ))}
+        </SortableContext>
+        {issues.length === 0 && (
+          <p className="text-center text-sm text-muted py-8">{emptyMessage}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Draggable issue card wrapper
+function DraggableIssueCard({
+  issue,
+  action,
+  onClick,
+  onAction,
+}: {
+  issue: Issue;
+  action: 'add' | 'remove';
+  onClick: () => void;
+  onAction: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: issue.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={cn('touch-none', isDragging && 'opacity-50')}
+    >
+      <IssueCard
+        issue={issue}
+        action={action}
+        onClick={onClick}
+        onAction={onAction}
+      />
+    </div>
+  );
+}
+
+// Issue card preview for drag overlay
+function IssueCardPreview({ issue }: { issue: Issue }) {
+  return (
+    <div className="rounded-lg border border-accent bg-background p-3 shadow-lg">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-mono text-muted">{issue.display_id}</span>
+        {issue.estimate && (
+          <span className="text-xs text-accent">{issue.estimate}h</span>
+        )}
+      </div>
+      <p className="mt-1 text-sm text-foreground truncate">{issue.title}</p>
+    </div>
+  );
+}
+
+const STATE_COLORS: Record<string, string> = {
+  backlog: 'bg-gray-500',
+  todo: 'bg-blue-500',
+  in_progress: 'bg-yellow-500',
+  done: 'bg-green-500',
+  cancelled: 'bg-red-500',
+};
+
 function IssueCard({
   issue,
   action,
@@ -395,28 +674,20 @@ function IssueCard({
   onClick: () => void;
   onAction: () => void;
 }) {
-  const stateColors: Record<string, string> = {
-    backlog: 'bg-gray-500',
-    todo: 'bg-blue-500',
-    in_progress: 'bg-yellow-500',
-    done: 'bg-green-500',
-    cancelled: 'bg-red-500',
-  };
-
   const localPriorityColors: Record<string, string> = {
     ...priorityColors,
     none: 'text-muted',
   };
 
   return (
-    <div className="group flex items-center gap-2 rounded-lg border border-border bg-background p-3 hover:bg-border/30 transition-colors">
+    <div className="group flex items-center gap-2 rounded-lg border border-border bg-background p-3 hover:bg-border/30 transition-colors cursor-grab active:cursor-grabbing">
       <button
         onClick={(e) => {
           e.stopPropagation();
           onAction();
         }}
         className={cn(
-          'flex h-6 w-6 items-center justify-center rounded text-white transition-colors',
+          'flex h-6 w-6 items-center justify-center rounded text-white transition-colors flex-shrink-0',
           action === 'add'
             ? 'bg-green-600 hover:bg-green-700'
             : 'bg-red-600 hover:bg-red-700'
@@ -426,13 +697,16 @@ function IssueCard({
         {action === 'add' ? '+' : '-'}
       </button>
 
-      <button onClick={onClick} className="flex-1 text-left">
+      <button onClick={onClick} className="flex-1 text-left min-w-0">
         <div className="flex items-center gap-2">
-          <span className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state])} />
+          <span className={cn('h-2 w-2 rounded-full flex-shrink-0', STATE_COLORS[issue.state])} />
           <span className="text-xs font-mono text-muted">{issue.display_id}</span>
           <span className={cn('text-xs', localPriorityColors[issue.priority])}>
             {issue.priority !== 'none' && issue.priority.charAt(0).toUpperCase()}
           </span>
+          {issue.estimate && (
+            <span className="text-xs text-muted">{issue.estimate}h</span>
+          )}
         </div>
         <p className="mt-1 text-sm text-foreground truncate">{issue.title}</p>
       </button>

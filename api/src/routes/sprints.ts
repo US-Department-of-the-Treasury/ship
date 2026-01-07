@@ -381,6 +381,7 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
         state: props.state || 'backlog',
         priority: props.priority || 'medium',
         assignee_id: props.assignee_id || null,
+        estimate: props.estimate ?? null,
         ticket_number: row.ticket_number,
         created_at: row.created_at,
         updated_at: row.updated_at,

@@ -183,9 +183,9 @@ export function SprintEditorPage() {
             <div className="border-t border-border pt-4">
               <button
                 onClick={() => navigate(`/sprints/${sprint.id}/view`)}
-                className="w-full rounded-md bg-border px-3 py-2 text-sm text-foreground hover:bg-border/80 transition-colors"
+                className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
               >
-                View Sprint Issues
+                Plan Sprint
               </button>
             </div>
         </div>
