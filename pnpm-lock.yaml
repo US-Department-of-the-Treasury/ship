@@ -132,9 +132,18 @@ importers:
       '@types/cookie-parser':
         specifier: ^1.4.8
         version: 1.4.10(@types/express@5.0.6)
+      '@types/cookiejar':
+        specifier: ^2.1.5
+        version: 2.1.5
       '@types/cors':
         specifier: ^2.8.17
         version: 2.8.19
+      '@types/docker-modem':
+        specifier: ^3.0.6
+        version: 3.0.6
+      '@types/dockerode':
+        specifier: ^3.3.47
+        version: 3.3.47
       '@types/express':
         specifier: ^5.0.0
         version: 5.0.6
@@ -144,12 +153,21 @@ importers:
       '@types/express-session':
         specifier: ^1.18.2
         version: 1.18.2
+      '@types/methods':
+        specifier: ^1.1.4
+        version: 1.1.4
       '@types/node':
-        specifier: ^22.10.5
+        specifier: ^22.19.3
         version: 22.19.3
       '@types/pg':
         specifier: ^8.11.10
         version: 8.16.0
+      '@types/ssh2':
+        specifier: ^1.15.5
+        version: 1.15.5
+      '@types/superagent':
+        specifier: ^8.1.9
+        version: 8.1.9
       '@types/supertest':
         specifier: ^6.0.3
         version: 6.0.3
@@ -177,6 +195,27 @@ importers:
 
   shared:
     devDependencies:
+      '@types/cookiejar':
+        specifier: ^2.1.5
+        version: 2.1.5
+      '@types/docker-modem':
+        specifier: ^3.0.6
+        version: 3.0.6
+      '@types/dockerode':
+        specifier: ^3.3.47
+        version: 3.3.47
+      '@types/methods':
+        specifier: ^1.1.4
+        version: 1.1.4
+      '@types/node':
+        specifier: ^22.19.3
+        version: 22.19.3
+      '@types/ssh2':
+        specifier: ^1.15.5
+        version: 1.15.5
+      '@types/superagent':
+        specifier: ^8.1.9
+        version: 8.1.9
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
