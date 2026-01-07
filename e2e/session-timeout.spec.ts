@@ -1272,16 +1272,57 @@ test.describe('Edge Cases', () => {
 });
 
 test.describe('Session Info API', () => {
-  test.fixme('GET /api/auth/session returns session metadata', async ({ page }) => {
-    // TODO: Call endpoint, verify returns createdAt, expiresAt, lastActivity
+  test('GET /api/auth/session returns session metadata', async ({ page, login }) => {
+    // Login to establish a session
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Call the session info endpoint using page.evaluate (shares session cookie)
+    const response = await page.evaluate(async () => {
+      const res = await fetch('/api/auth/session');
+      return { status: res.status, data: await res.json() };
+    });
+
+    // Verify response structure
+    expect(response.status).toBe(200);
+    expect(response.data.success).toBe(true);
+    expect(response.data.data).toHaveProperty('createdAt');
+    expect(response.data.data).toHaveProperty('expiresAt');
+    expect(response.data.data).toHaveProperty('lastActivity');
+    expect(response.data.data).toHaveProperty('absoluteExpiresAt');
   });
 
-  test.fixme('GET /api/auth/session returns 401 when not authenticated', async ({ page }) => {
-    // TODO: Call without session, verify 401
+  test('GET /api/auth/session returns 401 when not authenticated', async ({ request }) => {
+    // Make an API call without logging in (no session cookie)
+    const response = await request.get('/api/auth/session', {
+      headers: { Accept: 'application/json' },
+    });
+    expect(response.status()).toBe(401);
   });
 
-  test.fixme('session info expiresAt is accurate', async ({ page }) => {
-    // TODO: Verify expiresAt matches expected timeout
+  test('session info expiresAt is accurate', async ({ page, login }) => {
+    // Login to establish a session
+    await login();
+    await page.goto('/docs');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Get session info
+    const response = await page.evaluate(async () => {
+      const res = await fetch('/api/auth/session');
+      return res.json();
+    });
+
+    expect(response.success).toBe(true);
+
+    // Verify expiresAt is approximately 15 minutes from now
+    const expiresAt = new Date(response.data.expiresAt).getTime();
+    const now = Date.now();
+    const expectedExpiry = now + 15 * 60 * 1000; // 15 minutes
+
+    // Allow 10 seconds tolerance for test execution time
+    expect(expiresAt).toBeGreaterThan(expectedExpiry - 10000);
+    expect(expiresAt).toBeLessThan(expectedExpiry + 10000);
   });
 });
 
