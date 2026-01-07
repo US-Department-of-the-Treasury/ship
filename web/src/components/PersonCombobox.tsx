@@ -39,7 +39,8 @@ export function PersonCombobox({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
 
-  const selectedPerson = people.find((p) => p.user_id === value);
+  // Only search for a match if value is truthy - prevents matching pending users (who have null user_id)
+  const selectedPerson = value ? people.find((p) => p.user_id === value) : null;
 
   return (
     <Popover.Root open={open} onOpenChange={disabled ? undefined : setOpen}>

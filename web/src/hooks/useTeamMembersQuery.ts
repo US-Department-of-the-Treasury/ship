@@ -14,7 +14,7 @@ export const teamMemberKeys = {
   lists: () => [...teamMemberKeys.all, 'list'] as const,
 };
 
-// Fetch team members
+// Fetch team members (filters out pending users who don't have user_id yet)
 async function fetchTeamMembers(): Promise<TeamMember[]> {
   const res = await apiGet('/api/team/people');
   if (!res.ok) {
@@ -22,7 +22,9 @@ async function fetchTeamMembers(): Promise<TeamMember[]> {
     error.status = res.status;
     throw error;
   }
-  return res.json();
+  const data: TeamMember[] = await res.json();
+  // Filter out pending users (those without user_id) - they can't be assigned yet
+  return data.filter(member => member.user_id);
 }
 
 // Hook to get team members with TanStack Query (supports offline via cache)

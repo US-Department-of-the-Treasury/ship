@@ -15,9 +15,11 @@ When in doubt about implementation approach, check these docs first.
 
 ## Commands
 
+**PostgreSQL must be running locally before dev or tests.** The user has local PostgreSQL installed (not Docker).
+
 ```bash
 # Development (runs api + web in parallel)
-pnpm dev
+pnpm dev              # Auto-creates database, finds available ports, starts both servers
 
 # Run individual packages
 pnpm dev:api          # Express server on :3000
@@ -32,7 +34,18 @@ pnpm type-check       # Check all packages
 
 # Database
 pnpm db:seed          # Seed database with test data
+pnpm db:migrate       # Run database migrations
+
+# Unit tests (requires PostgreSQL running)
+pnpm test             # Runs api unit tests via vitest
 ```
+
+**What `pnpm dev` does** (via `scripts/dev.sh`):
+1. Creates `api/.env.local` with DATABASE_URL if missing
+2. Creates database (e.g., `ship_auth_jan_6`) if it doesn't exist
+3. Runs migrations and seeds on fresh databases
+4. Finds available ports (API: 3000+, Web: 5173+) for multi-worktree dev
+5. Starts both servers in parallel
 
 ## E2E Testing
 
