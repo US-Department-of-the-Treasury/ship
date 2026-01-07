@@ -63,7 +63,7 @@ describe('Files API', () => {
     await pool.query('DELETE FROM workspace_memberships WHERE user_id = $1', [testUserId]);
     await pool.query('DELETE FROM users WHERE id = $1', [testUserId]);
     await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId]);
-    await pool.end();
+    // Don't close pool - it's shared across test files
   });
 
   it('POST /api/files/upload returns 403 without valid session (CSRF blocks first)', async () => {
