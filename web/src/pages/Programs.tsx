@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { CardGrid } from '@/components/CardGrid';
+import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
 import { getContrastTextColor } from '@/lib/cn';
 
 export function ProgramsPage() {
   const navigate = useNavigate();
   const { programs, loading, createProgram } = usePrograms();
+  const isOfflineEmpty = useOfflineEmptyState(programs, loading);
   const [creating, setCreating] = useState(false);
 
   const handleCreateProgram = async () => {
@@ -24,6 +26,15 @@ export function ProgramsPage() {
       setCreating(false);
     }
   };
+
+  // Show offline empty state when offline with no cached data
+  if (isOfflineEmpty) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center">
+        <OfflineEmptyState resourceName="programs" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">

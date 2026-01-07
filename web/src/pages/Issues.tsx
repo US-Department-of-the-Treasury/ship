@@ -6,6 +6,7 @@ import { BulkActionBar } from '@/components/BulkActionBar';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useBulkUpdateIssues } from '@/hooks/useIssuesQuery';
 import { IssuesListSkeleton } from '@/components/ui/Skeleton';
+import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
 import { Combobox } from '@/components/ui/Combobox';
 import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
@@ -53,6 +54,7 @@ export function IssuesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { issues: allIssues, loading, createIssue: contextCreateIssue, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
+  const isOfflineEmpty = useOfflineEmptyState(allIssues, loading);
   const bulkUpdate = useBulkUpdateIssues();
   const { showToast } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -281,6 +283,15 @@ export function IssuesPage() {
       </button>
     </div>
   ), [handleCreateIssue]);
+
+  // Show offline empty state when offline with no cached data
+  if (isOfflineEmpty) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center">
+        <OfflineEmptyState resourceName="issues" />
+      </div>
+    );
+  }
 
   if (loading) {
     return <IssuesListSkeleton />;
