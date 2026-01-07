@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
+import { BulkActionBar } from '@/components/BulkActionBar';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useBulkUpdateIssues } from '@/hooks/useIssuesQuery';
 import { IssuesListSkeleton } from '@/components/ui/Skeleton';
@@ -51,12 +52,16 @@ const PRIORITY_COLORS: Record<string, string> = {
 export function IssuesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { issues: allIssues, loading, createIssue: contextCreateIssue, updateIssue: contextUpdateIssue } = useIssues();
+  const { issues: allIssues, loading, createIssue: contextCreateIssue, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
   const bulkUpdate = useBulkUpdateIssues();
   const { showToast } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sortBy, setSortBy] = useState<string>('updated');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
+
+  // Track selection state for BulkActionBar
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectionRef = useRef<UseSelectionReturn | null>(null);
 
   const stateFilter = searchParams.get('state') || '';
 
@@ -89,58 +94,143 @@ export function IssuesPage() {
     await contextUpdateIssue(id, updates);
   };
 
-  // Bulk action handlers - use selection from contextMenu state
+  // Clear selection helper
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    selectionRef.current?.clearSelection();
+    setContextMenu(null);
+  }, []);
+
+  // Bulk action handlers - work with both context menu and BulkActionBar
   const handleBulkArchive = useCallback(() => {
-    if (!contextMenu) return;
-    const ids = Array.from(contextMenu.selection.selectedIds);
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
     const count = ids.length;
+
+    // Store original states for undo
+    const originalStates = ids.map(id => {
+      const issue = allIssues.find(i => i.id === id);
+      return { id, state: issue?.state || 'backlog' };
+    });
+
     bulkUpdate.mutate({ ids, action: 'archive' }, {
-      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} archived`, 'success'),
+      onSuccess: () => {
+        showToast(
+          `${count} issue${count === 1 ? '' : 's'} archived`,
+          'success',
+          5000,
+          {
+            label: 'Undo',
+            onClick: () => {
+              // Restore original states
+              bulkUpdate.mutate({
+                ids,
+                action: 'update',
+                updates: { state: originalStates[0]?.state || 'backlog' }
+              }, {
+                onSuccess: () => {
+                  showToast('Archive undone', 'info');
+                  refreshIssues();
+                },
+              });
+            },
+          }
+        );
+      },
       onError: () => showToast('Failed to archive issues', 'error'),
     });
-    contextMenu.selection.clearSelection();
-    setContextMenu(null);
-  }, [contextMenu, bulkUpdate, showToast]);
+    clearSelection();
+  }, [selectedIds, allIssues, bulkUpdate, showToast, clearSelection, refreshIssues]);
 
   const handleBulkDelete = useCallback(() => {
-    if (!contextMenu) return;
-    const ids = Array.from(contextMenu.selection.selectedIds);
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
     const count = ids.length;
+
+    // Store original issues for undo
+    const deletedIssues = ids.map(id => allIssues.find(i => i.id === id)).filter(Boolean);
+
     bulkUpdate.mutate({ ids, action: 'delete' }, {
-      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} deleted`, 'success'),
+      onSuccess: () => {
+        showToast(
+          `${count} issue${count === 1 ? '' : 's'} deleted`,
+          'success',
+          5000,
+          {
+            label: 'Undo',
+            onClick: () => {
+              // Restore by un-deleting (setting deleted_at to null)
+              bulkUpdate.mutate({ ids, action: 'restore' }, {
+                onSuccess: () => {
+                  showToast('Delete undone', 'info');
+                  refreshIssues();
+                },
+                onError: () => showToast('Failed to undo delete', 'error'),
+              });
+            },
+          }
+        );
+      },
       onError: () => showToast('Failed to delete issues', 'error'),
     });
-    contextMenu.selection.clearSelection();
-    setContextMenu(null);
-  }, [contextMenu, bulkUpdate, showToast]);
+    clearSelection();
+  }, [selectedIds, allIssues, bulkUpdate, showToast, clearSelection, refreshIssues]);
 
   const handleBulkMoveToSprint = useCallback((sprintId: string | null) => {
-    if (!contextMenu) return;
-    const ids = Array.from(contextMenu.selection.selectedIds);
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
     const count = ids.length;
     bulkUpdate.mutate({ ids, action: 'update', updates: { sprint_id: sprintId } }, {
       onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} moved`, 'success'),
       onError: () => showToast('Failed to move issues', 'error'),
     });
-    contextMenu.selection.clearSelection();
-    setContextMenu(null);
-  }, [contextMenu, bulkUpdate, showToast]);
+    clearSelection();
+  }, [selectedIds, bulkUpdate, showToast, clearSelection]);
 
   const handleBulkChangeStatus = useCallback((status: string) => {
-    if (!contextMenu) return;
-    const ids = Array.from(contextMenu.selection.selectedIds);
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
     const count = ids.length;
     const statusLabel = STATE_LABELS[status] || status;
     bulkUpdate.mutate({ ids, action: 'update', updates: { state: status } }, {
       onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} changed to ${statusLabel}`, 'success'),
       onError: () => showToast('Failed to update issues', 'error'),
     });
-    contextMenu.selection.clearSelection();
-    setContextMenu(null);
-  }, [contextMenu, bulkUpdate, showToast]);
+    clearSelection();
+  }, [selectedIds, bulkUpdate, showToast, clearSelection]);
+
+  // Selection change handler - keeps parent state in sync with SelectableList
+  const handleSelectionChange = useCallback((newSelectedIds: Set<string>, selection: UseSelectionReturn) => {
+    setSelectedIds(newSelectedIds);
+    selectionRef.current = selection;
+  }, []);
+
+  // Kanban checkbox click handler - manages selection directly
+  const handleKanbanCheckboxClick = useCallback((id: string, e: React.MouseEvent) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (e.metaKey || e.ctrlKey) {
+        // Cmd/Ctrl+click to toggle individual item
+        if (newSet.has(id)) {
+          newSet.delete(id);
+        } else {
+          newSet.add(id);
+        }
+      } else {
+        // Simple click - toggle this item
+        if (newSet.has(id)) {
+          newSet.delete(id);
+        } else {
+          newSet.add(id);
+        }
+      }
+      return newSet;
+    });
+  }, []);
 
   // Context menu handler - receives selection from SelectableList
   const handleContextMenu = useCallback((e: React.MouseEvent, _item: Issue, selection: UseSelectionReturn) => {
+    selectionRef.current = selection;
     setContextMenu({ x: e.clientX, y: e.clientY, selection });
   }, []);
 
@@ -258,12 +348,25 @@ export function IssuesPage() {
         <FilterTab label="Cancelled" active={stateFilter === 'cancelled'} onClick={() => setFilter('cancelled')} id="filter-cancelled" />
       </div>
 
+      {/* Bulk action bar */}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        onClearSelection={clearSelection}
+        onArchive={handleBulkArchive}
+        onDelete={handleBulkDelete}
+        onChangeStatus={handleBulkChangeStatus}
+        onMoveToSprint={handleBulkMoveToSprint}
+        loading={bulkUpdate.isPending}
+      />
+
       {/* Content */}
       {viewMode === 'kanban' ? (
         <KanbanBoard
           issues={issues}
           onUpdateIssue={handleUpdateIssue}
           onIssueClick={(id) => navigate(`/issues/${id}`)}
+          selectedIds={selectedIds}
+          onCheckboxClick={handleKanbanCheckboxClick}
         />
       ) : (
         <div className="flex-1 overflow-auto">
@@ -273,6 +376,7 @@ export function IssuesPage() {
             columns={columns}
             emptyState={emptyState}
             onItemClick={(issue) => navigate(`/issues/${issue.id}`)}
+            onSelectionChange={handleSelectionChange}
             onContextMenu={handleContextMenu}
             ariaLabel="Issues list"
           />
