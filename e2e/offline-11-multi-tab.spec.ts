@@ -2,24 +2,16 @@
  * Category 11: Multi-Tab Offline Behavior
  * Tests multiple tabs working offline.
  *
- * SKIP REASON: These tests require offline mutation queue and shared
- * IndexedDB state which are NOT YET IMPLEMENTED.
- *
- * NOTE: The Yjs editor DOES sync across tabs (test 2 should pass), but
- * the list-level mutations (tests 1, 3) require the mutation queue.
- *
- * INFRASTRUCTURE NEEDED:
- * 1. Offline mutation queue with IndexedDB (shared across tabs)
- * 2. Pending sync count UI (data-testid="pending-sync-count")
- * 3. BroadcastChannel or SharedWorker for tab coordination
- *
- * See: docs/application-architecture.md "Offline Mutation Queue"
+ * IMPLEMENTATION STATUS: Complete
+ * - Offline mutation queue with IndexedDB persistence
+ * - Pending sync count UI (data-testid="pending-sync-count")
+ * - TanStack Query + IndexedDB shared across tabs
  */
 import { test, expect } from './fixtures/offline'
 
 
 
-test.describe.skip('11.1 Multiple Tabs Offline', () => {
+test.describe('11.1 Multiple Tabs Offline', () => {
   test('changes in one offline tab appear in another offline tab', async ({ context, login }) => {
     // Login in first page
     const page1 = await context.newPage()

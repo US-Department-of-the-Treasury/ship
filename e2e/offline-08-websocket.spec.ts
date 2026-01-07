@@ -2,42 +2,34 @@
  * Category 8: WebSocket Collaboration Offline
  * Tests WebSocket disconnect/reconnect behavior.
  *
- * SKIP REASON: These tests require collaboration status UI which is
- * NOT YET IMPLEMENTED.
- *
- * INFRASTRUCTURE NEEDED:
- * 1. Collaboration status indicator (data-testid="collab-status")
- * 2. WebSocket reconnection state display
- * 3. Sync status after reconnection
- *
- * Note: The underlying Yjs + y-websocket DO work, but the UI indicators
- * are not implemented yet.
- *
- * See: docs/application-architecture.md "Layer 1: Editor Content"
+ * IMPLEMENTATION STATUS: Complete
+ * - sync-status indicator shows Saved/Cached/Saving/Offline
+ * - collab-status shows connected users
+ * - y-websocket handles automatic reconnection
  */
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('8.1 WebSocket Disconnect/Reconnect', () => {
+test.describe('8.1 WebSocket Disconnect/Reconnect', () => {
   test('WebSocket reconnects automatically when online', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 
     // GIVEN: User has document open with active WebSocket connection
     const doc = testData.wikis[0]
     await page.goto(`/docs/${doc.id}`)
-    await expect(page.getByTestId('collab-status')).toContainText(/connected|online/i)
+    await expect(page.getByTestId('sync-status')).toContainText(/saved/i)
 
     // WHEN: Network drops
     await goOffline()
 
-    // THEN: Collab status shows disconnected
-    await expect(page.getByTestId('collab-status')).toContainText(/disconnected|offline/i)
+    // THEN: Sync status shows offline
+    await expect(page.getByTestId('sync-status')).toContainText(/offline/i)
 
     // WHEN: Network returns
     await goOnline()
 
-    // THEN: WebSocket reconnects
-    await expect(page.getByTestId('collab-status')).toContainText(/connected|synced/i, { timeout: 10000 })
+    // THEN: WebSocket reconnects and status shows saved
+    await expect(page.getByTestId('sync-status')).toContainText(/saved/i, { timeout: 10000 })
   })
 
   test('local edits during WebSocket disconnect sync on reconnect', async ({ page, goOffline, goOnline, login, testData }) => {
@@ -56,7 +48,7 @@ test.describe.skip('8.1 WebSocket Disconnect/Reconnect', () => {
     await goOnline()
 
     // THEN: Yjs syncs the local changes
-    await expect(page.getByTestId('collab-status')).toContainText(/synced/i, { timeout: 10000 })
+    await expect(page.getByTestId('sync-status')).toContainText(/saved/i, { timeout: 10000 })
 
     // AND: Another tab can see the changes
     const newPage = await page.context().newPage()
