@@ -466,6 +466,17 @@ export function SprintViewPage() {
           </span>
         </div>
 
+        {/* Sprint Progress Graph */}
+        {sprintEstimate > 0 && (
+          <SprintProgressGraph
+            startDate={sprint.start_date}
+            endDate={sprint.end_date}
+            scopeHours={sprintEstimate}
+            completedHours={completedEstimate}
+            status={sprint.status}
+          />
+        )}
+
         {/* Goal */}
         <div className="mt-3">
           {editingGoal ? (
@@ -807,4 +818,187 @@ function IssueCard({
 
 function formatDate(dateString: string): string {
   return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Sprint Progress Graph component
+function SprintProgressGraph({
+  startDate,
+  endDate,
+  scopeHours,
+  completedHours,
+  status,
+}: {
+  startDate: string;
+  endDate: string;
+  scopeHours: number;
+  completedHours: number;
+  status: 'planned' | 'active' | 'completed';
+}) {
+  // Calculate progress through sprint
+  const start = new Date(startDate).getTime();
+  const end = new Date(endDate).getTime();
+  const now = Date.now();
+
+  // Clamp current time to sprint bounds
+  const current = Math.min(Math.max(now, start), end);
+  const totalDuration = end - start;
+  const elapsed = current - start;
+  const progressPercent = totalDuration > 0 ? (elapsed / totalDuration) * 100 : 0;
+
+  // Calculate target completion at current time (linear pace)
+  const targetHoursAtNow = (progressPercent / 100) * scopeHours;
+  const completionPercent = scopeHours > 0 ? (completedHours / scopeHours) * 100 : 0;
+
+  // SVG dimensions
+  const width = 400;
+  const height = 120;
+  const padding = { top: 20, right: 40, bottom: 30, left: 50 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+
+  // Y-axis scale (0 to scopeHours)
+  const yScale = (hours: number) =>
+    padding.top + chartHeight - (hours / scopeHours) * chartHeight;
+
+  // X-axis scale (0% to 100% progress)
+  const xScale = (percent: number) =>
+    padding.left + (percent / 100) * chartWidth;
+
+  // Generate dates for x-axis labels
+  const startLabel = formatDate(startDate);
+  const endLabel = formatDate(endDate);
+  const midDate = new Date(start + totalDuration / 2);
+  const midLabel = formatDate(midDate.toISOString());
+
+  // Status indicator
+  const statusColor = {
+    planned: '#9CA3AF', // gray
+    active: '#3B82F6', // blue
+    completed: '#22C55E', // green
+  }[status];
+
+  const isOnTrack = completedHours >= targetHoursAtNow * 0.8;
+
+  return (
+    <div className="mt-4 rounded-lg border border-border bg-border/20 p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-medium text-foreground">Sprint Progress</h3>
+        <div className="flex items-center gap-4 text-xs">
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-gray-400" />
+            <span className="text-muted">Scope: {scopeHours}h</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-accent" />
+            <span className="text-muted">Completed: {completedHours}h</span>
+          </span>
+          {status === 'active' && (
+            <span className={cn('font-medium', isOnTrack ? 'text-green-500' : 'text-orange-500')}>
+              {isOnTrack ? 'On Track' : 'Behind'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <svg width={width} height={height} className="text-muted">
+        {/* Grid lines */}
+        <g className="stroke-border">
+          {[0, 25, 50, 75, 100].map((percent) => (
+            <line
+              key={percent}
+              x1={xScale(percent)}
+              y1={padding.top}
+              x2={xScale(percent)}
+              y2={padding.top + chartHeight}
+              strokeDasharray="2,2"
+              strokeWidth={0.5}
+            />
+          ))}
+          {[0, 25, 50, 75, 100].map((percent) => (
+            <line
+              key={`h-${percent}`}
+              x1={padding.left}
+              y1={yScale((percent / 100) * scopeHours)}
+              x2={padding.left + chartWidth}
+              y2={yScale((percent / 100) * scopeHours)}
+              strokeDasharray="2,2"
+              strokeWidth={0.5}
+            />
+          ))}
+        </g>
+
+        {/* Scope line (horizontal at max) */}
+        <line
+          x1={xScale(0)}
+          y1={yScale(scopeHours)}
+          x2={xScale(100)}
+          y2={yScale(scopeHours)}
+          stroke="#6B7280"
+          strokeWidth={2}
+        />
+
+        {/* Target pace line (diagonal from 0 to scope) */}
+        <line
+          x1={xScale(0)}
+          y1={yScale(0)}
+          x2={xScale(100)}
+          y2={yScale(scopeHours)}
+          stroke={statusColor}
+          strokeWidth={1.5}
+          strokeDasharray="4,4"
+        />
+
+        {/* Completed hours line (from 0 to current) */}
+        <line
+          x1={xScale(0)}
+          y1={yScale(0)}
+          x2={xScale(progressPercent)}
+          y2={yScale(completedHours)}
+          stroke="#8B5CF6"
+          strokeWidth={2.5}
+        />
+
+        {/* Current position marker */}
+        {status === 'active' && (
+          <g>
+            <circle
+              cx={xScale(progressPercent)}
+              cy={yScale(completedHours)}
+              r={4}
+              fill="#8B5CF6"
+            />
+            {/* Vertical "now" line */}
+            <line
+              x1={xScale(progressPercent)}
+              y1={padding.top}
+              x2={xScale(progressPercent)}
+              y2={padding.top + chartHeight}
+              stroke={statusColor}
+              strokeWidth={1}
+              strokeDasharray="2,2"
+            />
+          </g>
+        )}
+
+        {/* X-axis labels */}
+        <text x={xScale(0)} y={height - 8} fontSize={10} textAnchor="start" fill="currentColor">
+          {startLabel}
+        </text>
+        <text x={xScale(50)} y={height - 8} fontSize={10} textAnchor="middle" fill="currentColor">
+          {midLabel}
+        </text>
+        <text x={xScale(100)} y={height - 8} fontSize={10} textAnchor="end" fill="currentColor">
+          {endLabel}
+        </text>
+
+        {/* Y-axis labels */}
+        <text x={padding.left - 8} y={yScale(0)} fontSize={10} textAnchor="end" dominantBaseline="middle" fill="currentColor">
+          0h
+        </text>
+        <text x={padding.left - 8} y={yScale(scopeHours)} fontSize={10} textAnchor="end" dominantBaseline="middle" fill="currentColor">
+          {scopeHours}h
+        </text>
+      </svg>
+    </div>
+  );
 }
