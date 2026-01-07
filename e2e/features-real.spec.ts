@@ -403,8 +403,9 @@ test.describe('TIER 2: Toggle/Collapsible - REAL TESTS', () => {
       return;
     }
 
-    // Find the summary/trigger
-    const summary = page.locator('.tiptap summary, [data-type="detailsSummary"], .toggle-trigger');
+    // Find the summary/trigger (the clickable arrow button)
+    // Note: data-type uses hyphen "details-summary", not camelCase
+    const summary = page.locator('.tiptap summary, [data-type="details-summary"], .toggle-arrow');
     const summaryCount = await summary.count();
 
     if (summaryCount === 0) {

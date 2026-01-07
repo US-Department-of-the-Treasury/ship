@@ -211,9 +211,14 @@ test.describe('Backlinks', () => {
     }
   })
 
-  // TODO: This test is flaky - backlinks don't always appear in UI even after sync/reload
-  // The underlying backlinks API works (verified by features-real tests), but UI display is unreliable
-  test.skip('clicking backlink navigates to source document', async ({ page }) => {
+  test('clicking backlink navigates to source document', async ({ page }) => {
+    // Listen for console messages
+    page.on('console', msg => {
+      if (msg.text().includes('LinkSync')) {
+        console.log('[Browser]', msg.text())
+      }
+    })
+
     // Create Document M (will be mentioned)
     const docMUrl = await createNewDocument(page)
     await setDocumentTitle(page, 'Mentioned Doc')
@@ -234,14 +239,15 @@ test.describe('Backlinks', () => {
       const docOption = page.locator('[role="option"]').filter({ hasText: 'Mentioned Doc' })
       if (await docOption.isVisible()) {
         await docOption.click()
-        await page.waitForTimeout(1000)
 
-        // Wait for sync to complete before navigating
+        // Wait for the link sync POST request (debounced 500ms)
         await page.waitForResponse(
-          resp => resp.url().includes('/api/documents/') && resp.request().method() === 'PATCH',
+          resp => resp.url().includes('/links') && resp.request().method() === 'POST',
           { timeout: 5000 }
-        ).catch(() => {}) // Ignore if no response
-        await page.waitForTimeout(2000)
+        ).catch(() => console.log('No /links POST detected'))
+
+        // Wait for any pending syncs
+        await page.waitForTimeout(1000)
 
         // Navigate to Mentioned Doc and reload to ensure fresh backlinks data
         await page.goto(docMUrl)
@@ -282,9 +288,7 @@ test.describe('Backlinks', () => {
     }
   })
 
-  // TODO: This test is flaky - real-time backlinks updates don't reliably appear in UI
-  // The underlying backlinks API works (verified by features-real tests), but UI display timing is unreliable
-  test.skip('backlinks update in real-time', async ({ page, browser }) => {
+  test('backlinks update in real-time', async ({ page, browser }) => {
     // Create Document P (will be mentioned)
     const docPUrl = await createNewDocument(page)
     await setDocumentTitle(page, 'Real-time Doc')

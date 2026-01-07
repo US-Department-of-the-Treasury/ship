@@ -27,7 +27,10 @@ export function BacklinksPanel({ documentId }: BacklinksPanelProps) {
 
     async function fetchBacklinks() {
       try {
-        setLoading(true);
+        // Only show loading on initial fetch, not on polls
+        if (backlinks.length === 0) {
+          setLoading(true);
+        }
         setError(null);
 
         const response = await fetch(`${API_URL}/api/documents/${documentId}/backlinks`, {
@@ -57,8 +60,12 @@ export function BacklinksPanel({ documentId }: BacklinksPanelProps) {
 
     fetchBacklinks();
 
+    // Poll for updates every 5 seconds (for real-time backlink updates)
+    const intervalId = setInterval(fetchBacklinks, 5000);
+
     return () => {
       cancelled = true;
+      clearInterval(intervalId);
     };
   }, [documentId]);
 

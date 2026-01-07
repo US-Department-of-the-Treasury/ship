@@ -78,7 +78,6 @@ test.describe('Race Conditions - Concurrent Editing', () => {
 
     // Wait for content to save
     await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
-    await page.waitForTimeout(2000)
 
     // Open second tab as different user
     const page2 = await browser.newPage()
@@ -88,11 +87,8 @@ test.describe('Race Conditions - Concurrent Editing', () => {
     const editor2 = page2.locator('.ProseMirror')
     await expect(editor2).toBeVisible({ timeout: 5000 })
 
-    // Wait for WebSocket connection and Yjs sync to establish
-    await page2.waitForTimeout(3000)
-
-    // User 2 should see User 1's content
-    await expect(editor2).toContainText('User 1 writes this', { timeout: 10000 })
+    // User 2 should see User 1's content (with auto-retry)
+    await expect(editor2).toContainText('User 1 writes this', { timeout: 15000 })
 
     // Both users type simultaneously
     await editor1.click()
@@ -101,21 +97,15 @@ test.describe('Race Conditions - Concurrent Editing', () => {
     await editor2.click()
     await page2.keyboard.type('User 2 adds this.')
 
-    // Wait for Yjs to sync
-    await page.waitForTimeout(2000)
-    await page2.waitForTimeout(2000)
-
+    // Wait for Yjs sync by checking content appears in both editors (auto-retry)
     // Both users should see all content (order may vary due to CRDT)
-    const content1 = await editor1.textContent()
-    const content2 = await editor2.textContent()
+    await expect(editor1).toContainText('User 1 writes this', { timeout: 15000 })
+    await expect(editor1).toContainText('More from user 1', { timeout: 15000 })
+    await expect(editor1).toContainText('User 2 adds this', { timeout: 15000 })
 
-    expect(content1).toContain('User 1 writes this')
-    expect(content1).toContain('More from user 1')
-    expect(content1).toContain('User 2 adds this')
-
-    expect(content2).toContain('User 1 writes this')
-    expect(content2).toContain('More from user 1')
-    expect(content2).toContain('User 2 adds this')
+    await expect(editor2).toContainText('User 1 writes this', { timeout: 15000 })
+    await expect(editor2).toContainText('More from user 1', { timeout: 15000 })
+    await expect(editor2).toContainText('User 2 adds this', { timeout: 15000 })
 
     await page2.close()
   })
@@ -237,58 +227,59 @@ test.describe('Race Conditions - Concurrent Editing', () => {
     await createNewDocument(page)
 
     const docUrl = page.url()
+    const editor1 = page.locator('.ProseMirror')
 
     // Open two more tabs with same document
     const page2 = await browser.newPage()
     await login(page2)
     await page2.goto(docUrl)
+    const editor2 = page2.locator('.ProseMirror')
 
     const page3 = await browser.newPage()
     await login(page3)
     await page3.goto(docUrl)
+    const editor3 = page3.locator('.ProseMirror')
 
     // Wait for all editors to load
-    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
-    await expect(page2.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
-    await expect(page3.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
+    await expect(editor1).toBeVisible({ timeout: 5000 })
+    await expect(editor2).toBeVisible({ timeout: 5000 })
+    await expect(editor3).toBeVisible({ timeout: 5000 })
 
-    await page.waitForTimeout(1500)
-    await page2.waitForTimeout(1500)
-    await page3.waitForTimeout(1500)
-
-    // Each tab types different content
-    await page.locator('.ProseMirror').click()
+    // Tab 1 types first
+    await editor1.click()
     await page.keyboard.type('Tab 1 content. ')
+    await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
 
-    await page2.locator('.ProseMirror').click()
+    // Wait for Tab 2 to see Tab 1's content before typing
+    await expect(editor2).toContainText('Tab 1 content', { timeout: 15000 })
+
+    // Tab 2 types
+    await editor2.click()
     await page2.keyboard.press('End')
     await page2.keyboard.type('Tab 2 content. ')
+    await expect(page2.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
 
-    await page3.locator('.ProseMirror').click()
+    // Wait for Tab 3 to see Tab 2's content before typing
+    await expect(editor3).toContainText('Tab 2 content', { timeout: 15000 })
+
+    // Tab 3 types
+    await editor3.click()
     await page3.keyboard.press('End')
     await page3.keyboard.type('Tab 3 content.')
+    await expect(page3.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
 
-    // Wait for sync
-    await page.waitForTimeout(3000)
-    await page2.waitForTimeout(3000)
-    await page3.waitForTimeout(3000)
+    // All tabs should have all content (use auto-retry expects)
+    await expect(editor1).toContainText('Tab 1 content', { timeout: 15000 })
+    await expect(editor1).toContainText('Tab 2 content', { timeout: 15000 })
+    await expect(editor1).toContainText('Tab 3 content', { timeout: 15000 })
 
-    // All tabs should have all content
-    const content1 = await page.locator('.ProseMirror').textContent()
-    const content2 = await page2.locator('.ProseMirror').textContent()
-    const content3 = await page3.locator('.ProseMirror').textContent()
+    await expect(editor2).toContainText('Tab 1 content', { timeout: 15000 })
+    await expect(editor2).toContainText('Tab 2 content', { timeout: 15000 })
+    await expect(editor2).toContainText('Tab 3 content', { timeout: 15000 })
 
-    expect(content1).toContain('Tab 1 content')
-    expect(content1).toContain('Tab 2 content')
-    expect(content1).toContain('Tab 3 content')
-
-    expect(content2).toContain('Tab 1 content')
-    expect(content2).toContain('Tab 2 content')
-    expect(content2).toContain('Tab 3 content')
-
-    expect(content3).toContain('Tab 1 content')
-    expect(content3).toContain('Tab 2 content')
-    expect(content3).toContain('Tab 3 content')
+    await expect(editor3).toContainText('Tab 1 content', { timeout: 15000 })
+    await expect(editor3).toContainText('Tab 2 content', { timeout: 15000 })
+    await expect(editor3).toContainText('Tab 3 content', { timeout: 15000 })
 
     await page2.close()
     await page3.close()

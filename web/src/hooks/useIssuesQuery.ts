@@ -51,8 +51,15 @@ async function fetchIssues(): Promise<Issue[]> {
 }
 
 // Create issue
-async function createIssueApi(data: { title: string }): Promise<Issue> {
-  const res = await apiPost('/api/issues', data);
+interface CreateIssueData {
+  title?: string;
+  program_id?: string;
+  _optimisticId?: string;
+}
+
+async function createIssueApi(data: CreateIssueData): Promise<Issue> {
+  const { _optimisticId, ...apiData } = data;
+  const res = await apiPost('/api/issues', { title: 'Untitled', ...apiData });
   if (!res.ok) {
     const error = new Error('Failed to create issue') as Error & { status: number };
     error.status = res.status;
@@ -86,15 +93,14 @@ export function useCreateIssue() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data?: { title?: string; _optimisticId?: string }) =>
-      createIssueApi({ title: data?.title ?? 'Untitled' }),
+    mutationFn: (data?: CreateIssueData) => createIssueApi(data || {}),
     onMutate: async (newIssue) => {
       await queryClient.cancelQueries({ queryKey: issueKeys.lists() });
 
       const previousIssues = queryClient.getQueryData<Issue[]>(issueKeys.lists());
 
       // Use passed optimisticId if available (for offline creation)
-      const optimisticId = (newIssue as { _optimisticId?: string })?._optimisticId || `temp-${crypto.randomUUID()}`;
+      const optimisticId = newIssue?._optimisticId || `temp-${crypto.randomUUID()}`;
 
       // Check if issue was already added to cache (offline path adds synchronously)
       const alreadyExists = previousIssues?.some(i => i.id === optimisticId);
@@ -120,7 +126,7 @@ export function useCreateIssue() {
         assignee_id: null,
         assignee_name: null,
         estimate: null,
-        program_id: null,
+        program_id: newIssue?.program_id ?? null,
         sprint_id: null,
         program_name: null,
         program_prefix: null,
@@ -282,6 +288,11 @@ export function useBulkUpdateIssues() {
   });
 }
 
+// Options for creating an issue
+export interface CreateIssueOptions {
+  program_id?: string;
+}
+
 // Compatibility hook that matches the old useIssues interface
 export function useIssues() {
   const queryClient = useQueryClient();
@@ -289,7 +300,7 @@ export function useIssues() {
   const createMutation = useCreateIssue();
   const updateMutation = useUpdateIssue();
 
-  const createIssue = async (): Promise<Issue | null> => {
+  const createIssue = async (options?: CreateIssueOptions): Promise<Issue | null> => {
     // When offline, add to cache synchronously and return immediately
     // This avoids race condition where navigation happens before onMutate runs
     // Use getIsOnline() which is updated by the offline event handler (more reliable than navigator.onLine)
@@ -305,7 +316,7 @@ export function useIssues() {
         assignee_id: null,
         assignee_name: null,
         estimate: null,
-        program_id: null,
+        program_id: options?.program_id ?? null,
         sprint_id: null,
         program_name: null,
         program_prefix: null,
@@ -324,12 +335,12 @@ export function useIssues() {
       );
 
       // Trigger mutation (will be queued for when back online)
-      createMutation.mutate({ _optimisticId: optimisticId } as { title?: string; _optimisticId?: string });
+      createMutation.mutate({ _optimisticId: optimisticId, ...options });
       return optimisticIssue;
     }
 
     try {
-      return await createMutation.mutateAsync({});
+      return await createMutation.mutateAsync(options || {});
     } catch {
       return null;
     }

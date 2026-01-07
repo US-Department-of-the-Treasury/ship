@@ -94,7 +94,9 @@ test.describe('Auto-Save Race Conditions - Title Field', () => {
     await createNewDocument(page);
 
     const titleInput = page.locator('input[placeholder="Untitled"]');
-    await titleInput.click();
+    // Use focus() instead of click() and wait for focus to be established
+    await titleInput.focus();
+    await expect(titleInput).toBeFocused({ timeout: 2000 });
 
     // Type character by character with small delays (simulates real typing)
     const fullTitle = 'This is a long title that takes time to type';
