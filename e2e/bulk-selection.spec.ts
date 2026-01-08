@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/isolated-env';
 
 /**
  * Bulk Selection and Actions for Issues List/Kanban
@@ -7,22 +7,106 @@ import { test, expect } from '@playwright/test';
  * and bulk operations (archive, move to sprint, delete, change status).
  */
 
+// Helper to login before tests
+async function login(page: import('@playwright/test').Page) {
+  await page.goto('/login');
+  await page.locator('#email').fill('dev@ship.local');
+  await page.locator('#password').fill('admin123');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).not.toHaveURL('/login', { timeout: 10000 });
+}
+
 test.describe('Bulk Selection - List View', () => {
   test.describe('Checkbox Visibility', () => {
-    test.fixme('checkbox is hidden by default on each row', async ({ page }) => {
-      // TODO: Navigate to /issues with list view, verify checkbox not visible without hover
+    test('checkbox is hidden by default on each row', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+
+      // Wait for issues list to load
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      // Get the first row's checkbox container
+      const firstRow = page.locator('tbody tr').first();
+      await expect(firstRow).toBeVisible();
+
+      // The checkbox container should have opacity-0 when not hovered/selected
+      // Check that the checkbox button is not visible (opacity: 0)
+      const checkboxContainer = firstRow.locator('td').first().locator('div');
+
+      // Move mouse away to ensure no hover state
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(100);
+
+      // The container should exist but have opacity 0 (hidden)
+      await expect(checkboxContainer).toHaveCSS('opacity', '0');
     });
 
-    test.fixme('checkbox appears on row hover', async ({ page }) => {
-      // TODO: Hover over a row, verify checkbox becomes visible on left side
+    test('checkbox appears on row hover', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const firstRow = page.locator('tbody tr').first();
+      await expect(firstRow).toBeVisible();
+
+      // Get checkbox container before hover
+      const checkboxContainer = firstRow.locator('td').first().locator('div');
+
+      // Hover over the row
+      await firstRow.hover();
+
+      // The checkbox container should now be visible (opacity: 1)
+      await expect(checkboxContainer).toHaveCSS('opacity', '1');
     });
 
-    test.fixme('checkbox remains visible when item is selected', async ({ page }) => {
-      // TODO: Select an item, move mouse away, checkbox stays visible on selected row
+    test('checkbox remains visible when item is selected', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const firstRow = page.locator('tbody tr').first();
+      await expect(firstRow).toBeVisible();
+
+      // Hover to reveal checkbox and click it
+      await firstRow.hover();
+      const checkbox = firstRow.getByRole('checkbox');
+      await checkbox.click();
+
+      // Move mouse away from the row
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(100);
+
+      // Checkbox should remain visible because item is selected
+      const checkboxContainer = firstRow.locator('td').first().locator('div');
+      await expect(checkboxContainer).toHaveCSS('opacity', '1');
     });
 
-    test.fixme('checkbox column does not shift table layout on hover', async ({ page }) => {
-      // TODO: Verify table columns don't jump when checkbox appears
+    test('checkbox column does not shift table layout on hover', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const firstRow = page.locator('tbody tr').first();
+      await expect(firstRow).toBeVisible();
+
+      // Get the position of the second column (title) before hover
+      const titleCell = firstRow.locator('td').nth(1);
+      const boundingBoxBefore = await titleCell.boundingBox();
+
+      // Hover over the row to reveal checkbox
+      await firstRow.hover();
+      await page.waitForTimeout(100);
+
+      // Get the position after hover - should be the same
+      const boundingBoxAfter = await titleCell.boundingBox();
+
+      // The X position should not have changed (no layout shift)
+      expect(boundingBoxBefore?.x).toBe(boundingBoxAfter?.x);
+      // Width should remain the same
+      expect(boundingBoxBefore?.width).toBe(boundingBoxAfter?.width);
     });
   });
 
