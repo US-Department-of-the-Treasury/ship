@@ -550,52 +550,327 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
   });
 
   test.describe('Selection with Enter/Space', () => {
-    test.fixme('Enter toggles selection of focused row', async ({ page }) => {
-      // TODO: Focus row, press Enter, verify selected. Press Enter again, verify deselected.
+    test('Enter toggles selection of focused row', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      // Focus table and navigate to first row
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('ArrowDown');
+      await expect(rows.nth(0)).toHaveClass(/ring-2/);
+
+      // Press Enter to select
+      await page.keyboard.press('Enter');
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+
+      // Press Enter again to deselect
+      await page.keyboard.press('Enter');
+      await expect(rows.nth(0)).not.toHaveAttribute('data-selected', 'true');
     });
 
-    test.fixme('Space toggles selection of focused row', async ({ page }) => {
-      // TODO: Focus row, press Space, verify selected
+    test('Space toggles selection of focused row', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      // Focus table and navigate to first row
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('ArrowDown');
+      await expect(rows.nth(0)).toHaveClass(/ring-2/);
+
+      // Press Space to select
+      await page.keyboard.press('Space');
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+
+      // Press Space again to deselect
+      await page.keyboard.press('Space');
+      await expect(rows.nth(0)).not.toHaveAttribute('data-selected', 'true');
     });
   });
 
   test.describe('Shift+Arrow Range Selection', () => {
-    test.fixme('shift+down extends selection to next row', async ({ page }) => {
-      // TODO: Select row 2, press Shift+ArrowDown, verify rows 2-3 selected
+    test('shift+down extends selection to next row', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 2) {
+        test.skip(true, 'Not enough rows for Shift+Arrow test');
+        return;
+      }
+
+      // Select first row via checkbox
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+
+      // Focus table and use Shift+ArrowDown
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('Shift+ArrowDown');
+
+      // Both rows should be selected
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
     });
 
-    test.fixme('shift+up extends selection to previous row', async ({ page }) => {
-      // TODO: Select row 3, press Shift+ArrowUp, verify rows 2-3 selected
+    test('shift+up extends selection to previous row', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 3) {
+        test.skip(true, 'Not enough rows for Shift+Arrow test');
+        return;
+      }
+
+      // Select second row via checkbox
+      await rows.nth(1).hover();
+      await rows.nth(1).getByRole('checkbox').click();
+      await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
+
+      // Focus table and use Shift+ArrowUp
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('Shift+ArrowUp');
+
+      // Both rows 0 and 1 should be selected
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
     });
 
-    test.fixme('multiple shift+down extends selection incrementally', async ({ page }) => {
-      // TODO: Select row 1, Shift+Down 3 times, verify rows 1-4 selected
+    test('multiple shift+down extends selection incrementally', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 4) {
+        test.skip(true, 'Not enough rows for incremental selection test');
+        return;
+      }
+
+      // Select first row via checkbox
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+
+      // Focus table and press Shift+Down 3 times
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('Shift+ArrowDown');
+      await page.keyboard.press('Shift+ArrowDown');
+      await page.keyboard.press('Shift+ArrowDown');
+
+      // Rows 0-3 should all be selected
+      for (let i = 0; i < 4; i++) {
+        await expect(rows.nth(i)).toHaveAttribute('data-selected', 'true');
+      }
     });
 
-    test.fixme('shift+down then shift+up contracts selection', async ({ page }) => {
-      // TODO: Select row 2, Shift+Down twice (2-4), Shift+Up once, verify rows 2-3 selected
+    test('shift+down then shift+up contracts selection', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 4) {
+        test.skip(true, 'Not enough rows for contract selection test');
+        return;
+      }
+
+      // Select row 1 (second row) via checkbox
+      await rows.nth(1).hover();
+      await rows.nth(1).getByRole('checkbox').click();
+      await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
+
+      // Focus table and extend with Shift+Down twice
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('Shift+ArrowDown'); // Rows 1-2 selected
+      await page.keyboard.press('Shift+ArrowDown'); // Rows 1-3 selected
+
+      // Verify rows 1-3 selected
+      await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(2)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(3)).toHaveAttribute('data-selected', 'true');
+
+      // Now Shift+Up to contract selection
+      await page.keyboard.press('Shift+ArrowUp'); // Should now be rows 1-2
+
+      // Row 3 should no longer be selected
+      await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(2)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(3)).not.toHaveAttribute('data-selected', 'true');
     });
 
-    test.fixme('shift+end selects from current to last row', async ({ page }) => {
-      // TODO: Select row 2 of 5, Shift+End, verify rows 2-5 selected
+    test('shift+end selects from current to last row', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 3) {
+        test.skip(true, 'Not enough rows for Shift+End test');
+        return;
+      }
+
+      // Select first row via checkbox
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+
+      // Focus table and use Shift+End
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('Shift+End');
+
+      // All rows from 0 to last should be selected
+      for (let i = 0; i < rowCount; i++) {
+        await expect(rows.nth(i)).toHaveAttribute('data-selected', 'true');
+      }
     });
 
-    test.fixme('shift+home selects from first row to current', async ({ page }) => {
-      // TODO: Select row 4 of 5, Shift+Home, verify rows 1-4 selected
+    test('shift+home selects from first row to current', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 3) {
+        test.skip(true, 'Not enough rows for Shift+Home test');
+        return;
+      }
+
+      // Select last row via checkbox
+      const lastIdx = rowCount - 1;
+      await rows.nth(lastIdx).hover();
+      await rows.nth(lastIdx).getByRole('checkbox').click();
+      await expect(rows.nth(lastIdx)).toHaveAttribute('data-selected', 'true');
+
+      // Focus table and use Shift+Home
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('Shift+Home');
+
+      // All rows from 0 to last should be selected
+      for (let i = 0; i < rowCount; i++) {
+        await expect(rows.nth(i)).toHaveAttribute('data-selected', 'true');
+      }
     });
   });
 
   test.describe('Select All and Clear', () => {
-    test.fixme('cmd/ctrl+a selects all visible items', async ({ page }) => {
-      // TODO: Press Cmd+A (or Ctrl+A on Windows), verify all rows selected
+    test('cmd/ctrl+a selects all visible items', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+
+      // Focus table and press Cmd+A
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('Meta+a');
+
+      // All rows should be selected
+      for (let i = 0; i < rowCount; i++) {
+        await expect(rows.nth(i)).toHaveAttribute('data-selected', 'true');
+      }
     });
 
-    test.fixme('escape clears all selection', async ({ page }) => {
-      // TODO: Select multiple items, press Escape, verify no items selected
+    test('escape clears all selection', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 2) {
+        test.skip(true, 'Not enough rows for clear selection test');
+        return;
+      }
+
+      // Select multiple items via checkbox
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
+      await rows.nth(1).hover();
+      await rows.nth(1).getByRole('checkbox').click({ modifiers: ['Meta'] });
+
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
+
+      // Press Escape to clear selection
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('Escape');
+
+      // No rows should be selected
+      await expect(rows.nth(0)).not.toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(1)).not.toHaveAttribute('data-selected', 'true');
     });
 
-    test.fixme('cmd/ctrl+a when all selected deselects all', async ({ page }) => {
-      // TODO: Cmd+A to select all, Cmd+A again, verify all deselected
+    test('cmd/ctrl+a when all selected deselects all', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+
+      // Focus table and press Cmd+A to select all
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('Meta+a');
+
+      // Verify all selected
+      for (let i = 0; i < rowCount; i++) {
+        await expect(rows.nth(i)).toHaveAttribute('data-selected', 'true');
+      }
+
+      // Press Cmd+A again to deselect all
+      await page.keyboard.press('Meta+a');
+
+      // All rows should be deselected
+      for (let i = 0; i < rowCount; i++) {
+        await expect(rows.nth(i)).not.toHaveAttribute('data-selected', 'true');
+      }
     });
   });
 });
