@@ -1180,6 +1180,24 @@ test.describe('Phase 4 Continued: Filter Functionality', () => {
     await expect(page.getByText(/\d+ issue[s]? selected/)).not.toBeVisible()
   })
 
+  // Feature not implemented: Header checkbox for select-all doesn't exist in SelectableList.
+  // Select-all works via keyboard (Cmd+A) but no visual checkbox in table header.
+  // This is a feature request, not a test bug.
+  test.skip('select all checkbox selects all visible issues', async ({ page }) => {
+    await clickIssuesTab(page)
+
+    // Click header checkbox to select all
+    const headerCheckbox = page.locator('th').getByRole('checkbox')
+    await headerCheckbox.click()
+
+    // Should see bulk action bar with count matching visible rows
+    const rows = page.locator('tbody tr')
+    const rowCount = await rows.count()
+
+    if (rowCount > 0) {
+      await expect(page.getByText(new RegExp(`${rowCount} issues? selected`))).toBeVisible({ timeout: 5000 })
+    }
+  })
 })
 
 // =============================================================================
