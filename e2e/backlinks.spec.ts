@@ -110,9 +110,7 @@ test.describe('Backlinks', () => {
     }
   })
 
-  // FIXME: Backlink removal when mention is deleted may not be fully working
-  // The backlink persists after the mention is removed - needs investigation
-  test.fixme('removing mention removes backlink', async ({ page }) => {
+  test('removing mention removes backlink', async ({ page }) => {
     // Create Document A (will be mentioned)
     const docAUrl = await createNewDocument(page)
     await setDocumentTitle(page, 'Doc to Mention')
@@ -135,20 +133,35 @@ test.describe('Backlinks', () => {
         await docOption.click()
         await page.waitForTimeout(1000)
 
-        // Delete the mention
+        // Delete the mention by selecting all content and deleting it
+        // NOTE: Can't click on .mention directly because MentionExtension's click handler
+        // calls onNavigate() which navigates away from the page.
+        // Instead, use keyboard shortcuts to select all and delete.
         const mention = editor.locator('.mention')
         await expect(mention).toBeVisible({ timeout: 3000 })
-        await mention.click()
-        await page.keyboard.press('Backspace')
+
+        // Focus the editor and select all content
+        await editor.click()
+        await page.keyboard.press('Meta+a') // Select all (Cmd+A on Mac)
+        await page.keyboard.press('Backspace') // Delete selected content
+
+        // Wait for editor update to propagate (debounce is 500ms)
+        await page.waitForTimeout(1000)
+
+        // Verify mention is deleted before waiting for POST
+        await expect(editor.locator('.mention')).not.toBeVisible({ timeout: 3000 })
 
         // Wait for the link sync POST request (debounced 500ms)
-        await page.waitForResponse(
+        const linkSyncResponse = await page.waitForResponse(
           resp => resp.url().includes('/links') && resp.request().method() === 'POST',
           { timeout: 5000 }
-        ).catch(() => console.log('No /links POST detected after mention removal'))
+        ).catch((err) => {
+          console.log('No /links POST detected after mention removal:', err.message)
+          return null
+        })
 
         // Extra wait for sync to propagate
-        await page.waitForTimeout(1000)
+        await page.waitForTimeout(1500)
 
         // Navigate to Document A and reload to ensure fresh backlinks data
         await page.goto(docAUrl)

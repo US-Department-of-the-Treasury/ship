@@ -89,8 +89,7 @@ test.describe('Auto-Save Race Conditions - Title Field', () => {
     await expect(page.locator('input[placeholder="Untitled"]').or(page.locator('input').first())).toHaveValue('Hello World');
   });
 
-  // TODO: Flaky test - keyboard typing speed causes first character to be missed
-  test.skip('rapid typing with throttle: intermediate saves do not overwrite', async ({ page }) => {
+  test('rapid typing with throttle: intermediate saves do not overwrite', async ({ page }) => {
     await createNewDocument(page);
 
     const titleInput = page.locator('input[placeholder="Untitled"]');

@@ -110,8 +110,8 @@ test.describe('Phase 1: Critical Violations', () => {
       expect(ariaLabel!.toLowerCase()).toContain('keyboard')
     })
 
-    // TODO: Test flaky - Escape key doesn't reliably cancel keyboard drag mode
-    test.skip('draggable issues can be moved with keyboard', async ({ page }) => {
+    // Test keyboard accessibility for drag-and-drop
+    test('draggable issues can be moved with keyboard', async ({ page }) => {
       await login(page)
       await page.goto('/issues')
       await page.waitForLoadState('networkidle')
@@ -181,13 +181,13 @@ test.describe('Phase 1: Critical Violations', () => {
       await docLink.click()
       await page.waitForLoadState('networkidle')
 
-      // Find sr-only text in Editor sync status region
+      // Sync status region displays the message directly (role="status" with aria-live)
       const statusRegion = page.locator('[data-testid="sync-status"]')
-      const srText = statusRegion.locator('.sr-only')
+      await expect(statusRegion).toBeVisible({ timeout: 10000 })
 
       // Text must be one of the exact specified messages
       const allowedMessages = ['Saving', 'Saved', 'Offline', 'Error saving']
-      const text = await srText.textContent()
+      const text = await statusRegion.textContent()
 
       expect(allowedMessages).toContain(text?.trim())
     })

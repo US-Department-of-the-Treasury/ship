@@ -361,8 +361,7 @@ test.describe('Performance - Many Images', () => {
     await login(page)
   })
 
-  // TODO: Test flaky - file chooser event times out inconsistently in CI
-  test.skip('many images do not crash the editor', async ({ page }, testInfo) => {
+  test('many images do not crash the editor', async ({ page }, testInfo) => {
     testInfo.setTimeout(300000); // 5 minute timeout for multiple image uploads under load
     await createNewDocument(page)
 

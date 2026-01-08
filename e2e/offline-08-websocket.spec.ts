@@ -11,10 +11,7 @@ import { test, expect } from './fixtures/offline'
 
 
 test.describe('8.1 WebSocket Disconnect/Reconnect', () => {
-  // TODO: Test flaky - sync status shows "SavedSaved" (duplicate text) instead of "Offline" when network drops
-  // The sync-status element has both visible and sr-only spans, both containing the status text
-  // Need to investigate why the app isn't detecting offline state via goOffline() fixture
-  test.skip('WebSocket reconnects automatically when online', async ({ page, goOffline, goOnline, login, testData }) => {
+  test('WebSocket reconnects automatically when online', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 
     // GIVEN: User has document open with active WebSocket connection

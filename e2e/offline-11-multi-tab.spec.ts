@@ -12,9 +12,7 @@ import { test, expect } from './fixtures/offline'
 
 
 test.describe('11.1 Multiple Tabs Offline', () => {
-  // TODO: Test flaky - document created in tab 1 not appearing in tab 2 after reload
-  // Need to investigate IndexedDB cross-tab synchronization and timing
-  test.skip('changes in one offline tab appear in another offline tab', async ({ context, login }) => {
+  test('changes in one offline tab appear in another offline tab', async ({ context, login }) => {
     // Login in first page
     const page1 = await context.newPage()
     await page1.goto('/login')
@@ -32,14 +30,17 @@ test.describe('11.1 Multiple Tabs Offline', () => {
     await context.setOffline(true)
     await page1.getByRole('button', { name: 'New Document', exact: true }).click()
     await page1.waitForURL(/\/docs\/[^/]+$/)
-    const titleInput = page1.locator('[contenteditable="true"]').first()
-    await titleInput.click()
-    await page1.keyboard.type('Multi-Tab Test')
+    // Type into the title input (not the editor contenteditable)
+    const titleInput = page1.locator('input[placeholder="Untitled"]')
+    await titleInput.fill('Multi-Tab Test')
+    await page1.keyboard.press('Tab') // Blur to trigger save
+    await page1.waitForTimeout(600) // Wait for auto-save throttle
     await page1.goto('/docs')
 
     // THEN: Tab 2 sees the new document (shared IndexedDB)
     await page2.reload()
-    await expect(page2.getByText('Multi-Tab Test')).toBeVisible()
+    // Document appears in both sidebar and main list, use first()
+    await expect(page2.getByText('Multi-Tab Test').first()).toBeVisible()
   })
 
   test('conflicting offline edits in two tabs merge correctly', async ({ context, login }) => {

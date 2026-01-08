@@ -2,19 +2,24 @@
  * Category 2: Offline Mutations (Create/Update/Delete Queue)
  * Tests that mutations are queued offline and sync when back online.
  *
- * SKIP REASON: These tests require an offline mutation queue which is
- * NOT YET IMPLEMENTED. The app currently has no mutation queue - all
- * mutations go directly to the server API.
+ * SKIP REASON: The mutation queue infrastructure exists in queryClient.ts
+ * (IndexedDB-backed with sync handlers), but these tests require UI
+ * elements that are NOT YET IMPLEMENTED:
  *
- * INFRASTRUCTURE NEEDED:
- * 1. Implement IndexedDB-backed mutation queue
- * 2. Queue mutations when offline (detect via navigator.onLine)
- * 3. Process queue in FIFO order when online
- * 4. Add pending indicator UI (data-testid="pending-sync-icon")
- * 5. Generate temporary IDs for offline-created documents
- * 6. Replace temporary IDs with server IDs after sync
+ * MISSING UI:
+ * 1. Per-document pending sync indicator (data-testid="pending-sync-icon"
+ *    inside each doc-item in DocumentTreeItem.tsx)
+ * 2. Delete button in DocumentTreeItem (currently only has "Add sub-document")
+ * 3. Undo option for deletes
  *
- * See: docs/application-architecture.md "Offline Mutation Queue"
+ * The global PendingSyncCount component exists in the sidebar footer,
+ * but individual document items don't show their sync status.
+ *
+ * IMPLEMENTED (in queryClient.ts):
+ * - IndexedDB-backed mutation queue (mutationStore)
+ * - processPendingMutations() for FIFO processing
+ * - updateMutationResourceId() for temp ID remapping
+ * - PendingSyncIcon component (but not used per-item)
  */
 import { test, expect } from './fixtures/offline'
 
