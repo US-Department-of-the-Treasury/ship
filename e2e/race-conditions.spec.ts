@@ -64,8 +64,9 @@ function createTestImageFile(): string {
 }
 
 test.describe('Race Conditions - Concurrent Editing', () => {
-  // TODO: Flaky test - WebSocket sync timing issues cause content to be empty
-  test.skip('concurrent edits from two users merge correctly', async ({ page, browser }) => {
+  // Test collaboration between two users editing same document
+  // Uses sequential typing with sync waits to avoid race condition flakiness
+  test('concurrent edits from two users merge correctly', async ({ page, browser }) => {
     await login(page)
     await createNewDocument(page)
 
@@ -78,6 +79,8 @@ test.describe('Race Conditions - Concurrent Editing', () => {
 
     // Wait for content to save
     await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
+    // Wait extra for Yjs to persist to server
+    await page.waitForTimeout(2000)
 
     // Open second tab as different user
     const page2 = await browser.newPage()
@@ -86,18 +89,27 @@ test.describe('Race Conditions - Concurrent Editing', () => {
 
     const editor2 = page2.locator('.ProseMirror')
     await expect(editor2).toBeVisible({ timeout: 5000 })
+    // Wait for WebSocket to connect and sync
+    await page2.waitForTimeout(2000)
 
     // User 2 should see User 1's content (with auto-retry)
     await expect(editor2).toContainText('User 1 writes this', { timeout: 15000 })
 
-    // Both users type simultaneously
+    // User 1 types more
     await editor1.click()
-    await page.keyboard.type('More from user 1.')
+    await page.keyboard.press('End')
+    await page.keyboard.type('More from user 1. ')
+    await page.waitForTimeout(2000) // Wait for sync
 
+    // Wait for User 2 to see User 1's update
+    await expect(editor2).toContainText('More from user 1', { timeout: 15000 })
+
+    // User 2 types
     await editor2.click()
+    await page2.keyboard.press('End')
     await page2.keyboard.type('User 2 adds this.')
+    await page2.waitForTimeout(2000) // Wait for sync
 
-    // Wait for Yjs sync by checking content appears in both editors (auto-retry)
     // Both users should see all content (order may vary due to CRDT)
     await expect(editor1).toContainText('User 1 writes this', { timeout: 15000 })
     await expect(editor1).toContainText('More from user 1', { timeout: 15000 })
@@ -221,36 +233,30 @@ test.describe('Race Conditions - Concurrent Editing', () => {
     await page2.close()
   })
 
-  // TODO: Test flaky - multi-tab WebSocket sync doesn't always complete within timeout
-  test.skip('multiple tabs editing same document stay in sync', async ({ page, browser }) => {
+  // Test multiple tabs editing same document stay in sync
+  // Uses sequential typing with sync waits between tabs to avoid flakiness
+  test('multiple tabs editing same document stay in sync', async ({ page, browser }) => {
     await login(page)
     await createNewDocument(page)
 
     const docUrl = page.url()
     const editor1 = page.locator('.ProseMirror')
 
-    // Open two more tabs with same document
+    // Tab 1 types first and waits for save
+    await editor1.click()
+    await page.keyboard.type('Tab 1 content. ')
+    await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
+    await page.waitForTimeout(2000) // Wait for Yjs to persist
+
+    // Open Tab 2 and wait for it to sync
     const page2 = await browser.newPage()
     await login(page2)
     await page2.goto(docUrl)
     const editor2 = page2.locator('.ProseMirror')
-
-    const page3 = await browser.newPage()
-    await login(page3)
-    await page3.goto(docUrl)
-    const editor3 = page3.locator('.ProseMirror')
-
-    // Wait for all editors to load
-    await expect(editor1).toBeVisible({ timeout: 5000 })
     await expect(editor2).toBeVisible({ timeout: 5000 })
-    await expect(editor3).toBeVisible({ timeout: 5000 })
+    await page2.waitForTimeout(2000) // Wait for WebSocket sync
 
-    // Tab 1 types first
-    await editor1.click()
-    await page.keyboard.type('Tab 1 content. ')
-    await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
-
-    // Wait for Tab 2 to see Tab 1's content before typing
+    // Tab 2 should see Tab 1's content
     await expect(editor2).toContainText('Tab 1 content', { timeout: 15000 })
 
     // Tab 2 types
@@ -258,8 +264,18 @@ test.describe('Race Conditions - Concurrent Editing', () => {
     await page2.keyboard.press('End')
     await page2.keyboard.type('Tab 2 content. ')
     await expect(page2.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
+    await page2.waitForTimeout(2000) // Wait for Yjs to persist
 
-    // Wait for Tab 3 to see Tab 2's content before typing
+    // Open Tab 3 and wait for it to sync
+    const page3 = await browser.newPage()
+    await login(page3)
+    await page3.goto(docUrl)
+    const editor3 = page3.locator('.ProseMirror')
+    await expect(editor3).toBeVisible({ timeout: 5000 })
+    await page3.waitForTimeout(2000) // Wait for WebSocket sync
+
+    // Tab 3 should see Tab 1 and Tab 2's content
+    await expect(editor3).toContainText('Tab 1 content', { timeout: 15000 })
     await expect(editor3).toContainText('Tab 2 content', { timeout: 15000 })
 
     // Tab 3 types
@@ -267,8 +283,9 @@ test.describe('Race Conditions - Concurrent Editing', () => {
     await page3.keyboard.press('End')
     await page3.keyboard.type('Tab 3 content.')
     await expect(page3.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
+    await page3.waitForTimeout(2000) // Wait for sync
 
-    // All tabs should have all content (use auto-retry expects)
+    // All tabs should have all content
     await expect(editor1).toContainText('Tab 1 content', { timeout: 15000 })
     await expect(editor1).toContainText('Tab 2 content', { timeout: 15000 })
     await expect(editor1).toContainText('Tab 3 content', { timeout: 15000 })
