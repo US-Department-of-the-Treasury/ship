@@ -111,24 +111,100 @@ test.describe('Bulk Selection - List View', () => {
   });
 
   test.describe('Single Selection', () => {
-    test.fixme('clicking checkbox selects the item', async ({ page }) => {
-      // TODO: Click checkbox, verify item is selected (background highlight)
+    test('clicking checkbox selects the item', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const firstRow = page.locator('tbody tr').first();
+      await expect(firstRow).toBeVisible();
+
+      // Hover to reveal checkbox and click it
+      await firstRow.hover();
+      const checkbox = firstRow.getByRole('checkbox');
+      await checkbox.click();
+
+      // Verify the checkbox is now checked
+      await expect(checkbox).toHaveAttribute('aria-checked', 'true');
+      // Verify the row has data-selected attribute
+      await expect(firstRow).toHaveAttribute('data-selected', 'true');
     });
 
-    test.fixme('clicking checkbox does not navigate to item detail', async ({ page }) => {
-      // TODO: Click checkbox, verify URL has not changed to /issues/:id
+    test('clicking checkbox does not navigate to item detail', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const initialUrl = page.url();
+      const firstRow = page.locator('tbody tr').first();
+      await expect(firstRow).toBeVisible();
+
+      // Hover to reveal checkbox and click it
+      await firstRow.hover();
+      const checkbox = firstRow.getByRole('checkbox');
+      await checkbox.click();
+
+      // Wait a bit and verify URL hasn't changed
+      await page.waitForTimeout(200);
+      expect(page.url()).toBe(initialUrl);
     });
 
-    test.fixme('clicking row (not checkbox) navigates to item detail', async ({ page }) => {
-      // TODO: Click on title/row area, verify navigation to /issues/:id
+    test('clicking row (not checkbox) navigates to item detail', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const firstRow = page.locator('tbody tr').first();
+      await expect(firstRow).toBeVisible();
+
+      // Click on the row content (not the checkbox cell)
+      const titleCell = firstRow.locator('td').nth(1);
+      await titleCell.click();
+
+      // Should navigate to issue detail
+      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
     });
 
-    test.fixme('selected row shows background highlight', async ({ page }) => {
-      // TODO: Select item, verify bg-accent/10 or similar highlight
+    test('selected row shows background highlight', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const firstRow = page.locator('tbody tr').first();
+      await expect(firstRow).toBeVisible();
+
+      // Hover to reveal checkbox and click it
+      await firstRow.hover();
+      const checkbox = firstRow.getByRole('checkbox');
+      await checkbox.click();
+
+      // Verify the row has the bg-accent/10 class (shows as background color)
+      // The row should have the 'bg-accent/10' tailwind class when selected
+      await expect(firstRow).toHaveClass(/bg-accent/);
     });
 
-    test.fixme('clicking selected checkbox deselects the item', async ({ page }) => {
-      // TODO: Toggle selection off, verify highlight removed
+    test('clicking selected checkbox deselects the item', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const firstRow = page.locator('tbody tr').first();
+      await expect(firstRow).toBeVisible();
+
+      // Hover and click to select
+      await firstRow.hover();
+      const checkbox = firstRow.getByRole('checkbox');
+      await checkbox.click();
+
+      // Verify selected
+      await expect(checkbox).toHaveAttribute('aria-checked', 'true');
+
+      // Click again to deselect
+      await checkbox.click();
+
+      // Verify deselected
+      await expect(checkbox).toHaveAttribute('aria-checked', 'false');
+      await expect(firstRow).not.toHaveAttribute('data-selected', 'true');
     });
   });
 
