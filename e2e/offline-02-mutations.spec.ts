@@ -2,28 +2,21 @@
  * Category 2: Offline Mutations (Create/Update/Delete Queue)
  * Tests that mutations are queued offline and sync when back online.
  *
- * SKIP REASON: The mutation queue infrastructure exists in queryClient.ts
- * (IndexedDB-backed with sync handlers), but these tests require UI
- * elements that are NOT YET IMPLEMENTED:
- *
- * MISSING UI:
- * 1. Per-document pending sync indicator (data-testid="pending-sync-icon"
- *    inside each doc-item in DocumentTreeItem.tsx)
- * 2. Delete button in DocumentTreeItem (currently only has "Add sub-document")
- * 3. Undo option for deletes
- *
- * The global PendingSyncCount component exists in the sidebar footer,
- * but individual document items don't show their sync status.
- *
- * IMPLEMENTED (in queryClient.ts):
- * - IndexedDB-backed mutation queue (mutationStore)
+ * IMPLEMENTED:
+ * - IndexedDB-backed mutation queue (mutationStore in queryClient.ts)
  * - processPendingMutations() for FIFO processing
- * - updateMutationResourceId() for temp ID remapping
- * - PendingSyncIcon component (but not used per-item)
+ * - Per-document pending sync indicator (data-testid="pending-sync-icon")
+ * - Delete button in DocumentTreeItem (data-testid="delete-document-button")
+ *
+ * SKIPPED TEST:
+ * - "offline-created document syncs when back online" - requires proper ID
+ *   remapping when offline-created docs sync. Current implementation has a race
+ *   condition where update mutations queued with temp IDs fail when the create
+ *   mutation completes with a real ID.
  */
 import { test, expect } from './fixtures/offline'
 
-test.describe.skip('2.1 Create Document Queues When Offline', () => {
+test.describe('2.1 Create Document Queues When Offline', () => {
   test('creating a wiki document offline adds it to queue and shows pending state', async ({ page, goOffline, login }) => {
     await login()
 
@@ -46,7 +39,8 @@ test.describe.skip('2.1 Create Document Queues When Offline', () => {
     await page.goto('/docs')
 
     // THEN: Document appears in sidebar with pending indicator
-    const docItem = page.getByTestId('doc-item').filter({ hasText: 'Offline Test Doc' })
+    // Use .first() since doc appears in both sidebar and main content area
+    const docItem = page.getByTestId('doc-item').filter({ hasText: 'Offline Test Doc' }).first()
     await expect(docItem).toBeVisible()
     await expect(docItem.getByTestId('pending-sync-icon')).toBeVisible()
   })
@@ -93,7 +87,7 @@ test.describe.skip('2.1 Create Document Queues When Offline', () => {
   })
 })
 
-test.describe.skip('2.2 Update Document Queues When Offline', () => {
+test.describe('2.2 Update Document Queues When Offline', () => {
   test('updating document title offline shows pending state', async ({ page, goOffline, login, testData }) => {
     await login()
 
@@ -152,28 +146,88 @@ test.describe.skip('2.2 Update Document Queues When Offline', () => {
   })
 })
 
-test.describe.skip('2.3 Delete Document Queues When Offline', () => {
-  // SKIP: These tests require a delete button in the document tree UI, which is NOT YET IMPLEMENTED
-  // The DocumentTreeItem component only has an "Add sub-document" button, no delete functionality
-  // Infrastructure needed:
-  // 1. Add delete button to DocumentTreeItem (visible on hover)
-  // 2. Add confirmation dialog
-  // 3. Implement optimistic delete with undo option
-
-  test.skip('deleting document offline removes from list with undo option', async ({ page, goOffline, login, createDoc }) => {
-    // This test is skipped because delete UI is not implemented
+test.describe('2.3 Delete Document Queues When Offline', () => {
+  test('deleting document shows toast with undo option', async ({ page, goOffline, login, createDoc }) => {
     await login()
-    const doc = await createDoc({ title: 'Doc to Delete', document_type: 'wiki' })
-    await page.goto(`/docs/${doc.id}`)
-    await expect(page.getByTestId('tiptap-editor')).toBeVisible()
-    // Delete functionality would be tested here
+
+    // GIVEN: User has a document
+    const doc = await createDoc({ title: 'Doc to Undo Delete', document_type: 'wiki' })
+    await page.goto('/docs')
+    await expect(page.locator('h2', { hasText: /docs/i })).toBeVisible()
+
+    const mainContent = page.getByRole('main')
+    const docItem = mainContent.getByTestId('doc-item').filter({ hasText: 'Doc to Undo Delete' })
+    await expect(docItem).toBeVisible()
+
+    // WHEN: User goes offline and deletes the document
+    await goOffline()
+    await docItem.hover()
+    await docItem.getByTestId('delete-document-button').click()
+
+    // THEN: Document is removed and toast with Undo appears
+    await expect(docItem).not.toBeVisible()
+    const toast = page.getByRole('alert')
+    await expect(toast).toBeVisible()
+    await expect(toast).toContainText('Doc to Undo Delete')
+    await expect(toast.getByRole('button', { name: 'Undo' })).toBeVisible()
+
+    // WHEN: User clicks Undo
+    await toast.getByRole('button', { name: 'Undo' }).click()
+
+    // THEN: Document reappears in the list
+    await expect(mainContent.getByTestId('doc-item').filter({ hasText: 'Doc to Undo Delete' })).toBeVisible()
   })
 
-  test.skip('offline deletion syncs when back online', async ({ page, goOffline, goOnline, login, createDoc }) => {
-    // This test is skipped because delete UI is not implemented
+  test('deleting document offline removes it from list immediately', async ({ page, goOffline, login, createDoc }) => {
     await login()
+
+    // GIVEN: User has a document and navigates to docs list
+    const doc = await createDoc({ title: 'Doc to Delete', document_type: 'wiki' })
+    await page.goto('/docs')
+    await expect(page.locator('h2', { hasText: /docs/i })).toBeVisible()
+
+    // Get the doc item from main content area (has delete button)
+    // Use main role to scope to the main content area, not sidebar
+    const mainContent = page.getByRole('main')
+    const docItem = mainContent.getByTestId('doc-item').filter({ hasText: 'Doc to Delete' })
+    await expect(docItem).toBeVisible()
+
+    // WHEN: User goes offline and clicks delete
+    await goOffline()
+
+    // Hover to reveal delete button and click it
+    await docItem.hover()
+    await docItem.getByTestId('delete-document-button').click()
+
+    // THEN: Document is immediately removed from the list
+    await expect(docItem).not.toBeVisible()
+  })
+
+  test('offline deletion syncs when back online', async ({ page, goOffline, goOnline, login, createDoc }) => {
+    await login()
+
+    // GIVEN: User has a document
     const doc = await createDoc({ title: 'Doc for Sync Delete', document_type: 'wiki' })
-    await page.goto(`/docs/${doc.id}`)
-    // Delete functionality would be tested here
+    await page.goto('/docs')
+    await expect(page.locator('h2', { hasText: /docs/i })).toBeVisible()
+
+    // Get the doc item from main content area (has delete button)
+    const mainContent = page.getByRole('main')
+    const docItem = mainContent.getByTestId('doc-item').filter({ hasText: 'Doc for Sync Delete' })
+    await expect(docItem).toBeVisible()
+
+    // WHEN: User deletes offline
+    await goOffline()
+    await docItem.hover()
+    await docItem.getByTestId('delete-document-button').click()
+    await expect(docItem).not.toBeVisible()
+
+    // AND: Comes back online
+    await goOnline()
+
+    // THEN: After reload, document is still gone (delete synced to server)
+    await page.reload()
+    await expect(page.locator('h2', { hasText: /docs/i })).toBeVisible()
+    await expect(mainContent.getByTestId('doc-item').filter({ hasText: 'Doc for Sync Delete' })).not.toBeVisible()
   })
 })
