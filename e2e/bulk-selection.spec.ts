@@ -209,27 +209,169 @@ test.describe('Bulk Selection - List View', () => {
   });
 
   test.describe('Multi-Selection with Shift+Click', () => {
-    test.fixme('shift+click selects range from last selected to clicked item', async ({ page }) => {
-      // TODO: Select item 1, shift+click item 4, verify items 1-4 all selected
+    test('shift+click selects range from last selected to clicked item', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      // Need at least 4 rows for this test
+      const rowCount = await rows.count();
+      if (rowCount < 4) {
+        test.skip(true, 'Not enough rows for range selection test');
+        return;
+      }
+
+      // Select first row
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
+
+      // Shift+click fourth row
+      await rows.nth(3).hover();
+      await rows.nth(3).getByRole('checkbox').click({ modifiers: ['Shift'] });
+
+      // Verify all 4 rows are selected
+      for (let i = 0; i < 4; i++) {
+        await expect(rows.nth(i)).toHaveAttribute('data-selected', 'true');
+      }
     });
 
-    test.fixme('shift+click extends selection in reverse order', async ({ page }) => {
-      // TODO: Select item 4, shift+click item 1, verify items 1-4 all selected
+    test('shift+click extends selection in reverse order', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 4) {
+        test.skip(true, 'Not enough rows for range selection test');
+        return;
+      }
+
+      // Select fourth row first
+      await rows.nth(3).hover();
+      await rows.nth(3).getByRole('checkbox').click();
+
+      // Shift+click first row
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click({ modifiers: ['Shift'] });
+
+      // Verify all 4 rows are selected
+      for (let i = 0; i < 4; i++) {
+        await expect(rows.nth(i)).toHaveAttribute('data-selected', 'true');
+      }
     });
 
-    test.fixme('shift+click adds to existing selection', async ({ page }) => {
-      // TODO: Select item 1, shift+click item 3, then select item 6, shift+click item 8
-      // Verify items 1-3 and 6-8 are selected
+    test('shift+click adds to existing selection', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 6) {
+        test.skip(true, 'Not enough rows for additive selection test');
+        return;
+      }
+
+      // Select first row, shift+click third (selects 0-2)
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
+      await rows.nth(2).hover();
+      await rows.nth(2).getByRole('checkbox').click({ modifiers: ['Shift'] });
+
+      // Verify rows 0-2 selected
+      for (let i = 0; i < 3; i++) {
+        await expect(rows.nth(i)).toHaveAttribute('data-selected', 'true');
+      }
+
+      // Now select row 5 (cmd+click to add without clearing), then shift+click row 4
+      // This should add rows 4-5 to selection
+      await rows.nth(5).hover();
+      await rows.nth(5).getByRole('checkbox').click({ modifiers: ['Meta'] });
+      await rows.nth(4).hover();
+      await rows.nth(4).getByRole('checkbox').click({ modifiers: ['Shift'] });
+
+      // Verify rows 0-2 still selected and 4-5 now selected
+      // Note: rows 3 should NOT be selected (gap in selection)
+      for (let i = 0; i < 3; i++) {
+        await expect(rows.nth(i)).toHaveAttribute('data-selected', 'true');
+      }
+      await expect(rows.nth(4)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(5)).toHaveAttribute('data-selected', 'true');
     });
   });
 
   test.describe('Cmd/Ctrl+Click Toggle', () => {
-    test.fixme('cmd+click adds single item to selection', async ({ page }) => {
-      // TODO: Select item 1, cmd+click item 3, verify both 1 and 3 selected (not 2)
+    test('cmd+click adds single item to selection', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 3) {
+        test.skip(true, 'Not enough rows for cmd+click test');
+        return;
+      }
+
+      // Select first row
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
+
+      // Cmd+click third row (should add to selection, not replace)
+      await rows.nth(2).hover();
+      await rows.nth(2).getByRole('checkbox').click({ modifiers: ['Meta'] });
+
+      // Verify rows 0 and 2 selected, but not row 1
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(1)).not.toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(2)).toHaveAttribute('data-selected', 'true');
     });
 
-    test.fixme('cmd+click on selected item removes it from selection', async ({ page }) => {
-      // TODO: Select items 1,2,3, cmd+click item 2, verify only 1 and 3 selected
+    test('cmd+click on selected item removes it from selection', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 3) {
+        test.skip(true, 'Not enough rows for cmd+click toggle test');
+        return;
+      }
+
+      // Select rows 0, 1, 2 using cmd+click for each
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
+      await rows.nth(1).hover();
+      await rows.nth(1).getByRole('checkbox').click({ modifiers: ['Meta'] });
+      await rows.nth(2).hover();
+      await rows.nth(2).getByRole('checkbox').click({ modifiers: ['Meta'] });
+
+      // Verify all 3 selected
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(2)).toHaveAttribute('data-selected', 'true');
+
+      // Cmd+click row 1 to remove from selection
+      await rows.nth(1).hover();
+      await rows.nth(1).getByRole('checkbox').click({ modifiers: ['Meta'] });
+
+      // Verify only rows 0 and 2 remain selected
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(1)).not.toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(2)).toHaveAttribute('data-selected', 'true');
     });
   });
 });
