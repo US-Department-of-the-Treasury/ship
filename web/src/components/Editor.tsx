@@ -21,6 +21,7 @@ import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { cn } from '@/lib/cn';
 import { apiPost } from '@/lib/api';
+import { getIsOnline, subscribeToOnlineStatus } from '@/lib/queryClient';
 import { createSlashCommands } from './editor/SlashCommands';
 import { DocumentEmbed } from './editor/DocumentEmbed';
 import { DragHandleExtension } from './editor/DragHandle';
@@ -144,6 +145,7 @@ export function Editor({
   }, [initialTitle, title]);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('connecting');
+  const [isBrowserOnline, setIsBrowserOnline] = useState(getIsOnline());
   const [connectedUsers, setConnectedUsers] = useState<{ name: string; color: string }[]>([]);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => {
     return localStorage.getItem('ship:rightSidebarCollapsed') === 'true';
@@ -160,6 +162,11 @@ export function Editor({
   useEffect(() => {
     localStorage.setItem('ship:rightSidebarCollapsed', String(rightSidebarCollapsed));
   }, [rightSidebarCollapsed]);
+
+  // Track browser online status for sync indicator
+  useEffect(() => {
+    return subscribeToOnlineStatus(setIsBrowserOnline);
+  }, []);
 
   const color = userColor || stringToColor(userName);
 
@@ -456,36 +463,36 @@ export function Editor({
           </h1>
 
           {/* Sync status - WCAG 4.1.3 aria-live for status messages */}
-          <div
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            className="flex items-center gap-1.5"
-            data-testid="sync-status"
-          >
-            <div
-              className={cn(
-                'h-2 w-2 rounded-full',
-                syncStatus === 'synced' && 'bg-green-500',
-                syncStatus === 'cached' && 'bg-blue-500',
-                syncStatus === 'connecting' && 'bg-yellow-500 animate-pulse',
-                syncStatus === 'disconnected' && 'bg-red-500'
-              )}
-              aria-hidden="true"
-            />
-            <span className="text-xs text-muted">
-              {syncStatus === 'synced' && 'Saved'}
-              {syncStatus === 'cached' && 'Cached'}
-              {syncStatus === 'connecting' && 'Saving'}
-              {syncStatus === 'disconnected' && 'Offline'}
-            </span>
-            <span className="sr-only">
-              {syncStatus === 'synced' && 'Saved'}
-              {syncStatus === 'cached' && 'Saved'}
-              {syncStatus === 'connecting' && 'Saving'}
-              {syncStatus === 'disconnected' && 'Offline'}
-            </span>
-          </div>
+          {/* Show 'Offline' when browser is offline, regardless of WebSocket state */}
+          {(() => {
+            const effectiveStatus = !isBrowserOnline ? 'disconnected' : syncStatus;
+            return (
+              <div
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                className="flex items-center gap-1.5"
+                data-testid="sync-status"
+              >
+                <div
+                  className={cn(
+                    'h-2 w-2 rounded-full',
+                    effectiveStatus === 'synced' && 'bg-green-500',
+                    effectiveStatus === 'cached' && 'bg-blue-500',
+                    effectiveStatus === 'connecting' && 'bg-yellow-500 animate-pulse',
+                    effectiveStatus === 'disconnected' && 'bg-red-500'
+                  )}
+                  aria-hidden="true"
+                />
+                <span className="text-xs text-muted">
+                  {effectiveStatus === 'synced' && 'Saved'}
+                  {effectiveStatus === 'cached' && 'Cached'}
+                  {effectiveStatus === 'connecting' && 'Saving'}
+                  {effectiveStatus === 'disconnected' && 'Offline'}
+                </span>
+              </div>
+            );
+          })()}
 
           {/* Delete button */}
           {onDelete && (
