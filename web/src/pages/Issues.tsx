@@ -103,6 +103,11 @@ export function IssuesPage() {
     setContextMenu(null);
   }, []);
 
+  // Clear selection when filter changes
+  useEffect(() => {
+    clearSelection();
+  }, [stateFilter, clearSelection]);
+
   // Bulk action handlers - work with both context menu and BulkActionBar
   const handleBulkArchive = useCallback(() => {
     const ids = Array.from(selectedIds);
@@ -124,11 +129,10 @@ export function IssuesPage() {
           {
             label: 'Undo',
             onClick: () => {
-              // Restore original states
+              // Restore by clearing archived_at
               bulkUpdate.mutate({
                 ids,
-                action: 'update',
-                updates: { state: originalStates[0]?.state || 'backlog' }
+                action: 'restore',
               }, {
                 onSuccess: () => {
                   showToast('Archive undone', 'info');
