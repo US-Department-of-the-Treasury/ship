@@ -11,9 +11,7 @@ import { test, expect } from './fixtures/offline'
 
 
 test.describe('7.1 Session Expiry While Offline', () => {
-  // TODO: Test flaky - offline state detection and document persistence timing issues
-  // Need to investigate IndexedDB persistence when creating documents offline
-  test.skip('session expiry during offline does not lose local changes', async ({ page, goOffline, goOnline, login, testData }) => {
+  test('session expiry during offline does not lose local changes', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 
     // GIVEN: User is authenticated and editing offline
@@ -29,14 +27,12 @@ test.describe('7.1 Session Expiry While Offline', () => {
     // AND: User comes back online
     await goOnline()
 
-    // THEN: User is prompted to re-authenticate
-    await expect(page.getByText(/session expired|sign in/i)).toBeVisible()
+    // THEN: User is prompted to re-authenticate (multiple elements contain these texts)
+    await expect(page.getByRole('alert')).toContainText(/session expired/i)
     // AND: Local changes should be preserved for re-sync after auth
   })
 
-  // TODO: Test flaky - document created offline not appearing in list after navigation
-  // Need to investigate IndexedDB persistence timing for offline document creation
-  test.skip('app remains usable offline even with expired session', async ({ page, goOffline, login }) => {
+  test('app remains usable offline even with expired session', async ({ page, goOffline, login }) => {
     await login()
 
     // GIVEN: User is on the app with valid session
@@ -54,10 +50,13 @@ test.describe('7.1 Session Expiry While Offline', () => {
     // AND: Can make local changes (even if they won't sync until re-auth)
     await page.getByRole('button', { name: 'New Document', exact: true }).click()
     await page.waitForURL(/\/docs\/[^/]+$/)
-    const titleInput = page.locator('[contenteditable="true"]').first()
-    await titleInput.click()
-    await page.keyboard.type('Offline While Expired')
+    // Type into the title input (not the editor contenteditable)
+    const titleInput = page.locator('input[placeholder="Untitled"]')
+    await titleInput.fill('Offline While Expired')
+    await page.keyboard.press('Tab') // Blur to trigger save
+    await page.waitForTimeout(600) // Wait for auto-save throttle
     await page.goto('/docs')
-    await expect(page.getByText('Offline While Expired')).toBeVisible()
+    // Document should appear in the sidebar (appears in both sidebar and main list, use first())
+    await expect(page.getByText('Offline While Expired').first()).toBeVisible()
   })
 })
