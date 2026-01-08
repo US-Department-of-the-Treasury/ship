@@ -1,13 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import type { DocumentTreeNode } from '@/lib/documentTree';
+import { getPendingMutations, subscribeToPendingMutations } from '@/lib/queryClient';
+import { PendingSyncIcon } from './PendingSyncIcon';
 
 interface DocumentTreeItemProps {
   document: DocumentTreeNode;
   activeDocumentId?: string;
   depth?: number;
   onCreateChild: (parentId: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 function DocumentIcon({ className }: { className?: string }) {
@@ -55,9 +58,30 @@ export function DocumentTreeItem({
   activeDocumentId,
   depth = 0,
   onCreateChild,
+  onDelete,
 }: DocumentTreeItemProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [hasPendingMutations, setHasPendingMutations] = useState(() => {
+    // Initial check for pending mutations for this document
+    return getPendingMutations().some(m => m.resourceId === document.id);
+  });
+
+  // Subscribe to pending mutation changes
+  useEffect(() => {
+    const checkPending = () => {
+      const pending = getPendingMutations().some(m => m.resourceId === document.id);
+      setHasPendingMutations(pending);
+    };
+
+    // Check immediately
+    checkPending();
+
+    // Subscribe to changes
+    return subscribeToPendingMutations(() => {
+      checkPending();
+    });
+  }, [document.id]);
 
   const isActive = activeDocumentId === document.id;
   const hasChildren = document.children.length > 0;
@@ -67,6 +91,7 @@ export function DocumentTreeItem({
       role="treeitem"
       aria-expanded={hasChildren ? isOpen : undefined}
       aria-selected={isActive}
+      data-testid="doc-item"
     >
       <div
         className={cn(
@@ -102,6 +127,43 @@ export function DocumentTreeItem({
         >
           {document.title || 'Untitled'}
         </Link>
+
+        {/* Pending sync indicator - shows when document has unsynced changes */}
+        {hasPendingMutations && (
+          <PendingSyncIcon isPending={true} />
+        )}
+
+        {/* Delete button - visible on hover */}
+        {onDelete && (
+          <button
+            type="button"
+            className={cn(
+              'flex-shrink-0 p-0.5 rounded hover:bg-red-100 hover:text-red-600 transition-opacity',
+              isHovered ? 'opacity-100' : 'opacity-0'
+            )}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDelete(document.id);
+            }}
+            aria-label="Delete document"
+            data-testid="delete-document-button"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+          </button>
+        )}
 
         {/* Add child button - always visible for keyboard users, enhanced on hover */}
         <button
@@ -139,6 +201,7 @@ export function DocumentTreeItem({
               activeDocumentId={activeDocumentId}
               depth={depth + 1}
               onCreateChild={onCreateChild}
+              onDelete={onDelete}
             />
           ))}
         </ul>

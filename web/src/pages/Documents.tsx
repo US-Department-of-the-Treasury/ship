@@ -1,21 +1,26 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useDocuments } from '@/contexts/DocumentsContext';
+import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { buildDocumentTree } from '@/lib/documentTree';
 import { DocumentTreeItem } from '@/components/DocumentTreeItem';
 import { DocumentsListSkeleton } from '@/components/ui/Skeleton';
 import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
+import { useToast } from '@/components/ui/Toast';
+import { getPendingMutations, removePendingMutation } from '@/lib/queryClient';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/cn';
 
 type VisibilityFilter = 'all' | 'workspace' | 'private';
 
 export function DocumentsPage() {
-  const { documents, loading, createDocument } = useDocuments();
+  const { documents, loading, createDocument, deleteDocument } = useDocuments();
   const isOfflineEmpty = useOfflineEmptyState(documents, loading);
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   // Get filter from URL params
   const filterParam = searchParams.get('filter');
@@ -67,6 +72,43 @@ export function DocumentsPage() {
     }
     setSearchParams(searchParams);
   }
+
+  // Delete with undo support
+  const handleDeleteWithUndo = useCallback(async (id: string) => {
+    // Find the document before deleting to enable undo
+    const docToDelete = documents.find(d => d.id === id);
+    if (!docToDelete) return;
+
+    // Perform the delete
+    const success = await deleteDocument(id);
+    if (!success) return;
+
+    // Show toast with undo action
+    showToast(
+      `"${docToDelete.title || 'Untitled'}" deleted`,
+      'info',
+      5000,
+      {
+        label: 'Undo',
+        onClick: () => {
+          // Find and remove the pending delete mutation
+          const pendingMutations = getPendingMutations();
+          const deleteMutation = pendingMutations.find(
+            m => m.type === 'delete' && m.resource === 'document' && m.resourceId === id
+          );
+          if (deleteMutation) {
+            removePendingMutation(deleteMutation.id);
+          }
+
+          // Restore the document to the query cache
+          queryClient.setQueryData<WikiDocument[]>(
+            ['documents', 'wiki'],
+            (old) => old ? [docToDelete, ...old] : [docToDelete]
+          );
+        }
+      }
+    );
+  }, [documents, deleteDocument, showToast, queryClient]);
 
   // Show offline empty state when offline with no cached data
   if (isOfflineEmpty) {
@@ -167,6 +209,7 @@ export function DocumentsPage() {
               key={doc.id}
               document={doc}
               onCreateChild={handleCreateDocument}
+              onDelete={handleDeleteWithUndo}
             />
           ))}
         </ul>
