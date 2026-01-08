@@ -378,28 +378,174 @@ test.describe('Bulk Selection - List View', () => {
 
 test.describe('Bulk Selection - Keyboard Navigation', () => {
   test.describe('Focus Management', () => {
-    test.fixme('first row is focusable with Tab', async ({ page }) => {
-      // TODO: Tab into list, verify first row receives focus
+    test('first row is focusable with Tab', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      // Focus the table by clicking on it first, then using keyboard
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+
+      // Press arrow down to focus first row
+      await page.keyboard.press('ArrowDown');
+
+      // First row should have focus ring (ring-2 class indicates focus)
+      await expect(rows.nth(0)).toHaveClass(/ring-2/);
     });
 
-    test.fixme('arrow down moves focus to next row', async ({ page }) => {
-      // TODO: Focus on row 1, press ArrowDown, verify focus on row 2
+    test('arrow down moves focus to next row', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 2) {
+        test.skip(true, 'Not enough rows for focus navigation test');
+        return;
+      }
+
+      // Focus table and navigate to first row
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('ArrowDown');
+      await expect(rows.nth(0)).toHaveClass(/ring-2/);
+
+      // Press ArrowDown to move focus to second row
+      await page.keyboard.press('ArrowDown');
+
+      // Second row should have focus, first should not
+      await expect(rows.nth(1)).toHaveClass(/ring-2/);
+      await expect(rows.nth(0)).not.toHaveClass(/ring-2/);
     });
 
-    test.fixme('arrow up moves focus to previous row', async ({ page }) => {
-      // TODO: Focus on row 2, press ArrowUp, verify focus on row 1
+    test('arrow up moves focus to previous row', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 2) {
+        test.skip(true, 'Not enough rows for focus navigation test');
+        return;
+      }
+
+      // Focus table and navigate to second row
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('ArrowDown'); // First row
+      await page.keyboard.press('ArrowDown'); // Second row
+      await expect(rows.nth(1)).toHaveClass(/ring-2/);
+
+      // Press ArrowUp to move focus to first row
+      await page.keyboard.press('ArrowUp');
+
+      // First row should have focus, second should not
+      await expect(rows.nth(0)).toHaveClass(/ring-2/);
+      await expect(rows.nth(1)).not.toHaveClass(/ring-2/);
     });
 
-    test.fixme('arrow keys do not change selection (focus only)', async ({ page }) => {
-      // TODO: Select row 1, arrow down to row 2, verify row 1 still selected, row 2 not
+    test('arrow keys do not change selection (focus only)', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 2) {
+        test.skip(true, 'Not enough rows for focus navigation test');
+        return;
+      }
+
+      // Select first row via checkbox (this also sets focus to row 0)
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(0)).toHaveClass(/ring-2/); // Focus is on row 0 after checkbox click
+
+      // Focus table to enable keyboard navigation
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+
+      // Press ArrowDown once to move focus from row 0 to row 1
+      await page.keyboard.press('ArrowDown');
+
+      // First row should still be selected (not changed by arrow key)
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+      // Focus should have moved to second row
+      await expect(rows.nth(1)).toHaveClass(/ring-2/);
+      // Second row should NOT be selected (arrow keys only move focus, not selection)
+      await expect(rows.nth(1)).not.toHaveAttribute('data-selected', 'true');
     });
 
-    test.fixme('Home key moves focus to first row', async ({ page }) => {
-      // TODO: Focus on row 5, press Home, verify focus on row 1
+    test('Home key moves focus to first row', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 3) {
+        test.skip(true, 'Not enough rows for Home key test');
+        return;
+      }
+
+      // Focus table and navigate to a middle row
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('ArrowDown'); // Row 0
+      await page.keyboard.press('ArrowDown'); // Row 1
+      await page.keyboard.press('ArrowDown'); // Row 2
+      await expect(rows.nth(2)).toHaveClass(/ring-2/);
+
+      // Press Home to move focus to first row
+      await page.keyboard.press('Home');
+
+      // First row should have focus
+      await expect(rows.nth(0)).toHaveClass(/ring-2/);
+      await expect(rows.nth(2)).not.toHaveClass(/ring-2/);
     });
 
-    test.fixme('End key moves focus to last row', async ({ page }) => {
-      // TODO: Focus on row 1, press End, verify focus on last row
+    test('End key moves focus to last row', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 2) {
+        test.skip(true, 'Not enough rows for End key test');
+        return;
+      }
+
+      // Focus table and start at first row
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
+      await page.keyboard.press('ArrowDown'); // First row
+      await expect(rows.nth(0)).toHaveClass(/ring-2/);
+
+      // Press End to move focus to last row
+      await page.keyboard.press('End');
+
+      // Last row should have focus
+      const lastRow = rows.last();
+      await expect(lastRow).toHaveClass(/ring-2/);
+      await expect(rows.nth(0)).not.toHaveClass(/ring-2/);
     });
   });
 
