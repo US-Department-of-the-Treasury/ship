@@ -1,7 +1,7 @@
 ---
 title: Open Source Security Review Attestation
-date: 2026-01-07
-timestamp: 2026-01-07T02:03:11Z
+date: 2026-01-09
+timestamp: 2026-01-09T16:26:30Z
 reviewer: Sam Corcos
 reviewer_email: samuel.corcos@treasury.gov
 reviewer_title: Security Reviewer
@@ -24,14 +24,14 @@ I, **Sam Corcos**, as **Security Reviewer**, have conducted a security review of
 
 | Item | Value |
 |------|-------|
-| Review Date | 2026-01-07 |
+| Review Date | 2026-01-09 |
 | Scan Result | PASS |
 
 ### Scanning Tools Used
 
 | Scanning Tool | Used |
 |---------------|------|
-| gitleaks (skipped) | NO |
+| gitleaks | YES |
 | trivy (skipped) | NO |
 
 > **Note:** The attested commit is implicit - this file is committed alongside the code it attests.
@@ -51,7 +51,7 @@ I attest that the above statements are accurate as of the date of this review.
 **Reviewer:** Sam Corcos
 **Title:** Security Reviewer
 **Email:** samuel.corcos@treasury.gov
-**Date:** 2026-01-07
+**Date:** 2026-01-09
 
 ---
 *Full attestation history: `git log -p ATTESTATION.md`*
