@@ -22,6 +22,8 @@ import { SyncFailureNotification } from '@/components/SyncFailureNotification';
 import { ManualSyncButton } from '@/components/ManualSyncButton';
 import { PendingSyncCount } from '@/components/PendingSyncCount';
 import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
+import { SyncProgress } from '@/components/SyncProgress';
+import { StaleDataBanner } from '@/components/StaleDataBanner';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { useToast } from '@/components/ui/Toast';
 import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
@@ -146,6 +148,9 @@ export function AppLayout() {
 
       {/* Private browsing mode warning */}
       <PrivateModeWarning />
+
+      {/* Stale data warning (when offline with old cache) */}
+      <StaleDataBanner />
 
       {/* Sync failure notifications */}
       <SyncFailureNotification />
@@ -367,9 +372,12 @@ export function AppLayout() {
             </div>
 
             {/* Sync controls at bottom */}
-            <div className="flex items-center gap-2">
-              <ManualSyncButton />
-              <PendingSyncCount />
+            <div className="flex flex-col gap-2 p-2 border-t border-border">
+              <SyncProgress />
+              <div className="flex items-center gap-2">
+                <ManualSyncButton />
+                <PendingSyncCount />
+              </div>
             </div>
           </div>
         </aside>

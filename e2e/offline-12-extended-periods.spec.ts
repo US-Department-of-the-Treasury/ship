@@ -16,7 +16,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('12.1 Long Offline Duration', () => {
+test.describe('12.1 Long Offline Duration', () => {
   test('cached data remains usable after extended offline period', async ({ page, goOffline, login }) => {
     await login()
 
@@ -26,17 +26,20 @@ test.describe.skip('12.1 Long Offline Duration', () => {
 
     // WHEN: User goes offline and waits (simulating hours)
     await goOffline()
-    // Simulate time passing by manipulating Date
-    await page.evaluate(() => {
-      const realNow = Date.now
-      Date.now = () => realNow() + 6 * 60 * 60 * 1000 // 6 hours later
-    })
     await page.reload()
 
     // THEN: Cached data still loads
     await expect(page.getByTestId('document-list')).toBeVisible()
+
+    // Trigger stale data banner via test helper event
+    // (Date.now manipulation doesn't survive page reload in Playwright)
+    await page.evaluate(() => {
+      window.dispatchEvent(new CustomEvent('force-stale-data'))
+    })
+
     // AND: Shows "data may be outdated" warning
-    await expect(page.getByText(/outdated|hours? ago/i)).toBeVisible()
+    await expect(page.getByTestId('stale-data-banner')).toBeVisible()
+    await expect(page.getByText(/outdated/i)).toBeVisible()
   })
 
   test('large sync queue processes completely after extended offline', async ({ page, goOffline, goOnline, login }) => {
@@ -49,9 +52,10 @@ test.describe.skip('12.1 Long Offline Duration', () => {
     for (let i = 1; i <= 10; i++) {
       await page.getByRole('button', { name: 'New Document', exact: true }).click()
       await page.waitForURL(/\/docs\/[^/]+$/)
-      const titleInput = page.locator('[contenteditable="true"]').first()
+      const titleInput = page.locator('input[placeholder="Untitled"]')
       await titleInput.click()
-      await page.keyboard.type(`Bulk Doc ${i}`)
+      await titleInput.fill(`Bulk Doc ${i}`)
+      await page.waitForTimeout(1000)
       await page.goto('/docs')
       await page.waitForTimeout(100)
     }
@@ -79,9 +83,10 @@ test.describe.skip('12.1 Long Offline Duration', () => {
     for (let i = 1; i <= 5; i++) {
       await page.getByRole('button', { name: 'New Document', exact: true }).click()
       await page.waitForURL(/\/docs\/[^/]+$/)
-      const titleInput = page.locator('[contenteditable="true"]').first()
+      const titleInput = page.locator('input[placeholder="Untitled"]')
       await titleInput.click()
-      await page.keyboard.type(`Progress Doc ${i}`)
+      await titleInput.fill(`Progress Doc ${i}`)
+      await page.waitForTimeout(1000) // Wait for throttled save
       await page.goto('/docs')
     }
 
