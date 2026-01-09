@@ -679,7 +679,7 @@ span[data-emoji] {
 
 .ProseMirror ul.task-list li.task-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.5em;
   margin: 0.25em 0;
   padding: 0;
