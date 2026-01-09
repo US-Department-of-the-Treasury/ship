@@ -16,6 +16,7 @@ import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { ContextMenu, ContextMenuItem, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
+import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -924,6 +925,26 @@ function ProgramIssuesList({
   const [isMoving, setIsMoving] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; issueId: string } | null>(null);
 
+  // Selection ref for global keyboard navigation
+  const selectionRef = useRef<UseSelectionReturn | null>(null);
+  const [, forceUpdate] = useState(0);
+
+  // Handle selection change - capture selection object for keyboard navigation
+  const handleSelectionChange = useCallback((_selectedIds: Set<string>, selection: UseSelectionReturn) => {
+    selectionRef.current = selection;
+    onSelectionChange(selection.selectedIds);
+    forceUpdate(n => n + 1);
+  }, [onSelectionChange]);
+
+  // Global j/k keyboard navigation
+  useGlobalListNavigation({
+    selection: selectionRef.current,
+    enabled: true,
+    onEnter: useCallback((focusedId: string) => {
+      onIssueClick(focusedId);
+    }, [onIssueClick]),
+  });
+
   // Column definitions - added Actions column
   const columns = useMemo(() => [
     { key: 'id', label: 'ID' },
@@ -1045,7 +1066,7 @@ function ProgramIssuesList({
           columns={columns}
           emptyState={emptyState}
           onItemClick={(issue) => onIssueClick(issue.id)}
-          onSelectionChange={onSelectionChange}
+          onSelectionChange={handleSelectionChange}
           onContextMenu={handleContextMenu}
           ariaLabel="Program issues list"
         />
