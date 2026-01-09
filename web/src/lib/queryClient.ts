@@ -8,6 +8,12 @@ const documentKeys = {
   wikiList: () => [...documentKeys.all, 'wiki'] as const,
 };
 
+// Program query keys (must match useProgramsQuery.ts to avoid circular deps)
+const programKeys = {
+  all: ['programs'] as const,
+  lists: () => [...programKeys.all, 'list'] as const,
+};
+
 // ===========================================
 // Cache Schema Versioning
 // ===========================================
@@ -192,29 +198,48 @@ export function updateMutationSyncStatus(id: string, syncStatus: MutationSyncSta
   set('pending', pendingMutations, mutationStore).catch(console.error);
 }
 
-// Update document sync status in query cache (called after mutation syncs)
-function updateDocumentSyncStatusInCache(pendingId: string, syncStatus: MutationSyncStatus) {
+// Update resource sync status in query cache (called after mutation syncs)
+// Handles both documents and programs
+function updateResourceSyncStatusInCache(pendingId: string, syncStatus: MutationSyncStatus) {
   // This needs to run after queryClient is defined, so we check
   if (typeof queryClient === 'undefined') return;
 
-  interface CachedDocument {
+  interface CachedResource {
     id: string;
     _pendingId?: string;
     _syncStatus?: MutationSyncStatus;
     _pending?: boolean;
   }
 
-  const docs = queryClient.getQueryData<CachedDocument[]>(documentKeys.wikiList());
-  if (!docs) return;
+  // Helper to update a resource list
+  const updateList = (queryKey: readonly unknown[]) => {
+    const items = queryClient.getQueryData<CachedResource[]>(queryKey);
+    if (!items) return;
 
-  const updated = docs.map(doc => {
-    if (doc._pendingId === pendingId) {
-      return { ...doc, _syncStatus: syncStatus };
-    }
-    return doc;
-  });
+    const updated = items.map(item => {
+      if (item._pendingId === pendingId) {
+        // When synced, also clear the _pending flag
+        if (syncStatus === 'synced') {
+          return { ...item, _syncStatus: syncStatus, _pending: false };
+        }
+        return { ...item, _syncStatus: syncStatus };
+      }
+      return item;
+    });
 
-  queryClient.setQueryData(documentKeys.wikiList(), updated);
+    queryClient.setQueryData(queryKey, updated);
+  };
+
+  // Update documents
+  updateList(documentKeys.wikiList());
+
+  // Update programs
+  updateList(programKeys.lists());
+}
+
+// Alias for backwards compatibility
+function updateDocumentSyncStatusInCache(pendingId: string, syncStatus: MutationSyncStatus) {
+  updateResourceSyncStatusInCache(pendingId, syncStatus);
 }
 
 export function removePendingMutation(id: string) {

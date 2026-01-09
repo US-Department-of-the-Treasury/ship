@@ -17,6 +17,7 @@ import { test, expect } from './fixtures/offline'
 
 
 
+// Tests requiring Service Worker (not yet implemented)
 test.describe.skip('9.1 First Visit While Offline', () => {
   test('app shows meaningful error on first visit while offline', async ({ browser }) => {
     // GIVEN: Fresh browser with no cache (simulating first visit)
@@ -60,8 +61,9 @@ test.describe.skip('9.1 First Visit While Offline', () => {
   })
 })
 
-test.describe.skip('9.2 Navigation to Uncached Pages', () => {
-  test('navigating to uncached page shows appropriate message', async ({ page, goOffline, login }) => {
+test.describe('9.2 Navigation to Uncached Pages', () => {
+  // Requires "not available offline" UI (not yet implemented)
+  test.skip('navigating to uncached page shows appropriate message', async ({ page, goOffline, login }) => {
     await login()
 
     // GIVEN: User has docs page cached but not programs page
@@ -110,7 +112,8 @@ test.describe.skip('9.2 Navigation to Uncached Pages', () => {
     await expect(page.getByTestId('tiptap-editor')).toBeVisible()
   })
 
-  test('deep link to uncached document shows error', async ({ page, goOffline, login }) => {
+  // Requires "not available offline" UI (not yet implemented)
+  test.skip('deep link to uncached document shows error', async ({ page, goOffline, login }) => {
     await login()
 
     // GIVEN: User has docs list cached but not specific doc
