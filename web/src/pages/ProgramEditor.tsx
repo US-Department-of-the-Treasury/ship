@@ -1683,6 +1683,39 @@ function SprintTimeline({
     return groups;
   }, [windows]);
 
+  // Calculate "Today" marker position
+  const todayMarkerPosition = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Find which window today falls within
+    const windowIndex = windows.findIndex(w => {
+      const windowStart = new Date(w.start_date);
+      windowStart.setHours(0, 0, 0, 0);
+      const windowEnd = new Date(w.end_date);
+      windowEnd.setHours(23, 59, 59, 999);
+      return today >= windowStart && today <= windowEnd;
+    });
+
+    if (windowIndex === -1) return null; // Today is not visible in current range
+
+    const window = windows[windowIndex];
+    const windowStart = new Date(window.start_date);
+    windowStart.setHours(0, 0, 0, 0);
+
+    // Days into this window (0-13)
+    const daysIntoWindow = Math.floor((today.getTime() - windowStart.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Card width = 160px, gap = 12px
+    const cardWidth = 160;
+    const gap = 12;
+
+    // Position = (cards before * (width + gap)) + (days / 14 * width)
+    const position = (windowIndex * (cardWidth + gap)) + (daysIntoWindow / 14) * cardWidth;
+
+    return position;
+  }, [windows]);
+
   return (
     <div
       ref={scrollRef}
@@ -1712,6 +1745,24 @@ function SprintTimeline({
             className="absolute left-0 right-0 h-0.5 bg-border pointer-events-none"
             style={{ top: '50%', transform: 'translateY(-50%)' }}
           />
+          {/* Today marker */}
+          {todayMarkerPosition !== null && (
+            <div
+              className="absolute top-0 bottom-0 pointer-events-none z-10"
+              style={{ left: todayMarkerPosition }}
+            >
+              <div className="relative h-full">
+                {/* Vertical line */}
+                <div className="absolute top-0 bottom-0 w-0.5 bg-accent" />
+                {/* Today label */}
+                <div className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                  <span className="text-xs font-medium text-accent bg-background px-1 rounded">
+                    Today
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Sprint cards */}
           <div className="relative flex gap-3">
             {windows.map((window) => (
