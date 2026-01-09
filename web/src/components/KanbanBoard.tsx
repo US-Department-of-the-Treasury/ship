@@ -32,6 +32,7 @@ interface Issue {
   priority: string;
   ticket_number: number;
   assignee_name: string | null;
+  assignee_archived?: boolean;
 }
 
 interface KanbanBoardProps {
@@ -342,11 +343,16 @@ function IssueCard({
       <div className="mb-1 text-xs text-muted">#{issue.ticket_number}</div>
       <div className="text-sm text-foreground">{issue.title}</div>
       {issue.assignee_name && (
-        <div className="mt-2 flex items-center gap-1">
-          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent/50 text-[10px] font-medium text-white">
+        <div className={cn("mt-2 flex items-center gap-1", issue.assignee_archived && "opacity-50")}>
+          <div className={cn(
+            "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-medium text-white",
+            issue.assignee_archived ? "bg-gray-400" : "bg-accent/50"
+          )}>
             {issue.assignee_name.charAt(0).toUpperCase()}
           </div>
-          <span className="text-xs text-muted">{issue.assignee_name}</span>
+          <span className="text-xs text-muted">
+            {issue.assignee_name}{issue.assignee_archived && ' (archived)'}
+          </span>
         </div>
       )}
     </div>

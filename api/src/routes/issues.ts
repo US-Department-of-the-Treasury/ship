@@ -99,6 +99,7 @@ function extractIssueFromRow(row: any) {
     cancelled_at: row.cancelled_at || null,
     reopened_at: row.reopened_at || null,
     assignee_name: row.assignee_name,
+    assignee_archived: row.assignee_archived || false,
     program_name: row.program_name,
     program_prefix: row.program_prefix,
     program_color: row.program_color,
@@ -123,11 +124,15 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
              d.created_at, d.updated_at, d.created_by,
              d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
              u.name as assignee_name,
+             CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
              p.title as program_name,
              p.properties->>'prefix' as program_prefix,
              p.properties->>'color' as program_color
       FROM documents d
       LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+      LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
+        AND person_doc.document_type = 'person'
+        AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
       LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
       WHERE d.workspace_id = $1 AND d.document_type = 'issue'
         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
@@ -218,6 +223,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               d.created_at, d.updated_at, d.created_by,
               d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
               u.name as assignee_name,
+              CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
               p.title as program_name,
               p.properties->>'prefix' as program_prefix,
               p.properties->>'color' as program_color,
@@ -225,6 +231,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               creator.name as created_by_name
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+       LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
+         AND person_doc.document_type = 'person'
+         AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
        LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
        LEFT JOIN documents s ON d.sprint_id = s.id AND s.document_type = 'sprint'
        LEFT JOIN users creator ON d.created_by = creator.id

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
 import { api, WorkspaceMember, WorkspaceInvite, AuditLog } from '@/lib/api';
+import { archivedPersonsKey } from '@/contexts/ArchivedPersonsContext';
 import { cn } from '@/lib/cn';
 
 type Tab = 'members' | 'invites' | 'audit';
@@ -9,6 +11,7 @@ type Tab = 'members' | 'invites' | 'audit';
 export function WorkspaceSettingsPage() {
   const { currentWorkspace, isWorkspaceAdmin } = useWorkspace();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('members');
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [invites, setInvites] = useState<WorkspaceInvite[]>([]);
@@ -102,6 +105,8 @@ export function WorkspaceSettingsPage() {
     const res = await api.workspaces.removeMember(currentWorkspace.id, userId);
     if (res.success) {
       setMembers(prev => prev.filter(m => m.userId !== userId));
+      // Invalidate archived persons cache so mentions update
+      queryClient.invalidateQueries({ queryKey: archivedPersonsKey });
     }
   }
 
@@ -112,6 +117,8 @@ export function WorkspaceSettingsPage() {
     if (res.success) {
       // Refresh the members list to get updated data
       loadData(showArchived);
+      // Invalidate archived persons cache so mentions update
+      queryClient.invalidateQueries({ queryKey: archivedPersonsKey });
     }
   }
 

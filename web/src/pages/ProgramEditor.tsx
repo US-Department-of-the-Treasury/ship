@@ -83,6 +83,7 @@ interface Issue {
   ticket_number: number;
   assignee_id: string | null;
   assignee_name: string | null;
+  assignee_archived?: boolean;
   display_id: string;
   sprint_id: string | null;
 }

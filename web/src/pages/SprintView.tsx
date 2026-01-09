@@ -82,6 +82,7 @@ interface Issue {
   priority: string;
   ticket_number: number;
   assignee_name: string | null;
+  assignee_archived?: boolean;
   display_id: string;
   estimate: number | null;
   sprint_id?: string | null;
