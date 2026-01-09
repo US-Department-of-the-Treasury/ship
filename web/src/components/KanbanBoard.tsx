@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -19,6 +19,12 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/cn';
 
+interface ContextMenuEvent {
+  x: number;
+  y: number;
+  issueId: string;
+}
+
 interface Issue {
   id: string;
   title: string;
@@ -36,6 +42,8 @@ interface KanbanBoardProps {
   selectedIds?: Set<string>;
   onSelectionChange?: (ids: Set<string>) => void;
   onCheckboxClick?: (id: string, e: React.MouseEvent) => void;
+  // Context menu props
+  onContextMenu?: (event: ContextMenuEvent) => void;
 }
 
 const COLUMNS = [
@@ -59,6 +67,7 @@ export function KanbanBoard({
   onIssueClick,
   selectedIds = new Set(),
   onCheckboxClick,
+  onContextMenu,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -132,6 +141,7 @@ export function KanbanBoard({
             onIssueClick={onIssueClick}
             selectedIds={selectedIds}
             onCheckboxClick={onCheckboxClick}
+            onContextMenu={onContextMenu}
           />
         ))}
       </div>
@@ -148,12 +158,14 @@ function KanbanColumn({
   onIssueClick,
   selectedIds,
   onCheckboxClick,
+  onContextMenu,
 }: {
   column: { id: string; title: string; color: string };
   issues: Issue[];
   onIssueClick: (id: string) => void;
   selectedIds: Set<string>;
   onCheckboxClick?: (id: string, e: React.MouseEvent) => void;
+  onContextMenu?: (event: ContextMenuEvent) => void;
 }) {
   const { setNodeRef } = useSortable({ id: column.id });
 
@@ -188,6 +200,7 @@ function KanbanColumn({
                 onClick={() => onIssueClick(issue.id)}
                 isSelected={selectedIds.has(issue.id)}
                 onCheckboxClick={onCheckboxClick ? (e) => onCheckboxClick(issue.id, e) : undefined}
+                onContextMenu={onContextMenu}
               />
             </li>
           ))}
@@ -207,11 +220,13 @@ function SortableIssueCard({
   onClick,
   isSelected,
   onCheckboxClick,
+  onContextMenu,
 }: {
   issue: Issue;
   onClick: () => void;
   isSelected?: boolean;
   onCheckboxClick?: (e: React.MouseEvent) => void;
+  onContextMenu?: (event: ContextMenuEvent) => void;
 }) {
   const {
     attributes,
@@ -227,6 +242,18 @@ function SortableIssueCard({
     transition,
   };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onContextMenu?.({ x: e.clientX, y: e.clientY, issueId: issue.id });
+  };
+
+  const handleMenuClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    onContextMenu?.({ x: rect.right, y: rect.bottom, issueId: issue.id });
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -234,6 +261,7 @@ function SortableIssueCard({
       {...attributes}
       {...listeners}
       onClick={onClick}
+      onContextMenu={handleContextMenu}
       draggable="true"
       data-draggable
       data-issue
@@ -247,7 +275,7 @@ function SortableIssueCard({
       aria-label={`Issue #${issue.ticket_number}: ${issue.title}. Press Space to pick up and move.`}
       className={cn(isDragging && 'opacity-50', 'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background rounded-md')}
     >
-      <IssueCard issue={issue} isSelected={isSelected} onCheckboxClick={onCheckboxClick} />
+      <IssueCard issue={issue} isSelected={isSelected} onCheckboxClick={onCheckboxClick} onMenuClick={handleMenuClick} />
     </div>
   );
 }
@@ -257,11 +285,13 @@ function IssueCard({
   isDragging,
   isSelected,
   onCheckboxClick,
+  onMenuClick,
 }: {
   issue: Issue;
   isDragging?: boolean;
   isSelected?: boolean;
   onCheckboxClick?: (e: React.MouseEvent) => void;
+  onMenuClick?: (e: React.MouseEvent) => void;
 }) {
   return (
     <div
@@ -272,14 +302,30 @@ function IssueCard({
         isSelected && 'ring-2 ring-accent bg-accent/10'
       )}
     >
-      {/* Hover-reveal checkbox */}
-      {onCheckboxClick && (
-        <div
-          className={cn(
-            'absolute top-2 right-2 transition-opacity',
-            isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          )}
-        >
+      {/* Hover-reveal controls */}
+      <div
+        className={cn(
+          'absolute top-2 right-2 flex items-center gap-1 transition-opacity',
+          isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+        )}
+      >
+        {/* Three-dot menu button */}
+        {onMenuClick && (
+          <button
+            type="button"
+            onClick={onMenuClick}
+            className="p-0.5 rounded hover:bg-border/50 text-muted hover:text-foreground"
+            aria-label={`More actions for issue #${issue.ticket_number}`}
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
+          </button>
+        )}
+        {/* Checkbox */}
+        {onCheckboxClick && (
           <input
             type="checkbox"
             checked={isSelected ?? false}
@@ -291,8 +337,8 @@ function IssueCard({
             aria-label={`Select issue #${issue.ticket_number}`}
             className="h-4 w-4 rounded border-border text-accent focus:ring-accent cursor-pointer"
           />
-        </div>
-      )}
+        )}
+      </div>
       <div className="mb-1 text-xs text-muted">#{issue.ticket_number}</div>
       <div className="text-sm text-foreground">{issue.title}</div>
       {issue.assignee_name && (
