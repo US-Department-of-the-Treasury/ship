@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/cn';
+import { Tooltip } from '@/components/ui/Tooltip';
 import type { DocumentTreeNode } from '@/lib/documentTree';
 import { getPendingMutations, subscribeToPendingMutations } from '@/lib/queryClient';
 import { PendingSyncIcon } from './PendingSyncIcon';
@@ -105,14 +106,16 @@ export function DocumentTreeItem({
       >
         {/* Expand/collapse button - always visible for accessibility */}
         {hasChildren ? (
-          <button
-            type="button"
-            className="w-4 h-4 flex-shrink-0 flex items-center justify-center p-0 rounded hover:bg-border/50"
-            onClick={() => setIsOpen(!isOpen)}
-            aria-label={isOpen ? 'Collapse' : 'Expand'}
-          >
-            <ChevronIcon isOpen={isOpen} className="text-muted" />
-          </button>
+          <Tooltip content={isOpen ? 'Collapse' : 'Expand'}>
+            <button
+              type="button"
+              className="w-4 h-4 flex-shrink-0 flex items-center justify-center p-0 rounded hover:bg-border/50"
+              onClick={() => setIsOpen(!isOpen)}
+              aria-label={isOpen ? 'Collapse' : 'Expand'}
+            >
+              <ChevronIcon isOpen={isOpen} className="text-muted" />
+            </button>
+          </Tooltip>
         ) : (
           <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
             <DocumentIcon className="text-muted" />
@@ -135,22 +138,51 @@ export function DocumentTreeItem({
 
         {/* Delete button - visible on hover */}
         {onDelete && (
+          <Tooltip content="Delete">
+            <button
+              type="button"
+              className={cn(
+                'flex-shrink-0 p-0.5 rounded hover:bg-red-100 hover:text-red-600 transition-opacity',
+                isHovered ? 'opacity-100' : 'opacity-0'
+              )}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDelete(document.id);
+              }}
+              aria-label="Delete document"
+              data-testid="delete-document-button"
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
+            </button>
+          </Tooltip>
+        )}
+
+        {/* Add child button - always visible for keyboard users, enhanced on hover */}
+        <Tooltip content="Add sub-document">
           <button
             type="button"
             className={cn(
-              'flex-shrink-0 p-0.5 rounded hover:bg-red-100 hover:text-red-600 transition-opacity',
-              isHovered ? 'opacity-100' : 'opacity-0'
+              'flex-shrink-0 p-0.5 rounded hover:bg-border/50 transition-opacity',
+              isHovered ? 'opacity-100' : 'opacity-50'
             )}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onDelete(document.id);
-            }}
-            aria-label="Delete document"
-            data-testid="delete-document-button"
+            onClick={() => onCreateChild(document.id)}
+            aria-label="Add sub-document"
           >
             <svg
-              className="h-3.5 w-3.5"
+              className="h-3.5 w-3.5 text-muted"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -159,36 +191,11 @@ export function DocumentTreeItem({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                d="M12 4v16m8-8H4"
               />
             </svg>
           </button>
-        )}
-
-        {/* Add child button - always visible for keyboard users, enhanced on hover */}
-        <button
-          type="button"
-          className={cn(
-            'flex-shrink-0 p-0.5 rounded hover:bg-border/50 transition-opacity',
-            isHovered ? 'opacity-100' : 'opacity-50'
-          )}
-          onClick={() => onCreateChild(document.id)}
-          aria-label="Add sub-document"
-        >
-          <svg
-            className="h-3.5 w-3.5 text-muted"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
-        </button>
+        </Tooltip>
       </div>
 
       {/* Children (collapsible) */}
