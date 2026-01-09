@@ -103,6 +103,18 @@ input::placeholder {
   padding-left: 1.5em;
 }
 
+.ProseMirror ul {
+  list-style-type: disc;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.ProseMirror li::marker {
+  color: #f5f5f5;
+}
+
 .ProseMirror code {
   background: #1a1a1a;
   padding: 0.15em 0.3em;
