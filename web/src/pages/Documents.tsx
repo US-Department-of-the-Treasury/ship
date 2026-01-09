@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { buildDocumentTree } from '@/lib/documentTree';
 import { DocumentTreeItem } from '@/components/DocumentTreeItem';
@@ -9,6 +9,31 @@ import { useToast } from '@/components/ui/Toast';
 import { getPendingMutations, removePendingMutation } from '@/lib/queryClient';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/cn';
+import { SelectableList, RowRenderProps } from '@/components/SelectableList';
+import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
+
+// View mode type
+type ViewMode = 'tree' | 'list';
+
+// Column definitions for list view
+const ALL_COLUMNS: ColumnDefinition[] = [
+  { key: 'title', label: 'Title', hideable: false },
+  { key: 'visibility', label: 'Visibility', hideable: true },
+  { key: 'created_by', label: 'Created By', hideable: true },
+  { key: 'created', label: 'Created', hideable: true },
+  { key: 'updated', label: 'Updated', hideable: true },
+];
+
+// Sort options for list view
+const SORT_OPTIONS = [
+  { value: 'title', label: 'Title' },
+  { value: 'created', label: 'Created' },
+  { value: 'updated', label: 'Updated' },
+];
+
+// localStorage keys
+const VIEW_MODE_KEY = 'documents-view-mode';
+const COLUMN_VISIBILITY_KEY = 'documents-column-visibility';
 
 type VisibilityFilter = 'all' | 'workspace' | 'private';
 
@@ -21,6 +46,42 @@ export function DocumentsPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+
+  // View mode state with localStorage persistence (default to tree)
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    try {
+      const stored = localStorage.getItem(VIEW_MODE_KEY);
+      if (stored === 'list' || stored === 'tree') {
+        return stored;
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+    return 'tree'; // Default to tree view
+  });
+
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModeState(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, []);
+
+  // Sort state for list view
+  const [sortBy, setSortBy] = useState<string>('title');
+
+  // Column visibility for list view
+  const {
+    visibleColumns,
+    columns,
+    hiddenCount,
+    toggleColumn,
+  } = useColumnVisibility({
+    columns: ALL_COLUMNS,
+    storageKey: COLUMN_VISIBILITY_KEY,
+  });
 
   // Get filter from URL params
   const filterParam = searchParams.get('filter');
@@ -49,8 +110,40 @@ export function DocumentsPage() {
     return filtered;
   }, [documents, visibilityFilter, search]);
 
-  // Build tree structure from filtered documents
+  // Build tree structure from filtered documents (for tree view)
   const documentTree = useMemo(() => buildDocumentTree(filteredDocuments), [filteredDocuments]);
+
+  // Sort documents for list view
+  const sortedDocuments = useMemo(() => {
+    if (viewMode !== 'list') return filteredDocuments;
+
+    const sorted = [...filteredDocuments];
+    switch (sortBy) {
+      case 'title':
+        sorted.sort((a, b) => a.title.localeCompare(b.title));
+        break;
+      case 'created':
+        sorted.sort((a, b) => {
+          const aDate = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bDate = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return bDate - aDate; // Newest first
+        });
+        break;
+      case 'updated':
+        sorted.sort((a, b) => {
+          const aDate = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+          const bDate = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+          return bDate - aDate; // Newest first
+        });
+        break;
+    }
+    return sorted;
+  }, [filteredDocuments, sortBy, viewMode]);
+
+  // Render function for document rows in list view
+  const renderDocumentRow = useCallback((doc: WikiDocument, { isSelected }: RowRenderProps) => (
+    <DocumentRowContent document={doc} visibleColumns={Array.from(visibleColumns)} />
+  ), [visibleColumns]);
 
   async function handleCreateDocument(parentId?: string) {
     setCreating(true);
@@ -179,6 +272,36 @@ export function DocumentsPage() {
             onClick={() => handleFilterChange('private')}
           />
         </div>
+
+        {/* View toggle */}
+        <div className="flex gap-1 rounded-md border border-border p-1">
+          <button
+            onClick={() => setViewMode('tree')}
+            className={cn(
+              'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm transition-colors',
+              viewMode === 'tree'
+                ? 'bg-border text-foreground'
+                : 'text-muted hover:bg-border/50 hover:text-foreground'
+            )}
+            title="Tree view"
+          >
+            <TreeIcon className="h-3.5 w-3.5" />
+            Tree
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={cn(
+              'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm transition-colors',
+              viewMode === 'list'
+                ? 'bg-border text-foreground'
+                : 'text-muted hover:bg-border/50 hover:text-foreground'
+            )}
+            title="List view"
+          >
+            <ListIcon className="h-3.5 w-3.5" />
+            List
+          </button>
+        </div>
       </div>
 
       {/* Document list */}
@@ -202,7 +325,7 @@ export function DocumentsPage() {
             )}
           </div>
         </div>
-      ) : (
+      ) : viewMode === 'tree' ? (
         <ul role="tree" aria-label="Documents" className="space-y-0.5">
           {documentTree.map((doc) => (
             <DocumentTreeItem
@@ -213,6 +336,15 @@ export function DocumentsPage() {
             />
           ))}
         </ul>
+      ) : (
+        <div className="rounded-lg border border-border">
+          <SelectableList
+            items={sortedDocuments}
+            getItemId={(doc) => doc.id}
+            renderRow={(doc, props) => renderDocumentRow(doc, props)}
+            onItemClick={(doc) => navigate(`/docs/${doc.id}`)}
+          />
+        </div>
       )}
     </div>
   );
@@ -268,5 +400,81 @@ function GlobeIcon({ className }: { className?: string }) {
         d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
       />
     </svg>
+  );
+}
+
+function TreeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className || 'h-4 w-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M3 7h4m0 0V3m0 4l4 4m-4-4l4-4M3 17h4m0 0v-4m0 4l4 4m-4-4l4-4M13 7h8M13 12h8M13 17h8"
+      />
+    </svg>
+  );
+}
+
+function ListIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className || 'h-4 w-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M4 6h16M4 12h16M4 18h16"
+      />
+    </svg>
+  );
+}
+
+function DocumentRowContent({ document, visibleColumns }: { document: WikiDocument; visibleColumns: string[] }) {
+  return (
+    <div className="flex items-center gap-4 px-3 py-2">
+      {visibleColumns.includes('title') && (
+        <div className="flex-1 min-w-0">
+          <span className="truncate text-sm font-medium text-foreground">
+            {document.title || 'Untitled'}
+          </span>
+        </div>
+      )}
+      {visibleColumns.includes('visibility') && (
+        <div className="w-24 shrink-0">
+          <span className={cn(
+            'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs',
+            document.visibility === 'private'
+              ? 'bg-amber-500/10 text-amber-600'
+              : 'bg-blue-500/10 text-blue-600'
+          )}>
+            {document.visibility === 'private' ? (
+              <LockIcon className="h-3 w-3" />
+            ) : (
+              <GlobeIcon className="h-3 w-3" />
+            )}
+            {document.visibility === 'private' ? 'Private' : 'Workspace'}
+          </span>
+        </div>
+      )}
+      {visibleColumns.includes('created_by') && (
+        <div className="w-32 shrink-0 text-sm text-muted truncate">
+          {document.created_by || '-'}
+        </div>
+      )}
+      {visibleColumns.includes('created') && (
+        <div className="w-28 shrink-0 text-sm text-muted">
+          {document.created_at
+            ? new Date(document.created_at).toLocaleDateString()
+            : '-'}
+        </div>
+      )}
+      {visibleColumns.includes('updated') && (
+        <div className="w-28 shrink-0 text-sm text-muted">
+          {document.updated_at
+            ? new Date(document.updated_at).toLocaleDateString()
+            : '-'}
+        </div>
+      )}
+    </div>
   );
 }
