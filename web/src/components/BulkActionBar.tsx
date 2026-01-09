@@ -105,7 +105,7 @@ export function BulkActionBar({
       aria-label="Bulk actions"
       aria-live="polite"
       className={cn(
-        'flex items-center gap-3 border-b border-border bg-background/95 backdrop-blur-sm px-6 py-2',
+        'flex items-center gap-3 border-b border-accent/30 bg-accent/10 px-6 py-2',
         'animate-in slide-in-from-top-2 fade-in duration-150'
       )}
     >

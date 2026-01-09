@@ -486,26 +486,27 @@ export function IssuesPage() {
         </div>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Issue filters">
-        <FilterTab label="All" active={!stateFilter} onClick={() => setFilter('')} id="filter-all" />
-        <FilterTab label="Needs Triage" active={stateFilter === 'triage'} onClick={() => setFilter('triage')} id="filter-triage" />
-        <FilterTab label="Active" active={stateFilter === 'todo,in_progress,in_review'} onClick={() => setFilter('todo,in_progress,in_review')} id="filter-active" />
-        <FilterTab label="Backlog" active={stateFilter === 'backlog'} onClick={() => setFilter('backlog')} id="filter-backlog" />
-        <FilterTab label="Done" active={stateFilter === 'done'} onClick={() => setFilter('done')} id="filter-done" />
-        <FilterTab label="Cancelled" active={stateFilter === 'cancelled'} onClick={() => setFilter('cancelled')} id="filter-cancelled" />
-      </div>
-
-      {/* Bulk action bar */}
-      <BulkActionBar
-        selectedCount={selectedIds.size}
-        onClearSelection={clearSelection}
-        onArchive={handleBulkArchive}
-        onDelete={handleBulkDelete}
-        onChangeStatus={handleBulkChangeStatus}
-        onMoveToSprint={handleBulkMoveToSprint}
-        loading={bulkUpdate.isPending}
-      />
+      {/* Filter tabs OR Bulk action bar (mutually exclusive) */}
+      {selectedIds.size > 0 ? (
+        <BulkActionBar
+          selectedCount={selectedIds.size}
+          onClearSelection={clearSelection}
+          onArchive={handleBulkArchive}
+          onDelete={handleBulkDelete}
+          onChangeStatus={handleBulkChangeStatus}
+          onMoveToSprint={handleBulkMoveToSprint}
+          loading={bulkUpdate.isPending}
+        />
+      ) : (
+        <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Issue filters">
+          <FilterTab label="All" active={!stateFilter} onClick={() => setFilter('')} id="filter-all" />
+          <FilterTab label="Needs Triage" active={stateFilter === 'triage'} onClick={() => setFilter('triage')} id="filter-triage" />
+          <FilterTab label="Active" active={stateFilter === 'todo,in_progress,in_review'} onClick={() => setFilter('todo,in_progress,in_review')} id="filter-active" />
+          <FilterTab label="Backlog" active={stateFilter === 'backlog'} onClick={() => setFilter('backlog')} id="filter-backlog" />
+          <FilterTab label="Done" active={stateFilter === 'done'} onClick={() => setFilter('done')} id="filter-done" />
+          <FilterTab label="Cancelled" active={stateFilter === 'cancelled'} onClick={() => setFilter('cancelled')} id="filter-cancelled" />
+        </div>
+      )}
 
       {/* Content */}
       {viewMode === 'kanban' ? (
