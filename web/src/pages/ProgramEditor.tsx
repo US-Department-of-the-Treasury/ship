@@ -1071,7 +1071,21 @@ function SprintsTab({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Top Section: Two-column layout - chart left, issues right */}
+      {/* Top Section: Horizontal Timeline - fixed height */}
+      <div className="flex-shrink-0 border-b border-border p-4">
+        <h3 className="mb-3 text-sm font-medium text-muted uppercase tracking-wide">Timeline</h3>
+        <SprintTimeline
+          sprints={sprints}
+          workspaceSprintStartDate={workspaceSprintStartDate}
+          currentSprintNumber={currentSprintNumber}
+          selectedSprintNumber={selectedSprintNumber}
+          onSelectSprint={handleSelectSprint}
+          onOpenSprint={onSprintClick}
+          onCreateClick={(num) => setShowOwnerPrompt(num)}
+        />
+      </div>
+
+      {/* Bottom Section: Two-column layout - chart left, issues right */}
       <div className="flex-1 min-h-0 p-6 overflow-hidden">
         {selectedSprint && selectedWindow ? (
           <div className="flex gap-6 h-full">
@@ -1098,20 +1112,6 @@ function SprintsTab({
             currentSprintNumber={currentSprintNumber}
           />
         )}
-      </div>
-
-      {/* Bottom Section: Horizontal Timeline - fixed height */}
-      <div className="flex-shrink-0 border-t border-border p-4">
-        <h3 className="mb-3 text-sm font-medium text-muted uppercase tracking-wide">Timeline</h3>
-        <SprintTimeline
-          sprints={sprints}
-          workspaceSprintStartDate={workspaceSprintStartDate}
-          currentSprintNumber={currentSprintNumber}
-          selectedSprintNumber={selectedSprintNumber}
-          onSelectSprint={handleSelectSprint}
-          onOpenSprint={onSprintClick}
-          onCreateClick={(num) => setShowOwnerPrompt(num)}
-        />
       </div>
 
       {/* Owner Selection Prompt */}
