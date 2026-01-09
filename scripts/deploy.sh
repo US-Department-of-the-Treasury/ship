@@ -8,6 +8,11 @@ set -euo pipefail
 #   - AWS CLI configured with appropriate credentials
 #   - Terraform outputs available (run from terraform/ directory first if needed)
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Sync terraform config from SSM (source of truth)
+"$SCRIPT_DIR/sync-terraform-config.sh"
+
 VERSION="v$(date +%Y%m%d%H%M%S)"
 
 # Get config from Terraform outputs or environment

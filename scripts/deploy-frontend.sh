@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Sync terraform config from SSM (source of truth)
+"$SCRIPT_DIR/sync-terraform-config.sh"
+
 echo "=========================================="
 echo "Ship - Frontend Deployment"
 echo "=========================================="
