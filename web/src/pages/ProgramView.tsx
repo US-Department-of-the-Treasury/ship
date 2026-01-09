@@ -124,7 +124,7 @@ export function ProgramViewPage() {
       });
       if (res.ok) {
         const issue = await res.json();
-        navigate(`/issues/${issue.id}`);
+        navigate(`/issues/${issue.id}`, { state: { from: 'program', programId: id, programName: program?.name } });
       }
     } catch (err) {
       console.error('Failed to create issue:', err);
@@ -338,10 +338,10 @@ export function ProgramViewPage() {
             <KanbanBoard
               issues={issues}
               onUpdateIssue={updateIssue}
-              onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+              onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId: id, programName: program?.name } })}
             />
           ) : (
-            <IssuesList issues={issues} onIssueClick={(issueId) => navigate(`/issues/${issueId}`)} />
+            <IssuesList issues={issues} onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId: id, programName: program?.name } })} />
           )
         )}
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
@@ -131,9 +131,18 @@ const PRIORITIES = [
   { value: 'none', label: 'No Priority' },
 ];
 
+// Navigation context passed when navigating from another page
+interface NavigationContext {
+  from?: 'program';
+  programId?: string;
+  programName?: string;
+}
+
 export function IssueEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navContext = (location.state as NavigationContext) || {};
   const { user } = useAuth();
   const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
   const { createDocument } = useDocuments();
@@ -343,6 +352,37 @@ export function IssueEditorPage() {
     // Sprints will be fetched automatically via the useEffect when issue.program_id changes
   };
 
+  // Handle back navigation - return to context if available, otherwise issues list
+  const handleBack = useCallback(() => {
+    if (navContext.from === 'program' && navContext.programId) {
+      navigate(`/programs/${navContext.programId}`);
+    } else {
+      navigate('/issues');
+    }
+  }, [navigate, navContext]);
+
+  // Escape key handler - return to previous context
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle Escape when not in an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+      if (e.key === 'Escape') {
+        handleBack();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleBack]);
+
+  // Breadcrumb label based on navigation context
+  const backLabel = navContext.from === 'program' && navContext.programName
+    ? navContext.programName
+    : undefined;
+
   return (
     <>
     <Editor
@@ -350,7 +390,8 @@ export function IssueEditorPage() {
       userName={user.name}
       initialTitle={displayIssue.title}
       onTitleChange={throttledTitleSave}
-      onBack={() => navigate('/issues')}
+      onBack={handleBack}
+      backLabel={backLabel}
       roomPrefix="issue"
       placeholder="Add a description..."
       onCreateSubDocument={handleCreateSubDocument}
