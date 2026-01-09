@@ -14,6 +14,8 @@ export interface Program {
   color: string;
   emoji?: string | null;
   archived_at: string | null;
+  created_at?: string;
+  updated_at?: string;
   issue_count?: number;
   sprint_count?: number;
   owner: ProgramOwner | null;
