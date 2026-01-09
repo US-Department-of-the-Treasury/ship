@@ -523,6 +523,20 @@ router.delete('/:id/members/:userId', authMiddleware, workspaceAdminMiddleware, 
       [workspaceId, userId]
     );
 
+    // Clear owner_id on programs owned by this user (set to Unassigned)
+    await pool.query(
+      `UPDATE documents SET properties = properties - 'owner_id', updated_at = NOW()
+       WHERE workspace_id = $1 AND document_type = 'program' AND properties->>'owner_id' = $2`,
+      [workspaceId, userId]
+    );
+
+    // Clear owner_id on sprints owned by this user (set to Unassigned)
+    await pool.query(
+      `UPDATE documents SET properties = properties - 'owner_id', updated_at = NOW()
+       WHERE workspace_id = $1 AND document_type = 'sprint' AND properties->>'owner_id' = $2`,
+      [workspaceId, userId]
+    );
+
     // Invalidate all sessions for this user in this workspace
     await pool.query(
       'DELETE FROM sessions WHERE user_id = $1 AND workspace_id = $2',
