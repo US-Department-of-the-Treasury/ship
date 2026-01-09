@@ -34,7 +34,7 @@ export function AppLayout() {
   const navigate = useNavigate();
   const { documents, createDocument, updateDocument, deleteDocument } = useDocuments();
   const { programs, updateProgram } = usePrograms();
-  const { issues, createIssue } = useIssues();
+  const { issues, createIssue, updateIssue } = useIssues();
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
     return localStorage.getItem('ship:leftSidebarCollapsed') === 'true';
   });
@@ -333,6 +333,7 @@ export function AppLayout() {
                 <IssuesList
                   issues={issues}
                   activeId={location.pathname.split('/issues/')[1]}
+                  onUpdateIssue={updateIssue}
                 />
               )}
               {activeMode === 'programs' && (
@@ -757,7 +758,45 @@ function ChevronIcon({ isOpen }: { isOpen: boolean }) {
   );
 }
 
-function IssuesList({ issues, activeId }: { issues: Issue[]; activeId?: string }) {
+function IssuesList({
+  issues,
+  activeId,
+  onUpdateIssue,
+}: {
+  issues: Issue[];
+  activeId?: string;
+  onUpdateIssue: (id: string, updates: Partial<Issue>) => Promise<Issue | null>;
+}) {
+  const { showToast } = useToast();
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; issue: Issue } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, issue: Issue) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, issue });
+  }, []);
+
+  const handleMenuClick = useCallback((e: React.MouseEvent, issue: Issue) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setContextMenu({ x: rect.right, y: rect.bottom, issue });
+  }, []);
+
+  const handleChangeStatus = useCallback(async (issue: Issue, state: string) => {
+    const originalState = issue.state;
+    await onUpdateIssue(issue.id, { state });
+    showToast(`Status changed to ${state.replace('_', ' ')}`, 'success');
+    setContextMenu(null);
+  }, [onUpdateIssue, showToast]);
+
+  const handleArchive = useCallback(async (issue: Issue) => {
+    const originalState = issue.state;
+    await onUpdateIssue(issue.id, { state: 'cancelled' });
+    showToast('Issue archived', 'success');
+    setContextMenu(null);
+  }, [onUpdateIssue, showToast]);
+
   if (issues.length === 0) {
     return <div className="px-3 py-2 text-sm text-muted">No issues yet</div>;
   }
@@ -771,27 +810,85 @@ function IssuesList({ issues, activeId }: { issues: Issue[]; activeId?: string }
   };
 
   return (
-    <ul className="space-y-0.5 px-2" data-testid="issues-list">
-      {issues.map((issue) => (
-        <li key={issue.id} data-testid="issue-item">
-          <Link
-            to={`/issues/${issue.id}`}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-              activeId === issue.id
-                ? 'bg-border/50 text-foreground'
-                : 'text-muted hover:bg-border/30 hover:text-foreground'
-            )}
-          >
-            <span className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state] || stateColors.backlog)} />
-            <span className="flex-1 truncate">{issue.title || 'Untitled'}</span>
-            {'_pending' in issue && issue._pending && (
-              <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in issue ? issue._syncStatus as SyncStatus : undefined} />
-            )}
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="space-y-0.5 px-2" data-testid="issues-list">
+        {issues.map((issue) => (
+          <li key={issue.id} data-testid="issue-item" className="group relative">
+            <Link
+              to={`/issues/${issue.id}`}
+              onContextMenu={(e) => handleContextMenu(e, issue)}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                activeId === issue.id
+                  ? 'bg-border/50 text-foreground'
+                  : 'text-muted hover:bg-border/30 hover:text-foreground'
+              )}
+            >
+              <span className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state] || stateColors.backlog)} />
+              <span className="flex-1 truncate">{issue.title || 'Untitled'}</span>
+              {'_pending' in issue && issue._pending && (
+                <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in issue ? issue._syncStatus as SyncStatus : undefined} />
+              )}
+            </Link>
+            {/* Three-dot menu button */}
+            <button
+              type="button"
+              onClick={(e) => handleMenuClick(e, issue)}
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
+              aria-label={`Actions for ${issue.title || 'Untitled'}`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+          <ContextMenuSubmenu label="Change Status">
+            <ContextMenuItem onClick={() => handleChangeStatus(contextMenu.issue, 'backlog')}>
+              <IssueStatusIcon state="backlog" />
+              Backlog
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => handleChangeStatus(contextMenu.issue, 'todo')}>
+              <IssueStatusIcon state="todo" />
+              Todo
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => handleChangeStatus(contextMenu.issue, 'in_progress')}>
+              <IssueStatusIcon state="in_progress" />
+              In Progress
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => handleChangeStatus(contextMenu.issue, 'done')}>
+              <IssueStatusIcon state="done" />
+              Done
+            </ContextMenuItem>
+          </ContextMenuSubmenu>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => handleArchive(contextMenu.issue)}>
+            <ArchiveIcon className="h-4 w-4" />
+            Archive
+          </ContextMenuItem>
+        </ContextMenu>
+      )}
+    </>
+  );
+}
+
+function IssueStatusIcon({ state }: { state: string }) {
+  const colors: Record<string, string> = {
+    backlog: 'text-gray-400',
+    todo: 'text-blue-400',
+    in_progress: 'text-yellow-400',
+    done: 'text-green-400',
+    cancelled: 'text-red-400',
+  };
+  return (
+    <span className={cn('h-2 w-2 rounded-full inline-block mr-2', colors[state]?.replace('text-', 'bg-') || 'bg-gray-400')} />
   );
 }
 
