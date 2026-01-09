@@ -21,6 +21,7 @@ import { searchRouter } from './routes/search.js';
 import { filesRouter } from './routes/files.js';
 import pivAuthRoutes from './routes/piv-auth.js';
 import federationRoutes from './routes/federation.js';
+import apiTokensRoutes from './routes/api-tokens.js';
 import { createJwksHandler } from '@fpki/auth-client';
 import { getPublicJwk } from './services/credential-store.js';
 import { initializeFPKI } from './services/fpki.js';
@@ -167,6 +168,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/workspaces', csrfSynchronisedProtection, workspacesRoutes);
   app.use('/api/admin', csrfSynchronisedProtection, adminRoutes);
   app.use('/api/invites', csrfSynchronisedProtection, invitesRoutes);
+  app.use('/api/api-tokens', csrfSynchronisedProtection, apiTokensRoutes);
 
   // Search routes are read-only GET endpoints - no CSRF needed
   app.use('/api/search', searchRouter);

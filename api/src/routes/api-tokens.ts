@@ -1,0 +1,206 @@
+import { Router, Request, Response } from 'express';
+import type { Router as RouterType } from 'express';
+import crypto from 'crypto';
+import { z } from 'zod';
+import { pool } from '../db/client.js';
+import { authMiddleware } from '../middleware/auth.js';
+import { ERROR_CODES, HTTP_STATUS } from '@ship/shared';
+import { logAuditEvent } from '../services/audit.js';
+
+const router: RouterType = Router();
+
+// Generate a secure API token with "ship_" prefix
+function generateApiToken(): { token: string; hash: string; prefix: string } {
+  const randomBytes = crypto.randomBytes(32).toString('hex');
+  const token = `ship_${randomBytes}`;
+  const hash = crypto.createHash('sha256').update(token).digest('hex');
+  const prefix = token.substring(0, 12); // "ship_" + first 7 chars
+  return { token, hash, prefix };
+}
+
+// Hash a token for comparison
+export function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+const createTokenSchema = z.object({
+  name: z.string().min(1).max(100),
+  expires_in_days: z.number().int().positive().optional(), // NULL = never expires
+});
+
+// POST /api/api-tokens - Generate a new API token
+router.post('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const parseResult = createTokenSchema.safeParse(req.body);
+
+  if (!parseResult.success) {
+    res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: 'Invalid request',
+        details: parseResult.error.flatten(),
+      },
+    });
+    return;
+  }
+
+  const { name, expires_in_days } = parseResult.data;
+
+  try {
+    // Check if token with same name already exists for this user/workspace
+    const existingResult = await pool.query(
+      `SELECT id FROM api_tokens
+       WHERE user_id = $1 AND workspace_id = $2 AND name = $3 AND revoked_at IS NULL`,
+      [req.userId, req.workspaceId, name]
+    );
+
+    if (existingResult.rows.length > 0) {
+      res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.ALREADY_EXISTS,
+          message: `An active token named "${name}" already exists. Revoke it first or choose a different name.`,
+        },
+      });
+      return;
+    }
+
+    const { token, hash, prefix } = generateApiToken();
+    const expiresAt = expires_in_days
+      ? new Date(Date.now() + expires_in_days * 24 * 60 * 60 * 1000)
+      : null;
+
+    const result = await pool.query(
+      `INSERT INTO api_tokens (user_id, workspace_id, name, token_hash, token_prefix, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, token_prefix, expires_at, created_at`,
+      [req.userId, req.workspaceId, name, hash, prefix, expiresAt]
+    );
+
+    await logAuditEvent({
+      workspaceId: req.workspaceId,
+      actorUserId: req.userId!,
+      action: 'api_token.created',
+      resourceType: 'api_token',
+      resourceId: result.rows[0].id,
+      details: { name, expires_at: expiresAt },
+      req,
+    });
+
+    // Return the full token ONLY on creation (never stored or returned again)
+    res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      data: {
+        id: result.rows[0].id,
+        name: result.rows[0].name,
+        token: token, // ONLY returned here - user must save it
+        token_prefix: result.rows[0].token_prefix,
+        expires_at: result.rows[0].expires_at,
+        created_at: result.rows[0].created_at,
+        warning: 'Save this token now. It will not be shown again.',
+      },
+    });
+  } catch (error) {
+    console.error('Create API token error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to create API token',
+      },
+    });
+  }
+});
+
+// GET /api/api-tokens - List user's API tokens (never returns the actual token)
+router.get('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, token_prefix, last_used_at, expires_at, revoked_at, created_at
+       FROM api_tokens
+       WHERE user_id = $1 AND workspace_id = $2
+       ORDER BY created_at DESC`,
+      [req.userId, req.workspaceId]
+    );
+
+    res.json({
+      success: true,
+      data: result.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        token_prefix: row.token_prefix,
+        last_used_at: row.last_used_at,
+        expires_at: row.expires_at,
+        is_active: !row.revoked_at && (!row.expires_at || new Date(row.expires_at) > new Date()),
+        revoked_at: row.revoked_at,
+        created_at: row.created_at,
+      })),
+    });
+  } catch (error) {
+    console.error('List API tokens error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to list API tokens',
+      },
+    });
+  }
+});
+
+// DELETE /api/api-tokens/:id - Revoke an API token
+router.delete('/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    // Verify the token belongs to this user and workspace
+    const tokenResult = await pool.query(
+      `SELECT id, name FROM api_tokens
+       WHERE id = $1 AND user_id = $2 AND workspace_id = $3`,
+      [id, req.userId, req.workspaceId]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'API token not found',
+        },
+      });
+      return;
+    }
+
+    // Revoke the token (soft delete - keeps audit trail)
+    await pool.query(
+      `UPDATE api_tokens SET revoked_at = NOW() WHERE id = $1`,
+      [id]
+    );
+
+    await logAuditEvent({
+      workspaceId: req.workspaceId,
+      actorUserId: req.userId!,
+      action: 'api_token.revoked',
+      resourceType: 'api_token',
+      resourceId: id,
+      details: { name: tokenResult.rows[0].name },
+      req,
+    });
+
+    res.json({
+      success: true,
+      data: { message: 'API token revoked' },
+    });
+  } catch (error) {
+    console.error('Revoke API token error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to revoke API token',
+      },
+    });
+  }
+});
+
+export default router;
