@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
+import { useDocuments } from '@/contexts/DocumentsContext';
 import { cn } from '@/lib/cn';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
@@ -31,8 +32,24 @@ export function SprintEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { createDocument } = useDocuments();
   const [sprint, setSprint] = useState<Sprint | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Create sub-document (for slash commands) - creates a wiki doc linked to this sprint
+  const handleCreateSubDocument = useCallback(async () => {
+    if (!id) return null;
+    const newDoc = await createDocument(id);
+    if (newDoc) {
+      return { id: newDoc.id, title: newDoc.title };
+    }
+    return null;
+  }, [createDocument, id]);
+
+  // Navigate to document (for slash commands and mentions)
+  const handleNavigateToDocument = useCallback((docId: string) => {
+    navigate(`/docs/${docId}`);
+  }, [navigate]);
 
   // Fetch sprint with cancellation and state reset
   useEffect(() => {
@@ -113,6 +130,8 @@ export function SprintEditorPage() {
       onBack={() => navigate(sprint.program_id ? `/programs/${sprint.program_id}` : '/programs')}
       roomPrefix="sprint"
       placeholder="Add sprint goals, notes, or description..."
+      onCreateSubDocument={handleCreateSubDocument}
+      onNavigateToDocument={handleNavigateToDocument}
       headerBadge={
         <span className={cn(
           'rounded px-1.5 py-0.5 text-[10px] font-medium uppercase text-white',
