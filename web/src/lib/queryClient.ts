@@ -770,4 +770,19 @@ if (typeof window !== 'undefined') {
   setInterval(() => {
     checkStorageQuota();
   }, 5 * 60 * 1000);
+
+  // Test helper: Listen for synthetic storage quota events (for E2E tests)
+  window.addEventListener('storage-quota-warning', ((event: CustomEvent<{ percentUsed: number }>) => {
+    const percentUsed = event.detail.percentUsed / 100; // Convert from percentage to decimal
+    const mockUsage = percentUsed * 1000000000; // 1GB * percentUsed
+    const mockQuota = 1000000000; // 1GB
+    const info: StorageQuotaInfo = {
+      usage: mockUsage,
+      quota: mockQuota,
+      percentUsed,
+      isWarning: percentUsed >= STORAGE_WARNING_THRESHOLD,
+      isCritical: percentUsed >= STORAGE_CRITICAL_THRESHOLD,
+    };
+    notifyStorageQuotaListeners(info);
+  }) as EventListener);
 }
