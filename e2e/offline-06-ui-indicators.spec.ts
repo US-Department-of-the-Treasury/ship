@@ -2,22 +2,17 @@
  * Category 6: UI Indicators
  * Tests that offline/sync status is accurately displayed.
  *
- * SKIP REASON: These tests require offline UI components which are
- * NOT YET IMPLEMENTED.
- *
- * INFRASTRUCTURE NEEDED:
- * 1. Offline indicator component (data-testid="offline-indicator")
- * 2. Pending sync count badge (data-testid="pending-sync-count")
- * 3. Per-item sync status icons (sync-status-pending, syncing, synced)
- * 4. Listen to navigator.onLine events to update indicator state
- *
- * See: docs/application-architecture.md "Offline UI Components"
+ * Infrastructure implemented:
+ * - OfflineIndicator component with data-testid="offline-indicator"
+ * - PendingSyncCount component with data-testid="pending-sync-count"
+ * - PendingSyncIcon component with sync-status-pending/syncing/synced
+ * - Online/offline event listeners in queryClient.ts
  */
 import { test, expect } from './fixtures/offline'
 
 
 
-test.describe.skip('6.1 Offline Status Display', () => {
+test.describe('6.1 Offline Status Display', () => {
   test('offline indicator appears when network drops', async ({ page, goOffline, login }) => {
     await login()
 
