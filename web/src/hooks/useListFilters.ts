@@ -13,8 +13,10 @@ export interface UseListFiltersOptions {
   defaultSort?: string;
   /** URL param name for filter state (optional - if provided, syncs to URL) */
   filterUrlParam?: string;
-  /** localStorage key for view mode persistence (optional) */
-  viewModeStorageKey?: string;
+  /** localStorage key for view mode persistence (optional) - use base key like 'documents' */
+  storageKey?: string;
+  /** Default view mode if nothing in localStorage */
+  defaultViewMode?: ViewMode;
 }
 
 export type ViewMode = 'list' | 'kanban' | 'tree';
@@ -44,9 +46,13 @@ export function useListFilters({
   sortOptions,
   defaultSort,
   filterUrlParam,
-  viewModeStorageKey,
+  storageKey,
+  defaultViewMode = 'list',
 }: UseListFiltersOptions): UseListFiltersReturn {
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Compute full storage key for view mode
+  const viewModeStorageKey = storageKey ? `${storageKey}-view-mode` : undefined;
 
   // Sort state
   const [sortBy, setSortBy] = useState<string>(defaultSort ?? sortOptions[0]?.value ?? 'updated');
@@ -63,7 +69,7 @@ export function useListFilters({
         // Ignore
       }
     }
-    return 'list';
+    return defaultViewMode;
   });
 
   // Set view mode with persistence

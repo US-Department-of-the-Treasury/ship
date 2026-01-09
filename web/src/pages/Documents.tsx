@@ -11,11 +11,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/cn';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
+import { useListFilters, ViewMode } from '@/hooks/useListFilters';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
-
-// View mode type
-type ViewMode = 'tree' | 'list';
 
 // Column definitions for list view
 const ALL_COLUMNS: ColumnDefinition[] = [
@@ -33,8 +31,7 @@ const SORT_OPTIONS = [
   { value: 'updated', label: 'Updated' },
 ];
 
-// localStorage keys
-const VIEW_MODE_KEY = 'documents-view-mode';
+// localStorage key for column visibility
 const COLUMN_VISIBILITY_KEY = 'documents-column-visibility';
 
 type VisibilityFilter = 'all' | 'workspace' | 'private';
@@ -49,30 +46,13 @@ export function DocumentsPage() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
-  // View mode state with localStorage persistence (default to tree)
-  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
-    try {
-      const stored = localStorage.getItem(VIEW_MODE_KEY);
-      if (stored === 'list' || stored === 'tree') {
-        return stored;
-      }
-    } catch {
-      // Ignore localStorage errors
-    }
-    return 'tree'; // Default to tree view
+  // Use shared hooks for list state management (matches Issues page)
+  const { sortBy, setSortBy, viewMode, setViewMode } = useListFilters({
+    sortOptions: SORT_OPTIONS,
+    defaultSort: 'title',
+    storageKey: 'documents',
+    defaultViewMode: 'tree',
   });
-
-  const setViewMode = useCallback((mode: ViewMode) => {
-    setViewModeState(mode);
-    try {
-      localStorage.setItem(VIEW_MODE_KEY, mode);
-    } catch {
-      // Ignore localStorage errors
-    }
-  }, []);
-
-  // Sort state for list view
-  const [sortBy, setSortBy] = useState<string>('title');
 
   // Selection state for list view
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -274,129 +254,73 @@ export function DocumentsPage() {
     return <DocumentsListSkeleton />;
   }
 
+  // Search filter content for toolbar (matches Issues pattern)
+  const searchFilterContent = (
+    <div className="w-48">
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search..."
+        className={cn(
+          'w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm',
+          'placeholder:text-muted',
+          'focus:outline-none focus:ring-1 focus:ring-accent'
+        )}
+      />
+    </div>
+  );
+
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-lg font-medium text-foreground">Documents</h1>
-        <button
-          onClick={() => handleCreateDocument()}
-          disabled={creating}
-          className={cn(
-            'rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white',
-            'transition-colors hover:bg-accent/90',
-            'disabled:opacity-50',
-            'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background'
-          )}
-        >
-          {creating ? 'Creating...' : 'New Document'}
-        </button>
+    <div className="flex h-full flex-col">
+      {/* Header - matches Issues layout */}
+      <div className="flex items-center justify-between border-b border-border px-6 py-4">
+        <h1 className="text-xl font-semibold text-foreground">Documents</h1>
+        <DocumentListToolbar
+          sortOptions={SORT_OPTIONS}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          viewModes={['tree', 'list']}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          allColumns={ALL_COLUMNS}
+          visibleColumns={visibleColumns}
+          onToggleColumn={toggleColumn}
+          hiddenCount={hiddenCount}
+          showColumnPicker={viewMode === 'list'}
+          filterContent={searchFilterContent}
+          createButton={{ label: creating ? 'Creating...' : 'New Document', onClick: () => handleCreateDocument(), disabled: creating }}
+        />
       </div>
 
-      {/* Search and Filter */}
-      <div className="mb-6 flex gap-4">
-        {/* Search */}
-        <div className="flex-1">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search documents..."
-            className={cn(
-              'w-full rounded-md border border-border bg-background px-3 py-2 text-sm',
-              'placeholder:text-muted',
-              'focus:outline-none focus:ring-1 focus:ring-accent'
-            )}
-          />
-        </div>
-
-        {/* Filter tabs */}
-        <div className="flex gap-1 rounded-md border border-border p-1">
-          <FilterTab
-            label="All"
-            active={visibilityFilter === 'all'}
-            onClick={() => handleFilterChange('all')}
-          />
-          <FilterTab
-            label="Workspace"
-            icon={<GlobeIcon className="h-3.5 w-3.5" />}
-            active={visibilityFilter === 'workspace'}
-            onClick={() => handleFilterChange('workspace')}
-          />
-          <FilterTab
-            label="Private"
-            icon={<LockIcon className="h-3.5 w-3.5" />}
-            active={visibilityFilter === 'private'}
-            onClick={() => handleFilterChange('private')}
-          />
-        </div>
-
-        {/* View toggle */}
-        <div className="flex gap-1 rounded-md border border-border p-1">
-          <button
-            onClick={() => setViewMode('tree')}
-            className={cn(
-              'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm transition-colors',
-              viewMode === 'tree'
-                ? 'bg-border text-foreground'
-                : 'text-muted hover:bg-border/50 hover:text-foreground'
-            )}
-            title="Tree view"
-          >
-            <TreeIcon className="h-3.5 w-3.5" />
-            Tree
-          </button>
-          <button
-            onClick={() => setViewMode('list')}
-            className={cn(
-              'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm transition-colors',
-              viewMode === 'list'
-                ? 'bg-border text-foreground'
-                : 'text-muted hover:bg-border/50 hover:text-foreground'
-            )}
-            title="List view"
-          >
-            <ListIcon className="h-3.5 w-3.5" />
-            List
-          </button>
-        </div>
-      </div>
-
-      {/* List view toolbar (sort, column picker) */}
-      {viewMode === 'list' && (
-        <div className="mb-4">
-          <DocumentListToolbar
-            sortOptions={SORT_OPTIONS}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            allColumns={ALL_COLUMNS}
-            visibleColumns={visibleColumns}
-            onToggleColumn={toggleColumn}
-            hiddenCount={hiddenCount}
-            showColumnPicker={true}
-          />
-        </div>
-      )}
-
-      {/* Bulk action bar for list view */}
-      {viewMode === 'list' && selectedIds.size > 0 && (
+      {/* Filter tabs OR Bulk action bar (mutually exclusive) - matches Issues */}
+      {selectedIds.size > 0 ? (
         <DocumentBulkActionBar
           selectedCount={selectedIds.size}
           onDelete={handleBulkDelete}
           onClearSelection={() => setSelectedIds(new Set())}
         />
+      ) : (
+        <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Document visibility filters">
+          <FilterTab label="All" active={visibilityFilter === 'all'} onClick={() => handleFilterChange('all')} id="filter-all" />
+          <FilterTab label="Workspace" icon={<GlobeIcon className="h-3.5 w-3.5" />} active={visibilityFilter === 'workspace'} onClick={() => handleFilterChange('workspace')} id="filter-workspace" />
+          <FilterTab label="Private" icon={<LockIcon className="h-3.5 w-3.5" />} active={visibilityFilter === 'private'} onClick={() => handleFilterChange('private')} id="filter-private" />
+        </div>
       )}
 
-      {/* Document list */}
+      {/* Content */}
       {filteredDocuments.length === 0 ? (
-        <div className="flex h-64 items-center justify-center">
+        <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
             {documents.length === 0 ? (
               <>
                 <p className="text-muted">No documents yet</p>
-                <p className="mt-1 text-sm text-muted">
-                  Create your first document to get started
-                </p>
+                <button
+                  onClick={() => handleCreateDocument()}
+                  className="mt-2 text-sm text-accent hover:underline"
+                >
+                  Create your first document
+                </button>
               </>
             ) : (
               <>
@@ -409,31 +333,31 @@ export function DocumentsPage() {
           </div>
         </div>
       ) : viewMode === 'tree' ? (
-        <ul role="tree" aria-label="Documents" className="space-y-0.5">
-          {documentTree.map((doc) => (
-            <DocumentTreeItem
-              key={doc.id}
-              document={doc}
-              onCreateChild={handleCreateDocument}
-              onDelete={handleDeleteWithUndo}
-            />
-          ))}
-        </ul>
+        <div className="flex-1 overflow-auto p-6">
+          <ul role="tree" aria-label="Documents" className="space-y-0.5">
+            {documentTree.map((doc) => (
+              <DocumentTreeItem
+                key={doc.id}
+                document={doc}
+                onCreateChild={handleCreateDocument}
+                onDelete={handleDeleteWithUndo}
+              />
+            ))}
+          </ul>
+        </div>
       ) : (
-        <>
-          <div className="rounded-lg border border-border overflow-hidden">
-            <SelectableList
-              items={sortedDocuments}
-              getItemId={(doc) => doc.id}
-              renderRow={(doc, props) => renderDocumentRow(doc, props)}
-              columns={columns}
-              onItemClick={(doc) => navigate(`/docs/${doc.id}`)}
-              selectable={true}
-              onSelectionChange={(ids) => setSelectedIds(ids)}
-              onContextMenu={handleContextMenu}
-              ariaLabel="Documents list"
-            />
-          </div>
+        <div className="flex-1 overflow-auto">
+          <SelectableList
+            items={sortedDocuments}
+            getItemId={(doc) => doc.id}
+            renderRow={(doc, props) => renderDocumentRow(doc, props)}
+            columns={columns}
+            onItemClick={(doc) => navigate(`/docs/${doc.id}`)}
+            selectable={true}
+            onSelectionChange={(ids) => setSelectedIds(ids)}
+            onContextMenu={handleContextMenu}
+            ariaLabel="Documents list"
+          />
 
           {/* Context menu */}
           {contextMenu && (
@@ -444,7 +368,7 @@ export function DocumentsPage() {
               </ContextMenuItem>
             </ContextMenu>
           )}
-        </>
+        </div>
       )}
     </div>
   );
@@ -454,18 +378,23 @@ function FilterTab({
   label,
   icon,
   active,
-  onClick
+  onClick,
+  id
 }: {
   label: string;
   icon?: React.ReactNode;
   active: boolean;
   onClick: () => void;
+  id: string;
 }) {
   return (
     <button
+      id={id}
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       className={cn(
-        'flex items-center gap-1.5 rounded px-2.5 py-1 text-sm transition-colors',
+        'flex items-center gap-1.5 rounded-md px-3 py-1 text-sm transition-colors',
         active
           ? 'bg-border text-foreground'
           : 'text-muted hover:bg-border/50 hover:text-foreground'
@@ -498,32 +427,6 @@ function GlobeIcon({ className }: { className?: string }) {
         strokeLinejoin="round"
         strokeWidth={1.5}
         d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
-      />
-    </svg>
-  );
-}
-
-function TreeIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className || 'h-4 w-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.5}
-        d="M3 7h4m0 0V3m0 4l4 4m-4-4l4-4M3 17h4m0 0v-4m0 4l4 4m-4-4l4-4M13 7h8M13 12h8M13 17h8"
-      />
-    </svg>
-  );
-}
-
-function ListIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className || 'h-4 w-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.5}
-        d="M4 6h16M4 12h16M4 18h16"
       />
     </svg>
   );
@@ -610,14 +513,14 @@ function DocumentBulkActionBar({
   onClearSelection,
 }: DocumentBulkActionBarProps) {
   return (
-    <div className="mb-4 flex items-center gap-3 rounded-lg border border-border bg-background/80 px-4 py-2 shadow-sm">
+    <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-6 py-2">
       <span className="text-sm text-muted">
         {selectedCount} selected
       </span>
       <div className="h-4 w-px bg-border" />
       <button
         onClick={onDelete}
-        className="flex items-center gap-1.5 rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50 transition-colors"
+        className="flex items-center gap-1.5 rounded px-2 py-1 text-sm text-red-600 hover:bg-red-500/10 transition-colors"
       >
         <TrashIcon className="h-4 w-4" />
         Delete
