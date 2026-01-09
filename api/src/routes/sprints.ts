@@ -15,6 +15,8 @@ const createSprintSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
   sprint_number: z.number().int().positive(),
   owner_id: z.string().uuid(),
+  // Sprint goal (concise objective, separate from hypothesis)
+  goal: z.string().max(500).optional(),
   // Hypothesis tracking (optional at creation)
   hypothesis: z.string().max(2000).optional(),
   success_criteria: z.array(z.string().max(500)).max(20).optional(),
@@ -58,6 +60,8 @@ function extractSprintFromRow(row: any) {
     // Retro outcome summary (populated if retro exists)
     retro_outcome: row.retro_outcome || null,
     retro_id: row.retro_id || null,
+    // Sprint goal (concise objective)
+    goal: props.goal || null,
     // Hypothesis tracking fields
     hypothesis: props.hypothesis || null,
     success_criteria: props.success_criteria || null,
@@ -122,7 +126,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { program_id, title, sprint_number, owner_id, hypothesis, success_criteria, confidence } = parsed.data;
+    const { program_id, title, sprint_number, owner_id, goal, hypothesis, success_criteria, confidence } = parsed.data;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -167,11 +171,16 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Build properties JSONB - sprint_number, owner_id, and hypothesis fields
+    // Build properties JSONB - sprint_number, owner_id, goal, and hypothesis fields
     const properties: Record<string, unknown> = {
       sprint_number,
       owner_id,
     };
+
+    // Add goal if provided (concise objective, separate from hypothesis)
+    if (goal !== undefined) {
+      properties.goal = goal;
+    }
 
     // Add hypothesis fields if provided
     if (hypothesis !== undefined) {
@@ -214,6 +223,8 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       issue_count: 0,
       completed_count: 0,
       started_count: 0,
+      // Sprint goal (concise objective)
+      goal: properties.goal || null,
       // Hypothesis tracking fields
       hypothesis: properties.hypothesis || null,
       success_criteria: properties.success_criteria || null,
