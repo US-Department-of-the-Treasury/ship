@@ -584,6 +584,62 @@ router.get('/:id/history', authMiddleware, async (req: Request, res: Response) =
   }
 });
 
+// Log custom history entry (for verification failures, etc.)
+const logHistorySchema = z.object({
+  field: z.string().min(1).max(100),
+  old_value: z.string().nullable(),
+  new_value: z.string().nullable(),
+  automated_by: z.string().optional(),
+});
+
+router.post('/:id/history', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: 'Issue ID required' });
+      return;
+    }
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = logHistorySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify issue exists and user can access it
+    const issueCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (issueCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    const { field, old_value, new_value, automated_by } = parsed.data;
+
+    // Pass automated_by only if defined (function parameter is optional)
+    if (automated_by !== undefined) {
+      await logDocumentChange(id, field, old_value, new_value, userId, automated_by);
+    } else {
+      await logDocumentChange(id, field, old_value, new_value, userId);
+    }
+
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('Log history entry error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Bulk update issues
 const bulkUpdateSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(100),
