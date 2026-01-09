@@ -1,7 +1,7 @@
 import { createContext, useContext, ReactNode } from 'react';
-import { usePrograms as useProgramsQuery, Program, ProgramOwner, GitHubRepo, AutoStatusOnMerge } from '@/hooks/useProgramsQuery';
+import { usePrograms as useProgramsQuery, Program, ProgramOwner } from '@/hooks/useProgramsQuery';
 
-export type { Program, ProgramOwner, GitHubRepo, AutoStatusOnMerge };
+export type { Program, ProgramOwner };
 
 interface ProgramsContextValue {
   programs: Program[];
