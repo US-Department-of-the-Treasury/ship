@@ -25,6 +25,13 @@ const updateIssueSchema = z.object({
   program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
   estimate: z.number().positive().nullable().optional(),
+  // Claude Code integration metadata
+  claude_metadata: z.object({
+    updated_by: z.literal('claude'),
+    story_id: z.string().optional(),
+    prd_name: z.string().optional(),
+    session_context: z.string().optional(),
+  }).optional(),
 });
 
 const rejectIssueSchema = z.object({
@@ -409,6 +416,15 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.estimate !== undefined && data.estimate !== currentProps.estimate) {
       changes.push({ field: 'estimate', oldValue: currentProps.estimate?.toString() || null, newValue: data.estimate?.toString() || null });
       newProps.estimate = data.estimate;
+      propsChanged = true;
+    }
+
+    // Store Claude metadata in properties for attribution tracking
+    if (data.claude_metadata) {
+      newProps.claude_metadata = {
+        ...data.claude_metadata,
+        updated_at: new Date().toISOString(),
+      };
       propsChanged = true;
     }
 
