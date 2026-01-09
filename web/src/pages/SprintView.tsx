@@ -91,6 +91,64 @@ interface Issue {
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
+// CSRF token cache
+let csrfToken: string | null = null;
+
+async function getCsrfToken(): Promise<string> {
+  if (!csrfToken) {
+    const response = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
+    const data = await response.json();
+    csrfToken = data.token;
+  }
+  return csrfToken!;
+}
+
+// Helper for PATCH requests with CSRF token and retry on 403
+async function patchWithCsrf(url: string, body: object): Promise<Response> {
+  const token = await getCsrfToken();
+  let res = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  // If CSRF token invalid, clear and retry once
+  if (res.status === 403) {
+    csrfToken = null;
+    const newToken = await getCsrfToken();
+    res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': newToken },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+  }
+  return res;
+}
+
+// Helper for POST requests with CSRF token and retry on 403
+async function postWithCsrf(url: string, body: object): Promise<Response> {
+  const token = await getCsrfToken();
+  let res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  // If CSRF token invalid, clear and retry once
+  if (res.status === 403) {
+    csrfToken = null;
+    const newToken = await getCsrfToken();
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': newToken },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+  }
+  return res;
+}
+
 export function SprintViewPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -253,18 +311,13 @@ export function SprintViewPage() {
   const moveToSprint = async (issue: Issue, newEstimate?: number) => {
     if (!id) return;
     try {
-      // Build update payload
-      const payload: { sprint_id: string; properties?: { estimate: number } } = { sprint_id: id };
+      // Build update payload - estimate goes at top level, not nested in properties
+      const payload: { sprint_id: string; estimate?: number } = { sprint_id: id };
       if (newEstimate !== undefined) {
-        payload.properties = { estimate: newEstimate };
+        payload.estimate = newEstimate;
       }
 
-      const res = await fetch(`${API_URL}/api/issues/${issue.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload),
-      });
+      const res = await patchWithCsrf(`${API_URL}/api/issues/${issue.id}`, payload);
 
       if (res.ok) {
         // Update local state
@@ -295,12 +348,7 @@ export function SprintViewPage() {
 
   const moveToBacklog = async (issueId: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/issues/${issueId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ sprint_id: null }),
-      });
+      const res = await patchWithCsrf(`${API_URL}/api/issues/${issueId}`, { sprint_id: null });
 
       if (res.ok) {
         const issue = sprintIssues.find(i => i.id === issueId);
@@ -317,12 +365,7 @@ export function SprintViewPage() {
   const updateSprintStatus = async (status: Sprint['status']) => {
     if (!id) return;
     try {
-      const res = await fetch(`${API_URL}/api/sprints/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ sprint_status: status }),
-      });
+      const res = await patchWithCsrf(`${API_URL}/api/sprints/${id}`, { sprint_status: status });
 
       if (res.ok) {
         setSprint(prev => prev ? { ...prev, status } : null);
@@ -335,12 +378,7 @@ export function SprintViewPage() {
   const saveGoal = async () => {
     if (!id) return;
     try {
-      const res = await fetch(`${API_URL}/api/sprints/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ goal: goalText || null }),
-      });
+      const res = await patchWithCsrf(`${API_URL}/api/sprints/${id}`, { goal: goalText || null });
 
       if (res.ok) {
         setSprint(prev => prev ? { ...prev, goal: goalText || null } : null);
@@ -358,15 +396,10 @@ export function SprintViewPage() {
         ? `${sprint.name} - Sprint Plan`
         : `${sprint.name} - Retrospective`;
 
-      const res = await fetch(`${API_URL}/api/documents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          title,
-          document_type: docType,
-          sprint_id: id,
-        }),
+      const res = await postWithCsrf(`${API_URL}/api/documents`, {
+        title,
+        document_type: docType,
+        sprint_id: id,
       });
 
       if (res.ok) {

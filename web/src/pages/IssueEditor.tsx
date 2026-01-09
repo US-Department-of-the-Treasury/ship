@@ -29,6 +29,30 @@ interface Sprint {
   id: string;
   name: string;
   status: string;
+  sprint_number: number;
+}
+
+// Compute sprint dates from sprint number (2-week sprints)
+function computeSprintDates(sprintNumber: number, workspaceStartDate: Date): { start: Date; end: Date } {
+  const start = new Date(workspaceStartDate);
+  start.setDate(start.getDate() + (sprintNumber - 1) * 14);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 13);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+// Format date range for display (e.g., "Jan 6 - Jan 19")
+function formatDateRange(start: Date, end: Date): string {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const startMonth = monthNames[start.getMonth()];
+  const endMonth = monthNames[end.getMonth()];
+
+  if (startMonth === endMonth) {
+    return `${startMonth} ${start.getDate()} - ${end.getDate()}`;
+  }
+  return `${startMonth} ${start.getDate()} - ${endMonth} ${end.getDate()}`;
 }
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -114,6 +138,7 @@ export function IssueEditorPage() {
   const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
   const { createDocument } = useDocuments();
   const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [workspaceSprintStartDate, setWorkspaceSprintStartDate] = useState<Date | null>(null);
 
   // Create sub-document (for slash commands) - creates a wiki doc linked to this issue
   const handleCreateSubDocument = useCallback(async () => {
@@ -158,15 +183,28 @@ export function IssueEditorPage() {
   useEffect(() => {
     if (!issue?.program_id) {
       setSprints([]);
+      setWorkspaceSprintStartDate(null);
       return;
     }
 
     let cancelled = false;
 
     fetch(`${API_URL}/api/programs/${issue.program_id}/sprints`, { credentials: 'include' })
-      .then(res => res.ok ? res.json() : { sprints: [] })
-      .then(data => { if (!cancelled) setSprints(data.sprints || []); })
-      .catch(() => { if (!cancelled) setSprints([]); });
+      .then(res => res.ok ? res.json() : { sprints: [], workspace_sprint_start_date: null })
+      .then(data => {
+        if (!cancelled) {
+          setSprints(data.sprints || []);
+          if (data.workspace_sprint_start_date) {
+            setWorkspaceSprintStartDate(new Date(data.workspace_sprint_start_date));
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSprints([]);
+          setWorkspaceSprintStartDate(null);
+        }
+      });
 
     return () => { cancelled = true; };
   }, [issue?.program_id]);
@@ -378,7 +416,14 @@ export function IssueEditorPage() {
             {displayIssue.program_id && (
               <PropertyRow label="Sprint">
                 <Combobox
-                  options={sprints.map((s) => ({ value: s.id, label: s.name, description: s.status }))}
+                  options={sprints.map((s) => {
+                    let dateRange = '';
+                    if (workspaceSprintStartDate) {
+                      const { start, end } = computeSprintDates(s.sprint_number, workspaceSprintStartDate);
+                      dateRange = formatDateRange(start, end);
+                    }
+                    return { value: s.id, label: s.name, description: dateRange };
+                  })}
                   value={displayIssue.sprint_id}
                   onChange={(value) => {
                     if (value && !displayIssue.estimate) {
