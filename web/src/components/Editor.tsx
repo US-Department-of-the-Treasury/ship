@@ -20,6 +20,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { cn } from '@/lib/cn';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { apiPost } from '@/lib/api';
 import { getIsOnline, subscribeToOnlineStatus } from '@/lib/queryClient';
 import { createSlashCommands } from './editor/SlashCommands';
@@ -439,18 +440,20 @@ export function Editor({
       <div className="flex items-center gap-3 border-b border-border px-4 py-2">
           {/* Back button with optional parent label */}
           {onBack && (
-            <button
-              onClick={onBack}
-              className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors"
-              aria-label={backLabel ? `Back to ${backLabel}` : 'Back to documents'}
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              {backLabel && (
-                <span className="text-xs truncate max-w-[120px]">{backLabel}</span>
-              )}
-            </button>
+            <Tooltip content={backLabel ? `Back to ${backLabel}` : 'Back to documents'}>
+              <button
+                onClick={onBack}
+                className="flex items-center gap-1.5 text-muted hover:text-foreground transition-colors"
+                aria-label={backLabel ? `Back to ${backLabel}` : 'Back to documents'}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                {backLabel && (
+                  <span className="text-xs truncate max-w-[120px]">{backLabel}</span>
+                )}
+              </button>
+            </Tooltip>
           )}
 
           {/* Optional header badge (e.g., issue number) */}
@@ -496,13 +499,15 @@ export function Editor({
 
           {/* Delete button */}
           {onDelete && (
-            <button
-              onClick={onDelete}
-              className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-red-500/10 hover:text-red-500 transition-colors"
-              aria-label="Delete document"
-            >
-              <TrashIcon />
-            </button>
+            <Tooltip content="Delete document">
+              <button
+                onClick={onDelete}
+                className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-red-500/10 hover:text-red-500 transition-colors"
+                aria-label="Delete document"
+              >
+                <TrashIcon />
+              </button>
+            </Tooltip>
           )}
 
         {/* Connected users */}
@@ -589,13 +594,15 @@ export function Editor({
             {/* Sidebar header with collapse button */}
             <div className="flex h-10 items-center justify-between border-b border-border px-3">
               <span className="text-sm font-medium text-foreground">Properties</span>
-              <button
-                onClick={() => setRightSidebarCollapsed(true)}
-                className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                aria-label="Collapse sidebar"
-              >
-                <CollapseRightIcon />
-              </button>
+              <Tooltip content="Collapse sidebar">
+                <button
+                  onClick={() => setRightSidebarCollapsed(true)}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                  aria-label="Collapse sidebar"
+                >
+                  <CollapseRightIcon />
+                </button>
+              </Tooltip>
             </div>
             {/* Sidebar content */}
             <div className="flex-1 overflow-auto">
@@ -605,13 +612,15 @@ export function Editor({
 
           {/* Expand button when right sidebar is collapsed */}
           {rightSidebarCollapsed && (
-            <button
-              onClick={() => setRightSidebarCollapsed(false)}
-              className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center border-l border-border text-muted hover:bg-border/50 hover:text-foreground transition-colors"
-              aria-label="Expand properties sidebar"
-            >
-              <ExpandLeftIcon />
-            </button>
+            <Tooltip content="Expand properties" side="left">
+              <button
+                onClick={() => setRightSidebarCollapsed(false)}
+                className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center border-l border-border text-muted hover:bg-border/50 hover:text-foreground transition-colors"
+                aria-label="Expand properties sidebar"
+              >
+                <ExpandLeftIcon />
+              </button>
+            </Tooltip>
           )}
         </div>,
         portalTarget

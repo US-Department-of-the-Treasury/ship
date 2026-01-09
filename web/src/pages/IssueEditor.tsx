@@ -10,6 +10,7 @@ import { useAutoSave } from '@/hooks/useAutoSave';
 import { useProgramsQuery } from '@/hooks/useProgramsQuery';
 import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { apiPost } from '@/lib/api';
+import { GitHubIssueSection } from '@/components/GitHubActivityFeed';
 
 interface TeamMember {
   id: string;
@@ -451,6 +452,11 @@ export function IssueEditorPage() {
                 {displayIssue.source === 'external' ? 'External' : 'Internal'}
               </span>
             </PropertyRow>
+
+            {/* GitHub section - shows linked PRs, hidden when none exist */}
+            {displayIssue.ticket_number > 0 && (
+              <GitHubIssueSection ticketNumber={displayIssue.ticket_number} />
+            )}
 
             {displayIssue.state === 'cancelled' && displayIssue.rejection_reason && (
               <PropertyRow label="Rejection Reason">
