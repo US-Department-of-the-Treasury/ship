@@ -52,6 +52,7 @@ export function useGlobalListNavigation({
 
     switch (e.key) {
       case 'j':
+      case 'ArrowDown':
         e.preventDefault();
         if (isShiftKey) {
           currentSelection.extendSelection('down');
@@ -61,6 +62,7 @@ export function useGlobalListNavigation({
         break;
 
       case 'k':
+      case 'ArrowUp':
         e.preventDefault();
         if (isShiftKey) {
           currentSelection.extendSelection('up');
