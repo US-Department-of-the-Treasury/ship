@@ -12,6 +12,7 @@ import { Combobox } from '@/components/ui/Combobox';
 import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { cn } from '@/lib/cn';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { issueStatusColors, priorityColors } from '@/lib/statusColors';
 
 // localStorage key for column visibility
@@ -439,45 +440,51 @@ export function IssuesPage() {
           </div>
           {/* View toggle */}
           <div className="flex rounded-md border border-border" role="group" aria-label="View mode">
-            <button
-              onClick={() => setViewMode('list')}
-              aria-label="List view"
-              aria-pressed={viewMode === 'list'}
-              className={cn(
-                'px-3 py-1 text-sm transition-colors',
-                viewMode === 'list' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
-              )}
-            >
-              <ListIcon aria-hidden="true" />
-            </button>
-            <button
-              onClick={() => setViewMode('kanban')}
-              aria-label="Kanban view"
-              aria-pressed={viewMode === 'kanban'}
-              className={cn(
-                'px-3 py-1 text-sm transition-colors',
-                viewMode === 'kanban' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
-              )}
-            >
-              <KanbanIcon aria-hidden="true" />
-            </button>
+            <Tooltip content="List view">
+              <button
+                onClick={() => setViewMode('list')}
+                aria-label="List view"
+                aria-pressed={viewMode === 'list'}
+                className={cn(
+                  'px-3 py-1 text-sm transition-colors',
+                  viewMode === 'list' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
+                )}
+              >
+                <ListIcon aria-hidden="true" />
+              </button>
+            </Tooltip>
+            <Tooltip content="Board view">
+              <button
+                onClick={() => setViewMode('kanban')}
+                aria-label="Kanban view"
+                aria-pressed={viewMode === 'kanban'}
+                className={cn(
+                  'px-3 py-1 text-sm transition-colors',
+                  viewMode === 'kanban' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
+                )}
+              >
+                <KanbanIcon aria-hidden="true" />
+              </button>
+            </Tooltip>
           </div>
           {/* Column visibility picker (list view only) */}
           {viewMode === 'list' && (
             <Popover.Root>
-              <Popover.Trigger asChild>
-                <button
-                  className="relative rounded-md border border-border p-1.5 text-muted hover:bg-border/30 hover:text-foreground transition-colors"
-                  aria-label="Customize columns"
-                >
-                  <ColumnsIcon className="h-4 w-4" />
-                  {hiddenCount > 0 && (
-                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-white">
-                      {hiddenCount}
-                    </span>
-                  )}
-                </button>
-              </Popover.Trigger>
+              <Tooltip content="Show/hide columns">
+                <Popover.Trigger asChild>
+                  <button
+                    className="relative rounded-md border border-border p-1.5 text-muted hover:bg-border/30 hover:text-foreground transition-colors"
+                    aria-label="Customize columns"
+                  >
+                    <ColumnsIcon className="h-4 w-4" />
+                    {hiddenCount > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-white">
+                        {hiddenCount}
+                      </span>
+                    )}
+                  </button>
+                </Popover.Trigger>
+              </Tooltip>
               <Popover.Portal>
                 <Popover.Content
                   className="z-50 w-48 rounded-md border border-border bg-background p-2 shadow-lg"
