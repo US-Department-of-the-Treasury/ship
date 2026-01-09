@@ -13,6 +13,7 @@ interface PersonDocument {
   title: string;
   content: unknown;
   document_type: string;
+  archived_at: string | null;
   properties?: {
     email?: string | null;
     role?: string | null;
@@ -191,6 +192,14 @@ export function PersonEditorPage() {
       onNavigateToDocument={handleNavigateToDocument}
       sidebar={
         <div className="space-y-4 p-4">
+          {person.archived_at && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+              <p className="text-sm font-medium text-amber-300">Archived</p>
+              <p className="mt-1 text-xs text-amber-300/70">
+                This team member has been archived and no longer has access.
+              </p>
+            </div>
+          )}
           <PropertyRow label="Email">
             <div className="text-sm text-foreground">
               {person.title.toLowerCase().replace(/\s+/g, '.')}@example.com

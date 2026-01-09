@@ -541,8 +541,12 @@ function IssueRowContent({ issue, visibleColumns }: IssueRowContentProps) {
       )}
       {/* Assignee */}
       {visibleColumns.has('assignee') && (
-        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
-          {issue.assignee_name || 'Unassigned'}
+        <td className={cn("px-4 py-3 text-sm text-muted", issue.assignee_archived && "opacity-50")} role="gridcell">
+          {issue.assignee_name ? (
+            <>
+              {issue.assignee_name}{issue.assignee_archived && ' (archived)'}
+            </>
+          ) : 'Unassigned'}
         </td>
       )}
       {/* Updated */}

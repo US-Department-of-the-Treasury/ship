@@ -12,6 +12,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DocumentsProvider } from '@/contexts/DocumentsContext';
 import { ProgramsProvider } from '@/contexts/ProgramsContext';
 import { IssuesProvider } from '@/contexts/IssuesContext';
+import { ArchivedPersonsProvider } from '@/contexts/ArchivedPersonsContext';
 import { LoginPage } from '@/pages/Login';
 import { AppLayout } from '@/pages/App';
 import { DocumentsPage } from '@/pages/Documents';
@@ -166,13 +167,15 @@ function AppRoutes() {
         path="/"
         element={
           <ProtectedRoute>
-            <DocumentsProvider>
-              <ProgramsProvider>
-                <IssuesProvider>
-                  <AppLayout />
-                </IssuesProvider>
-              </ProgramsProvider>
-            </DocumentsProvider>
+            <ArchivedPersonsProvider>
+              <DocumentsProvider>
+                <ProgramsProvider>
+                  <IssuesProvider>
+                    <AppLayout />
+                  </IssuesProvider>
+                </ProgramsProvider>
+              </DocumentsProvider>
+            </ArchivedPersonsProvider>
           </ProtectedRoute>
         }
       >

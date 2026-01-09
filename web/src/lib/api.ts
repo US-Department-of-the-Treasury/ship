@@ -266,9 +266,10 @@ export interface WorkspaceMember {
   userId: string;
   email: string;
   name: string;
-  role: 'admin' | 'member';
+  role: 'admin' | 'member' | null;
   personDocumentId: string | null;
-  joinedAt: string;
+  joinedAt: string | null;
+  isArchived?: boolean;
 }
 
 export interface UserInfo {
@@ -324,8 +325,12 @@ export const api = {
       }),
 
     // Member management (workspace admin)
-    getMembers: (workspaceId: string) =>
-      request<{ members: WorkspaceMember[] }>(`/api/workspaces/${workspaceId}/members`),
+    getMembers: (workspaceId: string, options?: { includeArchived?: boolean }) => {
+      const params = new URLSearchParams();
+      if (options?.includeArchived) params.set('includeArchived', 'true');
+      const query = params.toString();
+      return request<{ members: WorkspaceMember[] }>(`/api/workspaces/${workspaceId}/members${query ? `?${query}` : ''}`);
+    },
 
     addMember: (workspaceId: string, data: { userId?: string; email?: string; role: 'admin' | 'member' }) =>
       request<WorkspaceMembership>(`/api/workspaces/${workspaceId}/members`, {
@@ -342,6 +347,11 @@ export const api = {
     removeMember: (workspaceId: string, userId: string) =>
       request(`/api/workspaces/${workspaceId}/members/${userId}`, {
         method: 'DELETE',
+      }),
+
+    restoreMember: (workspaceId: string, userId: string) =>
+      request(`/api/workspaces/${workspaceId}/members/${userId}/restore`, {
+        method: 'POST',
       }),
 
     // Invite management (workspace admin)

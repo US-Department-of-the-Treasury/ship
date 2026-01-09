@@ -27,14 +27,14 @@ async function getCsrfToken(page: import('@playwright/test').Page, apiUrl: strin
   return token;
 }
 
-// Helper to get a program ID (programs use onClick navigation, not links)
+// Helper to get a program ID (programs use onClick navigation with table rows)
 async function getProgramId(page: import('@playwright/test').Page): Promise<string> {
   await page.goto('/programs');
   await expect(page.locator('h1', { hasText: 'Programs' })).toBeVisible({ timeout: 10000 });
 
-  // Click on the first program card
-  const programCard = page.locator('[class*="rounded-lg"]', { hasText: /ship core/i }).first();
-  await programCard.click();
+  // Click on the Ship Core program row in the table
+  const programRow = page.locator('tr[role="row"]', { hasText: /ship core/i }).first();
+  await programRow.click();
   await page.waitForURL(/\/programs\/[a-f0-9-]+/i, { timeout: 10000 });
 
   // Extract program ID from URL

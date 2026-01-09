@@ -24,6 +24,7 @@ interface User {
   id: string;
   name: string;
   email: string;
+  isArchived?: boolean;
 }
 
 interface Sprint {
@@ -63,6 +64,7 @@ export function TeamModePage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState<'left' | 'right' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [sprintRange, setSprintRange] = useState<{ min: number; max: number } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
@@ -95,11 +97,18 @@ export function TeamModePage() {
   // Initial load
   useEffect(() => {
     Promise.all([
-      fetchTeamGrid(),
+      fetchTeamGrid(undefined, undefined, showArchived),
       fetchPrograms(),
       fetchAssignments(),
     ]).finally(() => setLoading(false));
   }, []);
+
+  // Refetch when showArchived changes
+  useEffect(() => {
+    // Skip initial render
+    if (loading) return;
+    fetchTeamGrid(sprintRange?.min, sprintRange?.max, showArchived);
+  }, [showArchived]);
 
   // Scroll to current sprint on initial load
   useEffect(() => {
@@ -118,11 +127,12 @@ export function TeamModePage() {
     }
   }, [data]);
 
-  async function fetchTeamGrid(fromSprint?: number, toSprint?: number) {
+  async function fetchTeamGrid(fromSprint?: number, toSprint?: number, includeArchived = false) {
     try {
       const params = new URLSearchParams();
       if (fromSprint !== undefined) params.set('fromSprint', String(fromSprint));
       if (toSprint !== undefined) params.set('toSprint', String(toSprint));
+      if (includeArchived) params.set('includeArchived', 'true');
 
       const url = `${API_URL}/api/team/grid${params.toString() ? `?${params}` : ''}`;
       const res = await fetch(url, { credentials: 'include' });
@@ -333,6 +343,7 @@ export function TeamModePage() {
         fromSprint: String(fromSprint),
         toSprint: String(toSprint),
       });
+      if (showArchived) params.set('includeArchived', 'true');
 
       const res = await fetch(`${API_URL}/api/team/grid?${params}`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch more sprints');
@@ -370,7 +381,7 @@ export function TeamModePage() {
     } finally {
       setLoadingMore(null);
     }
-  }, [data, sprintRange, loadingMore]);
+  }, [data, sprintRange, loadingMore, showArchived]);
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -457,9 +468,20 @@ export function TeamModePage() {
             </button>
           </div>
         </div>
-        <span className="text-xs text-muted">
-          {data.users.length} team members &middot; {programs.length} programs
-        </span>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-border text-accent focus:ring-accent/50"
+            />
+            <span className="text-xs text-muted">Show archived</span>
+          </label>
+          <span className="text-xs text-muted">
+            {data.users.length} team members &middot; {programs.length} programs
+          </span>
+        </div>
       </header>
 
       {/* Tab Content */}
@@ -476,13 +498,25 @@ export function TeamModePage() {
           {data.users.map((user) => (
             <div
               key={user.id}
-              className="flex h-12 w-[180px] items-center border-b border-border px-3"
+              className={cn(
+                "flex h-12 w-[180px] items-center border-b border-border px-3",
+                user.isArchived && "opacity-50"
+              )}
             >
               <div className="flex items-center gap-2 overflow-hidden">
-                <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-accent/80 text-xs font-medium text-white">
+                <div className={cn(
+                  "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white",
+                  user.isArchived ? "bg-gray-400" : "bg-accent/80"
+                )}>
                   {user.name.charAt(0).toUpperCase()}
                 </div>
-                <span className="truncate text-sm text-foreground">{user.name}</span>
+                <span className={cn(
+                  "truncate text-sm",
+                  user.isArchived ? "text-muted" : "text-foreground"
+                )}>
+                  {user.name}
+                  {user.isArchived && <span className="ml-1 text-xs">(archived)</span>}
+                </span>
               </div>
             </div>
           ))}

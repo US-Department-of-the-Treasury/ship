@@ -48,6 +48,7 @@ interface Issue {
   ticket_number: number;
   assignee_id: string | null;
   assignee_name: string | null;
+  assignee_archived?: boolean;
   display_id: string;
   sprint_ref_id: string | null;
 }
@@ -423,8 +424,12 @@ function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (
                 {stateLabels[issue.state] || issue.state}
               </span>
             </td>
-            <td className="px-6 py-3 text-sm text-muted">
-              {issue.assignee_name || 'Unassigned'}
+            <td className={cn("px-6 py-3 text-sm text-muted", issue.assignee_archived && "opacity-50")}>
+              {issue.assignee_name ? (
+                <>
+                  {issue.assignee_name}{issue.assignee_archived && ' (archived)'}
+                </>
+              ) : 'Unassigned'}
             </td>
           </tr>
         ))}

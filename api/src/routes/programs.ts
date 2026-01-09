@@ -365,9 +365,13 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.ticket_number,
               d.sprint_id, d.created_at, d.updated_at, d.created_by,
-              u.name as assignee_name
+              u.name as assignee_name,
+              CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+       LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
+         AND person_doc.document_type = 'person'
+         AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
        WHERE d.program_id = $1 AND d.document_type = 'issue'
          AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY
@@ -398,6 +402,7 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
         updated_at: row.updated_at,
         created_by: row.created_by,
         assignee_name: row.assignee_name,
+        assignee_archived: row.assignee_archived || false,
         display_id: `#${row.ticket_number}`
       };
     });

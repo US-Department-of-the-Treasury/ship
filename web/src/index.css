@@ -373,6 +373,17 @@ input::placeholder {
   color: #c084fc;
 }
 
+/* Archived mention (when person is archived) */
+.mention-archived {
+  color: #9ca3af;
+  background: rgba(156, 163, 175, 0.1);
+}
+
+.mention-archived:hover {
+  background: rgba(156, 163, 175, 0.2);
+  color: #d1d5db;
+}
+
 /* Broken mention (when target is deleted) */
 .mention-broken {
   color: #ef4444;

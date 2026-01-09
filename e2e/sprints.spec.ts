@@ -22,8 +22,8 @@ test.describe('Sprints - Issue Editor Integration', () => {
   test('Sprints tab shows in program view', async ({ page }) => {
     await page.goto('/programs')
 
-    // Click on an existing program (Ship Core from seed data)
-    await page.locator('main').getByRole('button', { name: /ship core/i }).click()
+    // Click on an existing program (Ship Core from seed data) - using table row
+    await page.locator('tr[role="row"]', { hasText: /ship core/i }).first().click()
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Should see Sprints tab in the program editor (can be tab or button depending on implementation)
@@ -33,7 +33,7 @@ test.describe('Sprints - Issue Editor Integration', () => {
   test('can assign issue to sprint via sprint picker in issue editor', async ({ page }) => {
     // Navigate to an existing program with sprints (Ship Core from seed data)
     await page.goto('/programs')
-    await page.locator('main').getByRole('button', { name: /ship core/i }).click()
+    await page.locator('tr[role="row"]', { hasText: /ship core/i }).first().click()
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Navigate to issues and create a new issue

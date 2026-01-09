@@ -389,7 +389,17 @@ export function IssueEditorPage() {
 
             <PropertyRow label="Assignee">
               <Combobox
-                options={teamMembers.map((m) => ({ value: m.user_id, label: m.name }))}
+                options={(() => {
+                  const options = teamMembers.map((m) => ({ value: m.user_id, label: m.name }));
+                  // If current assignee is archived and not in the active team members list, add them
+                  if (displayIssue.assignee_id && displayIssue.assignee_archived && displayIssue.assignee_name) {
+                    const exists = options.some(o => o.value === displayIssue.assignee_id);
+                    if (!exists) {
+                      options.unshift({ value: displayIssue.assignee_id, label: `${displayIssue.assignee_name} (archived)` });
+                    }
+                  }
+                  return options;
+                })()}
                 value={displayIssue.assignee_id}
                 onChange={(value) => handleUpdateIssue({ assignee_id: value })}
                 placeholder="Unassigned"
