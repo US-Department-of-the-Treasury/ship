@@ -38,9 +38,20 @@ export interface IssueProperties {
   [key: string]: unknown;
 }
 
+// GitHub repository reference for linking to programs
+export interface GitHubRepo {
+  owner: string;  // GitHub org or user
+  repo: string;   // Repository name
+}
+
 export interface ProgramProperties {
   color: string;
   emoji?: string | null;  // Optional emoji for visual identification
+  githubRepos?: GitHubRepo[];  // Linked GitHub repositories (1:Many)
+  autoStatusOnMerge?: {
+    enabled: boolean;
+    targetStatus: string;  // Status to set when PR is merged (e.g., 'done')
+  };
   [key: string]: unknown;
 }
 
@@ -60,6 +71,7 @@ export interface PersonProperties {
   email?: string | null;
   role?: string | null;
   capacity_hours?: number | null;
+  github_username?: string | null;  // GitHub username for activity mapping
   [key: string]: unknown;
 }
 
