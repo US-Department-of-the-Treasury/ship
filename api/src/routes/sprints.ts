@@ -55,6 +55,9 @@ function extractSprintFromRow(row: any) {
     started_count: parseInt(row.started_count) || 0,
     has_plan: row.has_plan === true || row.has_plan === 't',
     has_retro: row.has_retro === true || row.has_retro === 't',
+    // Retro outcome summary (populated if retro exists)
+    retro_outcome: row.retro_outcome || null,
+    retro_id: row.retro_id || null,
     // Hypothesis tracking fields
     hypothesis: props.hypothesis || null,
     success_criteria: props.success_criteria || null,
@@ -82,7 +85,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
               (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
-              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.parent_id = d.id AND rt.document_type = 'sprint_retro') as has_retro
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
@@ -312,7 +317,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
@@ -450,7 +459,9 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
               (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
-              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.parent_id = d.id AND rt.document_type = 'sprint_retro') as has_retro
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
