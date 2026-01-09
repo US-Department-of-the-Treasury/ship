@@ -2,23 +2,18 @@
  * Category 5: Error Handling
  * Tests conflict resolution and network error handling.
  *
- * SKIP REASON: These tests require offline mutation queue and conflict
- * resolution UI which are NOT YET IMPLEMENTED.
- *
- * INFRASTRUCTURE NEEDED:
- * 1. Offline mutation queue (Category 2, 4)
- * 2. Conflict detection when syncing stale data
- * 3. Conflict resolution UI with user choice options
- * 4. Retry logic with exponential backoff
- * 5. Error state UI for sync failures
- *
- * See: docs/application-architecture.md "Offline Mutation Queue"
+ * Infrastructure implemented:
+ * - Conflict detection on 409 responses (markMutationConflict in queryClient.ts)
+ * - Conflict resolution UI with dismiss/reload options (PendingSyncCount.tsx)
+ * - Retry logic with exponential backoff (1s, 2s, 4s, 8s, 16s)
+ * - Error state UI for sync failures (MAX_RETRY_COUNT = 5)
+ * - Mutation sync status tracking (pending, syncing, synced, conflict)
  */
 import { test, expect } from './fixtures/offline'
 
 
 
-test.describe.skip('5.1 Sync Conflicts', () => {
+test.describe('5.1 Sync Conflicts', () => {
   test('shows conflict resolution UI when server rejects stale update', async ({ page, goOffline, goOnline, login, testData }) => {
     await login()
 
@@ -101,7 +96,7 @@ test.describe.skip('5.1 Sync Conflicts', () => {
   })
 })
 
-test.describe.skip('5.2 Network Flakiness', () => {
+test.describe('5.2 Network Flakiness', () => {
   test('retries failed mutations automatically', async ({ page, goOffline, goOnline, login }) => {
     await login()
 
@@ -110,9 +105,11 @@ test.describe.skip('5.2 Network Flakiness', () => {
     await goOffline()
     await page.getByRole('button', { name: 'New Document', exact: true }).click()
     await page.waitForURL(/\/docs\/[^/]+$/)
-    const titleInput = page.locator('[contenteditable="true"]').first()
+    // Use title input, not contenteditable editor
+    const titleInput = page.locator('input[placeholder="Untitled"]')
     await titleInput.click()
-    await page.keyboard.type('Retry Test')
+    await titleInput.fill('Retry Test')
+    await page.waitForTimeout(1000) // Wait for throttled save
     await page.goto('/docs')
 
     // WHEN: Network is flaky (online but first request fails)
@@ -140,28 +137,47 @@ test.describe.skip('5.2 Network Flakiness', () => {
 
     // GIVEN: User creates document offline
     await page.goto('/docs')
-    await goOffline()
-    await page.getByRole('button', { name: 'New Document', exact: true }).click()
-    await page.waitForURL(/\/docs\/[^/]+$/)
-    const titleInput = page.locator('[contenteditable="true"]').first()
-    await titleInput.click()
-    await page.keyboard.type('Max Retry Test')
-    await page.goto('/docs')
 
-    // WHEN: Network always fails
-    await page.route('**/api/documents', (route) => {
-      if (route.request().method() === 'POST') {
+    // Set up route interception BEFORE going offline to ensure it catches all sync attempts
+    // Must intercept both /api/documents (POST create) and /api/documents/* (PATCH update)
+    await page.route('**/api/documents/**', (route) => {
+      const method = route.request().method()
+      if (method === 'POST' || method === 'PATCH') {
+        console.log('[TEST] Intercepting', method, 'to', route.request().url(), '- aborting')
         route.abort('connectionfailed')
       } else {
         route.continue()
       }
     })
+    await page.route('**/api/documents', (route) => {
+      const method = route.request().method()
+      if (method === 'POST' || method === 'PATCH') {
+        console.log('[TEST] Intercepting', method, 'to', route.request().url(), '- aborting')
+        route.abort('connectionfailed')
+      } else {
+        route.continue()
+      }
+    })
+
+    await goOffline()
+    await page.getByRole('button', { name: 'New Document', exact: true }).click()
+    await page.waitForURL(/\/docs\/[^/]+$/)
+    // Use title input, not contenteditable editor
+    const titleInput = page.locator('input[placeholder="Untitled"]')
+    await titleInput.click()
+    await titleInput.fill('Max Retry Test')
+    await page.waitForTimeout(1000) // Wait for throttled save
+    await page.goto('/docs')
+
+    // WHEN: Go online - sync attempts will fail due to route interception
     await goOnline()
 
-    // THEN: Error state shown after retries exhausted
-    await expect(page.getByText(/failed to sync|retry later/i)).toBeVisible({ timeout: 30000 })
-    // AND: Mutation remains in queue for manual retry
-    await expect(page.getByTestId('pending-sync-icon')).toBeVisible()
+    // THEN: Error state shown after retries exhausted - verify sync count shows pending
+    // AND: Mutation remains in queue for manual retry (visible in sync count button)
+    await expect(page.getByRole('button', { name: /Sync Now \d+/ })).toBeVisible({ timeout: 30000 })
+    // AND: Either "Failed to sync" or "Retry later" text is visible (error UI)
+    // Note: With exponential backoff (1s, 2s, 4s, 8s, 16s), all 5 retries take ~31s
+    await expect(page.locator('text=Retry later')).toBeVisible({ timeout: 45000 })
   })
 
   test('handles intermittent connectivity gracefully', async ({ page, goOffline, goOnline, login }) => {
@@ -174,9 +190,11 @@ test.describe.skip('5.2 Network Flakiness', () => {
     await goOffline()
     await page.getByRole('button', { name: 'New Document', exact: true }).click()
     await page.waitForURL(/\/docs\/[^/]+$/)
-    let titleInput = page.locator('[contenteditable="true"]').first()
+    // Use title input, not contenteditable editor
+    let titleInput = page.locator('input[placeholder="Untitled"]')
     await titleInput.click()
-    await page.keyboard.type('Intermittent 1')
+    await titleInput.fill('Intermittent 1')
+    await page.waitForTimeout(1000) // Wait for throttled save
     await page.goto('/docs')
 
     await goOnline()
@@ -185,9 +203,11 @@ test.describe.skip('5.2 Network Flakiness', () => {
 
     await page.getByRole('button', { name: 'New Document', exact: true }).click()
     await page.waitForURL(/\/docs\/[^/]+$/)
-    titleInput = page.locator('[contenteditable="true"]').first()
+    // Re-select title input for new document
+    titleInput = page.locator('input[placeholder="Untitled"]')
     await titleInput.click()
-    await page.keyboard.type('Intermittent 2')
+    await titleInput.fill('Intermittent 2')
+    await page.waitForTimeout(1000) // Wait for throttled save
     await page.goto('/docs')
 
     await goOnline()
