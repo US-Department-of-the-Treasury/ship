@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { addPendingMutation, removePendingMutation } from '@/lib/queryClient';
 
 export interface ProgramOwner {
@@ -194,11 +194,67 @@ export function useUpdateProgram() {
   });
 }
 
+// Delete program
+async function deleteProgramApi(id: string): Promise<void> {
+  const res = await apiDelete(`/api/programs/${id}`);
+  if (!res.ok) {
+    const error = new Error('Failed to delete program') as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
+}
+
+// Hook to delete program with optimistic update
+export function useDeleteProgram() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => deleteProgramApi(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: programKeys.lists() });
+
+      const previousPrograms = queryClient.getQueryData<Program[]>(programKeys.lists());
+
+      const pendingId = addPendingMutation({
+        type: 'delete',
+        resource: 'program',
+        resourceId: id,
+        data: null,
+      });
+
+      // Optimistically remove the program
+      queryClient.setQueryData<Program[]>(
+        programKeys.lists(),
+        (old) => old?.filter(p => p.id !== id) || []
+      );
+
+      return { previousPrograms, pendingId };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previousPrograms) {
+        queryClient.setQueryData(programKeys.lists(), context.previousPrograms);
+      }
+      if (context?.pendingId) {
+        removePendingMutation(context.pendingId);
+      }
+    },
+    onSuccess: (_data, _id, context) => {
+      if (context?.pendingId) {
+        removePendingMutation(context.pendingId);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: programKeys.lists() });
+    },
+  });
+}
+
 // Compatibility hook that matches the old usePrograms interface
 export function usePrograms() {
   const { data: programs = [], isLoading: loading, refetch } = useProgramsQuery();
   const createMutation = useCreateProgram();
   const updateMutation = useUpdateProgram();
+  const deleteMutation = useDeleteProgram();
 
   const createProgram = async (): Promise<Program | null> => {
     // When offline, return optimistic data immediately instead of waiting for mutateAsync
@@ -245,11 +301,27 @@ export function usePrograms() {
     await refetch();
   };
 
+  const deleteProgram = async (id: string): Promise<boolean> => {
+    // When offline, trigger mutation and return immediately
+    if (!navigator.onLine) {
+      deleteMutation.mutate(id);
+      return true;
+    }
+
+    try {
+      await deleteMutation.mutateAsync(id);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   return {
     programs,
     loading,
     createProgram,
     updateProgram,
+    deleteProgram,
     refreshPrograms,
   };
 }
