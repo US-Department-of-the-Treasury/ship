@@ -290,6 +290,7 @@ export function IssuesPage() {
     { key: 'title', label: 'Title' },
     { key: 'status', label: 'Status' },
     { key: 'source', label: 'Source' },
+    { key: 'program', label: 'Program' },
     { key: 'priority', label: 'Priority' },
     { key: 'assignee', label: 'Assignee' },
     { key: 'updated', label: 'Updated' },
@@ -495,6 +496,10 @@ function IssueRowContent({ issue }: IssueRowContentProps) {
       {/* Source */}
       <td className="px-4 py-3" role="gridcell">
         <SourceBadge source={issue.source} />
+      </td>
+      {/* Program */}
+      <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+        {issue.program_name || '—'}
       </td>
       {/* Priority */}
       <td className="px-4 py-3" role="gridcell">
