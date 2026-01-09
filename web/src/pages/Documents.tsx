@@ -9,8 +9,10 @@ import { useToast } from '@/components/ui/Toast';
 import { getPendingMutations, removePendingMutation } from '@/lib/queryClient';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/cn';
-import { SelectableList, RowRenderProps } from '@/components/SelectableList';
+import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
+import { DocumentListToolbar } from '@/components/DocumentListToolbar';
+import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
 
 // View mode type
 type ViewMode = 'tree' | 'list';
@@ -71,6 +73,12 @@ export function DocumentsPage() {
 
   // Sort state for list view
   const [sortBy, setSortBy] = useState<string>('title');
+
+  // Selection state for list view
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Context menu state for list view
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
 
   // Column visibility for list view
   const {
@@ -203,6 +211,56 @@ export function DocumentsPage() {
     );
   }, [documents, deleteDocument, showToast, queryClient]);
 
+  // Bulk delete handler
+  const handleBulkDelete = useCallback(async () => {
+    const idsToDelete = Array.from(selectedIds);
+    if (idsToDelete.length === 0) return;
+
+    const count = idsToDelete.length;
+    const docsToDelete = documents.filter(d => selectedIds.has(d.id));
+
+    // Delete all selected documents
+    await Promise.all(idsToDelete.map(id => deleteDocument(id)));
+
+    // Clear selection and context menu
+    setSelectedIds(new Set());
+    setContextMenu(null);
+
+    // Show toast with undo
+    showToast(
+      `${count} document${count === 1 ? '' : 's'} deleted`,
+      'info',
+      5000,
+      {
+        label: 'Undo',
+        onClick: () => {
+          // Remove pending delete mutations
+          const pendingMutations = getPendingMutations();
+          idsToDelete.forEach(id => {
+            const deleteMutation = pendingMutations.find(
+              m => m.type === 'delete' && m.resource === 'document' && m.resourceId === id
+            );
+            if (deleteMutation) {
+              removePendingMutation(deleteMutation.id);
+            }
+          });
+
+          // Restore documents to cache
+          queryClient.setQueryData<WikiDocument[]>(
+            ['documents', 'wiki'],
+            (old) => old ? [...docsToDelete, ...old] : docsToDelete
+          );
+        }
+      }
+    );
+  }, [selectedIds, documents, deleteDocument, showToast, queryClient]);
+
+  // Context menu handler
+  const handleContextMenu = useCallback((e: React.MouseEvent, _item: WikiDocument, selection: UseSelectionReturn) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, selection });
+  }, []);
+
   // Show offline empty state when offline with no cached data
   if (isOfflineEmpty) {
     return (
@@ -304,6 +362,31 @@ export function DocumentsPage() {
         </div>
       </div>
 
+      {/* List view toolbar (sort, column picker) */}
+      {viewMode === 'list' && (
+        <div className="mb-4">
+          <DocumentListToolbar
+            sortOptions={SORT_OPTIONS}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+            allColumns={ALL_COLUMNS}
+            visibleColumns={visibleColumns}
+            onToggleColumn={toggleColumn}
+            hiddenCount={hiddenCount}
+            showColumnPicker={true}
+          />
+        </div>
+      )}
+
+      {/* Bulk action bar for list view */}
+      {viewMode === 'list' && selectedIds.size > 0 && (
+        <DocumentBulkActionBar
+          selectedCount={selectedIds.size}
+          onDelete={handleBulkDelete}
+          onClearSelection={() => setSelectedIds(new Set())}
+        />
+      )}
+
       {/* Document list */}
       {filteredDocuments.length === 0 ? (
         <div className="flex h-64 items-center justify-center">
@@ -337,14 +420,29 @@ export function DocumentsPage() {
           ))}
         </ul>
       ) : (
-        <div className="rounded-lg border border-border">
-          <SelectableList
-            items={sortedDocuments}
-            getItemId={(doc) => doc.id}
-            renderRow={(doc, props) => renderDocumentRow(doc, props)}
-            onItemClick={(doc) => navigate(`/docs/${doc.id}`)}
-          />
-        </div>
+        <>
+          <div className="rounded-lg border border-border">
+            <SelectableList
+              items={sortedDocuments}
+              getItemId={(doc) => doc.id}
+              renderRow={(doc, props) => renderDocumentRow(doc, props)}
+              onItemClick={(doc) => navigate(`/docs/${doc.id}`)}
+              selectable={true}
+              onSelectionChange={(ids) => setSelectedIds(ids)}
+              onContextMenu={handleContextMenu}
+            />
+          </div>
+
+          {/* Context menu */}
+          {contextMenu && (
+            <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+              <ContextMenuItem onClick={handleBulkDelete} destructive>
+                <TrashIcon className="h-4 w-4" />
+                Delete {selectedIds.size > 1 ? `${selectedIds.size} documents` : 'document'}
+              </ContextMenuItem>
+            </ContextMenu>
+          )}
+        </>
       )}
     </div>
   );
@@ -475,6 +573,57 @@ function DocumentRowContent({ document, visibleColumns }: { document: WikiDocume
             : '-'}
         </div>
       )}
+    </div>
+  );
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className || 'h-4 w-4'} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+      />
+    </svg>
+  );
+}
+
+/**
+ * DocumentBulkActionBar - Bulk action bar for documents (Delete only for now)
+ */
+interface DocumentBulkActionBarProps {
+  selectedCount: number;
+  onDelete: () => void;
+  onClearSelection: () => void;
+}
+
+function DocumentBulkActionBar({
+  selectedCount,
+  onDelete,
+  onClearSelection,
+}: DocumentBulkActionBarProps) {
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-lg border border-border bg-background/80 px-4 py-2 shadow-sm">
+      <span className="text-sm text-muted">
+        {selectedCount} selected
+      </span>
+      <div className="h-4 w-px bg-border" />
+      <button
+        onClick={onDelete}
+        className="flex items-center gap-1.5 rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50 transition-colors"
+      >
+        <TrashIcon className="h-4 w-4" />
+        Delete
+      </button>
+      <div className="flex-1" />
+      <button
+        onClick={onClearSelection}
+        className="text-sm text-muted hover:text-foreground transition-colors"
+      >
+        Clear selection
+      </button>
     </div>
   );
 }
