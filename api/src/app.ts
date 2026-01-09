@@ -11,6 +11,7 @@ import issuesRoutes from './routes/issues.js';
 import feedbackRoutes, { publicFeedbackRouter } from './routes/feedback.js';
 import programsRoutes from './routes/programs.js';
 import sprintsRoutes from './routes/sprints.js';
+import iterationsRoutes from './routes/iterations.js';
 import teamRoutes from './routes/team.js';
 import workspacesRoutes from './routes/workspaces.js';
 import adminRoutes from './routes/admin.js';
@@ -176,6 +177,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/feedback', conditionalCsrf, feedbackRoutes);
   app.use('/api/programs', conditionalCsrf, programsRoutes);
   app.use('/api/sprints', conditionalCsrf, sprintsRoutes);
+  app.use('/api/sprints', conditionalCsrf, iterationsRoutes);
   app.use('/api/team', conditionalCsrf, teamRoutes);
   app.use('/api/workspaces', conditionalCsrf, workspacesRoutes);
   app.use('/api/admin', conditionalCsrf, adminRoutes);
