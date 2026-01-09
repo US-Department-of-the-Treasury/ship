@@ -6,6 +6,7 @@ import { BulkActionBar } from '@/components/BulkActionBar';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useBulkUpdateIssues } from '@/hooks/useIssuesQuery';
+import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { useListFilters, ViewMode } from '@/hooks/useListFilters';
 import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
@@ -72,6 +73,7 @@ export function IssuesPage() {
   const { issues: allIssues, loading, createIssue: contextCreateIssue, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
   const isOfflineEmpty = useOfflineEmptyState(allIssues, loading);
   const bulkUpdate = useBulkUpdateIssues();
+  const { data: teamMembers = [] } = useTeamMembersQuery();
   const { showToast } = useToast();
 
   // Use shared hooks for list state management
@@ -258,6 +260,22 @@ export function IssuesPage() {
     clearSelection();
   }, [selectedIds, bulkUpdate, showToast, clearSelection]);
 
+  const handleBulkAssign = useCallback((assigneeId: string | null) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const count = ids.length;
+    // Find the team member to get both the name and user_id
+    // BulkActionBar passes the team member's id (person document ID), but API needs user_id
+    const teamMember = assigneeId ? teamMembers.find(m => m.id === assigneeId) : null;
+    const assigneeName = teamMember?.name || 'Unassigned';
+    const userId = teamMember?.user_id || null;
+    bulkUpdate.mutate({ ids, action: 'update', updates: { assignee_id: userId } }, {
+      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} assigned to ${assigneeName}`, 'success'),
+      onError: () => showToast('Failed to assign issues', 'error'),
+    });
+    clearSelection();
+  }, [selectedIds, teamMembers, bulkUpdate, showToast, clearSelection]);
+
   // Selection change handler - keeps parent state in sync with SelectableList
   const handleSelectionChange = useCallback((newSelectedIds: Set<string>, newSelection: UseSelectionReturn) => {
     setSelectedIds(newSelectedIds);
@@ -432,6 +450,8 @@ export function IssuesPage() {
           onDelete={handleBulkDelete}
           onChangeStatus={handleBulkChangeStatus}
           onMoveToSprint={handleBulkMoveToSprint}
+          onAssign={handleBulkAssign}
+          teamMembers={teamMembers}
           loading={bulkUpdate.isPending}
         />
       ) : (

@@ -226,6 +226,7 @@ interface BulkUpdateRequest {
   updates?: {
     state?: string;
     sprint_id?: string | null;
+    assignee_id?: string | null;
   };
 }
 

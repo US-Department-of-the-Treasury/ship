@@ -6,6 +6,11 @@ interface Sprint {
   name: string;
 }
 
+interface TeamMember {
+  id: string;
+  name: string;
+}
+
 export interface BulkActionBarProps {
   /** Number of selected items */
   selectedCount: number;
@@ -19,8 +24,12 @@ export interface BulkActionBarProps {
   onChangeStatus: (status: string) => void;
   /** Callback to move selected items to a sprint */
   onMoveToSprint: (sprintId: string | null) => void;
+  /** Callback to assign selected items to a team member */
+  onAssign?: (assigneeId: string | null) => void;
   /** Available sprints for the dropdown */
   sprints?: Sprint[];
+  /** Available team members for the dropdown */
+  teamMembers?: TeamMember[];
   /** Whether actions are loading */
   loading?: boolean;
 }
@@ -51,13 +60,17 @@ export function BulkActionBar({
   onDelete,
   onChangeStatus,
   onMoveToSprint,
+  onAssign,
   sprints = [],
+  teamMembers = [],
   loading = false,
 }: BulkActionBarProps) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [sprintOpen, setSprintOpen] = useState(false);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
   const statusRef = useRef<HTMLDivElement>(null);
   const sprintRef = useRef<HTMLDivElement>(null);
+  const assigneeRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -67,6 +80,9 @@ export function BulkActionBar({
       }
       if (sprintRef.current && !sprintRef.current.contains(e.target as Node)) {
         setSprintOpen(false);
+      }
+      if (assigneeRef.current && !assigneeRef.current.contains(e.target as Node)) {
+        setAssigneeOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -79,6 +95,7 @@ export function BulkActionBar({
       if (e.key === 'Escape') {
         setStatusOpen(false);
         setSprintOpen(false);
+        setAssigneeOpen(false);
       }
     }
     document.addEventListener('keydown', handleKeyDown);
@@ -94,6 +111,11 @@ export function BulkActionBar({
     onMoveToSprint(sprintId);
     setSprintOpen(false);
   }, [onMoveToSprint]);
+
+  const handleAssigneeSelect = useCallback((assigneeId: string | null) => {
+    onAssign?.(assigneeId);
+    setAssigneeOpen(false);
+  }, [onAssign]);
 
   if (selectedCount === 0) {
     return null;
@@ -127,7 +149,7 @@ export function BulkActionBar({
       {/* Change Status dropdown */}
       <div className="relative" ref={statusRef}>
         <ActionButton
-          onClick={() => { setSprintOpen(false); setStatusOpen(!statusOpen); }}
+          onClick={() => { setSprintOpen(false); setAssigneeOpen(false); setStatusOpen(!statusOpen); }}
           disabled={loading}
           icon={<StatusIcon />}
           label="Change Status"
@@ -151,7 +173,7 @@ export function BulkActionBar({
       {/* Move to Sprint dropdown */}
       <div className="relative" ref={sprintRef}>
         <ActionButton
-          onClick={() => { setStatusOpen(false); setSprintOpen(!sprintOpen); }}
+          onClick={() => { setStatusOpen(false); setAssigneeOpen(false); setSprintOpen(!sprintOpen); }}
           disabled={loading}
           icon={<SprintIcon />}
           label="Move to Sprint"
@@ -182,6 +204,43 @@ export function BulkActionBar({
           </DropdownMenu>
         )}
       </div>
+
+      {/* Assign dropdown */}
+      {onAssign && (
+        <div className="relative" ref={assigneeRef}>
+          <ActionButton
+            onClick={() => { setStatusOpen(false); setSprintOpen(false); setAssigneeOpen(!assigneeOpen); }}
+            disabled={loading}
+            icon={<PersonIcon />}
+            label="Assign"
+            hasDropdown
+            isOpen={assigneeOpen}
+          />
+          {assigneeOpen && (
+            <DropdownMenu>
+              <DropdownItem onClick={() => handleAssigneeSelect(null)}>
+                Unassigned
+              </DropdownItem>
+              {teamMembers.length > 0 && (
+                <div className="my-1 h-px bg-border" />
+              )}
+              {teamMembers.map((member) => (
+                <DropdownItem
+                  key={member.id}
+                  onClick={() => handleAssigneeSelect(member.id)}
+                >
+                  {member.name}
+                </DropdownItem>
+              ))}
+              {teamMembers.length === 0 && (
+                <div className="px-3 py-2 text-xs text-muted">
+                  No team members available
+                </div>
+              )}
+            </DropdownMenu>
+          )}
+        </div>
+      )}
 
       {/* Delete button */}
       <ActionButton
@@ -304,6 +363,14 @@ function SprintIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  );
+}
+
+function PersonIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
     </svg>
   );
 }

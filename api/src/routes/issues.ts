@@ -568,6 +568,7 @@ const bulkUpdateSchema = z.object({
   updates: z.object({
     state: z.enum(['triage', 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional(),
     sprint_id: z.string().uuid().nullable().optional(),
+    assignee_id: z.string().uuid().nullable().optional(),
   }).optional(),
 });
 
@@ -665,6 +666,13 @@ router.post('/bulk', authMiddleware, async (req: Request, res: Response) => {
         if (updates.sprint_id !== undefined) {
           setClauses.push(`sprint_id = $${paramIdx}`);
           values.push(updates.sprint_id);
+          paramIdx++;
+        }
+
+        if (updates.assignee_id !== undefined) {
+          // Update assignee_id in properties JSONB
+          setClauses.push(`properties = jsonb_set(COALESCE(properties, '{}'), '{assignee_id}', $${paramIdx}::jsonb)`);
+          values.push(updates.assignee_id === null ? 'null' : JSON.stringify(updates.assignee_id));
           paramIdx++;
         }
 
