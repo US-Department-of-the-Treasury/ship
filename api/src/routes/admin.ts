@@ -1148,6 +1148,13 @@ router.post('/workspaces/:id/members', async (req: Request, res: Response): Prom
       [id, userId, role]
     );
 
+    // Create Person document for this user in this workspace (links via properties.user_id)
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+       VALUES ($1, 'person', $2, $3, $4)`,
+      [id, userResult.rows[0].name, JSON.stringify({ user_id: userId, email: userResult.rows[0].email }), req.userId]
+    );
+
     // Audit log
     await logAuditEvent({
       workspaceId: id,
