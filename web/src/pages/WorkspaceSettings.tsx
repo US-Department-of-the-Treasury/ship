@@ -85,18 +85,18 @@ export function WorkspaceSettingsPage() {
     }
   }
 
-  async function handleRemoveMember(userId: string) {
+  async function handleArchiveMember(userId: string) {
     if (!currentWorkspace) return;
 
     // Check if this is the last admin
     const admins = members.filter(m => m.role === 'admin');
     const member = members.find(m => m.userId === userId);
     if (member?.role === 'admin' && admins.length === 1) {
-      alert('Cannot remove the last admin. Promote another member first.');
+      alert('Cannot archive the last admin. Promote another member first.');
       return;
     }
 
-    if (!confirm('Are you sure you want to remove this member? They will immediately lose access.')) return;
+    if (!confirm(`Archive ${member?.name || 'this member'}? They will lose access immediately.`)) return;
 
     const res = await api.workspaces.removeMember(currentWorkspace.id, userId);
     if (res.success) {
@@ -158,7 +158,7 @@ export function WorkspaceSettingsPage() {
                 members={members}
                 currentUserId={user?.id}
                 onUpdateRole={handleUpdateRole}
-                onRemoveMember={handleRemoveMember}
+                onArchiveMember={handleArchiveMember}
               />
             )}
             {activeTab === 'invites' && (
@@ -207,12 +207,12 @@ function MembersTab({
   members,
   currentUserId,
   onUpdateRole,
-  onRemoveMember,
+  onArchiveMember,
 }: {
   members: WorkspaceMember[];
   currentUserId?: string;
   onUpdateRole: (userId: string, role: 'admin' | 'member') => void;
-  onRemoveMember: (userId: string) => void;
+  onArchiveMember: (userId: string) => void;
 }) {
   const adminCount = members.filter(m => m.role === 'admin').length;
 
@@ -261,10 +261,10 @@ function MembersTab({
                 <td className="px-4 py-3 text-right">
                   {!isSelf && !isLastAdmin && (
                     <button
-                      onClick={() => onRemoveMember(member.userId)}
+                      onClick={() => onArchiveMember(member.userId)}
                       className="text-sm text-red-500 hover:text-red-400 transition-colors"
                     >
-                      Remove
+                      Archive
                     </button>
                   )}
                 </td>
