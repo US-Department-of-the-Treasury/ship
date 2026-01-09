@@ -1656,23 +1656,61 @@ function SprintTimeline({
     return () => container.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
+  // Group windows by month
+  const monthGroups = useMemo(() => {
+    const groups: { month: string; year: number; windows: typeof windows }[] = [];
+    let currentGroup: { month: string; year: number; windows: typeof windows } | null = null;
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    windows.forEach((window) => {
+      const monthName = monthNames[window.start_date.getMonth()];
+      const year = window.start_date.getFullYear();
+
+      if (!currentGroup || currentGroup.month !== monthName || currentGroup.year !== year) {
+        currentGroup = { month: monthName, year, windows: [] };
+        groups.push(currentGroup);
+      }
+      currentGroup.windows.push(window);
+    });
+
+    return groups;
+  }, [windows]);
+
   return (
     <div
       ref={scrollRef}
-      className="flex gap-3 overflow-x-auto py-2 scrollbar-hide"
+      className="overflow-x-auto scrollbar-hide"
       style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
     >
-      {windows.map((window) => (
-        <SprintWindowCard
-          key={window.sprint_number}
-          window={window}
-          isCurrentWindow={window.sprint_number === currentSprintNumber}
-          isSelected={window.sprint_number === selectedSprintNumber}
-          onSelectSprint={onSelectSprint}
-          onOpenSprint={onOpenSprint}
-          onCreateClick={onCreateClick}
-        />
-      ))}
+      {/* Month headers row */}
+      <div className="flex gap-3 mb-2">
+        {monthGroups.map((group, idx) => (
+          <div
+            key={`${group.month}-${group.year}-${idx}`}
+            className="flex-shrink-0"
+            style={{ width: `calc(${group.windows.length} * 160px + ${(group.windows.length - 1) * 12}px)` }}
+          >
+            <div className="text-xs font-medium text-muted uppercase tracking-wide px-1">
+              {group.month} {group.year !== new Date().getFullYear() ? group.year : ''}
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Sprint cards row */}
+      <div className="flex gap-3 py-2">
+        {windows.map((window) => (
+          <SprintWindowCard
+            key={window.sprint_number}
+            window={window}
+            isCurrentWindow={window.sprint_number === currentSprintNumber}
+            isSelected={window.sprint_number === selectedSprintNumber}
+            onSelectSprint={onSelectSprint}
+            onOpenSprint={onOpenSprint}
+            onCreateClick={onCreateClick}
+          />
+        ))}
+      </div>
     </div>
   );
 }
