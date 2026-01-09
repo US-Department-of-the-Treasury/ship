@@ -1705,19 +1705,27 @@ function SprintTimeline({
             </div>
           ))}
         </div>
-        {/* Sprint cards row */}
-        <div className="flex gap-3 py-2">
-          {windows.map((window) => (
-            <SprintWindowCard
-              key={window.sprint_number}
-              window={window}
-              isCurrentWindow={window.sprint_number === currentSprintNumber}
-              isSelected={window.sprint_number === selectedSprintNumber}
-              onSelectSprint={onSelectSprint}
-              onOpenSprint={onOpenSprint}
-              onCreateClick={onCreateClick}
-            />
-          ))}
+        {/* Sprint cards row with connecting line */}
+        <div className="relative py-2">
+          {/* Connecting line - runs horizontally through all cards */}
+          <div
+            className="absolute left-0 right-0 h-0.5 bg-border pointer-events-none"
+            style={{ top: '50%', transform: 'translateY(-50%)' }}
+          />
+          {/* Sprint cards */}
+          <div className="relative flex gap-3">
+            {windows.map((window) => (
+              <SprintWindowCard
+                key={window.sprint_number}
+                window={window}
+                isCurrentWindow={window.sprint_number === currentSprintNumber}
+                isSelected={window.sprint_number === selectedSprintNumber}
+                onSelectSprint={onSelectSprint}
+                onOpenSprint={onOpenSprint}
+                onCreateClick={onCreateClick}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>
