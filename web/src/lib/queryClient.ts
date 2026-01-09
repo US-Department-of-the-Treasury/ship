@@ -8,6 +8,12 @@ const documentKeys = {
   wikiList: () => [...documentKeys.all, 'wiki'] as const,
 };
 
+// Program query keys (must match useProgramsQuery.ts to avoid circular deps)
+const programKeys = {
+  all: ['programs'] as const,
+  lists: () => [...programKeys.all, 'list'] as const,
+};
+
 // ===========================================
 // Cache Schema Versioning
 // ===========================================
@@ -143,6 +149,7 @@ export interface PendingMutation {
   resource: 'document' | 'issue' | 'program' | 'sprint' | 'person';
   resourceId?: string;
   data: unknown;
+  originalData?: unknown; // Original state before optimistic update, for rollback
   timestamp: number;
   retryCount: number;
   syncStatus: MutationSyncStatus;
@@ -192,29 +199,48 @@ export function updateMutationSyncStatus(id: string, syncStatus: MutationSyncSta
   set('pending', pendingMutations, mutationStore).catch(console.error);
 }
 
-// Update document sync status in query cache (called after mutation syncs)
-function updateDocumentSyncStatusInCache(pendingId: string, syncStatus: MutationSyncStatus) {
+// Update resource sync status in query cache (called after mutation syncs)
+// Handles both documents and programs
+function updateResourceSyncStatusInCache(pendingId: string, syncStatus: MutationSyncStatus) {
   // This needs to run after queryClient is defined, so we check
   if (typeof queryClient === 'undefined') return;
 
-  interface CachedDocument {
+  interface CachedResource {
     id: string;
     _pendingId?: string;
     _syncStatus?: MutationSyncStatus;
     _pending?: boolean;
   }
 
-  const docs = queryClient.getQueryData<CachedDocument[]>(documentKeys.wikiList());
-  if (!docs) return;
+  // Helper to update a resource list
+  const updateList = (queryKey: readonly unknown[]) => {
+    const items = queryClient.getQueryData<CachedResource[]>(queryKey);
+    if (!items) return;
 
-  const updated = docs.map(doc => {
-    if (doc._pendingId === pendingId) {
-      return { ...doc, _syncStatus: syncStatus };
-    }
-    return doc;
-  });
+    const updated = items.map(item => {
+      if (item._pendingId === pendingId) {
+        // When synced, also clear the _pending flag
+        if (syncStatus === 'synced') {
+          return { ...item, _syncStatus: syncStatus, _pending: false };
+        }
+        return { ...item, _syncStatus: syncStatus };
+      }
+      return item;
+    });
 
-  queryClient.setQueryData(documentKeys.wikiList(), updated);
+    queryClient.setQueryData(queryKey, updated);
+  };
+
+  // Update documents
+  updateList(documentKeys.wikiList());
+
+  // Update programs
+  updateList(programKeys.lists());
+}
+
+// Alias for backwards compatibility
+function updateDocumentSyncStatusInCache(pendingId: string, syncStatus: MutationSyncStatus) {
+  updateResourceSyncStatusInCache(pendingId, syncStatus);
 }
 
 export function removePendingMutation(id: string) {
@@ -323,6 +349,96 @@ function scheduleRetry() {
   }, minDelay);
 }
 
+// ===========================================
+// Sync Failure Notification
+// ===========================================
+
+export interface SyncFailure {
+  resourceType: string;
+  resourceId: string;
+  operation: string;
+  message: string;
+  timestamp: number;
+}
+
+let syncFailureListeners: Array<(failure: SyncFailure) => void> = [];
+
+export function subscribeToSyncFailures(listener: (failure: SyncFailure) => void): () => void {
+  syncFailureListeners.push(listener);
+  return () => {
+    syncFailureListeners = syncFailureListeners.filter(l => l !== listener);
+  };
+}
+
+function notifySyncFailure(failure: SyncFailure) {
+  debugLog('[SyncFailure]', failure);
+  syncFailureListeners.forEach(l => l(failure));
+}
+
+// ===========================================
+// Optimistic Update Rollback
+// ===========================================
+
+// Rollback an optimistic update by restoring original data to cache
+function rollbackOptimisticUpdate(mutation: PendingMutation): void {
+  // This needs queryClient to be defined
+  if (typeof queryClient === 'undefined') return;
+
+  interface CachedResource {
+    id: string;
+    _pendingId?: string;
+  }
+
+  const { type, resource, resourceId, originalData } = mutation;
+  debugLog('[Rollback] Rolling back mutation:', type, resource, resourceId);
+
+  // Determine query key based on resource type
+  const queryKey = resource === 'document'
+    ? documentKeys.wikiList()
+    : resource === 'program'
+    ? programKeys.lists()
+    : null;
+
+  if (!queryKey) {
+    debugLog('[Rollback] Unknown resource type:', resource);
+    return;
+  }
+
+  const items = queryClient.getQueryData<CachedResource[]>(queryKey);
+  if (!items) return;
+
+  if (type === 'create') {
+    // Remove the optimistically created item
+    const updated = items.filter(item => item.id !== resourceId);
+    queryClient.setQueryData(queryKey, updated);
+    debugLog('[Rollback] Removed optimistically created item:', resourceId);
+  } else if (type === 'update' && originalData) {
+    // Restore the original data
+    const updated = items.map(item =>
+      item.id === resourceId
+        ? { ...(originalData as CachedResource), _pendingId: undefined, _pending: false, _syncStatus: undefined }
+        : item
+    );
+    queryClient.setQueryData(queryKey, updated);
+    debugLog('[Rollback] Restored original data for:', resourceId);
+  } else if (type === 'delete' && originalData) {
+    // Re-add the optimistically deleted item
+    const original = originalData as CachedResource;
+    const updated = [...items, { ...original, _pendingId: undefined, _pending: false, _syncStatus: undefined }];
+    queryClient.setQueryData(queryKey, updated);
+    debugLog('[Rollback] Restored deleted item:', resourceId);
+  }
+
+  // Notify about the failure
+  notifySyncFailure({
+    resourceType: resource,
+    resourceId: resourceId || 'unknown',
+    operation: type,
+    message: `Failed to ${type} ${resource}. Changes have been reverted.`,
+    timestamp: Date.now(),
+  });
+}
+
 // Process all pending mutations when coming online
 export async function processPendingMutations(): Promise<void> {
   const toProcess = [...pendingMutations].filter(m => m.syncStatus !== 'synced');
@@ -331,10 +447,11 @@ export async function processPendingMutations(): Promise<void> {
   let hasFailures = false;
 
   for (const mutation of toProcess) {
-    // Skip if max retries exceeded
+    // Rollback and remove if max retries exceeded
     if (mutation.retryCount >= MAX_RETRY_COUNT) {
-      debugLog('[processPendingMutations] Skipping mutation (max retries):', mutation.id);
-      // Mark as failed by setting a high retry count indicator
+      debugLog('[processPendingMutations] Max retries exceeded, rolling back:', mutation.id);
+      rollbackOptimisticUpdate(mutation);
+      removePendingMutation(mutation.id);
       continue;
     }
 
@@ -368,9 +485,10 @@ export async function processPendingMutations(): Promise<void> {
       debugLog('[processPendingMutations] Mutation failed', mutation.id, 'error:', error);
       debugLog('[processPendingMutations] Error type:', typeof error, 'keys:', error && typeof error === 'object' ? Object.keys(error) : 'N/A');
 
-      // Check for 409 conflict error - don't retry these
       const status = (error as { status?: number }).status;
       debugLog('[processPendingMutations] Error status:', status);
+
+      // Check for 409 conflict error - special handling
       if (status === 409) {
         debugLog('[processPendingMutations] Conflict detected (409)', mutation.id);
         markMutationConflict(mutation.id, 'Version conflict - your changes conflict with recent updates');
@@ -379,6 +497,16 @@ export async function processPendingMutations(): Promise<void> {
         continue;
       }
 
+      // Don't retry 4xx client errors (except 409 handled above)
+      // These are permanent failures that need user intervention
+      if (status && status >= 400 && status < 500) {
+        debugLog('[processPendingMutations] Client error (4xx), rolling back:', mutation.id);
+        rollbackOptimisticUpdate(mutation);
+        removePendingMutation(mutation.id);
+        continue;
+      }
+
+      // For 5xx server errors, retry with backoff
       incrementMutationRetry(mutation.id);
       // Keep in pending state for retry
       updateMutationSyncStatus(mutation.id, 'pending');
@@ -745,4 +873,19 @@ if (typeof window !== 'undefined') {
   setInterval(() => {
     checkStorageQuota();
   }, 5 * 60 * 1000);
+
+  // Test helper: Listen for synthetic storage quota events (for E2E tests)
+  window.addEventListener('storage-quota-warning', ((event: CustomEvent<{ percentUsed: number }>) => {
+    const percentUsed = event.detail.percentUsed / 100; // Convert from percentage to decimal
+    const mockUsage = percentUsed * 1000000000; // 1GB * percentUsed
+    const mockQuota = 1000000000; // 1GB
+    const info: StorageQuotaInfo = {
+      usage: mockUsage,
+      quota: mockQuota,
+      percentUsed,
+      isWarning: percentUsed >= STORAGE_WARNING_THRESHOLD,
+      isCritical: percentUsed >= STORAGE_CRITICAL_THRESHOLD,
+    };
+    notifyStorageQuotaListeners(info);
+  }) as EventListener);
 }

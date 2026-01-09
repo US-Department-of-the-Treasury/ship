@@ -278,4 +278,101 @@ describe('authMiddleware', () => {
       expect(next).toHaveBeenCalled();
     });
   });
+
+  describe('bearer token authentication', () => {
+    function createMockReqResWithAuth(authHeader: string | undefined) {
+      const req = {
+        cookies: {},
+        headers: { authorization: authHeader },
+        get: vi.fn((name: string) => name.toLowerCase() === 'authorization' ? authHeader : undefined),
+      } as unknown as Request;
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as unknown as Response;
+      const next = vi.fn() as NextFunction;
+      return { req, res, next };
+    }
+
+    it('authenticates with valid bearer token', async () => {
+      const { req, res, next } = createMockReqResWithAuth('Bearer ship_validtoken123');
+
+      // Mock token validation query
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'token-1',
+            user_id: 'user-123',
+            workspace_id: 'ws-123',
+            is_super_admin: false,
+          }],
+        } as any)
+        // Mock update last_used_at
+        .mockResolvedValueOnce({ rows: [] } as any);
+
+      await authMiddleware(req, res, next);
+      expect(req.userId).toBe('user-123');
+      expect(req.workspaceId).toBe('ws-123');
+      expect(req.isApiToken).toBe(true);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('returns 401 for invalid bearer token', async () => {
+      const { req, res, next } = createMockReqResWithAuth('Bearer invalid_token');
+
+      // Mock token not found
+      vi.mocked(pool.query).mockResolvedValueOnce({ rows: [] } as any);
+
+      await authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.objectContaining({ message: 'Invalid or expired API token' }),
+        })
+      );
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 for revoked bearer token', async () => {
+      const { req, res, next } = createMockReqResWithAuth('Bearer ship_revokedtoken');
+
+      // Mock token found but revoked (revoked_at is set)
+      vi.mocked(pool.query).mockResolvedValueOnce({ rows: [] } as any); // No results means revoked/expired
+
+      await authMiddleware(req, res, next);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('prefers bearer token over session cookie when both present', async () => {
+      // Create request with both session cookie and auth header
+      const req = {
+        cookies: { session_id: 'some-session' },
+        headers: { authorization: 'Bearer ship_tokentoken' },
+        get: vi.fn((name: string) => name.toLowerCase() === 'authorization' ? 'Bearer ship_tokentoken' : undefined),
+      } as unknown as Request;
+      const res = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as unknown as Response;
+      const next = vi.fn() as NextFunction;
+
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'token-1',
+            user_id: 'api-user',
+            workspace_id: 'api-ws',
+            is_super_admin: false,
+          }],
+        } as any)
+        .mockResolvedValueOnce({ rows: [] } as any);
+
+      await authMiddleware(req, res, next);
+      // Should use token auth, not session
+      expect(req.userId).toBe('api-user');
+      expect(req.isApiToken).toBe(true);
+      expect(next).toHaveBeenCalled();
+    });
+  });
 });

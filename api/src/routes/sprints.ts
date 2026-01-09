@@ -8,18 +8,31 @@ type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
 // Validation schemas
-// Sprint properties: only sprint_number and owner_id are stored
+// Sprint properties: sprint_number, owner_id, and hypothesis fields
 // Dates and status are computed from sprint_number + workspace.sprint_start_date
 const createSprintSchema = z.object({
   program_id: z.string().uuid(),
   title: z.string().min(1).max(200).optional().default('Untitled'),
   sprint_number: z.number().int().positive(),
   owner_id: z.string().uuid(),
+  // Sprint goal (concise objective, separate from hypothesis)
+  goal: z.string().max(500).optional(),
+  // Hypothesis tracking (optional at creation)
+  hypothesis: z.string().max(2000).optional(),
+  success_criteria: z.array(z.string().max(500)).max(20).optional(),
+  confidence: z.number().int().min(0).max(100).optional(),
 });
 
 const updateSprintSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   owner_id: z.string().uuid().optional(),
+});
+
+// Separate schema for hypothesis updates (append mode)
+const updateHypothesisSchema = z.object({
+  hypothesis: z.string().max(2000).optional(),
+  success_criteria: z.array(z.string().max(500)).max(20).optional(),
+  confidence: z.number().int().min(0).max(100).optional(),
 });
 
 // Helper to extract sprint from row
@@ -44,6 +57,16 @@ function extractSprintFromRow(row: any) {
     started_count: parseInt(row.started_count) || 0,
     has_plan: row.has_plan === true || row.has_plan === 't',
     has_retro: row.has_retro === true || row.has_retro === 't',
+    // Retro outcome summary (populated if retro exists)
+    retro_outcome: row.retro_outcome || null,
+    retro_id: row.retro_id || null,
+    // Sprint goal (concise objective)
+    goal: props.goal || null,
+    // Hypothesis tracking fields
+    hypothesis: props.hypothesis || null,
+    success_criteria: props.success_criteria || null,
+    confidence: typeof props.confidence === 'number' ? props.confidence : null,
+    hypothesis_history: props.hypothesis_history || null,
   };
 }
 
@@ -66,7 +89,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
               (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
-              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.parent_id = d.id AND rt.document_type = 'sprint_retro') as has_retro
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
@@ -101,7 +126,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { program_id, title, sprint_number, owner_id } = parsed.data;
+    const { program_id, title, sprint_number, owner_id, goal, hypothesis, success_criteria, confidence } = parsed.data;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -146,11 +171,33 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Build properties JSONB - only sprint_number and owner_id
-    const properties = {
+    // Build properties JSONB - sprint_number, owner_id, goal, and hypothesis fields
+    const properties: Record<string, unknown> = {
       sprint_number,
       owner_id,
     };
+
+    // Add goal if provided (concise objective, separate from hypothesis)
+    if (goal !== undefined) {
+      properties.goal = goal;
+    }
+
+    // Add hypothesis fields if provided
+    if (hypothesis !== undefined) {
+      properties.hypothesis = hypothesis;
+      // Initialize hypothesis_history with the initial hypothesis
+      properties.hypothesis_history = [{
+        hypothesis,
+        timestamp: new Date().toISOString(),
+        author_id: userId,
+      }];
+    }
+    if (success_criteria !== undefined) {
+      properties.success_criteria = success_criteria;
+    }
+    if (confidence !== undefined) {
+      properties.confidence = confidence;
+    }
 
     const result = await pool.query(
       `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by)
@@ -176,6 +223,13 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       issue_count: 0,
       completed_count: 0,
       started_count: 0,
+      // Sprint goal (concise objective)
+      goal: properties.goal || null,
+      // Hypothesis tracking fields
+      hypothesis: properties.hypothesis || null,
+      success_criteria: properties.success_criteria || null,
+      confidence: properties.confidence ?? null,
+      hypothesis_history: properties.hypothesis_history || null,
     });
   } catch (err) {
     console.error('Create sprint error:', err);
@@ -274,7 +328,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
@@ -327,6 +385,105 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
     res.status(204).send();
   } catch (err) {
     console.error('Delete sprint error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update sprint hypothesis (append mode - preserves history)
+// PATCH /api/sprints/:id/hypothesis
+router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = updateHypothesisSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists and user can access it, get current properties
+    const existing = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (existing.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    const currentProps = existing.rows[0].properties || {};
+    const newProps = { ...currentProps };
+    const data = parsed.data;
+    const now = new Date().toISOString();
+
+    // If hypothesis is being updated, append old one to history
+    if (data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis) {
+      // Initialize history if doesn't exist
+      const currentHistory = Array.isArray(currentProps.hypothesis_history)
+        ? [...currentProps.hypothesis_history]
+        : [];
+
+      // If there was a previous hypothesis, add it to history
+      if (currentProps.hypothesis) {
+        currentHistory.push({
+          hypothesis: currentProps.hypothesis,
+          timestamp: now,
+          author_id: userId,
+        });
+      }
+
+      // Update to new hypothesis
+      newProps.hypothesis = data.hypothesis;
+      newProps.hypothesis_history = currentHistory;
+    }
+
+    // Update success_criteria and confidence directly
+    if (data.success_criteria !== undefined) {
+      newProps.success_criteria = data.success_criteria;
+    }
+    if (data.confidence !== undefined) {
+      newProps.confidence = data.confidence;
+    }
+
+    // Save updated properties
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND workspace_id = $3 AND document_type = 'sprint'`,
+      [JSON.stringify(newProps), id, workspaceId]
+    );
+
+    // Re-query to get full sprint with owner info
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.program_id,
+              p.title as program_name, p.properties->>'prefix' as program_prefix,
+              w.sprint_start_date as workspace_sprint_start_date,
+              u.id as owner_id, u.name as owner_name, u.email as owner_email,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
+       FROM documents d
+       JOIN documents p ON d.program_id = p.id
+       JOIN workspaces w ON d.workspace_id = w.id
+       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       WHERE d.id = $1 AND d.document_type = 'sprint'`,
+      [id]
+    );
+
+    res.json(extractSprintFromRow(result.rows[0]));
+  } catch (err) {
+    console.error('Update sprint hypothesis error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
