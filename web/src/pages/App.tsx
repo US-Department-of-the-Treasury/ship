@@ -18,6 +18,7 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { StorageWarning } from '@/components/StorageWarning';
 import { CacheCorruptionAlert } from '@/components/CacheCorruptionAlert';
 import { PrivateModeWarning } from '@/components/PrivateModeWarning';
+import { SyncFailureNotification } from '@/components/SyncFailureNotification';
 import { ManualSyncButton } from '@/components/ManualSyncButton';
 import { PendingSyncCount } from '@/components/PendingSyncCount';
 import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
@@ -145,6 +146,9 @@ export function AppLayout() {
 
       {/* Private browsing mode warning */}
       <PrivateModeWarning />
+
+      {/* Sync failure notifications */}
+      <SyncFailureNotification />
 
       {/* Impersonation banner */}
       {impersonating && (
