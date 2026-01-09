@@ -14,7 +14,7 @@
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('19.1 Program Operations Offline', () => {
+test.describe('19.1 Program Operations Offline', () => {
   test('create program offline', async ({ page, goOffline, goOnline, login }) => {
     await login()
 
@@ -23,24 +23,28 @@ test.describe.skip('19.1 Program Operations Offline', () => {
     await goOffline()
 
     // WHEN: User creates a new program
-    await page.getByRole('button', { name: 'New Document', exact: true }).click()
+    await page.getByRole('button', { name: 'New Program', exact: true }).click()
     await page.waitForURL(/\/programs\/[^/]+$/)
-    const titleInput = page.locator('[contenteditable="true"]').first()
+    // Use title input, not contenteditable editor
+    const titleInput = page.locator('input[placeholder="Untitled"]')
     await titleInput.click()
-    await page.keyboard.type('Offline Program')
+    await titleInput.fill('Offline Program')
+    // Blur to trigger save and wait for throttled save
+    await page.getByTestId('tiptap-editor').click()
+    await page.waitForTimeout(1000)
 
     // Navigate back to list
     await page.goto('/programs')
 
     // THEN: Program appears in list with pending indicator
-    await expect(page.getByText('Offline Program')).toBeVisible()
-    await expect(page.getByTestId('pending-sync-icon')).toBeVisible()
+    await expect(page.getByText('Offline Program').first()).toBeVisible()
+    await expect(page.getByTestId('pending-sync-icon').first()).toBeVisible()
 
     // WHEN: User comes back online
     await goOnline()
 
-    // THEN: Program syncs successfully
-    await expect(page.getByTestId('pending-sync-icon')).not.toBeVisible({ timeout: 10000 })
+    // THEN: Program syncs successfully (allow time for multiple mutations)
+    await expect(page.getByTestId('pending-sync-icon')).not.toBeVisible({ timeout: 20000 })
   })
 
   test('edit program title offline', async ({ page, goOffline, goOnline, login, testData }) => {
@@ -49,18 +53,19 @@ test.describe.skip('19.1 Program Operations Offline', () => {
     // GIVEN: User opens existing program
     const program = testData.programs[0]
     await page.goto(`/programs/${program.id}`)
+    await expect(page.getByTestId('tiptap-editor')).toBeVisible({ timeout: 10000 })
 
-    const originalTitle = await page.locator('[contenteditable="true"]').first().textContent()
     await goOffline()
 
-    // WHEN: User edits title
-    await page.locator('[contenteditable="true"]').first().click()
-    await page.keyboard.press('Control+a')
-    await page.keyboard.type('Updated Program')
-    await page.keyboard.press('Tab')
+    // WHEN: User edits title (using input element, not contenteditable)
+    const titleInput = page.locator('input[placeholder="Untitled"]')
+    await titleInput.click()
+    await titleInput.fill('Updated Program')
+    // Blur to trigger save
+    await page.getByTestId('tiptap-editor').click()
 
     // THEN: Shows pending indicator
-    await expect(page.getByTestId('pending-sync-icon')).toBeVisible()
+    await expect(page.getByTestId('pending-sync-icon').first()).toBeVisible()
 
     // WHEN: Online
     await goOnline()
@@ -68,6 +73,6 @@ test.describe.skip('19.1 Program Operations Offline', () => {
     // THEN: Syncs successfully
     await expect(page.getByTestId('pending-sync-icon')).not.toBeVisible({ timeout: 10000 })
     await page.reload()
-    await expect(page.locator('[contenteditable="true"]').first()).toContainText('Updated Program')
+    await expect(titleInput).toHaveValue('Updated Program')
   })
 })

@@ -2,20 +2,15 @@
  * Category 22: Background Tab Behavior
  * Tests tab visibility changes and stale data handling.
  *
- * SKIP REASON: These tests require TanStack Query refetch on visibility
- * and mutation queue which are NOT YET IMPLEMENTED.
- *
- * INFRASTRUCTURE NEEDED:
- * 1. TanStack Query with refetchOnWindowFocus
- * 2. Pending sync count UI (data-testid="pending-sync-count")
- * 3. Visibility-triggered sync
- *
- * See: docs/application-architecture.md "Layer 2: Lists/Metadata (Planned)"
+ * Infrastructure implemented:
+ * 1. TanStack Query with refetchOnMount: 'always'
+ * 2. Offline mutation queue with IndexedDB persistence
+ * 3. Online status listener triggers sync processing
  */
 import { test, expect } from './fixtures/offline'
 
 
-test.describe.skip('22.1 Tab Visibility Changes', () => {
+test.describe('22.1 Tab Visibility Changes', () => {
   test('stale data refetches when tab becomes visible', async ({ page, login }) => {
     await login()
 
@@ -50,9 +45,10 @@ test.describe.skip('22.1 Tab Visibility Changes', () => {
     await goOffline()
     await page.getByRole('button', { name: 'New Document', exact: true }).click()
     await page.waitForURL(/\/docs\/[^/]+$/)
-    const titleInput = page.locator('[contenteditable="true"]').first()
+    const titleInput = page.locator('input[placeholder="Untitled"]')
     await titleInput.click()
-    await page.keyboard.type('Background Sync Test')
+    await titleInput.fill('Background Sync Test')
+    await page.waitForTimeout(1000)
     await page.goto('/docs')
 
     // Tab goes background

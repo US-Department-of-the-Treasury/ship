@@ -68,6 +68,12 @@ export function PendingSyncCount() {
     );
   }
 
+  // Handle discard all failed mutations
+  const handleDiscardFailed = () => {
+    const failedMutations = pendingMutations.filter(m => m.syncStatus !== 'conflict' && m.retryCount >= MAX_RETRY_COUNT);
+    failedMutations.forEach(m => removePendingMutation(m.id));
+  };
+
   // Show failed message if any mutations have exceeded max retries
   if (failedCount > 0) {
     return (
@@ -82,13 +88,22 @@ export function PendingSyncCount() {
         <div className="text-destructive">
           <span data-testid="sync-error-message">Failed to sync {failedCount} {failedCount === 1 ? 'change' : 'changes'}</span>
         </div>
-        <button
-          onClick={handleRetry}
-          className="text-primary underline hover:no-underline mt-1"
-          data-testid="retry-sync-button"
-        >
-          Retry later
-        </button>
+        <div className="flex gap-2 mt-1">
+          <button
+            onClick={handleRetry}
+            className="text-primary underline hover:no-underline"
+            data-testid="retry-sync-button"
+          >
+            Retry
+          </button>
+          <button
+            onClick={handleDiscardFailed}
+            className="text-muted-foreground underline hover:no-underline"
+            data-testid="discard-failed-button"
+          >
+            Discard
+          </button>
+        </div>
         {pendingCount > 0 && (
           <div className="text-muted mt-1">{pendingCount} still syncing...</div>
         )}
