@@ -13,6 +13,7 @@ import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { useListFilters, ViewMode } from '@/hooks/useListFilters';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
+import { FilterTabs, FilterTab } from '@/components/FilterTabs';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
 
 // Column definitions for list view
@@ -301,11 +302,16 @@ export function DocumentsPage() {
           onClearSelection={() => setSelectedIds(new Set())}
         />
       ) : (
-        <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Document visibility filters">
-          <FilterTab label="All" active={visibilityFilter === 'all'} onClick={() => handleFilterChange('all')} id="filter-all" />
-          <FilterTab label="Workspace" icon={<GlobeIcon className="h-3.5 w-3.5" />} active={visibilityFilter === 'workspace'} onClick={() => handleFilterChange('workspace')} id="filter-workspace" />
-          <FilterTab label="Private" icon={<LockIcon className="h-3.5 w-3.5" />} active={visibilityFilter === 'private'} onClick={() => handleFilterChange('private')} id="filter-private" />
-        </div>
+        <FilterTabs
+          tabs={[
+            { id: 'all', label: 'All' },
+            { id: 'workspace', label: 'Workspace', icon: <GlobeIcon className="h-3.5 w-3.5" /> },
+            { id: 'private', label: 'Private', icon: <LockIcon className="h-3.5 w-3.5" /> },
+          ]}
+          activeId={visibilityFilter}
+          onChange={(id) => handleFilterChange(id as VisibilityFilter)}
+          ariaLabel="Document visibility filters"
+        />
       )}
 
       {/* Content */}
@@ -371,38 +377,6 @@ export function DocumentsPage() {
         </div>
       )}
     </div>
-  );
-}
-
-function FilterTab({
-  label,
-  icon,
-  active,
-  onClick,
-  id
-}: {
-  label: string;
-  icon?: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
-  id: string;
-}) {
-  return (
-    <button
-      id={id}
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-1.5 rounded-md px-3 py-1 text-sm transition-colors',
-        active
-          ? 'bg-border text-foreground'
-          : 'text-muted hover:bg-border/50 hover:text-foreground'
-      )}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
 

@@ -15,6 +15,7 @@ import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { cn } from '@/lib/cn';
 import { issueStatusColors, priorityColors } from '@/lib/statusColors';
+import { FilterTabs, FilterTab } from '@/components/FilterTabs';
 
 // All available columns with metadata
 const ALL_COLUMNS: ColumnDefinition[] = [
@@ -418,14 +419,19 @@ export function IssuesPage() {
           loading={bulkUpdate.isPending}
         />
       ) : (
-        <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Issue filters">
-          <FilterTab label="All" active={!stateFilter} onClick={() => setFilter('')} id="filter-all" />
-          <FilterTab label="Needs Triage" active={stateFilter === 'triage'} onClick={() => setFilter('triage')} id="filter-triage" />
-          <FilterTab label="Active" active={stateFilter === 'todo,in_progress,in_review'} onClick={() => setFilter('todo,in_progress,in_review')} id="filter-active" />
-          <FilterTab label="Backlog" active={stateFilter === 'backlog'} onClick={() => setFilter('backlog')} id="filter-backlog" />
-          <FilterTab label="Done" active={stateFilter === 'done'} onClick={() => setFilter('done')} id="filter-done" />
-          <FilterTab label="Cancelled" active={stateFilter === 'cancelled'} onClick={() => setFilter('cancelled')} id="filter-cancelled" />
-        </div>
+        <FilterTabs
+          tabs={[
+            { id: '', label: 'All' },
+            { id: 'triage', label: 'Needs Triage' },
+            { id: 'todo,in_progress,in_review', label: 'Active' },
+            { id: 'backlog', label: 'Backlog' },
+            { id: 'done', label: 'Done' },
+            { id: 'cancelled', label: 'Cancelled' },
+          ]}
+          activeId={stateFilter}
+          onChange={setFilter}
+          ariaLabel="Issue filters"
+        />
       )}
 
       {/* Content */}
@@ -545,25 +551,6 @@ function IssueRowContent({ issue, visibleColumns }: IssueRowContentProps) {
         </td>
       )}
     </>
-  );
-}
-
-function FilterTab({ label, active, onClick, id }: { label: string; active: boolean; onClick: () => void; id: string }) {
-  return (
-    <button
-      id={id}
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={cn(
-        'rounded-md px-3 py-1 text-sm transition-colors',
-        active
-          ? 'bg-border text-foreground'
-          : 'text-muted hover:bg-border/50 hover:text-foreground'
-      )}
-    >
-      {label}
-    </button>
   );
 }
 
