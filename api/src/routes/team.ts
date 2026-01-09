@@ -18,22 +18,26 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
+    // Parse includeArchived query param
+    const includeArchived = req.query.includeArchived === 'true';
+
     // Get all people in workspace via person documents (only visible ones)
     // Filter out pending users - they can't be assigned until they accept their invite
     const usersResult = await pool.query(
       `SELECT
          d.properties->>'user_id' as id,
          d.title as name,
-         COALESCE(d.properties->>'email', u.email) as email
+         COALESCE(d.properties->>'email', u.email) as email,
+         CASE WHEN d.archived_at IS NOT NULL THEN true ELSE false END as "isArchived"
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
        WHERE d.workspace_id = $1
          AND d.document_type = 'person'
-         AND d.archived_at IS NULL
+         AND ($4 OR d.archived_at IS NULL)
          AND (d.properties->>'pending' IS NULL OR d.properties->>'pending' != 'true')
          AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
-       ORDER BY d.title`,
-      [workspaceId, userId, isAdmin]
+       ORDER BY d.archived_at NULLS FIRST, d.title`,
+      [workspaceId, userId, isAdmin, includeArchived]
     );
 
     // Get workspace sprint start date
