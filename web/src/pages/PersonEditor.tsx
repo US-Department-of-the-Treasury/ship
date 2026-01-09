@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
+import { useDocuments } from '@/contexts/DocumentsContext';
 import { useAutoSave } from '@/hooks/useAutoSave';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -34,8 +35,24 @@ export function PersonEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { createDocument } = useDocuments();
   const [person, setPerson] = useState<PersonDocument | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Create sub-document (for slash commands) - creates a wiki doc linked to this person
+  const handleCreateSubDocument = useCallback(async () => {
+    if (!id) return null;
+    const newDoc = await createDocument(id);
+    if (newDoc) {
+      return { id: newDoc.id, title: newDoc.title };
+    }
+    return null;
+  }, [createDocument, id]);
+
+  // Navigate to document (for slash commands and mentions)
+  const handleNavigateToDocument = useCallback((docId: string) => {
+    navigate(`/docs/${docId}`);
+  }, [navigate]);
   const [sprintMetrics, setSprintMetrics] = useState<SprintMetricsResponse | null>(null);
   const [metricsVisible, setMetricsVisible] = useState(false);
 
@@ -143,6 +160,8 @@ export function PersonEditorPage() {
       roomPrefix="person"
       placeholder="Add bio, contact info, skills..."
       onDelete={handleDelete}
+      onCreateSubDocument={handleCreateSubDocument}
+      onNavigateToDocument={handleNavigateToDocument}
       sidebar={
         <div className="space-y-4 p-4">
           <PropertyRow label="Email">

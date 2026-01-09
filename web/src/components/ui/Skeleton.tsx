@@ -35,7 +35,7 @@ export function SkeletonText({ lines = 3 }: { lines?: number }) {
 
 export function DocumentsListSkeleton() {
   return (
-    <div className="space-y-2 p-6">
+    <div className="space-y-2 p-6 max-w-4xl mx-auto">
       {/* Header skeleton */}
       <div className="mb-6 flex items-center justify-between">
         <Skeleton className="h-6 w-32" />

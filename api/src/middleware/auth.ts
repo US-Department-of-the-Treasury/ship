@@ -118,6 +118,19 @@ export async function authMiddleware(
       [now, sessionId]
     );
 
+    // Refresh cookie with sliding expiration (throttled to avoid overhead)
+    // Only refresh if more than 60 seconds since last activity
+    const COOKIE_REFRESH_THRESHOLD_MS = 60 * 1000;
+    if (inactivityMs > COOKIE_REFRESH_THRESHOLD_MS) {
+      res.cookie('session_id', sessionId, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: SESSION_TIMEOUT_MS,
+        path: '/',
+      });
+    }
+
     // Attach session info to request
     req.sessionId = session.id;
     req.userId = session.user_id;
