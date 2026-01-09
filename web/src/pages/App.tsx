@@ -23,6 +23,7 @@ import { PendingSyncCount } from '@/components/PendingSyncCount';
 import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { useToast } from '@/components/ui/Toast';
+import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
 import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 
 type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
@@ -121,6 +122,7 @@ export function AppLayout() {
   };
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Skip link for keyboard/screen reader users - Section 508 compliance */}
       <a
@@ -246,13 +248,15 @@ export function AppLayout() {
 
           {/* Expand sidebar button (shows when collapsed) */}
           {leftSidebarCollapsed && (
-            <button
-              onClick={() => setLeftSidebarCollapsed(false)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-border/50 hover:text-foreground transition-colors"
-              aria-label="Expand sidebar"
-            >
-              <ExpandRightIcon />
-            </button>
+            <Tooltip content="Expand sidebar" side="right">
+              <button
+                onClick={() => setLeftSidebarCollapsed(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-border/50 hover:text-foreground transition-colors"
+                aria-label="Expand sidebar"
+              >
+                <ExpandRightIcon />
+              </button>
+            </Tooltip>
           )}
 
           {/* User avatar & settings at bottom */}
@@ -293,30 +297,36 @@ export function AppLayout() {
               </h2>
               <div className="flex items-center gap-1">
                 {activeMode === 'docs' && (
-                  <button
-                    onClick={handleCreateDocument}
-                    className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                    aria-label="New document"
-                  >
-                    <PlusIcon />
-                  </button>
+                  <Tooltip content="New document">
+                    <button
+                      onClick={handleCreateDocument}
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                      aria-label="New document"
+                    >
+                      <PlusIcon />
+                    </button>
+                  </Tooltip>
                 )}
                 {activeMode === 'issues' && (
-                  <button
-                    onClick={handleCreateIssue}
-                    className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                    aria-label="New issue"
-                  >
-                    <PlusIcon />
-                  </button>
+                  <Tooltip content="New issue">
+                    <button
+                      onClick={handleCreateIssue}
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                      aria-label="New issue"
+                    >
+                      <PlusIcon />
+                    </button>
+                  </Tooltip>
                 )}
-                <button
-                  onClick={() => setLeftSidebarCollapsed(true)}
-                  className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                  aria-label="Collapse sidebar"
-                >
-                  <CollapseLeftIcon />
-                </button>
+                <Tooltip content="Collapse sidebar">
+                  <button
+                    onClick={() => setLeftSidebarCollapsed(true)}
+                    className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                    aria-label="Collapse sidebar"
+                  >
+                    <CollapseLeftIcon />
+                  </button>
+                </Tooltip>
               </div>
             </div>
 
@@ -381,21 +391,24 @@ export function AppLayout() {
         onStayLoggedIn={resetSessionTimer}
       />
     </div>
+    </TooltipProvider>
   );
 }
 
 function RailIcon({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
-        active ? 'bg-border text-foreground' : 'text-muted hover:bg-border/50 hover:text-foreground'
-      )}
-      aria-label={label}
-    >
-      {icon}
-    </button>
+    <Tooltip content={label} side="right">
+      <button
+        onClick={onClick}
+        className={cn(
+          'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+          active ? 'bg-border text-foreground' : 'text-muted hover:bg-border/50 hover:text-foreground'
+        )}
+        aria-label={label}
+      >
+        {icon}
+      </button>
+    </Tooltip>
   );
 }
 

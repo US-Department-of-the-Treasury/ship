@@ -1,13 +1,14 @@
 import { createContext, useContext, ReactNode } from 'react';
-import { usePrograms as useProgramsQuery, Program, ProgramOwner } from '@/hooks/useProgramsQuery';
+import { usePrograms as useProgramsQuery, Program, ProgramOwner, GitHubRepo, AutoStatusOnMerge } from '@/hooks/useProgramsQuery';
 
-export type { Program, ProgramOwner };
+export type { Program, ProgramOwner, GitHubRepo, AutoStatusOnMerge };
 
 interface ProgramsContextValue {
   programs: Program[];
   loading: boolean;
   createProgram: () => Promise<Program | null>;
   updateProgram: (id: string, updates: Partial<Program> & { owner_id?: string | null }) => Promise<Program | null>;
+  deleteProgram: (id: string) => Promise<boolean>;
   refreshPrograms: () => Promise<void>;
 }
 

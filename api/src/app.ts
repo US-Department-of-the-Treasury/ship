@@ -21,6 +21,8 @@ import { searchRouter } from './routes/search.js';
 import { filesRouter } from './routes/files.js';
 import pivAuthRoutes from './routes/piv-auth.js';
 import federationRoutes from './routes/federation.js';
+import githubWebhooksRoutes, { initializeGitHubWebhooks } from './routes/github-webhooks.js';
+import githubActivityRoutes from './routes/github-activity.js';
 import { createJwksHandler } from '@fpki/auth-client';
 import { getPublicJwk } from './services/credential-store.js';
 import { initializeFPKI } from './services/fpki.js';
@@ -171,6 +173,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   // Search routes are read-only GET endpoints - no CSRF needed
   app.use('/api/search', searchRouter);
 
+  // GitHub activity routes - read-only GET endpoints - no CSRF needed
+  app.use('/api/github/activity', githubActivityRoutes);
+
   // PIV auth routes - no CSRF protection (OAuth flow with external callback)
   app.use('/api/auth/piv', pivAuthRoutes);
 
@@ -186,9 +191,17 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   // File upload routes (CSRF protected for POST endpoints)
   app.use('/api/files', csrfSynchronisedProtection, filesRouter);
 
+  // GitHub webhook routes - NO CSRF protection (external source with signature verification)
+  app.use('/api/webhooks/github', githubWebhooksRoutes);
+
   // Initialize FPKI credentials from Secrets Manager at startup
   initializeFPKI().catch((err) => {
     console.warn('FPKI initialization failed:', err);
+  });
+
+  // Initialize GitHub webhook credentials
+  initializeGitHubWebhooks().catch((err) => {
+    console.warn('GitHub webhook initialization failed:', err);
   });
 
   return app;

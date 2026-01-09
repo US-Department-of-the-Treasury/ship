@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Command } from 'cmdk';
 import { cn } from '@/lib/cn';
+import { Tooltip } from '@/components/ui/Tooltip';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -234,16 +235,18 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         className="absolute left-1/2 top-[20%] w-full max-w-lg -translate-x-1/2"
       >
         {/* Close button for accessibility */}
-        <button
-          type="button"
-          onClick={() => onOpenChange(false)}
-          aria-label="Close dialog"
-          className="absolute right-2 top-2 z-10 rounded p-1 text-muted hover:bg-border hover:text-foreground transition-colors"
-        >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <Tooltip content="Close">
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            aria-label="Close dialog"
+            className="absolute right-2 top-2 z-10 rounded p-1 text-muted hover:bg-border hover:text-foreground transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </Tooltip>
         <Command
           className="rounded-lg border border-border bg-background shadow-2xl"
           onKeyDown={(e) => {

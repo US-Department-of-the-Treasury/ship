@@ -4,6 +4,7 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments } from '@/contexts/DocumentsContext';
 import { useAutoSave } from '@/hooks/useAutoSave';
+import { GitHubActivityFeed } from '@/components/GitHubActivityFeed';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -13,6 +14,12 @@ interface PersonDocument {
   content: unknown;
   document_type: string;
   archived_at: string | null;
+  properties?: {
+    email?: string | null;
+    role?: string | null;
+    capacity_hours?: number | null;
+    github_username?: string | null;
+  };
 }
 
 interface SprintMetric {
@@ -138,6 +145,26 @@ export function PersonEditorPage() {
     }
   }, [id, navigate]);
 
+  // Update person properties
+  const handleUpdateProperties = useCallback(async (propertyUpdates: Partial<NonNullable<PersonDocument['properties']>>) => {
+    if (!id) return;
+    try {
+      await fetch(`${API_URL}/api/documents/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ properties: propertyUpdates }),
+      });
+      // Optimistically update local state
+      setPerson(prev => prev ? {
+        ...prev,
+        properties: { ...prev.properties, ...propertyUpdates }
+      } : null);
+    } catch (error) {
+      console.error('Failed to update person properties:', error);
+    }
+  }, [id]);
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -184,6 +211,29 @@ export function PersonEditorPage() {
           <PropertyRow label="Department">
             <div className="text-sm text-muted">Not set</div>
           </PropertyRow>
+
+          <PropertyRow label="GitHub Username">
+            <input
+              type="text"
+              placeholder="e.g. octocat"
+              value={person.properties?.github_username || ''}
+              onChange={(e) => handleUpdateProperties({ github_username: e.target.value || null })}
+              className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+            />
+          </PropertyRow>
+
+          {/* GitHub Activity - shows when user has linked their GitHub */}
+          {person.properties?.github_username && (
+            <div className="mt-4 border-t border-border pt-4">
+              <label className="mb-2 block text-xs font-medium text-muted">GitHub Activity</label>
+              <GitHubActivityFeed
+                authorLogin={person.properties.github_username}
+                limit={5}
+                compact
+                emptyMessage="No recent PR activity"
+              />
+            </div>
+          )}
 
           {metricsVisible && sprintMetrics && (
             <SprintHistory metrics={sprintMetrics} />

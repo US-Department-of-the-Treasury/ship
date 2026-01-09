@@ -256,8 +256,8 @@ test.describe('Triage Workflow: Accept', () => {
     await triageIssue.click();
     await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
 
-    // Accept button should be visible
-    await expect(page.getByRole('button', { name: /accept/i })).toBeVisible();
+    // Accept button should be visible (use exact match to avoid matching "Actions for Accepted...")
+    await expect(page.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
   });
 
   test('accepting issue moves it to backlog state', async ({ page }) => {
@@ -270,8 +270,8 @@ test.describe('Triage Workflow: Accept', () => {
     await triageIssue.click();
     await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
 
-    // Verify Accept button is visible (issue is in triage)
-    const acceptButton = page.getByRole('button', { name: /accept/i });
+    // Verify Accept button is visible (issue is in triage) - use exact match
+    const acceptButton = page.getByRole('button', { name: 'Accept', exact: true });
     await expect(acceptButton).toBeVisible({ timeout: 5000 });
 
     // Verify state is triage before accepting
@@ -325,8 +325,8 @@ test.describe('Triage Workflow: Reject', () => {
     await triageIssue.click();
     await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
 
-    // Reject button should be visible
-    await expect(page.getByRole('button', { name: /reject/i })).toBeVisible();
+    // Reject button should be visible (use exact match)
+    await expect(page.getByRole('button', { name: 'Reject', exact: true })).toBeVisible();
   });
 
   test('rejecting requires a reason', async ({ page }) => {
@@ -339,8 +339,8 @@ test.describe('Triage Workflow: Reject', () => {
     await triageIssue.click();
     await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
 
-    // Click Reject - should show dialog/prompt for reason
-    await page.getByRole('button', { name: /reject/i }).click();
+    // Click Reject - should show dialog/prompt for reason (use exact match)
+    await page.getByRole('button', { name: 'Reject', exact: true }).click();
 
     // Should show rejection dialog with reason input
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5000 });

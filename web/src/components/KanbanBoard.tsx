@@ -18,6 +18,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/cn';
+import { Tooltip } from '@/components/ui/Tooltip';
 
 interface ContextMenuEvent {
   x: number;
@@ -312,18 +313,20 @@ function IssueCard({
       >
         {/* Three-dot menu button */}
         {onMenuClick && (
-          <button
-            type="button"
-            onClick={onMenuClick}
-            className="p-0.5 rounded hover:bg-border/50 text-muted hover:text-foreground"
-            aria-label={`More actions for issue #${issue.ticket_number}`}
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="12" cy="5" r="2" />
-              <circle cx="12" cy="12" r="2" />
-              <circle cx="12" cy="19" r="2" />
-            </svg>
-          </button>
+          <Tooltip content="More actions">
+            <button
+              type="button"
+              onClick={onMenuClick}
+              className="p-0.5 rounded hover:bg-border/50 text-muted hover:text-foreground"
+              aria-label={`More actions for issue #${issue.ticket_number}`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </Tooltip>
         )}
         {/* Checkbox */}
         {onCheckboxClick && (
