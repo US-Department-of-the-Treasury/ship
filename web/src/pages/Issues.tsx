@@ -59,6 +59,7 @@ export function IssuesPage() {
   const { showToast } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sortBy, setSortBy] = useState<string>('updated');
+  const [programFilter, setProgramFilter] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
 
   // Track selection state for BulkActionBar
@@ -67,12 +68,36 @@ export function IssuesPage() {
 
   const stateFilter = searchParams.get('state') || '';
 
-  // Filter issues client-side based on state filter
+  // Compute unique programs from issues for the filter dropdown
+  const programOptions = useMemo(() => {
+    const programMap = new Map<string, string>();
+    allIssues.forEach(issue => {
+      if (issue.program_id && issue.program_name) {
+        programMap.set(issue.program_id, issue.program_name);
+      }
+    });
+    return Array.from(programMap.entries())
+      .map(([id, name]) => ({ value: id, label: name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [allIssues]);
+
+  // Filter issues client-side based on state filter AND program filter
   const issues = useMemo(() => {
-    if (!stateFilter) return allIssues;
-    const states = stateFilter.split(',');
-    return allIssues.filter(issue => states.includes(issue.state));
-  }, [allIssues, stateFilter]);
+    let filtered = allIssues;
+
+    // Apply program filter
+    if (programFilter) {
+      filtered = filtered.filter(issue => issue.program_id === programFilter);
+    }
+
+    // Apply state filter
+    if (stateFilter) {
+      const states = stateFilter.split(',');
+      filtered = filtered.filter(issue => states.includes(issue.state));
+    }
+
+    return filtered;
+  }, [allIssues, stateFilter, programFilter]);
 
   const handleCreateIssue = useCallback(async () => {
     const issue = await contextCreateIssue();
@@ -307,6 +332,21 @@ export function IssuesPage() {
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <h1 className="text-xl font-semibold text-foreground">Issues</h1>
         <div className="flex items-center gap-3">
+          {/* Program filter dropdown */}
+          {programOptions.length > 0 && (
+            <div className="w-40">
+              <Combobox
+                options={programOptions}
+                value={programFilter}
+                onChange={setProgramFilter}
+                placeholder="All Programs"
+                aria-label="Filter issues by program"
+                id="issues-program-filter"
+                allowClear={true}
+                clearLabel="All Programs"
+              />
+            </div>
+          )}
           {/* Sort dropdown */}
           <div className="w-32">
             <Combobox
