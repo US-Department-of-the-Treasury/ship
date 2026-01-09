@@ -140,6 +140,11 @@ export function IssueEditorPage() {
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [workspaceSprintStartDate, setWorkspaceSprintStartDate] = useState<Date | null>(null);
 
+  // Direct-fetched issue (when not found in context cache)
+  const [directFetchedIssue, setDirectFetchedIssue] = useState<Issue | null>(null);
+  const [directFetchLoading, setDirectFetchLoading] = useState(false);
+  const [directFetchFailed, setDirectFetchFailed] = useState(false);
+
   // Create sub-document (for slash commands) - creates a wiki doc linked to this issue
   const handleCreateSubDocument = useCallback(async () => {
     if (!id) return null;
@@ -176,8 +181,46 @@ export function IssueEditorPage() {
     name: m.name,
   }));
 
-  // Get the current issue from context
-  const issue = issues.find(i => i.id === id) || null;
+  // Get the current issue from context, or use direct-fetched issue
+  const contextIssue = issues.find(i => i.id === id) || null;
+  const issue = contextIssue || directFetchedIssue;
+
+  // Fetch issue directly by ID if not in context (e.g., when navigating from Programs view)
+  useEffect(() => {
+    // Skip if we already have the issue from context
+    if (contextIssue) {
+      setDirectFetchedIssue(null);
+      setDirectFetchFailed(false);
+      return;
+    }
+
+    // Skip if no ID or temp ID (offline creation)
+    if (!id || id.startsWith('temp-')) return;
+
+    // Skip if still loading from context
+    if (issuesLoading) return;
+
+    // Skip if already fetching or already failed
+    if (directFetchLoading || directFetchFailed) return;
+
+    setDirectFetchLoading(true);
+
+    fetch(`${API_URL}/api/issues/${id}`, { credentials: 'include' })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error('Issue not found');
+        }
+        return res.json();
+      })
+      .then(data => {
+        setDirectFetchedIssue(data);
+        setDirectFetchLoading(false);
+      })
+      .catch(() => {
+        setDirectFetchFailed(true);
+        setDirectFetchLoading(false);
+      });
+  }, [id, contextIssue, issuesLoading, directFetchLoading, directFetchFailed]);
 
   // Fetch sprints when issue's program changes with cancellation
   useEffect(() => {
@@ -209,13 +252,13 @@ export function IssueEditorPage() {
     return () => { cancelled = true; };
   }, [issue?.program_id]);
 
-  // Redirect if issue not found after loading
+  // Redirect only if direct fetch failed (issue truly doesn't exist)
   // Skip redirect for temp IDs (pending offline creation) - give cache time to sync
   useEffect(() => {
-    if (!issuesLoading && id && !issue && !id.startsWith('temp-')) {
+    if (directFetchFailed && !id?.startsWith('temp-')) {
       navigate('/issues');
     }
-  }, [issuesLoading, id, issue, navigate]);
+  }, [directFetchFailed, id, navigate]);
 
   // Update handler using shared context
   const handleUpdateIssue = useCallback(async (updates: Partial<Issue>) => {
@@ -261,7 +304,10 @@ export function IssueEditorPage() {
 
   // Only wait for issues to load - programs/team can load in background
   // This allows the page to render with cached data when offline
-  const loading = issuesLoading;
+  // Also wait for direct fetch if we're fetching an issue not in context
+  // We're loading if: issues are loading, OR (not in context AND not fetched AND not failed)
+  const needsDirectFetch = !contextIssue && !directFetchedIssue && !directFetchFailed && !id?.startsWith('temp-');
+  const loading = issuesLoading || directFetchLoading || (!issuesLoading && needsDirectFetch);
 
   if (loading) {
     return <EditorSkeleton />;
