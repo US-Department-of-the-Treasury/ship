@@ -438,6 +438,107 @@ Use for browsable collections where users navigate to items.
 
 **Philosophy alignment:** This follows Ship's principle of consistency over specialization.
 
+## Standard Document List View
+
+When using SelectableList for document collections (Issues, Programs, Documents), follow this standardized pattern to ensure consistency across all list views.
+
+### Required Components and Hooks
+
+| Component/Hook | Purpose | File |
+|----------------|---------|------|
+| `useColumnVisibility` | Manages column visibility state with localStorage persistence | `web/src/hooks/useColumnVisibility.ts` |
+| `useListFilters` | Manages sort options and view mode (list/kanban/tree) | `web/src/hooks/useListFilters.ts` |
+| `DocumentListToolbar` | Reusable toolbar with sort dropdown, view toggle, column picker | `web/src/components/DocumentListToolbar.tsx` |
+| `SelectableList` | Table component with selection, keyboard nav, context menu | `web/src/components/SelectableList.tsx` |
+
+### Standard Features
+
+Every document list view should include:
+
+1. **Sort dropdown** - Configurable sort options (Updated, Created, Title, etc.)
+2. **Column picker** - Toggle column visibility, persisted to localStorage
+3. **Multi-select** - Checkboxes on hover, Shift+Click range selection
+4. **Bulk actions** - Action bar appears when items selected (Archive, Delete, etc.)
+5. **Context menu** - Right-click for same actions as bulk action bar
+6. **Keyboard navigation** - Arrow keys, Space to select, Escape to clear
+
+### Implementation Pattern
+
+```typescript
+// 1. Define columns with ColumnDefinition type
+const ALL_COLUMNS: ColumnDefinition[] = [
+  { key: 'title', label: 'Title', hideable: false },  // Required column
+  { key: 'status', label: 'Status', hideable: true },
+  { key: 'updated', label: 'Updated', hideable: true },
+];
+
+// 2. Define sort options
+const SORT_OPTIONS = [
+  { value: 'updated', label: 'Updated' },
+  { value: 'created', label: 'Created' },
+  { value: 'title', label: 'Title' },
+];
+
+// 3. Use shared hooks
+const { sortBy, setSortBy, viewMode, setViewMode } = useListFilters({
+  sortOptions: SORT_OPTIONS,
+  defaultSort: 'updated',
+});
+
+const { visibleColumns, columns, hiddenCount, toggleColumn } = useColumnVisibility({
+  columns: ALL_COLUMNS,
+  storageKey: 'my-list-column-visibility',
+});
+
+// 4. Render toolbar and list
+<DocumentListToolbar
+  sortOptions={SORT_OPTIONS}
+  sortBy={sortBy}
+  onSortChange={setSortBy}
+  viewModes={['list', 'kanban']}
+  viewMode={viewMode}
+  onViewModeChange={setViewMode}
+  allColumns={ALL_COLUMNS}
+  visibleColumns={visibleColumns}
+  onToggleColumn={toggleColumn}
+  hiddenCount={hiddenCount}
+/>
+
+<SelectableList
+  items={sortedItems}
+  columns={columns}
+  renderRow={(item) => <MyRowContent item={item} columns={columns} />}
+  selectable={true}
+  onSelectionChange={setSelectedIds}
+  onContextMenu={handleContextMenu}
+/>
+```
+
+### When to Use List View
+
+| Document Type | Primary View | Secondary View | Notes |
+|---------------|--------------|----------------|-------|
+| **Issues** | List | Kanban | List for bulk operations, Kanban for workflow |
+| **Programs** | List | - | Replaced CardGrid with List for bulk actions |
+| **Documents** | Tree | List | Tree for hierarchy, List for flat view with bulk actions |
+
+**Decision criteria:**
+- Use **List** when users need to select/filter/sort/bulk-operate on items
+- Use **Tree** when hierarchy is the primary organizational principle
+- Use **Kanban** when status workflow visualization is the primary use case
+- Avoid **CardGrid** for document collections (prefer List with bulk actions)
+
+### Column Visibility Storage
+
+Column visibility is stored in localStorage with the pattern `{storageKey}`:
+
+```typescript
+// Stored as JSON array of hidden column keys
+localStorage.setItem('issues-column-visibility', '["assignee", "priority"]');
+```
+
+Each list view should use a unique `storageKey` to prevent conflicts.
+
 ## Editor Conventions
 
 All document types share a single `Editor` component. This ensures consistent UX across docs, issues, projects, and sprints.
