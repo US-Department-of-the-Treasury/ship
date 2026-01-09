@@ -246,6 +246,7 @@ export function useSelection<T>({
 
     switch (e.key) {
       case 'ArrowUp':
+      case 'k': // Vim-style navigation
         e.preventDefault();
         if (isShiftKey) {
           extendSelection('up');
@@ -255,6 +256,7 @@ export function useSelection<T>({
         break;
 
       case 'ArrowDown':
+      case 'j': // Vim-style navigation
         e.preventDefault();
         if (isShiftKey) {
           extendSelection('down');

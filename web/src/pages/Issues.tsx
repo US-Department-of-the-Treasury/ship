@@ -8,6 +8,7 @@ import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useBulkUpdateIssues } from '@/hooks/useIssuesQuery';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { useListFilters, ViewMode } from '@/hooks/useListFilters';
+import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
 import { IssuesListSkeleton } from '@/components/ui/Skeleton';
 import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
 import { Combobox } from '@/components/ui/Combobox';
@@ -87,9 +88,11 @@ export function IssuesPage() {
   const [programFilter, setProgramFilter] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
 
-  // Track selection state for BulkActionBar
+  // Track selection state for BulkActionBar and global keyboard navigation
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const selectionRef = useRef<UseSelectionReturn | null>(null);
+  // Force re-render trigger for when selection ref updates (used by useGlobalListNavigation)
+  const [, forceUpdate] = useState(0);
 
   const stateFilter = searchParams.get('state') || '';
 
@@ -256,10 +259,22 @@ export function IssuesPage() {
   }, [selectedIds, bulkUpdate, showToast, clearSelection]);
 
   // Selection change handler - keeps parent state in sync with SelectableList
-  const handleSelectionChange = useCallback((newSelectedIds: Set<string>, selection: UseSelectionReturn) => {
+  const handleSelectionChange = useCallback((newSelectedIds: Set<string>, newSelection: UseSelectionReturn) => {
     setSelectedIds(newSelectedIds);
-    selectionRef.current = selection;
+    // Always update the ref and trigger re-render so useGlobalListNavigation has the latest selection object
+    // This is called on both selection changes AND focus changes (via j/k navigation)
+    selectionRef.current = newSelection;
+    forceUpdate(n => n + 1);
   }, []);
+
+  // Global keyboard navigation for j/k and Enter
+  useGlobalListNavigation({
+    selection: selectionRef.current,
+    enabled: viewMode === 'list', // Only enable for list view
+    onEnter: useCallback((focusedId: string) => {
+      navigate(`/issues/${focusedId}`);
+    }, [navigate]),
+  });
 
   // Kanban checkbox click handler - manages selection directly
   const handleKanbanCheckboxClick = useCallback((id: string, e: React.MouseEvent) => {

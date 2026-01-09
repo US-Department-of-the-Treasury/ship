@@ -75,9 +75,11 @@ export function SelectableList<T extends { id: string }>({
   });
 
   // Notify parent of selection changes with both IDs and selection object
+  // Include focusedId to ensure parent has latest selection object for keyboard navigation
   useEffect(() => {
     onSelectionChange?.(selection.selectedIds, selection);
-  }, [selection.selectedIds, selection, onSelectionChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection.selectedIds, selection.focusedId, onSelectionChange]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, item: T) => {
     e.preventDefault();
@@ -144,7 +146,11 @@ export function SelectableList<T extends { id: string }>({
                 onCheckboxClick={(e) => selection.handleClick(itemId, e)}
                 onRowClick={() => onItemClick?.(item)}
                 onFocus={() => selection.setFocusedId(itemId)}
-                onMouseEnter={() => setHoveredId(itemId)}
+                onMouseEnter={() => {
+                  setHoveredId(itemId);
+                  // Superhuman-style: hovering sets keyboard focus
+                  selection.setFocusedId(itemId);
+                }}
                 onMouseLeave={() => setHoveredId(null)}
                 onContextMenu={(e) => handleContextMenu(e, item)}
               >
