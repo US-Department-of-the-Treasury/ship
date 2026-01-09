@@ -14,6 +14,7 @@ import { Combobox } from '@/components/ui/Combobox';
 import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { cn } from '@/lib/cn';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { issueStatusColors, priorityColors } from '@/lib/statusColors';
 import { FilterTabs, FilterTab } from '@/components/FilterTabs';
 

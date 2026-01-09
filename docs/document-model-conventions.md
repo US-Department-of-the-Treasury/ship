@@ -576,6 +576,65 @@ Document types differ by:
 
 They do NOT differ by title handling. Keep it simple.
 
+## Icon Tooltip Convention
+
+**Every icon-only interactive element must have both an `aria-label` AND a `Tooltip` wrapper.**
+
+### Why Both?
+
+| Attribute | Purpose | Audience |
+|-----------|---------|----------|
+| `aria-label` | Screen reader accessibility (WCAG) | Users with visual impairments |
+| `Tooltip` | Visual hover hint | Sighted users who don't recognize the icon |
+
+`aria-label` alone is not sufficient—sighted users can't see it. `Tooltip` alone is not sufficient—screen readers can't announce it.
+
+### Pattern
+
+```tsx
+import { Tooltip } from '@/components/ui/Tooltip';
+
+// Icon-only button: MUST have both aria-label AND Tooltip
+<Tooltip content="Delete document">
+  <button
+    aria-label="Delete document"
+    onClick={handleDelete}
+  >
+    <TrashIcon />
+  </button>
+</Tooltip>
+
+// Button with visible text: aria-label optional, Tooltip NOT needed
+<button onClick={handleDelete}>
+  <TrashIcon />
+  Delete
+</button>
+```
+
+### When to Use Tooltips
+
+| Element | Needs Tooltip? |
+|---------|----------------|
+| Icon-only button | Yes |
+| Icon with visible text label | No |
+| Icon used purely decoratively | No (but should have `aria-hidden="true"`) |
+
+### Tooltip Component
+
+The `Tooltip` component wraps any trigger element and displays on hover/focus:
+
+```tsx
+<Tooltip
+  content="Label text"    // Required: tooltip text
+  side="top"              // Optional: top, right, bottom, left (default: top)
+  delayDuration={300}     // Optional: hover delay in ms (default: 300)
+>
+  <button>...</button>
+</Tooltip>
+```
+
+Use `side="right"` for icons in the left rail, `side="bottom"` for icons in headers.
+
 ## Decision Log
 
 ### 2025-01-03: Team Allocation View Bug Fix

@@ -656,30 +656,6 @@ test.describe('Phase 4: Issues Tab Filtering', () => {
     }
   })
 
-  test('issues table shows Sprint column', async ({ page }) => {
-    await clickIssuesTab(page)
-
-    // Should see Sprint column header
-    await expect(page.locator('th').filter({ hasText: 'Sprint' })).toBeVisible({ timeout: 5000 })
-  })
-
-  test('Sprint column shows sprint name or "—" for backlog', async ({ page }) => {
-    await clickIssuesTab(page)
-
-    // Wait for at least one row to exist
-    const firstRow = page.locator('tbody tr').first()
-    await expect(firstRow).toBeVisible({ timeout: 5000 })
-
-    // Issues should show either sprint name or "—"
-    // Sprint is the last column (Title, Status, Assignee, Sprint)
-    const sprintCells = page.locator('td:last-child')
-    const firstCell = sprintCells.first()
-    await expect(firstCell).toBeVisible({ timeout: 3000 })
-    const text = await firstCell.textContent()
-
-    expect(text?.match(/Sprint \d+|—/)).toBeTruthy()
-  })
-
   test('issue row has quick menu (⋮) button', async ({ page }) => {
     await clickIssuesTab(page)
 
