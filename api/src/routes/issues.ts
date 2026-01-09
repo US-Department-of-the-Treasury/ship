@@ -31,6 +31,17 @@ const updateIssueSchema = z.object({
     story_id: z.string().optional(),
     prd_name: z.string().optional(),
     session_context: z.string().optional(),
+    // Telemetry for completed stories
+    telemetry: z.object({
+      iterations: z.number().int().min(1).optional(),
+      feedback_loops: z.object({
+        type_check: z.number().int().min(0).optional(),
+        test: z.number().int().min(0).optional(),
+        build: z.number().int().min(0).optional(),
+      }).optional(),
+      time_elapsed_seconds: z.number().int().min(0).optional(),
+      files_changed: z.array(z.string()).optional(),
+    }).optional(),
   }).optional(),
 });
 
