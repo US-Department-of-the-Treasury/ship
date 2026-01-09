@@ -50,12 +50,13 @@ async function logDocumentChange(
   field: string,
   oldValue: string | null,
   newValue: string | null,
-  changedBy: string
+  changedBy: string,
+  automatedBy?: string
 ) {
   await pool.query(
-    `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [documentId, field, oldValue, newValue, changedBy]
+    `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by, automated_by)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [documentId, field, oldValue, newValue, changedBy, automatedBy ?? null]
   );
 }
 
@@ -496,8 +497,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     // Log all changes to history
+    const automatedBy = data.claude_metadata?.updated_by;
     for (const change of changes) {
-      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.userId!);
+      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.userId!, automatedBy);
     }
 
     updates.push(`updated_at = now()`);
@@ -542,7 +544,7 @@ router.get('/:id/history', authMiddleware, async (req: Request, res: Response) =
     }
 
     const result = await pool.query(
-      `SELECT h.id, h.field, h.old_value, h.new_value, h.created_at,
+      `SELECT h.id, h.field, h.old_value, h.new_value, h.created_at, h.automated_by,
               u.id as changed_by_id, u.name as changed_by_name
        FROM document_history h
        LEFT JOIN users u ON h.changed_by = u.id
@@ -561,6 +563,7 @@ router.get('/:id/history', authMiddleware, async (req: Request, res: Response) =
         id: row.changed_by_id,
         name: row.changed_by_name,
       } : null,
+      automated_by: row.automated_by,
     })));
   } catch (err) {
     console.error('Get issue history error:', err);
