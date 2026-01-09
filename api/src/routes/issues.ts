@@ -31,6 +31,8 @@ const updateIssueSchema = z.object({
     story_id: z.string().optional(),
     prd_name: z.string().optional(),
     session_context: z.string().optional(),
+    // Confidence score (0-100) for story completion
+    confidence: z.number().int().min(0).max(100).optional(),
     // Telemetry for completed stories
     telemetry: z.object({
       iterations: z.number().int().min(1).optional(),
