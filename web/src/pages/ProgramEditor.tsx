@@ -5,6 +5,7 @@ import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components
 import { useAuth } from '@/hooks/useAuth';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues } from '@/contexts/IssuesContext';
+import { useDocuments } from '@/contexts/DocumentsContext';
 import { useSprints, Sprint as SprintFromHook } from '@/hooks/useSprintsQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { issueStatusColors, sprintStatusColors } from '@/lib/statusColors';
@@ -648,6 +649,8 @@ function OverviewTab({
   onTitleChange: (title: string) => void;
   onUpdateProgram: (updates: Partial<Program> & { owner_id?: string | null }) => void;
 }) {
+  const navigate = useNavigate();
+  const { createDocument } = useDocuments();
   const [people, setPeople] = useState<Person[]>([]);
 
   // Fetch team members (filter out pending users who don't have user_id yet)
@@ -658,6 +661,20 @@ function OverviewTab({
       .catch(console.error);
   }, []);
 
+  // Create sub-document (for slash commands) - creates a wiki doc linked to this program
+  const handleCreateSubDocument = useCallback(async () => {
+    const newDoc = await createDocument(program.id);
+    if (newDoc) {
+      return { id: newDoc.id, title: newDoc.title };
+    }
+    return null;
+  }, [createDocument, program.id]);
+
+  // Navigate to document (for slash commands and mentions)
+  const handleNavigateToDocument = useCallback((docId: string) => {
+    navigate(`/docs/${docId}`);
+  }, [navigate]);
+
   return (
     <Editor
       documentId={program.id}
@@ -666,6 +683,8 @@ function OverviewTab({
       onTitleChange={onTitleChange}
       roomPrefix="program"
       placeholder="Describe this program..."
+      onCreateSubDocument={handleCreateSubDocument}
+      onNavigateToDocument={handleNavigateToDocument}
       sidebar={
         <div className="space-y-4 p-4">
           <PropertyRow label="Owner">

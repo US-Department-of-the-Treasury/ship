@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
+import { useDocuments } from '@/contexts/DocumentsContext';
 import { Combobox } from '@/components/ui/Combobox';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
@@ -110,7 +111,23 @@ export function IssueEditorPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
+  const { createDocument } = useDocuments();
   const [sprints, setSprints] = useState<Sprint[]>([]);
+
+  // Create sub-document (for slash commands) - creates a wiki doc linked to this issue
+  const handleCreateSubDocument = useCallback(async () => {
+    if (!id) return null;
+    const newDoc = await createDocument(id);
+    if (newDoc) {
+      return { id: newDoc.id, title: newDoc.title };
+    }
+    return null;
+  }, [createDocument, id]);
+
+  // Navigate to document (for slash commands and mentions)
+  const handleNavigateToDocument = useCallback((docId: string) => {
+    navigate(`/docs/${docId}`);
+  }, [navigate]);
   const [sprintError, setSprintError] = useState<string | null>(null);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
 
@@ -251,6 +268,8 @@ export function IssueEditorPage() {
       onBack={() => navigate('/issues')}
       roomPrefix="issue"
       placeholder="Add a description..."
+      onCreateSubDocument={handleCreateSubDocument}
+      onNavigateToDocument={handleNavigateToDocument}
       headerBadge={
         <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted" data-testid="ticket-number">
           {displayIssue.display_id}
