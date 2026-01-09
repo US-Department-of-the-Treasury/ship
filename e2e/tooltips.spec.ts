@@ -14,8 +14,8 @@ test.describe('Icon Tooltips', () => {
     await login(page)
     await page.waitForLoadState('networkidle')
 
-    // Find a rail icon button (Documents, Issues, etc.)
-    const railIcon = page.locator('button[aria-label="Documents"]').first()
+    // Find a rail icon button (Docs, Issues, etc.)
+    const railIcon = page.locator('button[aria-label="Docs"]').first()
     await expect(railIcon).toBeVisible()
 
     // Hover over the icon
@@ -27,7 +27,7 @@ test.describe('Icon Tooltips', () => {
     // Check that tooltip content is visible
     const tooltip = page.getByRole('tooltip')
     await expect(tooltip).toBeVisible()
-    await expect(tooltip).toContainText('Documents')
+    await expect(tooltip).toContainText('Docs')
   })
 
   test('new document button shows tooltip on hover', async ({ page }) => {

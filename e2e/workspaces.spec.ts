@@ -206,8 +206,8 @@ test.describe('Workspace Isolation', () => {
     // Navigate to docs
     await page.goto('/docs')
 
-    // Documents list should be visible (empty or with docs)
-    await expect(page.locator('[data-testid="documents-list"], .flex-1.overflow-auto')).toBeVisible()
+    // Documents list should be visible (empty or with docs) - use main content area
+    await expect(page.locator('main .flex-1.overflow-auto').first()).toBeVisible()
   })
 
   test('switching workspaces shows different documents', async ({ page }) => {

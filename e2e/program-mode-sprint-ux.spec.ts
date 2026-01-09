@@ -74,8 +74,8 @@ async function login(page: Page) {
 
 async function navigateToProgram(page: Page, programName: string = 'Ship Core') {
   await page.goto('/programs')
-  // Click the program card in main content area (not sidebar)
-  await page.locator('main').getByRole('button', { name: new RegExp(programName, 'i') }).click()
+  // Click the program row in table (programs now use table layout)
+  await page.locator('tr[role="row"]', { hasText: new RegExp(programName, 'i') }).first().click()
   await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 }
 
