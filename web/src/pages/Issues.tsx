@@ -234,6 +234,36 @@ export function IssuesPage() {
     });
   }, []);
 
+  // Kanban context menu handler - receives { x, y, issueId } from KanbanBoard
+  const handleKanbanContextMenu = useCallback((event: { x: number; y: number; issueId: string }) => {
+    // Select the issue if not already selected (single-select behavior for context menu)
+    if (!selectedIds.has(event.issueId)) {
+      setSelectedIds(new Set([event.issueId]));
+    }
+    // Create a mock selection object that works with existing context menu rendering
+    const effectiveIds = selectedIds.has(event.issueId) ? selectedIds : new Set([event.issueId]);
+    const mockSelection: UseSelectionReturn = {
+      selectedIds: effectiveIds,
+      focusedId: event.issueId,
+      selectedCount: effectiveIds.size,
+      hasSelection: effectiveIds.size > 0,
+      isSelected: (id: string) => effectiveIds.has(id),
+      isFocused: (id: string) => id === event.issueId,
+      toggleSelection: () => {},
+      toggleInGroup: () => {},
+      selectAll: () => {},
+      clearSelection: () => setSelectedIds(new Set()),
+      selectRange: () => {},
+      setFocusedId: () => {},
+      moveFocus: () => {},
+      extendSelection: () => {},
+      handleClick: () => {},
+      handleKeyDown: () => {},
+    };
+    selectionRef.current = mockSelection;
+    setContextMenu({ x: event.x, y: event.y, selection: mockSelection });
+  }, [selectedIds]);
+
   // Context menu handler - receives selection from SelectableList
   const handleContextMenu = useCallback((e: React.MouseEvent, _item: Issue, selection: UseSelectionReturn) => {
     selectionRef.current = selection;
@@ -382,6 +412,7 @@ export function IssuesPage() {
           onIssueClick={(id) => navigate(`/issues/${id}`)}
           selectedIds={selectedIds}
           onCheckboxClick={handleKanbanCheckboxClick}
+          onContextMenu={handleKanbanContextMenu}
         />
       ) : (
         <div className="flex-1 overflow-auto">
