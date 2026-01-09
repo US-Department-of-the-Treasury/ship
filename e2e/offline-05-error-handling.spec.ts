@@ -175,9 +175,9 @@ test.describe('5.2 Network Flakiness', () => {
     // THEN: Error state shown after retries exhausted - verify sync count shows pending
     // AND: Mutation remains in queue for manual retry (visible in sync count button)
     await expect(page.getByRole('button', { name: /Sync Now \d+/ })).toBeVisible({ timeout: 30000 })
-    // AND: Either "Failed to sync" or "Retry later" text is visible (error UI)
+    // AND: "Failed to sync" error message is visible after retries exhausted
     // Note: With exponential backoff (1s, 2s, 4s, 8s, 16s), all 5 retries take ~31s
-    await expect(page.locator('text=Retry later')).toBeVisible({ timeout: 45000 })
+    await expect(page.getByTestId('sync-error-message')).toBeVisible({ timeout: 45000 })
   })
 
   test('handles intermittent connectivity gracefully', async ({ page, goOffline, goOnline, login }) => {
