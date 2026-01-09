@@ -1206,6 +1206,7 @@ function ActiveSprintProgress({
   window: SprintWindow;
   onClick: () => void;
 }) {
+  const navigate = useNavigate();
   const chartRef = useRef<HTMLDivElement>(null);
   const [chartSize, setChartSize] = useState({ width: 400, height: 150 }); // Start with reasonable defaults
 
@@ -1359,12 +1360,20 @@ function ActiveSprintProgress({
             </>
           )}
         </div>
-        <button
-          onClick={onClick}
-          className="rounded-md px-3 py-1.5 text-sm text-accent hover:bg-accent/10 transition-colors"
-        >
-          Open →
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate(`/sprints/${sprint.id}/view`)}
+            className="rounded-md px-3 py-1.5 text-sm bg-accent text-white hover:bg-accent/90 transition-colors"
+          >
+            Plan Sprint
+          </button>
+          <button
+            onClick={onClick}
+            className="rounded-md px-3 py-1.5 text-sm text-accent hover:bg-accent/10 transition-colors"
+          >
+            Open →
+          </button>
+        </div>
       </div>
 
       {/* Progress Graph - fills remaining space */}
