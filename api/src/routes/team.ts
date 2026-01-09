@@ -19,6 +19,7 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     // Get all people in workspace via person documents (only visible ones)
+    // Filter out pending users - they can't be assigned until they accept their invite
     const usersResult = await pool.query(
       `SELECT
          d.properties->>'user_id' as id,
@@ -29,6 +30,7 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
        WHERE d.workspace_id = $1
          AND d.document_type = 'person'
          AND d.archived_at IS NULL
+         AND (d.properties->>'pending' IS NULL OR d.properties->>'pending' != 'true')
          AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY d.title`,
       [workspaceId, userId, isAdmin]
@@ -395,6 +397,7 @@ router.get('/people', authMiddleware, async (req: Request, res: Response) => {
     // Get person documents - return document id for navigation to person editor
     // Also include user_id for grid consistency
     // Email comes from properties or joined user
+    // Filter out pending users - they can't be assigned until they accept their invite
     const result = await pool.query(
       `SELECT d.id, d.properties->>'user_id' as user_id, d.title as name,
               COALESCE(d.properties->>'email', u.email) as email
@@ -403,6 +406,7 @@ router.get('/people', authMiddleware, async (req: Request, res: Response) => {
        WHERE d.workspace_id = $1
          AND d.document_type = 'person'
          AND d.archived_at IS NULL
+         AND (d.properties->>'pending' IS NULL OR d.properties->>'pending' != 'true')
          AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY d.title`,
       [workspaceId, userId, isAdmin]
@@ -473,7 +477,7 @@ router.get('/accountability', authMiddleware, async (req: Request, res: Response
       });
     }
 
-    // Get all people in workspace
+    // Get all people in workspace (exclude pending - they can't have assignments)
     const peopleResult = await pool.query(
       `SELECT
          d.properties->>'user_id' as id,
@@ -482,6 +486,7 @@ router.get('/accountability', authMiddleware, async (req: Request, res: Response
        WHERE d.workspace_id = $1
          AND d.document_type = 'person'
          AND d.archived_at IS NULL
+         AND (d.properties->>'pending' IS NULL OR d.properties->>'pending' != 'true')
        ORDER BY d.title`,
       [workspaceId]
     );

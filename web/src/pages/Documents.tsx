@@ -113,7 +113,7 @@ export function DocumentsPage() {
   // Show offline empty state when offline with no cached data
   if (isOfflineEmpty) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-6">
         <OfflineEmptyState resourceName="documents" />
       </div>
     );
@@ -124,7 +124,7 @@ export function DocumentsPage() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-lg font-medium text-foreground">Documents</h1>
