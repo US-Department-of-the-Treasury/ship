@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
@@ -21,6 +21,9 @@ import { PrivateModeWarning } from '@/components/PrivateModeWarning';
 import { ManualSyncButton } from '@/components/ManualSyncButton';
 import { PendingSyncCount } from '@/components/PendingSyncCount';
 import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
+import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
+import { useToast } from '@/components/ui/Toast';
+import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 
 type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
 
@@ -29,7 +32,7 @@ export function AppLayout() {
   const { currentWorkspace, workspaces, switchWorkspace } = useWorkspace();
   const location = useLocation();
   const navigate = useNavigate();
-  const { documents, createDocument } = useDocuments();
+  const { documents, createDocument, updateDocument, deleteDocument } = useDocuments();
   const { programs } = usePrograms();
   const { issues, createIssue } = useIssues();
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
@@ -509,9 +512,17 @@ function DocumentTreeItem({
   onSelect: (id: string) => void;
   depth: number;
 }) {
+  const { createDocument, updateDocument, deleteDocument } = useDocuments();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+
   // Auto-expand if this node or any descendant is active
   const shouldAutoExpand = hasActiveDescendant(document, activeId);
   const [isOpen, setIsOpen] = useState(shouldAutoExpand);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   // Update isOpen when activeId changes (for navigation)
   useEffect(() => {
@@ -522,6 +533,83 @@ function DocumentTreeItem({
 
   const isActive = activeId === document.id;
   const hasChildren = document.children.length > 0;
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const handleMenuButtonClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (menuButtonRef.current) {
+      const rect = menuButtonRef.current.getBoundingClientRect();
+      setContextMenu({ x: rect.right - 180, y: rect.bottom + 4 });
+    }
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  // Action handlers
+  const handleCreateSubdocument = useCallback(async () => {
+    closeContextMenu();
+    const newDoc = await createDocument(document.id);
+    if (newDoc) {
+      navigate(`/docs/${newDoc.id}`);
+    }
+  }, [createDocument, document.id, navigate, closeContextMenu]);
+
+  const handleRename = useCallback(() => {
+    closeContextMenu();
+    // Navigate to document and focus title (the title becomes editable when you click it)
+    navigate(`/docs/${document.id}`);
+  }, [document.id, navigate, closeContextMenu]);
+
+  const handleChangeVisibility = useCallback(async (visibility: string) => {
+    closeContextMenu();
+    await updateDocument(document.id, { visibility: visibility as 'private' | 'workspace' });
+    showToast(`Visibility changed to ${visibility}`, 'success');
+  }, [document.id, updateDocument, showToast, closeContextMenu]);
+
+  const handleDelete = useCallback(async () => {
+    closeContextMenu();
+    const docTitle = document.title || 'Untitled';
+    const childCount = document.children.length;
+
+    // Store document data for undo
+    const docData = {
+      id: document.id,
+      title: document.title,
+      visibility: document.visibility,
+      parent_id: document.parent_id,
+    };
+
+    const success = await deleteDocument(document.id);
+    if (success) {
+      const message = childCount > 0
+        ? `Deleted "${docTitle}" and ${childCount} child document${childCount > 1 ? 's' : ''}`
+        : `Deleted "${docTitle}"`;
+
+      showToast(message, 'info', 5000, {
+        label: 'Undo',
+        onClick: async () => {
+          // Recreate the document (undo)
+          const restored = await createDocument(docData.parent_id || undefined);
+          if (restored) {
+            await updateDocument(restored.id, {
+              title: docData.title,
+              visibility: docData.visibility,
+            });
+            showToast('Document restored', 'success');
+          }
+        },
+      });
+    }
+  }, [document, deleteDocument, createDocument, updateDocument, showToast, closeContextMenu]);
 
   return (
     <li
@@ -540,6 +628,7 @@ function DocumentTreeItem({
           'focus-within:bg-border/30 focus-within:text-foreground'
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        onContextMenu={handleContextMenu}
       >
         {/* Expand/collapse button - always visible for accessibility */}
         {hasChildren ? (
@@ -571,7 +660,46 @@ function DocumentTreeItem({
         {'_pending' in document && document._pending && (
           <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in document ? document._syncStatus as SyncStatus : undefined} />
         )}
+        {/* Three-dot menu button - visible on hover */}
+        <button
+          ref={menuButtonRef}
+          type="button"
+          onClick={handleMenuButtonClick}
+          className="p-0.5 rounded hover:bg-border/50 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+          aria-label="Document actions"
+          aria-haspopup="menu"
+        >
+          <MoreHorizontalIcon className="h-3.5 w-3.5" />
+        </button>
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={closeContextMenu}>
+          <ContextMenuItem onClick={handleCreateSubdocument}>
+            Create sub-document
+          </ContextMenuItem>
+          <ContextMenuItem onClick={handleRename}>
+            Rename
+          </ContextMenuItem>
+          <ContextMenuSubmenu label="Change visibility">
+            {VISIBILITY_OPTIONS.map((opt) => (
+              <ContextMenuItem
+                key={opt.value}
+                onClick={() => handleChangeVisibility(opt.value)}
+              >
+                {opt.value === 'private' && <LockIcon className="h-3.5 w-3.5 mr-2" />}
+                {opt.value === 'workspace' && <GlobeIcon className="h-3.5 w-3.5 mr-2" />}
+                {opt.label}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubmenu>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={handleDelete} destructive>
+            Delete
+          </ContextMenuItem>
+        </ContextMenu>
+      )}
 
       {/* Children (collapsible) */}
       {hasChildren && isOpen && (
@@ -588,6 +716,22 @@ function DocumentTreeItem({
         </ul>
       )}
     </li>
+  );
+}
+
+function MoreHorizontalIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
+      <circle cx="19" cy="12" r="1" fill="currentColor" />
+      <circle cx="5" cy="12" r="1" fill="currentColor" />
+    </svg>
   );
 }
 
