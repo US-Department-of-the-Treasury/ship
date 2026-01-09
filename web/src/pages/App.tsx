@@ -23,6 +23,7 @@ import { PendingSyncCount } from '@/components/PendingSyncCount';
 import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { useToast } from '@/components/ui/Toast';
+import { TooltipProvider } from '@/components/ui/Tooltip';
 import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 
 type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
@@ -121,6 +122,7 @@ export function AppLayout() {
   };
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Skip link for keyboard/screen reader users - Section 508 compliance */}
       <a
@@ -381,6 +383,7 @@ export function AppLayout() {
         onStayLoggedIn={resetSessionTimer}
       />
     </div>
+    </TooltipProvider>
   );
 }
 
