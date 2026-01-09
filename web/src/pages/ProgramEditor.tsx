@@ -1611,9 +1611,15 @@ function SprintTimeline({
   // Center on current sprint on mount
   useEffect(() => {
     if (scrollRef.current && !hasInitialized) {
-      const activeCard = scrollRef.current.querySelector('[data-active="true"]');
+      const activeCard = scrollRef.current.querySelector('[data-active="true"]') as HTMLElement;
       if (activeCard) {
-        activeCard.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+        // Manual centering calculation - scrollIntoView doesn't work well for first/last elements
+        const container = scrollRef.current;
+        const cardRect = activeCard.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const cardCenterInContainer = cardRect.left - containerRect.left + cardRect.width / 2;
+        const targetOffset = cardCenterInContainer - container.clientWidth / 2;
+        container.scrollLeft = container.scrollLeft + targetOffset;
         setHasInitialized(true);
       }
     }
@@ -1683,33 +1689,36 @@ function SprintTimeline({
       className="overflow-x-auto scrollbar-hide"
       style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
     >
-      {/* Month headers row */}
-      <div className="flex gap-3 mb-2">
-        {monthGroups.map((group, idx) => (
-          <div
-            key={`${group.month}-${group.year}-${idx}`}
-            className="flex-shrink-0"
-            style={{ width: `calc(${group.windows.length} * 160px + ${(group.windows.length - 1) * 12}px)` }}
-          >
-            <div className="text-xs font-medium text-muted uppercase tracking-wide px-1">
-              {group.month} {group.year !== new Date().getFullYear() ? group.year : ''}
+      {/* Wrapper with padding to allow centering first/last cards */}
+      <div style={{ paddingLeft: 'calc(50% - 80px)', paddingRight: 'calc(50% - 80px)' }}>
+        {/* Month headers row */}
+        <div className="flex gap-3 mb-2">
+          {monthGroups.map((group, idx) => (
+            <div
+              key={`${group.month}-${group.year}-${idx}`}
+              className="flex-shrink-0"
+              style={{ width: `calc(${group.windows.length} * 160px + ${(group.windows.length - 1) * 12}px)` }}
+            >
+              <div className="text-xs font-medium text-muted uppercase tracking-wide px-1">
+                {group.month} {group.year !== new Date().getFullYear() ? group.year : ''}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
-      {/* Sprint cards row */}
-      <div className="flex gap-3 py-2">
-        {windows.map((window) => (
-          <SprintWindowCard
-            key={window.sprint_number}
-            window={window}
-            isCurrentWindow={window.sprint_number === currentSprintNumber}
-            isSelected={window.sprint_number === selectedSprintNumber}
-            onSelectSprint={onSelectSprint}
-            onOpenSprint={onOpenSprint}
-            onCreateClick={onCreateClick}
-          />
-        ))}
+          ))}
+        </div>
+        {/* Sprint cards row */}
+        <div className="flex gap-3 py-2">
+          {windows.map((window) => (
+            <SprintWindowCard
+              key={window.sprint_number}
+              window={window}
+              isCurrentWindow={window.sprint_number === currentSprintNumber}
+              isSelected={window.sprint_number === selectedSprintNumber}
+              onSelectSprint={onSelectSprint}
+              onOpenSprint={onOpenSprint}
+              onCreateClick={onCreateClick}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
