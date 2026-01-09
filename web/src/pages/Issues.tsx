@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import * as Popover from '@radix-ui/react-popover';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { BulkActionBar } from '@/components/BulkActionBar';
+import { DocumentListToolbar } from '@/components/DocumentListToolbar';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useBulkUpdateIssues } from '@/hooks/useIssuesQuery';
+import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
+import { useListFilters, ViewMode } from '@/hooks/useListFilters';
 import { IssuesListSkeleton } from '@/components/ui/Skeleton';
 import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
 import { Combobox } from '@/components/ui/Combobox';
@@ -14,12 +16,10 @@ import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu 
 import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { issueStatusColors, priorityColors } from '@/lib/statusColors';
-
-// localStorage key for column visibility
-const COLUMN_VISIBILITY_KEY = 'issues-column-visibility';
+import { FilterTabs, FilterTab } from '@/components/FilterTabs';
 
 // All available columns with metadata
-const ALL_COLUMNS = [
+const ALL_COLUMNS: ColumnDefinition[] = [
   { key: 'id', label: 'ID', hideable: true },
   { key: 'title', label: 'Title', hideable: false }, // Cannot hide title
   { key: 'status', label: 'Status', hideable: true },
@@ -28,7 +28,7 @@ const ALL_COLUMNS = [
   { key: 'priority', label: 'Priority', hideable: true },
   { key: 'assignee', label: 'Assignee', hideable: true },
   { key: 'updated', label: 'Updated', hideable: true },
-] as const;
+];
 
 const SORT_OPTIONS = [
   { value: 'updated', label: 'Updated' },
@@ -36,8 +36,6 @@ const SORT_OPTIONS = [
   { value: 'priority', label: 'Priority' },
   { value: 'title', label: 'Title' },
 ];
-
-type ViewMode = 'list' | 'kanban';
 
 const STATE_LABELS: Record<string, string> = {
   triage: 'Needs Triage',
@@ -74,25 +72,19 @@ export function IssuesPage() {
   const isOfflineEmpty = useOfflineEmptyState(allIssues, loading);
   const bulkUpdate = useBulkUpdateIssues();
   const { showToast } = useToast();
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [sortBy, setSortBy] = useState<string>('updated');
-  const [programFilter, setProgramFilter] = useState<string | null>(null);
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
-    // Load from localStorage or default to all columns
-    try {
-      const stored = localStorage.getItem(COLUMN_VISIBILITY_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as string[];
-        // Validate that we have at least title column
-        if (Array.isArray(parsed) && parsed.includes('title')) {
-          return new Set(parsed);
-        }
-      }
-    } catch {
-      // Ignore parsing errors, use default
-    }
-    return new Set(ALL_COLUMNS.map(c => c.key));
+
+  // Use shared hooks for list state management
+  const { sortBy, setSortBy, viewMode, setViewMode } = useListFilters({
+    sortOptions: SORT_OPTIONS,
+    defaultSort: 'updated',
   });
+
+  const { visibleColumns, columns, hiddenCount, toggleColumn } = useColumnVisibility({
+    columns: ALL_COLUMNS,
+    storageKey: 'issues-column-visibility',
+  });
+
+  const [programFilter, setProgramFilter] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
 
   // Track selection state for BulkActionBar
@@ -165,11 +157,6 @@ export function IssuesPage() {
   useEffect(() => {
     clearSelection();
   }, [stateFilter, clearSelection]);
-
-  // Persist column visibility to localStorage
-  useEffect(() => {
-    localStorage.setItem(COLUMN_VISIBILITY_KEY, JSON.stringify(Array.from(visibleColumns)));
-  }, [visibleColumns]);
 
   // Bulk action handlers - work with both context menu and BulkActionBar
   const handleBulkArchive = useCallback(() => {
@@ -352,28 +339,6 @@ export function IssuesPage() {
     return () => window.removeEventListener('keydown', handler);
   }, [handleCreateIssue]);
 
-  // Column definitions filtered by visibility
-  const columns = useMemo(() =>
-    ALL_COLUMNS.filter(col => visibleColumns.has(col.key)),
-    [visibleColumns]
-  );
-
-  // Count of hidden columns for badge
-  const hiddenCount = ALL_COLUMNS.length - visibleColumns.size;
-
-  // Toggle column visibility
-  const toggleColumn = useCallback((key: string) => {
-    setVisibleColumns(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
-
   // Render function for issue rows
   const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => (
     <IssueRowContent issue={issue} isSelected={isSelected} visibleColumns={visibleColumns} />
@@ -405,122 +370,42 @@ export function IssuesPage() {
     return <IssuesListSkeleton />;
   }
 
+  // Program filter for toolbar
+  const programFilterContent = programOptions.length > 0 ? (
+    <div className="w-40">
+      <Combobox
+        options={programOptions}
+        value={programFilter}
+        onChange={setProgramFilter}
+        placeholder="All Programs"
+        aria-label="Filter issues by program"
+        id="issues-program-filter"
+        allowClear={true}
+        clearLabel="All Programs"
+      />
+    </div>
+  ) : null;
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <h1 className="text-xl font-semibold text-foreground">Issues</h1>
-        <div className="flex items-center gap-3">
-          {/* Program filter dropdown */}
-          {programOptions.length > 0 && (
-            <div className="w-40">
-              <Combobox
-                options={programOptions}
-                value={programFilter}
-                onChange={setProgramFilter}
-                placeholder="All Programs"
-                aria-label="Filter issues by program"
-                id="issues-program-filter"
-                allowClear={true}
-                clearLabel="All Programs"
-              />
-            </div>
-          )}
-          {/* Sort dropdown */}
-          <div className="w-32">
-            <Combobox
-              options={SORT_OPTIONS}
-              value={sortBy}
-              onChange={(v) => setSortBy(v || 'updated')}
-              placeholder="Sort by"
-              aria-label="Sort issues by"
-              id="issues-sort"
-              allowClear={false}
-            />
-          </div>
-          {/* View toggle */}
-          <div className="flex rounded-md border border-border" role="group" aria-label="View mode">
-            <Tooltip content="List view">
-              <button
-                onClick={() => setViewMode('list')}
-                aria-label="List view"
-                aria-pressed={viewMode === 'list'}
-                className={cn(
-                  'px-3 py-1 text-sm transition-colors',
-                  viewMode === 'list' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
-                )}
-              >
-                <ListIcon aria-hidden="true" />
-              </button>
-            </Tooltip>
-            <Tooltip content="Board view">
-              <button
-                onClick={() => setViewMode('kanban')}
-                aria-label="Kanban view"
-                aria-pressed={viewMode === 'kanban'}
-                className={cn(
-                  'px-3 py-1 text-sm transition-colors',
-                  viewMode === 'kanban' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
-                )}
-              >
-                <KanbanIcon aria-hidden="true" />
-              </button>
-            </Tooltip>
-          </div>
-          {/* Column visibility picker (list view only) */}
-          {viewMode === 'list' && (
-            <Popover.Root>
-              <Tooltip content="Show/hide columns">
-                <Popover.Trigger asChild>
-                  <button
-                    className="relative rounded-md border border-border p-1.5 text-muted hover:bg-border/30 hover:text-foreground transition-colors"
-                    aria-label="Customize columns"
-                  >
-                    <ColumnsIcon className="h-4 w-4" />
-                    {hiddenCount > 0 && (
-                      <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-white">
-                        {hiddenCount}
-                      </span>
-                    )}
-                  </button>
-                </Popover.Trigger>
-              </Tooltip>
-              <Popover.Portal>
-                <Popover.Content
-                  className="z-50 w-48 rounded-md border border-border bg-background p-2 shadow-lg"
-                  sideOffset={4}
-                  align="end"
-                >
-                  <div className="text-xs font-medium text-muted mb-2">Show columns</div>
-                  {ALL_COLUMNS.map((col) => (
-                    <label
-                      key={col.key}
-                      className={cn(
-                        'flex items-center gap-2 rounded px-2 py-1.5 text-sm',
-                        col.hideable ? 'cursor-pointer hover:bg-border/30' : 'cursor-not-allowed opacity-50'
-                      )}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={visibleColumns.has(col.key)}
-                        onChange={() => col.hideable && toggleColumn(col.key)}
-                        disabled={!col.hideable}
-                        className="h-4 w-4 rounded border-border text-accent focus:ring-accent"
-                      />
-                      <span>{col.label}</span>
-                    </label>
-                  ))}
-                </Popover.Content>
-              </Popover.Portal>
-            </Popover.Root>
-          )}
-          <button
-            onClick={handleCreateIssue}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
-          >
-            New Issue
-          </button>
-        </div>
+        <DocumentListToolbar
+          sortOptions={SORT_OPTIONS}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          viewModes={['list', 'kanban']}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          allColumns={ALL_COLUMNS}
+          visibleColumns={visibleColumns}
+          onToggleColumn={toggleColumn}
+          hiddenCount={hiddenCount}
+          showColumnPicker={viewMode === 'list'}
+          filterContent={programFilterContent}
+          createButton={{ label: 'New Issue', onClick: handleCreateIssue }}
+        />
       </div>
 
       {/* Filter tabs OR Bulk action bar (mutually exclusive) */}
@@ -535,14 +420,19 @@ export function IssuesPage() {
           loading={bulkUpdate.isPending}
         />
       ) : (
-        <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Issue filters">
-          <FilterTab label="All" active={!stateFilter} onClick={() => setFilter('')} id="filter-all" />
-          <FilterTab label="Needs Triage" active={stateFilter === 'triage'} onClick={() => setFilter('triage')} id="filter-triage" />
-          <FilterTab label="Active" active={stateFilter === 'todo,in_progress,in_review'} onClick={() => setFilter('todo,in_progress,in_review')} id="filter-active" />
-          <FilterTab label="Backlog" active={stateFilter === 'backlog'} onClick={() => setFilter('backlog')} id="filter-backlog" />
-          <FilterTab label="Done" active={stateFilter === 'done'} onClick={() => setFilter('done')} id="filter-done" />
-          <FilterTab label="Cancelled" active={stateFilter === 'cancelled'} onClick={() => setFilter('cancelled')} id="filter-cancelled" />
-        </div>
+        <FilterTabs
+          tabs={[
+            { id: '', label: 'All' },
+            { id: 'triage', label: 'Needs Triage' },
+            { id: 'todo,in_progress,in_review', label: 'Active' },
+            { id: 'backlog', label: 'Backlog' },
+            { id: 'done', label: 'Done' },
+            { id: 'cancelled', label: 'Cancelled' },
+          ]}
+          activeId={stateFilter}
+          onChange={setFilter}
+          ariaLabel="Issue filters"
+        />
       )}
 
       {/* Content */}
@@ -651,8 +541,12 @@ function IssueRowContent({ issue, visibleColumns }: IssueRowContentProps) {
       )}
       {/* Assignee */}
       {visibleColumns.has('assignee') && (
-        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
-          {issue.assignee_name || 'Unassigned'}
+        <td className={cn("px-4 py-3 text-sm text-muted", issue.assignee_archived && "opacity-50")} role="gridcell">
+          {issue.assignee_name ? (
+            <>
+              {issue.assignee_name}{issue.assignee_archived && ' (archived)'}
+            </>
+          ) : 'Unassigned'}
         </td>
       )}
       {/* Updated */}
@@ -662,25 +556,6 @@ function IssueRowContent({ issue, visibleColumns }: IssueRowContentProps) {
         </td>
       )}
     </>
-  );
-}
-
-function FilterTab({ label, active, onClick, id }: { label: string; active: boolean; onClick: () => void; id: string }) {
-  return (
-    <button
-      id={id}
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={cn(
-        'rounded-md px-3 py-1 text-sm transition-colors',
-        active
-          ? 'bg-border text-foreground'
-          : 'text-muted hover:bg-border/50 hover:text-foreground'
-      )}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -799,22 +674,6 @@ function formatDate(dateString: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function ListIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h16" />
-    </svg>
-  );
-}
-
-function KanbanIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-    </svg>
-  );
-}
-
 function ArchiveIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -831,10 +690,3 @@ function TrashIcon({ className }: { className?: string }) {
   );
 }
 
-function ColumnsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 4h6M9 20h6M4 9h4M4 15h4M16 9h4M16 15h4M12 4v16" />
-    </svg>
-  );
-}

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { addPendingMutation, removePendingMutation } from '@/lib/queryClient';
 
 export interface ProgramOwner {
@@ -8,15 +8,29 @@ export interface ProgramOwner {
   email: string;
 }
 
+export interface GitHubRepo {
+  owner: string;  // GitHub org or user
+  repo: string;   // Repository name
+}
+
+export interface AutoStatusOnMerge {
+  enabled: boolean;
+  targetStatus: string;  // Status to set when PR is merged (e.g., 'done')
+}
+
 export interface Program {
   id: string;
   name: string;
   color: string;
   emoji?: string | null;
   archived_at: string | null;
+  created_at?: string;
+  updated_at?: string;
   issue_count?: number;
   sprint_count?: number;
   owner: ProgramOwner | null;
+  github_repos?: GitHubRepo[];
+  auto_status_on_merge?: AutoStatusOnMerge | null;
   _pending?: boolean;
   _pendingId?: string;
 }
@@ -148,6 +162,8 @@ export function useUpdateProgram() {
       if (updates.color !== undefined) apiUpdates.color = updates.color;
       if (updates.archived_at !== undefined) apiUpdates.archived_at = updates.archived_at;
       if (updates.owner_id !== undefined) apiUpdates.owner_id = updates.owner_id;
+      if (updates.github_repos !== undefined) apiUpdates.github_repos = updates.github_repos;
+      if (updates.auto_status_on_merge !== undefined) apiUpdates.auto_status_on_merge = updates.auto_status_on_merge;
       return updateProgramApi(id, apiUpdates);
     },
     onMutate: async ({ id, updates }) => {
@@ -192,11 +208,67 @@ export function useUpdateProgram() {
   });
 }
 
+// Delete program
+async function deleteProgramApi(id: string): Promise<void> {
+  const res = await apiDelete(`/api/programs/${id}`);
+  if (!res.ok) {
+    const error = new Error('Failed to delete program') as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
+}
+
+// Hook to delete program with optimistic update
+export function useDeleteProgram() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => deleteProgramApi(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: programKeys.lists() });
+
+      const previousPrograms = queryClient.getQueryData<Program[]>(programKeys.lists());
+
+      const pendingId = addPendingMutation({
+        type: 'delete',
+        resource: 'program',
+        resourceId: id,
+        data: null,
+      });
+
+      // Optimistically remove the program
+      queryClient.setQueryData<Program[]>(
+        programKeys.lists(),
+        (old) => old?.filter(p => p.id !== id) || []
+      );
+
+      return { previousPrograms, pendingId };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previousPrograms) {
+        queryClient.setQueryData(programKeys.lists(), context.previousPrograms);
+      }
+      if (context?.pendingId) {
+        removePendingMutation(context.pendingId);
+      }
+    },
+    onSuccess: (_data, _id, context) => {
+      if (context?.pendingId) {
+        removePendingMutation(context.pendingId);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: programKeys.lists() });
+    },
+  });
+}
+
 // Compatibility hook that matches the old usePrograms interface
 export function usePrograms() {
   const { data: programs = [], isLoading: loading, refetch } = useProgramsQuery();
   const createMutation = useCreateProgram();
   const updateMutation = useUpdateProgram();
+  const deleteMutation = useDeleteProgram();
 
   const createProgram = async (): Promise<Program | null> => {
     // When offline, return optimistic data immediately instead of waiting for mutateAsync
@@ -243,11 +315,27 @@ export function usePrograms() {
     await refetch();
   };
 
+  const deleteProgram = async (id: string): Promise<boolean> => {
+    // When offline, trigger mutation and return immediately
+    if (!navigator.onLine) {
+      deleteMutation.mutate(id);
+      return true;
+    }
+
+    try {
+      await deleteMutation.mutateAsync(id);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   return {
     programs,
     loading,
     createProgram,
     updateProgram,
+    deleteProgram,
     refreshPrograms,
   };
 }

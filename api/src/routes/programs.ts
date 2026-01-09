@@ -15,6 +15,8 @@ function extractProgramFromRow(row: any) {
     name: row.title,
     color: props.color || '#6366f1',
     emoji: props.emoji || null,
+    github_repos: props.githubRepos || [],
+    auto_status_on_merge: props.autoStatusOnMerge || null,
     archived_at: row.archived_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -36,12 +38,26 @@ const createProgramSchema = z.object({
   emoji: z.string().max(10).optional().nullable(),
 });
 
+// GitHub repo schema for validation
+const githubRepoSchema = z.object({
+  owner: z.string().min(1).max(100),
+  repo: z.string().min(1).max(100),
+});
+
+// Auto-status on merge schema
+const autoStatusOnMergeSchema = z.object({
+  enabled: z.boolean(),
+  targetStatus: z.string().min(1).max(50),
+});
+
 const updateProgramSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   emoji: z.string().max(10).optional().nullable(),
   owner_id: z.string().uuid().optional().nullable(),
   archived_at: z.string().datetime().optional().nullable(),
+  github_repos: z.array(githubRepoSchema).optional(),
+  auto_status_on_merge: autoStatusOnMergeSchema.optional().nullable(),
 });
 
 // List programs (documents with document_type = 'program')
@@ -228,6 +244,16 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    if (data.github_repos !== undefined) {
+      newProps.githubRepos = data.github_repos;
+      propsChanged = true;
+    }
+
+    if (data.auto_status_on_merge !== undefined) {
+      newProps.autoStatusOnMerge = data.auto_status_on_merge;
+      propsChanged = true;
+    }
+
     if (propsChanged) {
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(newProps));
@@ -339,9 +365,13 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.ticket_number,
               d.sprint_id, d.created_at, d.updated_at, d.created_by,
-              u.name as assignee_name
+              u.name as assignee_name,
+              CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+       LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
+         AND person_doc.document_type = 'person'
+         AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
        WHERE d.program_id = $1 AND d.document_type = 'issue'
          AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY
@@ -372,6 +402,7 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
         updated_at: row.updated_at,
         created_by: row.created_by,
         assignee_name: row.assignee_name,
+        assignee_archived: row.assignee_archived || false,
         display_id: `#${row.ticket_number}`
       };
     });

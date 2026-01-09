@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useAuth } from '@/hooks/useAuth';
-import { usePrograms, Program } from '@/contexts/ProgramsContext';
+import { usePrograms, Program, GitHubRepo } from '@/contexts/ProgramsContext';
 import { useIssues } from '@/contexts/IssuesContext';
 import { useDocuments } from '@/contexts/DocumentsContext';
 import { useSprints, Sprint as SprintFromHook } from '@/hooks/useSprintsQuery';
@@ -83,6 +83,7 @@ interface Issue {
   ticket_number: number;
   assignee_id: string | null;
   assignee_name: string | null;
+  assignee_archived?: boolean;
   display_id: string;
   sprint_id: string | null;
 }
@@ -652,6 +653,7 @@ function OverviewTab({
   const navigate = useNavigate();
   const { createDocument } = useDocuments();
   const [people, setPeople] = useState<Person[]>([]);
+  const [newRepoInput, setNewRepoInput] = useState('');
 
   // Fetch team members (filter out pending users who don't have user_id yet)
   useEffect(() => {
@@ -674,6 +676,51 @@ function OverviewTab({
   const handleNavigateToDocument = useCallback((docId: string) => {
     navigate(`/docs/${docId}`);
   }, [navigate]);
+
+  // Parse GitHub repo from input (owner/repo or full URL)
+  const parseGitHubRepo = (input: string): GitHubRepo | null => {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+
+    // Try to parse as URL
+    const urlMatch = trimmed.match(/github\.com\/([^/]+)\/([^/\s?#]+)/i);
+    if (urlMatch) {
+      return { owner: urlMatch[1], repo: urlMatch[2].replace(/\.git$/, '') };
+    }
+
+    // Try to parse as owner/repo
+    const repoMatch = trimmed.match(/^([^/\s]+)\/([^/\s]+)$/);
+    if (repoMatch) {
+      return { owner: repoMatch[1], repo: repoMatch[2] };
+    }
+
+    return null;
+  };
+
+  // Add a new repo
+  const handleAddRepo = () => {
+    const parsed = parseGitHubRepo(newRepoInput);
+    if (!parsed) return;
+
+    const currentRepos = program.github_repos || [];
+    // Check for duplicates
+    const exists = currentRepos.some(r => r.owner === parsed.owner && r.repo === parsed.repo);
+    if (exists) {
+      setNewRepoInput('');
+      return;
+    }
+
+    onUpdateProgram({ github_repos: [...currentRepos, parsed] });
+    setNewRepoInput('');
+  };
+
+  // Remove a repo
+  const handleRemoveRepo = (owner: string, repo: string) => {
+    const currentRepos = program.github_repos || [];
+    onUpdateProgram({
+      github_repos: currentRepos.filter(r => !(r.owner === owner && r.repo === repo))
+    });
+  };
 
   return (
     <Editor
@@ -727,6 +774,110 @@ function OverviewTab({
               ))}
             </div>
           </PropertyRow>
+
+          <PropertyRow label="GitHub Repos">
+            <div className="space-y-2">
+              {/* Linked repos */}
+              {(program.github_repos || []).map((repo) => (
+                <div
+                  key={`${repo.owner}/${repo.repo}`}
+                  className="flex items-center gap-2 rounded-md bg-secondary/50 px-2 py-1.5 text-sm group"
+                >
+                  <svg className="h-4 w-4 text-muted flex-shrink-0" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                  </svg>
+                  <a
+                    href={`https://github.com/${repo.owner}/${repo.repo}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="truncate hover:text-accent transition-colors flex-1"
+                  >
+                    {repo.owner}/{repo.repo}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveRepo(repo.owner, repo.repo)}
+                    className="text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove repo"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+
+              {/* Add repo input */}
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  value={newRepoInput}
+                  onChange={(e) => setNewRepoInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddRepo();
+                    }
+                  }}
+                  placeholder="owner/repo or URL"
+                  className="flex-1 min-w-0 rounded-md border border-border bg-background px-2 py-1 text-sm placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddRepo}
+                  disabled={!parseGitHubRepo(newRepoInput)}
+                  className="rounded-md bg-accent px-2 py-1 text-sm text-white hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Add
+                </button>
+              </div>
+              <p className="text-xs text-muted">Link GitHub repos to track PR activity</p>
+            </div>
+          </PropertyRow>
+
+          {/* Auto-status on merge - only show if repos are linked */}
+          {(program.github_repos || []).length > 0 && (
+            <PropertyRow label="Auto-Update on Merge">
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={program.auto_status_on_merge?.enabled ?? false}
+                    onChange={(e) => {
+                      const enabled = e.target.checked;
+                      onUpdateProgram({
+                        auto_status_on_merge: enabled
+                          ? { enabled: true, targetStatus: program.auto_status_on_merge?.targetStatus || 'done' }
+                          : null,
+                      });
+                    }}
+                    className="rounded border-border bg-background focus:ring-accent"
+                  />
+                  <span className="text-sm">Update issue status when PR merges</span>
+                </label>
+                {program.auto_status_on_merge?.enabled && (
+                  <div className="flex items-center gap-2 pl-6">
+                    <span className="text-xs text-muted">Set status to:</span>
+                    <select
+                      value={program.auto_status_on_merge?.targetStatus || 'done'}
+                      onChange={(e) => {
+                        onUpdateProgram({
+                          auto_status_on_merge: {
+                            enabled: true,
+                            targetStatus: e.target.value,
+                          },
+                        });
+                      }}
+                      className="rounded-md border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+                    >
+                      <option value="done">Done</option>
+                      <option value="in_review">In Review</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            </PropertyRow>
+          )}
         </div>
       }
     />
@@ -1071,7 +1222,21 @@ function SprintsTab({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Top Section: Two-column layout - chart left, issues right */}
+      {/* Top Section: Horizontal Timeline - fixed height */}
+      <div className="flex-shrink-0 border-b border-border p-4">
+        <h3 className="mb-3 text-sm font-medium text-muted uppercase tracking-wide">Timeline</h3>
+        <SprintTimeline
+          sprints={sprints}
+          workspaceSprintStartDate={workspaceSprintStartDate}
+          currentSprintNumber={currentSprintNumber}
+          selectedSprintNumber={selectedSprintNumber}
+          onSelectSprint={handleSelectSprint}
+          onOpenSprint={onSprintClick}
+          onCreateClick={(num) => setShowOwnerPrompt(num)}
+        />
+      </div>
+
+      {/* Bottom Section: Two-column layout - chart left, issues right */}
       <div className="flex-1 min-h-0 p-6 overflow-hidden">
         {selectedSprint && selectedWindow ? (
           <div className="flex gap-6 h-full">
@@ -1098,20 +1263,6 @@ function SprintsTab({
             currentSprintNumber={currentSprintNumber}
           />
         )}
-      </div>
-
-      {/* Bottom Section: Horizontal Timeline - fixed height */}
-      <div className="flex-shrink-0 border-t border-border p-4">
-        <h3 className="mb-3 text-sm font-medium text-muted uppercase tracking-wide">Timeline</h3>
-        <SprintTimeline
-          sprints={sprints}
-          workspaceSprintStartDate={workspaceSprintStartDate}
-          currentSprintNumber={currentSprintNumber}
-          selectedSprintNumber={selectedSprintNumber}
-          onSelectSprint={handleSelectSprint}
-          onOpenSprint={onSprintClick}
-          onCreateClick={(num) => setShowOwnerPrompt(num)}
-        />
       </div>
 
       {/* Owner Selection Prompt */}
@@ -1206,6 +1357,7 @@ function ActiveSprintProgress({
   window: SprintWindow;
   onClick: () => void;
 }) {
+  const navigate = useNavigate();
   const chartRef = useRef<HTMLDivElement>(null);
   const [chartSize, setChartSize] = useState({ width: 400, height: 150 }); // Start with reasonable defaults
 
@@ -1359,12 +1511,20 @@ function ActiveSprintProgress({
             </>
           )}
         </div>
-        <button
-          onClick={onClick}
-          className="rounded-md px-3 py-1.5 text-sm text-accent hover:bg-accent/10 transition-colors"
-        >
-          Open →
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate(`/sprints/${sprint.id}/view`)}
+            className="rounded-md px-3 py-1.5 text-sm bg-accent text-white hover:bg-accent/90 transition-colors"
+          >
+            Plan Sprint
+          </button>
+          <button
+            onClick={onClick}
+            className="rounded-md px-3 py-1.5 text-sm text-accent hover:bg-accent/10 transition-colors"
+          >
+            Open →
+          </button>
+        </div>
       </div>
 
       {/* Progress Graph - fills remaining space */}
@@ -1611,9 +1771,15 @@ function SprintTimeline({
   // Center on current sprint on mount
   useEffect(() => {
     if (scrollRef.current && !hasInitialized) {
-      const activeCard = scrollRef.current.querySelector('[data-active="true"]');
+      const activeCard = scrollRef.current.querySelector('[data-active="true"]') as HTMLElement;
       if (activeCard) {
-        activeCard.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+        // Manual centering calculation - scrollIntoView doesn't work well for first/last elements
+        const container = scrollRef.current;
+        const cardRect = activeCard.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const cardCenterInContainer = cardRect.left - containerRect.left + cardRect.width / 2;
+        const targetOffset = cardCenterInContainer - container.clientWidth / 2;
+        container.scrollLeft = container.scrollLeft + targetOffset;
         setHasInitialized(true);
       }
     }
@@ -1656,23 +1822,123 @@ function SprintTimeline({
     return () => container.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
+  // Group windows by month
+  const monthGroups = useMemo(() => {
+    const groups: { month: string; year: number; windows: typeof windows }[] = [];
+    let currentGroup: { month: string; year: number; windows: typeof windows } | null = null;
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    windows.forEach((window) => {
+      const monthName = monthNames[window.start_date.getMonth()];
+      const year = window.start_date.getFullYear();
+
+      if (!currentGroup || currentGroup.month !== monthName || currentGroup.year !== year) {
+        currentGroup = { month: monthName, year, windows: [] };
+        groups.push(currentGroup);
+      }
+      currentGroup.windows.push(window);
+    });
+
+    return groups;
+  }, [windows]);
+
+  // Calculate "Today" marker position
+  const todayMarkerPosition = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Find which window today falls within
+    const windowIndex = windows.findIndex(w => {
+      const windowStart = new Date(w.start_date);
+      windowStart.setHours(0, 0, 0, 0);
+      const windowEnd = new Date(w.end_date);
+      windowEnd.setHours(23, 59, 59, 999);
+      return today >= windowStart && today <= windowEnd;
+    });
+
+    if (windowIndex === -1) return null; // Today is not visible in current range
+
+    const window = windows[windowIndex];
+    const windowStart = new Date(window.start_date);
+    windowStart.setHours(0, 0, 0, 0);
+
+    // Days into this window (0-13)
+    const daysIntoWindow = Math.floor((today.getTime() - windowStart.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Card width = 160px, gap = 12px
+    const cardWidth = 160;
+    const gap = 12;
+
+    // Position = (cards before * (width + gap)) + (days / 14 * width)
+    const position = (windowIndex * (cardWidth + gap)) + (daysIntoWindow / 14) * cardWidth;
+
+    return position;
+  }, [windows]);
+
   return (
     <div
       ref={scrollRef}
-      className="flex gap-3 overflow-x-auto py-2 scrollbar-hide"
+      className="overflow-x-auto scrollbar-hide"
       style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
     >
-      {windows.map((window) => (
-        <SprintWindowCard
-          key={window.sprint_number}
-          window={window}
-          isCurrentWindow={window.sprint_number === currentSprintNumber}
-          isSelected={window.sprint_number === selectedSprintNumber}
-          onSelectSprint={onSelectSprint}
-          onOpenSprint={onOpenSprint}
-          onCreateClick={onCreateClick}
-        />
-      ))}
+      {/* Wrapper with padding to allow centering first/last cards */}
+      <div style={{ paddingLeft: 'calc(50% - 80px)', paddingRight: 'calc(50% - 80px)' }}>
+        {/* Month headers row */}
+        <div className="flex gap-3 mb-2">
+          {monthGroups.map((group, idx) => (
+            <div
+              key={`${group.month}-${group.year}-${idx}`}
+              className="flex-shrink-0"
+              style={{ width: `calc(${group.windows.length} * 160px + ${(group.windows.length - 1) * 12}px)` }}
+            >
+              <div className="text-xs font-medium text-muted uppercase tracking-wide px-1">
+                {group.month} {group.year !== new Date().getFullYear() ? group.year : ''}
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Sprint cards row with connecting line */}
+        <div className="relative py-2">
+          {/* Connecting line - runs horizontally through all cards */}
+          <div
+            className="absolute left-0 right-0 h-0.5 bg-border pointer-events-none"
+            style={{ top: '50%', transform: 'translateY(-50%)' }}
+          />
+          {/* Today marker */}
+          {todayMarkerPosition !== null && (
+            <div
+              className="absolute top-0 bottom-0 pointer-events-none z-10"
+              style={{ left: todayMarkerPosition }}
+            >
+              <div className="relative h-full">
+                {/* Vertical line */}
+                <div className="absolute top-0 bottom-0 w-0.5 bg-accent" />
+                {/* Today label */}
+                <div className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                  <span className="text-xs font-medium text-accent bg-background px-1 rounded">
+                    Today
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Sprint cards */}
+          <div className="relative flex gap-3">
+            {windows.map((window) => (
+              <SprintWindowCard
+                key={window.sprint_number}
+                window={window}
+                isCurrentWindow={window.sprint_number === currentSprintNumber}
+                isSelected={window.sprint_number === selectedSprintNumber}
+                onSelectSprint={onSelectSprint}
+                onOpenSprint={onOpenSprint}
+                onCreateClick={onCreateClick}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

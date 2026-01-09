@@ -15,6 +15,7 @@ interface Person {
   user_id: string;  // User ID (for backend operations)
   name: string;
   email: string;
+  isArchived?: boolean;
 }
 
 export function TeamDirectoryPage() {
@@ -24,26 +25,33 @@ export function TeamDirectoryPage() {
   const { showToast } = useToast();
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; person: Person } | null>(null);
 
-  useEffect(() => {
-    async function fetchPeople() {
-      try {
-        const response = await fetch(`${API_URL}/api/team/people`, {
-          credentials: 'include',
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setPeople(data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch people:', error);
-      } finally {
-        setLoading(false);
+  const fetchPeople = useCallback(async (includeArchived = false) => {
+    try {
+      const params = new URLSearchParams();
+      if (includeArchived) params.set('includeArchived', 'true');
+      const url = params.toString()
+        ? `${API_URL}/api/team/people?${params}`
+        : `${API_URL}/api/team/people`;
+      const response = await fetch(url, {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setPeople(data);
       }
+    } catch (error) {
+      console.error('Failed to fetch people:', error);
+    } finally {
+      setLoading(false);
     }
-    fetchPeople();
   }, []);
+
+  useEffect(() => {
+    fetchPeople(showArchived);
+  }, [fetchPeople, showArchived]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, person: Person) => {
     e.preventDefault();
@@ -98,9 +106,20 @@ export function TeamDirectoryPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex h-12 items-center border-b border-border px-6">
-        <h1 className="text-lg font-medium text-foreground">Team Directory</h1>
-        {!loading && <span className="ml-2 text-sm text-muted">({people.length} members)</span>}
+      <div className="flex h-12 items-center justify-between border-b border-border px-6">
+        <div className="flex items-center">
+          <h1 className="text-lg font-medium text-foreground">Team Directory</h1>
+          {!loading && <span className="ml-2 text-sm text-muted">({people.length} members)</span>}
+        </div>
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-border text-accent focus:ring-accent/50"
+          />
+          <span className="text-xs text-muted">Show archived</span>
+        </label>
       </div>
 
       {/* List */}
@@ -164,16 +183,28 @@ function PersonCard({
 }) {
   return (
     <div
-      className="group relative flex items-center gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:bg-border/30"
+      className={cn(
+        "group relative flex items-center gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:bg-border/30",
+        person.isArchived && "opacity-50"
+      )}
       onContextMenu={onContextMenu}
     >
       {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent/80 text-sm font-medium text-white">
+      <div className={cn(
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-medium text-white",
+        person.isArchived ? "bg-gray-400" : "bg-accent/80"
+      )}>
         {person.name.charAt(0).toUpperCase()}
       </div>
       {/* Info */}
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium text-foreground">{person.name}</div>
+        <div className={cn(
+          "truncate font-medium",
+          person.isArchived ? "text-muted" : "text-foreground"
+        )}>
+          {person.name}
+          {person.isArchived && <span className="ml-1 text-xs font-normal">(archived)</span>}
+        </div>
         <div className="truncate text-sm text-muted">{person.email}</div>
       </div>
       {/* Three-dot menu button */}

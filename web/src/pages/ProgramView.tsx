@@ -8,12 +8,18 @@ import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
 import { useToast } from '@/components/ui/Toast';
 
+interface GitHubRepo {
+  owner: string;
+  repo: string;
+}
+
 interface Program {
   id: string;
   name: string;
   description: string | null;
   color: string;
   emoji?: string | null;
+  github_repos?: GitHubRepo[];
   issue_count: number;
   sprint_count: number;
   archived_at: string | null;
@@ -42,6 +48,7 @@ interface Issue {
   ticket_number: number;
   assignee_id: string | null;
   assignee_name: string | null;
+  assignee_archived?: boolean;
   display_id: string;
   sprint_ref_id: string | null;
 }
@@ -417,8 +424,12 @@ function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (
                 {stateLabels[issue.state] || issue.state}
               </span>
             </td>
-            <td className="px-6 py-3 text-sm text-muted">
-              {issue.assignee_name || 'Unassigned'}
+            <td className={cn("px-6 py-3 text-sm text-muted", issue.assignee_archived && "opacity-50")}>
+              {issue.assignee_name ? (
+                <>
+                  {issue.assignee_name}{issue.assignee_archived && ' (archived)'}
+                </>
+              ) : 'Unassigned'}
             </td>
           </tr>
         ))}
@@ -628,6 +639,8 @@ function TrashIcon() {
 function ProgramSettings({ program, onUpdate }: { program: Program; onUpdate: (updates: Partial<Program>) => void }) {
   const [name, setName] = useState(program.name);
   const [description, setDescription] = useState(program.description || '');
+  const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>(program.github_repos || []);
+  const [newRepoInput, setNewRepoInput] = useState('');
 
   const handleSave = () => {
     onUpdate({ name, description: description || null });
@@ -635,6 +648,57 @@ function ProgramSettings({ program, onUpdate }: { program: Program; onUpdate: (u
 
   const handleEmojiChange = (emoji: string | null) => {
     onUpdate({ emoji });
+  };
+
+  const parseRepoInput = (input: string): GitHubRepo | null => {
+    // Accept formats: "owner/repo" or "https://github.com/owner/repo"
+    const trimmed = input.trim();
+
+    // Try URL format first
+    const urlMatch = trimmed.match(/github\.com\/([^/]+)\/([^/\s]+)/);
+    if (urlMatch) {
+      return { owner: urlMatch[1], repo: urlMatch[2].replace(/\.git$/, '') };
+    }
+
+    // Try owner/repo format
+    const slashMatch = trimmed.match(/^([^/\s]+)\/([^/\s]+)$/);
+    if (slashMatch) {
+      return { owner: slashMatch[1], repo: slashMatch[2] };
+    }
+
+    return null;
+  };
+
+  const handleAddRepo = () => {
+    const parsed = parseRepoInput(newRepoInput);
+    if (!parsed) return;
+
+    // Check for duplicates
+    const exists = githubRepos.some(r => r.owner === parsed.owner && r.repo === parsed.repo);
+    if (exists) {
+      setNewRepoInput('');
+      return;
+    }
+
+    const updated = [...githubRepos, parsed];
+    setGithubRepos(updated);
+    setNewRepoInput('');
+
+    // Save immediately
+    onUpdate({ github_repos: updated } as any);
+  };
+
+  const handleRemoveRepo = (index: number) => {
+    const updated = githubRepos.filter((_, i) => i !== index);
+    setGithubRepos(updated);
+    onUpdate({ github_repos: updated } as any);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddRepo();
+    }
   };
 
   return (
@@ -678,7 +742,72 @@ function ProgramSettings({ program, onUpdate }: { program: Program; onUpdate: (u
       >
         Save Changes
       </button>
+
+      {/* GitHub Repos Section */}
+      <div className="border-t border-border pt-6">
+        <label className="mb-2 block text-sm font-medium text-foreground">GitHub Repositories</label>
+        <p className="mb-3 text-xs text-muted">Link repositories to track PRs and commits for this program.</p>
+
+        {/* Linked repos list */}
+        {githubRepos.length > 0 && (
+          <div className="mb-3 space-y-2">
+            {githubRepos.map((repo, index) => (
+              <div
+                key={`${repo.owner}/${repo.repo}`}
+                className="flex items-center justify-between rounded-md border border-border bg-background/50 px-3 py-2"
+              >
+                <a
+                  href={`https://github.com/${repo.owner}/${repo.repo}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm text-foreground hover:text-accent"
+                >
+                  <GitHubIcon />
+                  <span>{repo.owner}/{repo.repo}</span>
+                </a>
+                <button
+                  onClick={() => handleRemoveRepo(index)}
+                  className="p-1 text-muted hover:text-red-500 transition-colors"
+                  aria-label={`Remove ${repo.owner}/${repo.repo}`}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add repo input */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newRepoInput}
+            onChange={(e) => setNewRepoInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="owner/repo or GitHub URL"
+            className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+          <button
+            onClick={handleAddRepo}
+            disabled={!parseRepoInput(newRepoInput)}
+            className="rounded-md bg-border px-3 py-2 text-sm text-foreground hover:bg-border/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Add
+          </button>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function GitHubIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+    </svg>
   );
 }
 
