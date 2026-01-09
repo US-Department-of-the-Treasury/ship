@@ -633,6 +633,81 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
       return;
     }
 
+    // Check if user exists but is not a member (e.g., super admin or member of other workspace)
+    // If so, directly add them as a member instead of creating a pending invite
+    const existingNonMemberResult = await pool.query(
+      `SELECT id, name, email FROM users
+       WHERE ($1::TEXT IS NOT NULL AND LOWER(email) = LOWER($1))
+          OR ($2::TEXT IS NOT NULL AND x509_subject_dn = $2)`,
+      [email || null, x509SubjectDn || null]
+    );
+
+    if (existingNonMemberResult.rows[0]) {
+      const existingUser = existingNonMemberResult.rows[0];
+
+      // Create membership directly
+      await pool.query(
+        `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+         VALUES ($1, $2, $3)`,
+        [workspaceId, existingUser.id, role]
+      );
+
+      // Check for existing pending person doc (from a previous invite attempt)
+      const existingPendingPerson = await pool.query(
+        `SELECT id FROM documents
+         WHERE workspace_id = $1
+           AND document_type = 'person'
+           AND properties->>'pending' = 'true'
+           AND LOWER(properties->>'email') = LOWER($2)`,
+        [workspaceId, existingUser.email]
+      );
+
+      if (existingPendingPerson.rows[0]) {
+        // Update existing pending person doc to be a real person doc
+        await pool.query(
+          `UPDATE documents
+           SET title = $1,
+               properties = jsonb_build_object('user_id', $2::text, 'email', $3)
+           WHERE id = $4`,
+          [existingUser.name, existingUser.id, existingUser.email, existingPendingPerson.rows[0].id]
+        );
+      } else {
+        // Create person document with user_id (not pending)
+        await pool.query(
+          `INSERT INTO documents (workspace_id, document_type, title, properties)
+           VALUES ($1, 'person', $2, $3)`,
+          [workspaceId, existingUser.name, JSON.stringify({
+            user_id: existingUser.id,
+            email: existingUser.email
+          })]
+        );
+      }
+
+      await logAuditEvent({
+        workspaceId,
+        actorUserId: req.userId!,
+        action: 'member.add',
+        resourceType: 'user',
+        resourceId: existingUser.id,
+        details: { email: existingUser.email, role },
+        req,
+      });
+
+      res.status(HTTP_STATUS.CREATED).json({
+        success: true,
+        data: {
+          member: {
+            id: existingUser.id,
+            email: existingUser.email,
+            name: existingUser.name,
+            role,
+          },
+          message: 'User added as member (existing account)',
+        },
+      });
+      return;
+    }
+
     // Check for existing pending invite (by email or subject DN)
     const existingInviteResult = await pool.query(
       `SELECT id FROM workspace_invites
