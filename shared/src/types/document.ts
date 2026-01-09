@@ -61,9 +61,22 @@ export interface ProjectProperties {
   [key: string]: unknown;
 }
 
+// Hypothesis history entry for tracking hypothesis changes over time
+export interface HypothesisHistoryEntry {
+  hypothesis: string;
+  timestamp: string;  // ISO 8601 date string
+  author_id: string;
+  author_name?: string;
+}
+
 export interface SprintProperties {
   sprint_number: number;  // References implicit 2-week window, dates computed from this
   owner_id: string;       // REQUIRED - person accountable for this sprint
+  // Hypothesis tracking (for Ship-Claude integration)
+  hypothesis?: string | null;           // Current hypothesis statement
+  success_criteria?: string[] | null;   // Array of measurable success criteria
+  confidence?: number | null;           // Confidence level 0-100
+  hypothesis_history?: HypothesisHistoryEntry[] | null;  // History of hypothesis changes
   [key: string]: unknown;
 }
 

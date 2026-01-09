@@ -261,6 +261,22 @@ export interface AuditLog {
   createdAt: string;
 }
 
+export interface ApiToken {
+  id: string;
+  name: string;
+  token_prefix: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  is_active: boolean;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface ApiTokenCreateResponse extends ApiToken {
+  token: string; // Full token - only returned on creation
+  warning: string;
+}
+
 export interface WorkspaceMember {
   id: string;
   userId: string;
@@ -480,6 +496,22 @@ export const api = {
       request<LoginResponse>(`/api/invites/${token}/accept`, {
         method: 'POST',
         body: JSON.stringify(data || {}),
+      }),
+  },
+
+  apiTokens: {
+    list: () =>
+      request<ApiToken[]>('/api/api-tokens'),
+
+    create: (data: { name: string; expires_in_days?: number }) =>
+      request<ApiTokenCreateResponse>('/api/api-tokens', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    revoke: (tokenId: string) =>
+      request('/api/api-tokens/' + tokenId, {
+        method: 'DELETE',
       }),
   },
 };

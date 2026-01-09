@@ -483,6 +483,8 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
         has_retro: row.has_retro === true || row.has_retro === 't',
         plan_created_at: row.plan_created_at || null,
         retro_created_at: row.retro_created_at || null,
+        // Sprint goal (concise objective, separate from hypothesis)
+        goal: props.goal || null,
       };
     });
 
