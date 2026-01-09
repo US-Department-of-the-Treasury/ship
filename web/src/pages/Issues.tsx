@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import * as Popover from '@radix-ui/react-popover';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { BulkActionBar } from '@/components/BulkActionBar';
@@ -12,6 +13,21 @@ import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { cn } from '@/lib/cn';
 import { issueStatusColors, priorityColors } from '@/lib/statusColors';
+
+// localStorage key for column visibility
+const COLUMN_VISIBILITY_KEY = 'issues-column-visibility';
+
+// All available columns with metadata
+const ALL_COLUMNS = [
+  { key: 'id', label: 'ID', hideable: true },
+  { key: 'title', label: 'Title', hideable: false }, // Cannot hide title
+  { key: 'status', label: 'Status', hideable: true },
+  { key: 'source', label: 'Source', hideable: true },
+  { key: 'program', label: 'Program', hideable: true },
+  { key: 'priority', label: 'Priority', hideable: true },
+  { key: 'assignee', label: 'Assignee', hideable: true },
+  { key: 'updated', label: 'Updated', hideable: true },
+] as const;
 
 const SORT_OPTIONS = [
   { value: 'updated', label: 'Updated' },
@@ -59,6 +75,23 @@ export function IssuesPage() {
   const { showToast } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sortBy, setSortBy] = useState<string>('updated');
+  const [programFilter, setProgramFilter] = useState<string | null>(null);
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
+    // Load from localStorage or default to all columns
+    try {
+      const stored = localStorage.getItem(COLUMN_VISIBILITY_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as string[];
+        // Validate that we have at least title column
+        if (Array.isArray(parsed) && parsed.includes('title')) {
+          return new Set(parsed);
+        }
+      }
+    } catch {
+      // Ignore parsing errors, use default
+    }
+    return new Set(ALL_COLUMNS.map(c => c.key));
+  });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
 
   // Track selection state for BulkActionBar
@@ -67,12 +100,36 @@ export function IssuesPage() {
 
   const stateFilter = searchParams.get('state') || '';
 
-  // Filter issues client-side based on state filter
+  // Compute unique programs from issues for the filter dropdown
+  const programOptions = useMemo(() => {
+    const programMap = new Map<string, string>();
+    allIssues.forEach(issue => {
+      if (issue.program_id && issue.program_name) {
+        programMap.set(issue.program_id, issue.program_name);
+      }
+    });
+    return Array.from(programMap.entries())
+      .map(([id, name]) => ({ value: id, label: name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [allIssues]);
+
+  // Filter issues client-side based on state filter AND program filter
   const issues = useMemo(() => {
-    if (!stateFilter) return allIssues;
-    const states = stateFilter.split(',');
-    return allIssues.filter(issue => states.includes(issue.state));
-  }, [allIssues, stateFilter]);
+    let filtered = allIssues;
+
+    // Apply program filter
+    if (programFilter) {
+      filtered = filtered.filter(issue => issue.program_id === programFilter);
+    }
+
+    // Apply state filter
+    if (stateFilter) {
+      const states = stateFilter.split(',');
+      filtered = filtered.filter(issue => states.includes(issue.state));
+    }
+
+    return filtered;
+  }, [allIssues, stateFilter, programFilter]);
 
   const handleCreateIssue = useCallback(async () => {
     const issue = await contextCreateIssue();
@@ -107,6 +164,11 @@ export function IssuesPage() {
   useEffect(() => {
     clearSelection();
   }, [stateFilter, clearSelection]);
+
+  // Persist column visibility to localStorage
+  useEffect(() => {
+    localStorage.setItem(COLUMN_VISIBILITY_KEY, JSON.stringify(Array.from(visibleColumns)));
+  }, [visibleColumns]);
 
   // Bulk action handlers - work with both context menu and BulkActionBar
   const handleBulkArchive = useCallback(() => {
@@ -259,21 +321,32 @@ export function IssuesPage() {
     return () => window.removeEventListener('keydown', handler);
   }, [handleCreateIssue]);
 
-  // Column definitions for the issues list
-  const columns = useMemo(() => [
-    { key: 'id', label: 'ID' },
-    { key: 'title', label: 'Title' },
-    { key: 'status', label: 'Status' },
-    { key: 'source', label: 'Source' },
-    { key: 'priority', label: 'Priority' },
-    { key: 'assignee', label: 'Assignee' },
-    { key: 'updated', label: 'Updated' },
-  ], []);
+  // Column definitions filtered by visibility
+  const columns = useMemo(() =>
+    ALL_COLUMNS.filter(col => visibleColumns.has(col.key)),
+    [visibleColumns]
+  );
+
+  // Count of hidden columns for badge
+  const hiddenCount = ALL_COLUMNS.length - visibleColumns.size;
+
+  // Toggle column visibility
+  const toggleColumn = useCallback((key: string) => {
+    setVisibleColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
 
   // Render function for issue rows
   const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => (
-    <IssueRowContent issue={issue} isSelected={isSelected} />
-  ), []);
+    <IssueRowContent issue={issue} isSelected={isSelected} visibleColumns={visibleColumns} />
+  ), [visibleColumns]);
 
   // Empty state for the list
   const emptyState = useMemo(() => (
@@ -307,6 +380,21 @@ export function IssuesPage() {
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <h1 className="text-xl font-semibold text-foreground">Issues</h1>
         <div className="flex items-center gap-3">
+          {/* Program filter dropdown */}
+          {programOptions.length > 0 && (
+            <div className="w-40">
+              <Combobox
+                options={programOptions}
+                value={programFilter}
+                onChange={setProgramFilter}
+                placeholder="All Programs"
+                aria-label="Filter issues by program"
+                id="issues-program-filter"
+                allowClear={true}
+                clearLabel="All Programs"
+              />
+            </div>
+          )}
           {/* Sort dropdown */}
           <div className="w-32">
             <Combobox
@@ -344,6 +432,51 @@ export function IssuesPage() {
               <KanbanIcon aria-hidden="true" />
             </button>
           </div>
+          {/* Column visibility picker (list view only) */}
+          {viewMode === 'list' && (
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <button
+                  className="relative rounded-md border border-border p-1.5 text-muted hover:bg-border/30 hover:text-foreground transition-colors"
+                  aria-label="Customize columns"
+                >
+                  <ColumnsIcon className="h-4 w-4" />
+                  {hiddenCount > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-white">
+                      {hiddenCount}
+                    </span>
+                  )}
+                </button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  className="z-50 w-48 rounded-md border border-border bg-background p-2 shadow-lg"
+                  sideOffset={4}
+                  align="end"
+                >
+                  <div className="text-xs font-medium text-muted mb-2">Show columns</div>
+                  {ALL_COLUMNS.map((col) => (
+                    <label
+                      key={col.key}
+                      className={cn(
+                        'flex items-center gap-2 rounded px-2 py-1.5 text-sm',
+                        col.hideable ? 'cursor-pointer hover:bg-border/30' : 'cursor-not-allowed opacity-50'
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={visibleColumns.has(col.key)}
+                        onChange={() => col.hideable && toggleColumn(col.key)}
+                        disabled={!col.hideable}
+                        className="h-4 w-4 rounded border-border text-accent focus:ring-accent"
+                      />
+                      <span>{col.label}</span>
+                    </label>
+                  ))}
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+          )}
           <button
             onClick={handleCreateIssue}
             className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
@@ -353,26 +486,27 @@ export function IssuesPage() {
         </div>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Issue filters">
-        <FilterTab label="All" active={!stateFilter} onClick={() => setFilter('')} id="filter-all" />
-        <FilterTab label="Needs Triage" active={stateFilter === 'triage'} onClick={() => setFilter('triage')} id="filter-triage" />
-        <FilterTab label="Active" active={stateFilter === 'todo,in_progress,in_review'} onClick={() => setFilter('todo,in_progress,in_review')} id="filter-active" />
-        <FilterTab label="Backlog" active={stateFilter === 'backlog'} onClick={() => setFilter('backlog')} id="filter-backlog" />
-        <FilterTab label="Done" active={stateFilter === 'done'} onClick={() => setFilter('done')} id="filter-done" />
-        <FilterTab label="Cancelled" active={stateFilter === 'cancelled'} onClick={() => setFilter('cancelled')} id="filter-cancelled" />
-      </div>
-
-      {/* Bulk action bar */}
-      <BulkActionBar
-        selectedCount={selectedIds.size}
-        onClearSelection={clearSelection}
-        onArchive={handleBulkArchive}
-        onDelete={handleBulkDelete}
-        onChangeStatus={handleBulkChangeStatus}
-        onMoveToSprint={handleBulkMoveToSprint}
-        loading={bulkUpdate.isPending}
-      />
+      {/* Filter tabs OR Bulk action bar (mutually exclusive) */}
+      {selectedIds.size > 0 ? (
+        <BulkActionBar
+          selectedCount={selectedIds.size}
+          onClearSelection={clearSelection}
+          onArchive={handleBulkArchive}
+          onDelete={handleBulkDelete}
+          onChangeStatus={handleBulkChangeStatus}
+          onMoveToSprint={handleBulkMoveToSprint}
+          loading={bulkUpdate.isPending}
+        />
+      ) : (
+        <div className="flex gap-1 border-b border-border px-6 py-2" role="tablist" aria-label="Issue filters">
+          <FilterTab label="All" active={!stateFilter} onClick={() => setFilter('')} id="filter-all" />
+          <FilterTab label="Needs Triage" active={stateFilter === 'triage'} onClick={() => setFilter('triage')} id="filter-triage" />
+          <FilterTab label="Active" active={stateFilter === 'todo,in_progress,in_review'} onClick={() => setFilter('todo,in_progress,in_review')} id="filter-active" />
+          <FilterTab label="Backlog" active={stateFilter === 'backlog'} onClick={() => setFilter('backlog')} id="filter-backlog" />
+          <FilterTab label="Done" active={stateFilter === 'done'} onClick={() => setFilter('done')} id="filter-done" />
+          <FilterTab label="Cancelled" active={stateFilter === 'cancelled'} onClick={() => setFilter('cancelled')} id="filter-cancelled" />
+        </div>
+      )}
 
       {/* Content */}
       {viewMode === 'kanban' ? (
@@ -435,39 +569,60 @@ export function IssuesPage() {
 interface IssueRowContentProps {
   issue: Issue;
   isSelected: boolean;
+  visibleColumns: Set<string>;
 }
 
-function IssueRowContent({ issue }: IssueRowContentProps) {
+function IssueRowContent({ issue, visibleColumns }: IssueRowContentProps) {
   return (
     <>
       {/* ID */}
-      <td className="px-4 py-3 text-sm text-muted" role="gridcell">
-        #{issue.ticket_number}
-      </td>
+      {visibleColumns.has('id') && (
+        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+          #{issue.ticket_number}
+        </td>
+      )}
       {/* Title */}
-      <td className="px-4 py-3 text-sm text-foreground" role="gridcell">
-        {issue.title}
-      </td>
+      {visibleColumns.has('title') && (
+        <td className="px-4 py-3 text-sm text-foreground" role="gridcell">
+          {issue.title}
+        </td>
+      )}
       {/* Status */}
-      <td className="px-4 py-3" role="gridcell">
-        <StatusBadge state={issue.state} />
-      </td>
+      {visibleColumns.has('status') && (
+        <td className="px-4 py-3" role="gridcell">
+          <StatusBadge state={issue.state} />
+        </td>
+      )}
       {/* Source */}
-      <td className="px-4 py-3" role="gridcell">
-        <SourceBadge source={issue.source} />
-      </td>
+      {visibleColumns.has('source') && (
+        <td className="px-4 py-3" role="gridcell">
+          <SourceBadge source={issue.source} />
+        </td>
+      )}
+      {/* Program */}
+      {visibleColumns.has('program') && (
+        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+          {issue.program_name || '—'}
+        </td>
+      )}
       {/* Priority */}
-      <td className="px-4 py-3" role="gridcell">
-        <PriorityBadge priority={issue.priority} />
-      </td>
+      {visibleColumns.has('priority') && (
+        <td className="px-4 py-3" role="gridcell">
+          <PriorityBadge priority={issue.priority} />
+        </td>
+      )}
       {/* Assignee */}
-      <td className="px-4 py-3 text-sm text-muted" role="gridcell">
-        {issue.assignee_name || 'Unassigned'}
-      </td>
+      {visibleColumns.has('assignee') && (
+        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+          {issue.assignee_name || 'Unassigned'}
+        </td>
+      )}
       {/* Updated */}
-      <td className="px-4 py-3 text-sm text-muted" role="gridcell">
-        {issue.updated_at ? formatDate(issue.updated_at) : '-'}
-      </td>
+      {visibleColumns.has('updated') && (
+        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+          {issue.updated_at ? formatDate(issue.updated_at) : '-'}
+        </td>
+      )}
     </>
   );
 }
@@ -634,6 +789,14 @@ function TrashIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+  );
+}
+
+function ColumnsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 4h6M9 20h6M4 9h4M4 15h4M16 9h4M16 15h4M12 4v16" />
     </svg>
   );
 }
