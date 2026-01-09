@@ -18,6 +18,7 @@ function createMockReqRes(cookies: Record<string, string> = {}) {
   const res = {
     status: vi.fn().mockReturnThis(),
     json: vi.fn().mockReturnThis(),
+    cookie: vi.fn().mockReturnThis(),
   } as unknown as Response;
   const next = vi.fn() as NextFunction;
   return { req, res, next };
@@ -219,6 +220,62 @@ describe('authMiddleware', () => {
           error: expect.objectContaining({ message: 'Authentication failed' }),
         })
       );
+    });
+  });
+
+  describe('sliding cookie expiration', () => {
+    it('refreshes cookie when activity is beyond 60s threshold', async () => {
+      const { req, res, next } = createMockReqRes({ session_id: 'valid-session' });
+      const now = new Date();
+      // Last activity was 90 seconds ago (beyond 60s threshold)
+      const lastActivity = new Date(now.getTime() - 90 * 1000);
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'valid-session',
+            user_id: 'user-123',
+            workspace_id: 'ws-123',
+            last_activity: lastActivity,
+            created_at: now,
+            is_super_admin: false,
+          }],
+        } as any)
+        .mockResolvedValueOnce({ rows: [{ id: 'membership-1' }] } as any)
+        .mockResolvedValueOnce({ rows: [] } as any);
+
+      await authMiddleware(req, res, next);
+      expect(res.cookie).toHaveBeenCalledWith('session_id', 'valid-session', {
+        httpOnly: true,
+        secure: false, // NODE_ENV is 'test', not 'production'
+        sameSite: 'strict',
+        maxAge: SESSION_TIMEOUT_MS,
+        path: '/',
+      });
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('does NOT refresh cookie when activity is within 60s threshold', async () => {
+      const { req, res, next } = createMockReqRes({ session_id: 'valid-session' });
+      const now = new Date();
+      // Last activity was 30 seconds ago (within 60s threshold)
+      const lastActivity = new Date(now.getTime() - 30 * 1000);
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'valid-session',
+            user_id: 'user-123',
+            workspace_id: 'ws-123',
+            last_activity: lastActivity,
+            created_at: now,
+            is_super_admin: false,
+          }],
+        } as any)
+        .mockResolvedValueOnce({ rows: [{ id: 'membership-1' }] } as any)
+        .mockResolvedValueOnce({ rows: [] } as any);
+
+      await authMiddleware(req, res, next);
+      expect(res.cookie).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
     });
   });
 });

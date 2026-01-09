@@ -196,3 +196,37 @@ Use `/ship-philosophy-reviewer` to audit changes against Ship's core philosophy.
 - Reuse `Editor` component (no type-specific editors)
 - "Untitled" for all new docs (not "Untitled Issue")
 - YAGNI, boring technology, 4-panel layout
+
+## Security Compliance
+
+**NEVER use `git commit --no-verify`.** This bypasses security checks and is not acceptable.
+
+### Pre-commit Hooks
+
+This repo uses `comply opensource` as a pre-commit hook to scan for:
+- Embedded secrets (gitleaks)
+- Sensitive information (AI analysis)
+- Vulnerability scanning (trivy)
+
+### When Compliance Checks Fail
+
+If the pre-commit hook fails:
+
+1. **Fix the issue** - Remove secrets, update ATTESTATION.md, etc.
+2. **If the tool itself is broken** - Report the bug, but do NOT bypass with `--no-verify`
+3. **Emergency bypass procedure** - There is none. Fix the issue or wait for tool fix.
+
+### CI Enforcement
+
+GitHub Actions runs the same compliance checks on every PR. Even if someone bypasses local hooks:
+- `secrets-scan` job runs gitleaks on full commit history
+- `attestation-check` verifies ATTESTATION.md exists and is recent
+
+These are **required status checks** - PRs cannot merge without passing.
+
+### Why This Matters
+
+Using `--no-verify` to bypass a broken compliance check:
+- Defeats the purpose of security scanning
+- Can leak secrets to the repo
+- Violates FISMA compliance requirements
