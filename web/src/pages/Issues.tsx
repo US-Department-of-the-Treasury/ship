@@ -14,6 +14,9 @@ import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu 
 import { cn } from '@/lib/cn';
 import { issueStatusColors, priorityColors } from '@/lib/statusColors';
 
+// localStorage key for column visibility
+const COLUMN_VISIBILITY_KEY = 'issues-column-visibility';
+
 // All available columns with metadata
 const ALL_COLUMNS = [
   { key: 'id', label: 'ID', hideable: true },
@@ -73,9 +76,22 @@ export function IssuesPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sortBy, setSortBy] = useState<string>('updated');
   const [programFilter, setProgramFilter] = useState<string | null>(null);
-  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(
-    new Set(ALL_COLUMNS.map(c => c.key))
-  );
+  const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
+    // Load from localStorage or default to all columns
+    try {
+      const stored = localStorage.getItem(COLUMN_VISIBILITY_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as string[];
+        // Validate that we have at least title column
+        if (Array.isArray(parsed) && parsed.includes('title')) {
+          return new Set(parsed);
+        }
+      }
+    } catch {
+      // Ignore parsing errors, use default
+    }
+    return new Set(ALL_COLUMNS.map(c => c.key));
+  });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
 
   // Track selection state for BulkActionBar
@@ -148,6 +164,11 @@ export function IssuesPage() {
   useEffect(() => {
     clearSelection();
   }, [stateFilter, clearSelection]);
+
+  // Persist column visibility to localStorage
+  useEffect(() => {
+    localStorage.setItem(COLUMN_VISIBILITY_KEY, JSON.stringify(Array.from(visibleColumns)));
+  }, [visibleColumns]);
 
   // Bulk action handlers - work with both context menu and BulkActionBar
   const handleBulkArchive = useCallback(() => {
