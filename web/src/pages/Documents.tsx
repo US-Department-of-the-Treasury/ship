@@ -150,7 +150,7 @@ export function DocumentsPage() {
 
   // Render function for document rows in list view
   const renderDocumentRow = useCallback((doc: WikiDocument, { isSelected }: RowRenderProps) => (
-    <DocumentRowContent document={doc} visibleColumns={Array.from(visibleColumns)} />
+    <DocumentRowContent document={doc} visibleColumns={visibleColumns} />
   ), [visibleColumns]);
 
   async function handleCreateDocument(parentId?: string) {
@@ -421,15 +421,17 @@ export function DocumentsPage() {
         </ul>
       ) : (
         <>
-          <div className="rounded-lg border border-border">
+          <div className="rounded-lg border border-border overflow-hidden">
             <SelectableList
               items={sortedDocuments}
               getItemId={(doc) => doc.id}
               renderRow={(doc, props) => renderDocumentRow(doc, props)}
+              columns={columns}
               onItemClick={(doc) => navigate(`/docs/${doc.id}`)}
               selectable={true}
               onSelectionChange={(ids) => setSelectedIds(ids)}
               onContextMenu={handleContextMenu}
+              ariaLabel="Documents list"
             />
           </div>
 
@@ -527,18 +529,18 @@ function ListIcon({ className }: { className?: string }) {
   );
 }
 
-function DocumentRowContent({ document, visibleColumns }: { document: WikiDocument; visibleColumns: string[] }) {
+function DocumentRowContent({ document, visibleColumns }: { document: WikiDocument; visibleColumns: Set<string> }) {
   return (
-    <div className="flex items-center gap-4 px-3 py-2">
-      {visibleColumns.includes('title') && (
-        <div className="flex-1 min-w-0">
-          <span className="truncate text-sm font-medium text-foreground">
-            {document.title || 'Untitled'}
-          </span>
-        </div>
+    <>
+      {/* Title */}
+      {visibleColumns.has('title') && (
+        <td className="px-4 py-3 text-sm font-medium text-foreground" role="gridcell">
+          {document.title || 'Untitled'}
+        </td>
       )}
-      {visibleColumns.includes('visibility') && (
-        <div className="w-24 shrink-0">
+      {/* Visibility */}
+      {visibleColumns.has('visibility') && (
+        <td className="px-4 py-3" role="gridcell">
           <span className={cn(
             'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs',
             document.visibility === 'private'
@@ -552,28 +554,31 @@ function DocumentRowContent({ document, visibleColumns }: { document: WikiDocume
             )}
             {document.visibility === 'private' ? 'Private' : 'Workspace'}
           </span>
-        </div>
+        </td>
       )}
-      {visibleColumns.includes('created_by') && (
-        <div className="w-32 shrink-0 text-sm text-muted truncate">
+      {/* Created By */}
+      {visibleColumns.has('created_by') && (
+        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
           {document.created_by || '-'}
-        </div>
+        </td>
       )}
-      {visibleColumns.includes('created') && (
-        <div className="w-28 shrink-0 text-sm text-muted">
+      {/* Created */}
+      {visibleColumns.has('created') && (
+        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
           {document.created_at
             ? new Date(document.created_at).toLocaleDateString()
             : '-'}
-        </div>
+        </td>
       )}
-      {visibleColumns.includes('updated') && (
-        <div className="w-28 shrink-0 text-sm text-muted">
+      {/* Updated */}
+      {visibleColumns.has('updated') && (
+        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
           {document.updated_at
             ? new Date(document.updated_at).toLocaleDateString()
             : '-'}
-        </div>
+        </td>
       )}
-    </div>
+    </>
   );
 }
 
