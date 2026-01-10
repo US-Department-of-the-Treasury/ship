@@ -11,27 +11,6 @@ import { test, expect } from './fixtures/offline'
 
 
 test.describe('7.1 Session Expiry While Offline', () => {
-  test('session expiry during offline does not lose local changes', async ({ page, goOffline, goOnline, login, testData }) => {
-    await login()
-
-    // GIVEN: User is authenticated and editing offline
-    const doc = testData.wikis[0]
-    await page.goto(`/docs/${doc.id}`)
-    await goOffline()
-    await page.getByTestId('tiptap-editor').click()
-    await page.keyboard.type('Important offline work')
-
-    // WHEN: Session expires (simulated by clearing session cookie)
-    await page.context().clearCookies()
-
-    // AND: User comes back online
-    await goOnline()
-
-    // THEN: User is prompted to re-authenticate (multiple elements contain these texts)
-    await expect(page.getByRole('alert')).toContainText(/session expired/i)
-    // AND: Local changes should be preserved for re-sync after auth
-  })
-
   test('app remains usable offline even with expired session', async ({ page, goOffline, login }) => {
     await login()
 

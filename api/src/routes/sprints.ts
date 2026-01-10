@@ -641,10 +641,10 @@ router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Respo
     // Get when each issue was added to this sprint from document_history
     // field = 'sprint_id' and new_value = sprint_id means issue was added to sprint
     const historyResult = await pool.query(
-      `SELECT document_id, changed_at, old_value, new_value
+      `SELECT document_id, created_at, old_value, new_value
        FROM document_history
        WHERE field = 'sprint_id' AND new_value = $1
-       ORDER BY changed_at ASC`,
+       ORDER BY created_at ASC`,
       [id]
     );
 
@@ -652,7 +652,7 @@ router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Respo
     const issueAddedAtMap: Record<string, Date> = {};
     for (const row of historyResult.rows) {
       if (!issueAddedAtMap[row.document_id]) {
-        issueAddedAtMap[row.document_id] = new Date(row.changed_at);
+        issueAddedAtMap[row.document_id] = new Date(row.created_at);
       }
     }
 
@@ -691,12 +691,12 @@ router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Respo
     // Only track changes after sprint starts
     let runningScope = originalScope;
     for (const row of historyResult.rows) {
-      const changedAt = new Date(row.changed_at);
-      if (changedAt > sprintStartDate) {
+      const createdAt = new Date(row.created_at);
+      if (createdAt > sprintStartDate) {
         const estimate = issueEstimateMap[row.document_id] || 0;
         runningScope += estimate;
         scopeChanges.push({
-          timestamp: changedAt.toISOString(),
+          timestamp: createdAt.toISOString(),
           scopeAfter: runningScope,
           changeType: 'added',
           estimateChange: estimate,
@@ -706,10 +706,10 @@ router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Respo
 
     // Also check for issues removed from sprint (sprint_id changed away from this sprint)
     const removedResult = await pool.query(
-      `SELECT document_id, changed_at, old_value, new_value
+      `SELECT document_id, created_at, old_value, new_value
        FROM document_history
-       WHERE field = 'sprint_id' AND old_value = $1 AND changed_at > $2
-       ORDER BY changed_at ASC`,
+       WHERE field = 'sprint_id' AND old_value = $1 AND created_at > $2
+       ORDER BY created_at ASC`,
       [id, sprintStartDate.toISOString()]
     );
 
@@ -725,7 +725,7 @@ router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Respo
       const estimate = issueResult.rows[0] ? parseFloat(issueResult.rows[0].estimate) : 0;
 
       scopeChanges.push({
-        timestamp: new Date(row.changed_at).toISOString(),
+        timestamp: new Date(row.created_at).toISOString(),
         scopeAfter: -1, // Will be recalculated when sorting
         changeType: 'removed',
         estimateChange: -estimate,

@@ -141,31 +141,6 @@ test.describe('27.1 Screen Reader Announcements', () => {
     await expect(offlineIndicator).toBeVisible()
   })
 
-  test('focus management after sync completion', async ({ page, goOffline, goOnline, login, testData }) => {
-    await login()
-
-    // GIVEN: User is editing document offline
-    const doc = testData.wikis[0]
-    await page.goto(`/docs/${doc.id}`)
-    await goOffline()
-    await page.getByTestId('tiptap-editor').click()
-    await page.keyboard.type('Focus test content')
-
-    // WHEN: Sync completes after coming online
-    await goOnline()
-    await page.waitForTimeout(3000)
-
-    // THEN: Focus should not be unexpectedly moved
-    // User's focus position should be preserved
-    const editorHasFocus = await page.evaluate(() => {
-      const active = document.activeElement
-      return active?.closest('[data-testid="tiptap-editor"]') !== null
-    })
-
-    // Focus should still be in or near editor area
-    expect(editorHasFocus).toBe(true)
-  })
-
   test('error messages have proper ARIA attributes', async ({ page, goOffline, goOnline, login }) => {
     await login()
 

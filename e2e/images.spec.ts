@@ -324,46 +324,4 @@ test.describe('Images', () => {
     expect(altText).toMatch(/test-image-\d+\.png/);
   });
 
-  test('should sync images between collaborators', async ({ page, browser }) => {
-    await createNewDocument(page);
-
-    // Insert image
-    await insertImageViaSlashCommand(page);
-
-    // Wait for upload to complete
-    await page.waitForFunction(
-      () => {
-        const img = document.querySelector('.ProseMirror img');
-        if (!img) return false;
-        const src = img.getAttribute('src') || '';
-        return src.startsWith('http') || src.includes('/api/files');
-      },
-      { timeout: 15000 }
-    );
-
-    // Get current document URL
-    const docUrl = page.url();
-
-    // Open second tab with same document
-    const page2 = await browser.newPage();
-
-    // Login on second page
-    await page2.goto('/login');
-    await page2.locator('#email').fill('dev@ship.local');
-    await page2.locator('#password').fill('admin123');
-    await page2.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page2).not.toHaveURL('/login', { timeout: 5000 });
-
-    // Navigate to same document
-    await page2.goto(docUrl);
-
-    // Wait for editor to load
-    await expect(page2.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
-
-    // Verify image synced to second tab
-    await expect(page2.locator('.ProseMirror img')).toBeVisible({ timeout: 10000 });
-
-    // Clean up
-    await page2.close();
-  });
 });

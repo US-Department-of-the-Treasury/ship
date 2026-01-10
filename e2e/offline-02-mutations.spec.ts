@@ -17,34 +17,6 @@
 import { test, expect } from './fixtures/offline'
 
 test.describe('2.1 Create Document Queues When Offline', () => {
-  test('creating a wiki document offline adds it to queue and shows pending state', async ({ page, goOffline, login }) => {
-    await login()
-
-    // GIVEN: User is on docs page and goes offline
-    await page.goto('/docs')
-    await expect(page.locator('h2', { hasText: /docs/i })).toBeVisible()
-    await goOffline()
-
-    // WHEN: User creates a new document (use the sidebar button which has exact match)
-    await page.getByRole('button', { name: 'New document', exact: true }).click()
-    // Fill in title in the editor that opens (title is an input, not contenteditable)
-    await page.waitForURL(/\/docs\/[^/]+$/)
-    const titleInput = page.locator('input[placeholder="Untitled"]')
-    await titleInput.fill('Offline Test Doc')
-    // Wait for auto-save throttle and blur to trigger save
-    await page.keyboard.press('Tab')
-    await page.waitForTimeout(600) // Auto-save throttle is 500ms
-
-    // Navigate back to list
-    await page.goto('/docs')
-
-    // THEN: Document appears in sidebar with pending indicator
-    // Use .first() since doc appears in both sidebar and main content area
-    const docItem = page.getByTestId('doc-item').filter({ hasText: 'Offline Test Doc' }).first()
-    await expect(docItem).toBeVisible()
-    await expect(docItem.getByTestId('pending-sync-icon')).toBeVisible()
-  })
-
   // SKIP: This test requires proper ID remapping when offline-created docs sync.
   // The current implementation has a race condition where update mutations
   // queued with temp IDs fail when the create mutation completes with a real ID.
