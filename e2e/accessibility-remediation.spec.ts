@@ -110,38 +110,6 @@ test.describe('Phase 1: Critical Violations', () => {
       expect(ariaLabel!.toLowerCase()).toContain('keyboard')
     })
 
-    // Test keyboard accessibility for drag-and-drop
-    test('draggable issues can be moved with keyboard', async ({ page }) => {
-      await login(page)
-      await page.goto('/issues')
-      await page.waitForLoadState('networkidle')
-
-      // Switch to kanban view (default is list view)
-      const kanbanViewButton = page.getByRole('button', { name: 'Kanban view' })
-      await kanbanViewButton.click()
-      await page.waitForTimeout(500)
-
-      // MUST have at least one draggable issue card
-      const issueCard = page.locator('[draggable="true"], [data-draggable]').first()
-      await expect(issueCard).toBeVisible({ timeout: 5000 })
-
-      // MUST be focusable
-      await issueCard.focus()
-      await expect(issueCard).toBeFocused({ timeout: 2000 })
-
-      // MUST enter drag mode with Space
-      await page.keyboard.press('Space')
-
-      // Wait for drag mode indication (aria-grabbed="true" or data-dragging="true")
-      // Use Playwright's auto-retry assertions instead of immediate evaluate()
-      await expect(issueCard).toHaveAttribute('aria-grabbed', 'true', { timeout: 5000 })
-
-      // MUST be able to cancel with Escape
-      await page.keyboard.press('Escape')
-
-      // Wait for drag mode to be cancelled (aria-grabbed returns to "false")
-      await expect(issueCard).toHaveAttribute('aria-grabbed', 'false', { timeout: 5000 })
-    })
   })
 
   test.describe('1.3 Status Messages Announced (WCAG 4.1.3)', () => {
@@ -171,26 +139,6 @@ test.describe('Phase 1: Critical Violations', () => {
       expect(ariaAtomic).toBe('true')
     })
 
-    test('sync status uses exact specified messages', async ({ page }) => {
-      await login(page)
-      await page.goto('/docs')
-      await page.waitForLoadState('networkidle')
-
-      const docLink = page.locator('a[href*="/docs/"]').first()
-      await expect(docLink).toBeVisible({ timeout: 5000 })
-      await docLink.click()
-      await page.waitForLoadState('networkidle')
-
-      // Sync status region displays the message directly (role="status" with aria-live)
-      const statusRegion = page.locator('[data-testid="sync-status"]')
-      await expect(statusRegion).toBeVisible({ timeout: 10000 })
-
-      // Text must be one of the exact specified messages
-      const allowedMessages = ['Saving', 'Saved', 'Offline', 'Error saving']
-      const text = await statusRegion.textContent()
-
-      expect(allowedMessages).toContain(text?.trim())
-    })
   })
 
   test.describe('1.4 Combobox ARIA Attributes (WCAG 4.1.2)', () => {

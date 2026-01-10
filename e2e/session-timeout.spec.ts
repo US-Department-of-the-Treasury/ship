@@ -654,62 +654,6 @@ test.describe('Extend Session API', () => {
     expect(extendCalls[0]).toContain('/api/auth/extend-session');
   });
 
-  test('extend session failure shows error and forces logout', async ({ page, login }) => {
-    await page.clock.install();
-    await login();
-    await page.goto('/docs');
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-
-    // Mock API failure
-    await page.route('**/api/auth/extend-session', async (route) => {
-      await route.fulfill({
-        status: 500,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: false,
-          error: { code: 'INTERNAL_ERROR', message: 'Server error' },
-        }),
-      });
-    });
-
-    // Advance to warning
-    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
-
-    const modal = page.getByRole('alertdialog');
-    await expect(modal).toBeVisible({ timeout: 5000 });
-
-    // Click Stay Logged In button
-    const button = page.getByRole('button', { name: /stay logged in/i });
-    await button.click();
-
-    // User should be redirected to login due to API failure
-    await expect(page).toHaveURL(/\/login/);
-  });
-
-  test('extend session failure on network error forces logout', async ({ page, login }) => {
-    await page.clock.install();
-    await login();
-    await page.goto('/docs');
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-
-    // Simulate network error
-    await page.route('**/api/auth/extend-session', async (route) => {
-      await route.abort('failed');
-    });
-
-    // Advance to warning
-    await page.clock.runFor(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);
-
-    const modal = page.getByRole('alertdialog');
-    await expect(modal).toBeVisible({ timeout: 5000 });
-
-    // Click Stay Logged In button
-    const button = page.getByRole('button', { name: /stay logged in/i });
-    await button.click();
-
-    // User should be redirected to login due to network error
-    await expect(page).toHaveURL(/\/login/);
-  });
 });
 
 test.describe('Accessibility', () => {

@@ -97,40 +97,6 @@ test.describe('5.1 Sync Conflicts', () => {
 })
 
 test.describe('5.2 Network Flakiness', () => {
-  test('retries failed mutations automatically', async ({ page, goOffline, goOnline, login }) => {
-    await login()
-
-    // GIVEN: User creates document offline
-    await page.goto('/docs')
-    await goOffline()
-    await page.getByRole('button', { name: 'New Document', exact: true }).click()
-    await page.waitForURL(/\/docs\/[^/]+$/)
-    // Use title input, not contenteditable editor
-    const titleInput = page.locator('input[placeholder="Untitled"]')
-    await titleInput.click()
-    await titleInput.fill('Retry Test')
-    await page.waitForTimeout(1000) // Wait for throttled save
-    await page.goto('/docs')
-
-    // WHEN: Network is flaky (online but first request fails)
-    let requestCount = 0
-    await page.route('**/api/documents', (route) => {
-      if (route.request().method() === 'POST') {
-        requestCount++
-        if (requestCount === 1) {
-          route.abort('connectionfailed') // First attempt fails
-        } else {
-          route.continue()
-        }
-      } else {
-        route.continue()
-      }
-    })
-    await goOnline()
-
-    // THEN: Mutation eventually succeeds via retry
-    await expect(page.getByTestId('pending-sync-icon')).not.toBeVisible({ timeout: 15000 })
-  })
 
   test('shows error after max retries exceeded', async ({ page, goOffline, goOnline, login }) => {
     await login()

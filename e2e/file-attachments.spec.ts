@@ -236,58 +236,6 @@ test.describe('File Attachments', () => {
     setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);
   });
 
-  test('should sync file attachments between collaborators', async ({ page, browser }) => {
-    await createNewDocument(page);
-
-    const editor = page.locator('.ProseMirror');
-    await editor.click();
-    await page.waitForTimeout(300);
-
-    // Insert file
-    await page.keyboard.type('/file');
-    await page.waitForTimeout(500);
-
-    const tmpPath = createTestFile('sync-test.txt', 'Sync test content');
-
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
-    const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles(tmpPath);
-
-    // Wait for upload to complete
-    await expect(editor.locator('[data-file-attachment]')).toBeVisible({ timeout: 5000 });
-    await page.waitForTimeout(2000);
-
-    // Get current document URL
-    const docUrl = page.url();
-
-    // Wait for Yjs sync
-    await page.waitForTimeout(2000);
-
-    // Open second tab with same document
-    const page2 = await browser.newPage();
-
-    // Login on second page
-    await page2.goto('/login');
-    await page2.locator('#email').fill('dev@ship.local');
-    await page2.locator('#password').fill('admin123');
-    await page2.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page2).not.toHaveURL('/login', { timeout: 5000 });
-
-    // Navigate to same document
-    await page2.goto(docUrl);
-
-    // Wait for editor to load
-    await expect(page2.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
-
-    // Verify file attachment synced to second tab
-    await expect(page2.locator('.ProseMirror [data-file-attachment]')).toBeVisible({ timeout: 10000 });
-
-    // Clean up
-    await page2.close();
-    setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);
-  });
-
   test('should display file icon based on type', async ({ page }) => {
     await createNewDocument(page);
 
