@@ -97,7 +97,6 @@ test.describe('5.1 Sync Conflicts', () => {
 })
 
 test.describe('5.2 Network Flakiness', () => {
-
   test('shows error after max retries exceeded', async ({ page, goOffline, goOnline, login }) => {
     await login()
 

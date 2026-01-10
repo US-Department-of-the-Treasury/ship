@@ -94,6 +94,7 @@ interface IssueProperties {
   priority?: 'low' | 'medium' | 'high';
   assignee_id?: string;
   ticket_number?: number;
+  claude_metadata?: ClaudeMetadata; // Claude Code integration tracking
   [key: string]: any; // allows custom properties
 }
 

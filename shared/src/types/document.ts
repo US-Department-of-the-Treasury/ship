@@ -38,20 +38,9 @@ export interface IssueProperties {
   [key: string]: unknown;
 }
 
-// GitHub repository reference for linking to programs
-export interface GitHubRepo {
-  owner: string;  // GitHub org or user
-  repo: string;   // Repository name
-}
-
 export interface ProgramProperties {
   color: string;
   emoji?: string | null;  // Optional emoji for visual identification
-  githubRepos?: GitHubRepo[];  // Linked GitHub repositories (1:Many)
-  autoStatusOnMerge?: {
-    enabled: boolean;
-    targetStatus: string;  // Status to set when PR is merged (e.g., 'done')
-  };
   [key: string]: unknown;
 }
 
@@ -61,9 +50,22 @@ export interface ProjectProperties {
   [key: string]: unknown;
 }
 
+// Hypothesis history entry for tracking hypothesis changes over time
+export interface HypothesisHistoryEntry {
+  hypothesis: string;
+  timestamp: string;  // ISO 8601 date string
+  author_id: string;
+  author_name?: string;
+}
+
 export interface SprintProperties {
   sprint_number: number;  // References implicit 2-week window, dates computed from this
   owner_id: string;       // REQUIRED - person accountable for this sprint
+  // Hypothesis tracking (for Ship-Claude integration)
+  hypothesis?: string | null;           // Current hypothesis statement
+  success_criteria?: string[] | null;   // Array of measurable success criteria
+  confidence?: number | null;           // Confidence level 0-100
+  hypothesis_history?: HypothesisHistoryEntry[] | null;  // History of hypothesis changes
   [key: string]: unknown;
 }
 
@@ -71,7 +73,6 @@ export interface PersonProperties {
   email?: string | null;
   role?: string | null;
   capacity_hours?: number | null;
-  github_username?: string | null;  // GitHub username for activity mapping
   [key: string]: unknown;
 }
 

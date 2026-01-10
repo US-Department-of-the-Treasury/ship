@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useAuth } from '@/hooks/useAuth';
-import { usePrograms, Program, GitHubRepo } from '@/contexts/ProgramsContext';
+import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues } from '@/contexts/IssuesContext';
 import { useDocuments } from '@/contexts/DocumentsContext';
 import { useSprints, Sprint as SprintFromHook } from '@/hooks/useSprintsQuery';
@@ -653,7 +653,6 @@ function OverviewTab({
   const navigate = useNavigate();
   const { createDocument } = useDocuments();
   const [people, setPeople] = useState<Person[]>([]);
-  const [newRepoInput, setNewRepoInput] = useState('');
 
   // Fetch team members (filter out pending users who don't have user_id yet)
   useEffect(() => {
@@ -676,51 +675,6 @@ function OverviewTab({
   const handleNavigateToDocument = useCallback((docId: string) => {
     navigate(`/docs/${docId}`);
   }, [navigate]);
-
-  // Parse GitHub repo from input (owner/repo or full URL)
-  const parseGitHubRepo = (input: string): GitHubRepo | null => {
-    const trimmed = input.trim();
-    if (!trimmed) return null;
-
-    // Try to parse as URL
-    const urlMatch = trimmed.match(/github\.com\/([^/]+)\/([^/\s?#]+)/i);
-    if (urlMatch) {
-      return { owner: urlMatch[1], repo: urlMatch[2].replace(/\.git$/, '') };
-    }
-
-    // Try to parse as owner/repo
-    const repoMatch = trimmed.match(/^([^/\s]+)\/([^/\s]+)$/);
-    if (repoMatch) {
-      return { owner: repoMatch[1], repo: repoMatch[2] };
-    }
-
-    return null;
-  };
-
-  // Add a new repo
-  const handleAddRepo = () => {
-    const parsed = parseGitHubRepo(newRepoInput);
-    if (!parsed) return;
-
-    const currentRepos = program.github_repos || [];
-    // Check for duplicates
-    const exists = currentRepos.some(r => r.owner === parsed.owner && r.repo === parsed.repo);
-    if (exists) {
-      setNewRepoInput('');
-      return;
-    }
-
-    onUpdateProgram({ github_repos: [...currentRepos, parsed] });
-    setNewRepoInput('');
-  };
-
-  // Remove a repo
-  const handleRemoveRepo = (owner: string, repo: string) => {
-    const currentRepos = program.github_repos || [];
-    onUpdateProgram({
-      github_repos: currentRepos.filter(r => !(r.owner === owner && r.repo === repo))
-    });
-  };
 
   return (
     <Editor
@@ -774,110 +728,6 @@ function OverviewTab({
               ))}
             </div>
           </PropertyRow>
-
-          <PropertyRow label="GitHub Repos">
-            <div className="space-y-2">
-              {/* Linked repos */}
-              {(program.github_repos || []).map((repo) => (
-                <div
-                  key={`${repo.owner}/${repo.repo}`}
-                  className="flex items-center gap-2 rounded-md bg-secondary/50 px-2 py-1.5 text-sm group"
-                >
-                  <svg className="h-4 w-4 text-muted flex-shrink-0" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-                  </svg>
-                  <a
-                    href={`https://github.com/${repo.owner}/${repo.repo}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="truncate hover:text-accent transition-colors flex-1"
-                  >
-                    {repo.owner}/{repo.repo}
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveRepo(repo.owner, repo.repo)}
-                    className="text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Remove repo"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-
-              {/* Add repo input */}
-              <div className="flex gap-1">
-                <input
-                  type="text"
-                  value={newRepoInput}
-                  onChange={(e) => setNewRepoInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddRepo();
-                    }
-                  }}
-                  placeholder="owner/repo or URL"
-                  className="flex-1 min-w-0 rounded-md border border-border bg-background px-2 py-1 text-sm placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddRepo}
-                  disabled={!parseGitHubRepo(newRepoInput)}
-                  className="rounded-md bg-accent px-2 py-1 text-sm text-white hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Add
-                </button>
-              </div>
-              <p className="text-xs text-muted">Link GitHub repos to track PR activity</p>
-            </div>
-          </PropertyRow>
-
-          {/* Auto-status on merge - only show if repos are linked */}
-          {(program.github_repos || []).length > 0 && (
-            <PropertyRow label="Auto-Update on Merge">
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={program.auto_status_on_merge?.enabled ?? false}
-                    onChange={(e) => {
-                      const enabled = e.target.checked;
-                      onUpdateProgram({
-                        auto_status_on_merge: enabled
-                          ? { enabled: true, targetStatus: program.auto_status_on_merge?.targetStatus || 'done' }
-                          : null,
-                      });
-                    }}
-                    className="rounded border-border bg-background focus:ring-accent"
-                  />
-                  <span className="text-sm">Update issue status when PR merges</span>
-                </label>
-                {program.auto_status_on_merge?.enabled && (
-                  <div className="flex items-center gap-2 pl-6">
-                    <span className="text-xs text-muted">Set status to:</span>
-                    <select
-                      value={program.auto_status_on_merge?.targetStatus || 'done'}
-                      onChange={(e) => {
-                        onUpdateProgram({
-                          auto_status_on_merge: {
-                            enabled: true,
-                            targetStatus: e.target.value,
-                          },
-                        });
-                      }}
-                      className="rounded-md border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                    >
-                      <option value="done">Done</option>
-                      <option value="in_review">In Review</option>
-                    </select>
-                  </div>
-                )}
-              </div>
-            </PropertyRow>
-          )}
         </div>
       }
     />

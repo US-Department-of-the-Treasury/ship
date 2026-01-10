@@ -11,6 +11,7 @@ import issuesRoutes from './routes/issues.js';
 import feedbackRoutes, { publicFeedbackRouter } from './routes/feedback.js';
 import programsRoutes from './routes/programs.js';
 import sprintsRoutes from './routes/sprints.js';
+import iterationsRoutes from './routes/iterations.js';
 import teamRoutes from './routes/team.js';
 import workspacesRoutes from './routes/workspaces.js';
 import adminRoutes from './routes/admin.js';
@@ -21,8 +22,7 @@ import { searchRouter } from './routes/search.js';
 import { filesRouter } from './routes/files.js';
 import pivAuthRoutes from './routes/piv-auth.js';
 import federationRoutes from './routes/federation.js';
-import githubWebhooksRoutes, { initializeGitHubWebhooks } from './routes/github-webhooks.js';
-import githubActivityRoutes from './routes/github-activity.js';
+import apiTokensRoutes from './routes/api-tokens.js';
 import { createJwksHandler } from '@fpki/auth-client';
 import { getPublicJwk } from './services/credential-store.js';
 import { initializeFPKI } from './services/fpki.js';
@@ -38,6 +38,18 @@ const sessionSecret = process.env.SESSION_SECRET || 'dev-only-secret-do-not-use-
 const { csrfSynchronisedProtection, generateToken } = csrfSync({
   getTokenFromRequest: (req) => req.headers['x-csrf-token'] as string,
 });
+
+// Conditional CSRF middleware - skip for API token auth (Bearer tokens are not vulnerable to CSRF)
+import { Request, Response, NextFunction } from 'express';
+const conditionalCsrf = (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers?.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    // Skip CSRF for API token requests - Bearer tokens are not auto-attached by browsers
+    return next();
+  }
+  // Apply CSRF protection for session-based auth
+  return csrfSynchronisedProtection(req, res, next);
+};
 
 // Rate limiting configurations
 // In test environment, use much higher limits to avoid flaky tests
@@ -149,7 +161,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   });
 
   // Setup routes (CSRF protected - first-time setup only)
-  app.use('/api/setup', csrfSynchronisedProtection, setupRoutes);
+  app.use('/api/setup', conditionalCsrf, setupRoutes);
 
   // Public feedback routes - no auth or CSRF required (must be before protected routes)
   app.use('/api/feedback', publicFeedbackRouter);
@@ -158,23 +170,22 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/auth/login', loginLimiter);
 
   // Apply CSRF protection to all state-changing API routes
-  app.use('/api/auth', csrfSynchronisedProtection, authRoutes);
-  app.use('/api/documents', csrfSynchronisedProtection, documentsRoutes);
-  app.use('/api/documents', csrfSynchronisedProtection, backlinksRoutes);
-  app.use('/api/issues', csrfSynchronisedProtection, issuesRoutes);
-  app.use('/api/feedback', csrfSynchronisedProtection, feedbackRoutes);
-  app.use('/api/programs', csrfSynchronisedProtection, programsRoutes);
-  app.use('/api/sprints', csrfSynchronisedProtection, sprintsRoutes);
-  app.use('/api/team', csrfSynchronisedProtection, teamRoutes);
-  app.use('/api/workspaces', csrfSynchronisedProtection, workspacesRoutes);
-  app.use('/api/admin', csrfSynchronisedProtection, adminRoutes);
-  app.use('/api/invites', csrfSynchronisedProtection, invitesRoutes);
+  app.use('/api/auth', conditionalCsrf, authRoutes);
+  app.use('/api/documents', conditionalCsrf, documentsRoutes);
+  app.use('/api/documents', conditionalCsrf, backlinksRoutes);
+  app.use('/api/issues', conditionalCsrf, issuesRoutes);
+  app.use('/api/feedback', conditionalCsrf, feedbackRoutes);
+  app.use('/api/programs', conditionalCsrf, programsRoutes);
+  app.use('/api/sprints', conditionalCsrf, sprintsRoutes);
+  app.use('/api/sprints', conditionalCsrf, iterationsRoutes);
+  app.use('/api/team', conditionalCsrf, teamRoutes);
+  app.use('/api/workspaces', conditionalCsrf, workspacesRoutes);
+  app.use('/api/admin', conditionalCsrf, adminRoutes);
+  app.use('/api/invites', conditionalCsrf, invitesRoutes);
+  app.use('/api/api-tokens', conditionalCsrf, apiTokensRoutes);
 
   // Search routes are read-only GET endpoints - no CSRF needed
   app.use('/api/search', searchRouter);
-
-  // GitHub activity routes - read-only GET endpoints - no CSRF needed
-  app.use('/api/github/activity', githubActivityRoutes);
 
   // PIV auth routes - no CSRF protection (OAuth flow with external callback)
   app.use('/api/auth/piv', pivAuthRoutes);
@@ -182,26 +193,18 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   // Federation routes - CSRF protected (admin credential management)
   // Note: mTLS happens between browser and FPKI Validator, not browser and this API.
   // These endpoints are standard POSTs from our frontend and need CSRF protection.
-  app.use('/api/federation', csrfSynchronisedProtection, federationRoutes);
+  app.use('/api/federation', conditionalCsrf, federationRoutes);
 
   // JWKS endpoint for private_key_jwt - public, no auth needed
   // Rate limiting is built into the SDK handler
   app.get('/.well-known/jwks.json', jwksHandler);
 
   // File upload routes (CSRF protected for POST endpoints)
-  app.use('/api/files', csrfSynchronisedProtection, filesRouter);
-
-  // GitHub webhook routes - NO CSRF protection (external source with signature verification)
-  app.use('/api/webhooks/github', githubWebhooksRoutes);
+  app.use('/api/files', conditionalCsrf, filesRouter);
 
   // Initialize FPKI credentials from Secrets Manager at startup
   initializeFPKI().catch((err) => {
     console.warn('FPKI initialization failed:', err);
-  });
-
-  // Initialize GitHub webhook credentials
-  initializeGitHubWebhooks().catch((err) => {
-    console.warn('GitHub webhook initialization failed:', err);
   });
 
   return app;

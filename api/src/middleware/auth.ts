@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { pool } from '../db/client.js';
 import { SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS, ERROR_CODES, HTTP_STATUS } from '@ship/shared';
 
@@ -10,8 +11,55 @@ declare global {
       userId?: string;
       workspaceId?: string;
       isSuperAdmin?: boolean;
+      isApiToken?: boolean; // True when authenticated via API token
     }
   }
+}
+
+// Hash a token for comparison
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+// Validate API token and return user info if valid
+async function validateApiToken(token: string): Promise<{
+  userId: string;
+  workspaceId: string;
+  isSuperAdmin: boolean;
+  tokenId: string;
+} | null> {
+  const tokenHash = hashToken(token);
+
+  const result = await pool.query(
+    `SELECT t.id, t.user_id, t.workspace_id, t.expires_at, t.revoked_at, u.is_super_admin
+     FROM api_tokens t
+     JOIN users u ON t.user_id = u.id
+     WHERE t.token_hash = $1`,
+    [tokenHash]
+  );
+
+  const tokenRow = result.rows[0];
+
+  if (!tokenRow) return null;
+
+  // Check if revoked
+  if (tokenRow.revoked_at) return null;
+
+  // Check if expired
+  if (tokenRow.expires_at && new Date(tokenRow.expires_at) < new Date()) return null;
+
+  // Update last_used_at
+  await pool.query(
+    'UPDATE api_tokens SET last_used_at = NOW() WHERE id = $1',
+    [tokenRow.id]
+  );
+
+  return {
+    userId: tokenRow.user_id,
+    workspaceId: tokenRow.workspace_id,
+    isSuperAdmin: tokenRow.is_super_admin,
+    tokenId: tokenRow.id,
+  };
 }
 
 export async function authMiddleware(
@@ -19,6 +67,47 @@ export async function authMiddleware(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  // Check for Bearer token first (API token auth)
+  const authHeader = req.headers?.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+
+    try {
+      const tokenData = await validateApiToken(token);
+
+      if (!tokenData) {
+        res.status(HTTP_STATUS.UNAUTHORIZED).json({
+          success: false,
+          error: {
+            code: ERROR_CODES.UNAUTHORIZED,
+            message: 'Invalid or expired API token',
+          },
+        });
+        return;
+      }
+
+      // Attach token info to request
+      req.userId = tokenData.userId;
+      req.workspaceId = tokenData.workspaceId;
+      req.isSuperAdmin = tokenData.isSuperAdmin;
+      req.isApiToken = true;
+
+      next();
+      return;
+    } catch (error) {
+      console.error('API token auth error:', error);
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.INTERNAL_ERROR,
+          message: 'Authentication failed',
+        },
+      });
+      return;
+    }
+  }
+
+  // Fall back to session cookie auth
   const sessionId = req.cookies?.session_id;
 
   if (!sessionId) {
