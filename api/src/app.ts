@@ -10,6 +10,7 @@ import documentsRoutes from './routes/documents.js';
 import issuesRoutes from './routes/issues.js';
 import feedbackRoutes, { publicFeedbackRouter } from './routes/feedback.js';
 import programsRoutes from './routes/programs.js';
+import projectsRoutes from './routes/projects.js';
 import sprintsRoutes from './routes/sprints.js';
 import iterationsRoutes from './routes/iterations.js';
 import teamRoutes from './routes/team.js';
@@ -176,6 +177,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/issues', conditionalCsrf, issuesRoutes);
   app.use('/api/feedback', conditionalCsrf, feedbackRoutes);
   app.use('/api/programs', conditionalCsrf, programsRoutes);
+  app.use('/api/projects', conditionalCsrf, projectsRoutes);
   app.use('/api/sprints', conditionalCsrf, sprintsRoutes);
   app.use('/api/sprints', conditionalCsrf, iterationsRoutes);
   app.use('/api/team', conditionalCsrf, teamRoutes);

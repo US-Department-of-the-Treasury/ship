@@ -146,7 +146,7 @@ export const MAX_RETRY_COUNT = 5;
 export interface PendingMutation {
   id: string;
   type: 'create' | 'update' | 'delete';
-  resource: 'document' | 'issue' | 'program' | 'sprint' | 'person';
+  resource: 'document' | 'issue' | 'program' | 'project' | 'sprint' | 'person';
   resourceId?: string;
   data: unknown;
   originalData?: unknown; // Original state before optimistic update, for rollback

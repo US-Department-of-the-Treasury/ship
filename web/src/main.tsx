@@ -12,6 +12,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DocumentsProvider } from '@/contexts/DocumentsContext';
 import { ProgramsProvider } from '@/contexts/ProgramsContext';
 import { IssuesProvider } from '@/contexts/IssuesContext';
+import { ProjectsProvider } from '@/contexts/ProjectsContext';
 import { ArchivedPersonsProvider } from '@/contexts/ArchivedPersonsContext';
 import { LoginPage } from '@/pages/Login';
 import { AppLayout } from '@/pages/App';
@@ -29,6 +30,7 @@ import { TeamDirectoryPage } from '@/pages/TeamDirectory';
 import { PersonEditorPage } from '@/pages/PersonEditor';
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
+import { ProjectEditorPage } from '@/pages/ProjectEditor';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
@@ -170,9 +172,11 @@ function AppRoutes() {
             <ArchivedPersonsProvider>
               <DocumentsProvider>
                 <ProgramsProvider>
-                  <IssuesProvider>
-                    <AppLayout />
-                  </IssuesProvider>
+                  <ProjectsProvider>
+                    <IssuesProvider>
+                      <AppLayout />
+                    </IssuesProvider>
+                  </ProjectsProvider>
                 </ProgramsProvider>
               </DocumentsProvider>
             </ArchivedPersonsProvider>
@@ -184,6 +188,8 @@ function AppRoutes() {
         <Route path="docs/:id" element={<DocumentEditorPage />} />
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:id" element={<IssueEditorPage />} />
+        <Route path="projects" element={<PlaceholderPage title="Projects" subtitle="Select a project from the sidebar or create a new one" />} />
+        <Route path="projects/:id" element={<ProjectEditorPage />} />
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />
         <Route path="programs/:id/view" element={<ProgramViewPage />} />
