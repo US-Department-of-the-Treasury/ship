@@ -36,6 +36,18 @@ export function useGlobalListNavigation({
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     const currentSelection = selectionRef.current;
+
+    // Debug logging for E2E tests
+    if (e.key === 'j' || e.key === 'k') {
+      console.log('[useGlobalListNavigation] keydown:', {
+        key: e.key,
+        enabled,
+        hasSelection: !!currentSelection,
+        itemCount: currentSelection?.selectedIds?.size ?? 0,
+        focusedId: currentSelection?.focusedId ?? null,
+      });
+    }
+
     if (!enabled || !currentSelection) return;
 
     // Skip if we're in an input, textarea, or contenteditable
@@ -45,6 +57,9 @@ export function useGlobalListNavigation({
       target.tagName === 'TEXTAREA' ||
       target.isContentEditable
     ) {
+      if (e.key === 'j' || e.key === 'k') {
+        console.log('[useGlobalListNavigation] skipped - in editable element:', target.tagName);
+      }
       return;
     }
 
@@ -57,7 +72,9 @@ export function useGlobalListNavigation({
         if (isShiftKey) {
           currentSelection.extendSelection('down');
         } else {
+          console.log('[useGlobalListNavigation] calling moveFocus(down)');
           currentSelection.moveFocus('down');
+          console.log('[useGlobalListNavigation] after moveFocus, focusedId:', currentSelection.focusedId);
         }
         break;
 

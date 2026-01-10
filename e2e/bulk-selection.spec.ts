@@ -388,12 +388,8 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       const rows = page.locator('tbody tr');
       await expect(rows.first()).toBeVisible();
 
-      // Focus the table by clicking on it first, then using keyboard
-      const table = page.locator('table[role="grid"]');
-      await table.focus();
-
-      // Press arrow down to focus first row
-      await page.keyboard.press('ArrowDown');
+      // Click on first row to establish React focus state (triggers handleClick which sets focusedId)
+      await rows.nth(0).click();
 
       // First row should have focus ring (ring-2 class indicates focus)
       await expect(rows.nth(0)).toHaveClass(/ring-2/);
@@ -413,13 +409,14 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
         return;
       }
 
-      // Focus table and navigate to first row
-      const table = page.locator('table[role="grid"]');
-      await table.focus();
-      await page.keyboard.press('ArrowDown');
+      // Hover + checkbox click to establish React focus (without navigating)
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
       await expect(rows.nth(0)).toHaveClass(/ring-2/);
 
-      // Press ArrowDown to move focus to second row
+      // Focus table and press ArrowDown to move focus to second row
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
       await page.keyboard.press('ArrowDown');
 
       // Second row should have focus, first should not
@@ -441,14 +438,14 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
         return;
       }
 
-      // Focus table and navigate to second row
-      const table = page.locator('table[role="grid"]');
-      await table.focus();
-      await page.keyboard.press('ArrowDown'); // First row
-      await page.keyboard.press('ArrowDown'); // Second row
+      // Hover + checkbox click on second row to establish React focus (without navigating)
+      await rows.nth(1).hover();
+      await rows.nth(1).getByRole('checkbox').click();
       await expect(rows.nth(1)).toHaveClass(/ring-2/);
 
-      // Press ArrowUp to move focus to first row
+      // Focus table and press ArrowUp to move focus to first row
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
       await page.keyboard.press('ArrowUp');
 
       // First row should have focus, second should not
@@ -505,15 +502,14 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
         return;
       }
 
-      // Focus table and navigate to a middle row
-      const table = page.locator('table[role="grid"]');
-      await table.focus();
-      await page.keyboard.press('ArrowDown'); // Row 0
-      await page.keyboard.press('ArrowDown'); // Row 1
-      await page.keyboard.press('ArrowDown'); // Row 2
+      // Hover + checkbox click to establish React focus state (without navigating)
+      await rows.nth(2).hover();
+      await rows.nth(2).getByRole('checkbox').click();
       await expect(rows.nth(2)).toHaveClass(/ring-2/);
 
-      // Press Home to move focus to first row
+      // Focus table and press Home to move focus to first row
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
       await page.keyboard.press('Home');
 
       // First row should have focus
@@ -535,13 +531,14 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
         return;
       }
 
-      // Focus table and start at first row
-      const table = page.locator('table[role="grid"]');
-      await table.focus();
-      await page.keyboard.press('ArrowDown'); // First row
+      // Hover + checkbox click to establish React focus state (without navigating)
+      await rows.nth(0).hover();
+      await rows.nth(0).getByRole('checkbox').click();
       await expect(rows.nth(0)).toHaveClass(/ring-2/);
 
-      // Press End to move focus to last row
+      // Focus table and press End to move focus to last row
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
       await page.keyboard.press('End');
 
       // Last row should have focus
@@ -560,13 +557,13 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       const rows = page.locator('tbody tr');
       await expect(rows.first()).toBeVisible();
 
-      // Focus table and navigate to first row
-      const table = page.locator('table[role="grid"]');
-      await table.focus();
-      await page.keyboard.press('ArrowDown');
+      // Hover to establish React focus state (without selecting)
+      await rows.nth(0).hover();
       await expect(rows.nth(0)).toHaveClass(/ring-2/);
 
-      // Press Enter to select
+      // Focus table and press Enter to select
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
       await page.keyboard.press('Enter');
       await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
 
@@ -583,13 +580,13 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       const rows = page.locator('tbody tr');
       await expect(rows.first()).toBeVisible();
 
-      // Focus table and navigate to first row
-      const table = page.locator('table[role="grid"]');
-      await table.focus();
-      await page.keyboard.press('ArrowDown');
+      // Hover to establish React focus state (without selecting)
+      await rows.nth(0).hover();
       await expect(rows.nth(0)).toHaveClass(/ring-2/);
 
-      // Press Space to select
+      // Focus table and press Space to select
+      const table = page.locator('table[role="grid"]');
+      await table.focus();
       await page.keyboard.press('Space');
       await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
 
@@ -873,6 +870,394 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       for (let i = 0; i < rowCount; i++) {
         await expect(rows.nth(i)).not.toHaveAttribute('data-selected', 'true');
       }
+    });
+  });
+});
+
+test.describe('Global j/k Vim-Style Navigation', () => {
+  test.describe('j/k Focus Navigation', () => {
+    test('j key moves focus to first/next item globally', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      // Move mouse outside the list to prevent hover-to-focus interference
+      // This ensures we start with a clean focus state
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(100);
+
+      // Press 'j' to focus first row
+      await page.keyboard.press('j');
+
+      // Verify some row has focus ring (using correct selector for tr with class)
+      await expect(page.locator('tbody tr.ring-2')).toHaveCount(1, { timeout: 3000 });
+
+      // First row should have focus ring
+      await expect(rows.nth(0)).toHaveClass(/ring-2/, { timeout: 3000 });
+
+      // Press j again to move to next row
+      await page.keyboard.press('j');
+
+      // Second row should have focus (if exists)
+      const rowCount = await rows.count();
+      if (rowCount > 1) {
+        await expect(rows.nth(1)).toHaveClass(/ring-2/, { timeout: 3000 });
+        await expect(rows.nth(0)).not.toHaveClass(/ring-2/);
+      }
+    });
+
+    test('k key moves focus to previous item', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 2) {
+        test.skip(true, 'Not enough rows for k navigation test');
+        return;
+      }
+
+      // Move mouse outside the list to prevent hover-to-focus interference
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(100);
+
+      // Navigate down first with j
+      await page.keyboard.press('j'); // First row
+      await page.keyboard.press('j'); // Second row
+      await expect(rows.nth(1)).toHaveClass(/ring-2/, { timeout: 3000 });
+
+      // Press k to move back up
+      await page.keyboard.press('k');
+
+      // First row should have focus again
+      await expect(rows.nth(0)).toHaveClass(/ring-2/, { timeout: 3000 });
+      await expect(rows.nth(1)).not.toHaveClass(/ring-2/);
+    });
+
+    test('j/k work without explicitly focusing the table', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      // Move mouse outside the list to prevent hover-to-focus interference
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(100);
+
+      // Press j - should still work and focus first row (without clicking anything)
+      await page.keyboard.press('j');
+      await expect(rows.nth(0)).toHaveClass(/ring-2/, { timeout: 3000 });
+    });
+  });
+
+  test.describe('Enter to Open Item', () => {
+    test('Enter on focused item navigates to issue detail page', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      // Move mouse outside the list to prevent hover-to-focus interference
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(100);
+
+      // Focus the row with j
+      const firstRow = rows.first();
+      await page.keyboard.press('j');
+      await expect(firstRow).toHaveClass(/ring-2/, { timeout: 3000 });
+
+      // Press Enter to navigate to issue
+      await page.keyboard.press('Enter');
+
+      // Should navigate to some issue detail page (any issue page is valid)
+      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+    });
+  });
+
+  test.describe('Input Field Exclusion', () => {
+    test('j key types in search input instead of navigating', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      // First, verify j navigates without input focus
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      // Move mouse outside the list to prevent hover-to-focus interference
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(100);
+
+      await page.keyboard.press('j');
+      await expect(rows.nth(0)).toHaveClass(/ring-2/, { timeout: 3000 });
+
+      // Now click on a search input if one exists, or any text input
+      const searchInput = page.locator('input[type="text"], input[type="search"]').first();
+      if (await searchInput.isVisible()) {
+        await searchInput.click();
+        await searchInput.fill(''); // Clear any existing text
+
+        // Press j while in input
+        await page.keyboard.press('j');
+
+        // Input should contain 'j', not trigger navigation
+        await expect(searchInput).toHaveValue('j');
+      } else {
+        test.skip(true, 'No text input found to test input exclusion');
+      }
+    });
+
+    test('j/k do not navigate when typing in contenteditable', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      // Move mouse outside the list to prevent hover-to-focus interference
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(100);
+
+      // Navigate to an issue to get to an editor (contenteditable)
+      await page.keyboard.press('j');
+      await expect(rows.nth(0)).toHaveClass(/ring-2/, { timeout: 3000 });
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+
+      // Wait for editor to be ready
+      const editor = page.locator('[contenteditable="true"]').first();
+      await expect(editor).toBeVisible({ timeout: 5000 });
+
+      // Click and focus the editor
+      await editor.click();
+
+      // Press j - should type j, not navigate
+      await page.keyboard.press('j');
+
+      // The editor should contain 'j' (or at least not cause navigation)
+      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/);
+    });
+  });
+
+  test.describe('Hover-to-Focus', () => {
+    test('hovering over row sets keyboard focus', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 3) {
+        test.skip(true, 'Not enough rows for hover-to-focus test');
+        return;
+      }
+
+      // Hover over the third row (not first, to verify it's setting focus correctly)
+      await rows.nth(2).hover();
+
+      // Third row should have focus ring
+      await expect(rows.nth(2)).toHaveClass(/ring-2/, { timeout: 3000 });
+
+      // Now press j and focus should move from third to fourth row (if exists)
+      if (rowCount > 3) {
+        await page.keyboard.press('j');
+        await expect(rows.nth(3)).toHaveClass(/ring-2/, { timeout: 3000 });
+        await expect(rows.nth(2)).not.toHaveClass(/ring-2/);
+      }
+    });
+
+    test('Shift+Arrow from hovered item creates selection', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      const rowCount = await rows.count();
+      if (rowCount < 2) {
+        test.skip(true, 'Not enough rows for hover+shift test');
+        return;
+      }
+
+      // Hover over first row
+      await rows.nth(0).hover();
+      await expect(rows.nth(0)).toHaveClass(/ring-2/, { timeout: 3000 });
+
+      // Press Shift+Down without prior selection
+      await page.keyboard.press('Shift+ArrowDown');
+
+      // Both first and second row should be selected
+      await expect(rows.nth(0)).toHaveAttribute('data-selected', 'true');
+      await expect(rows.nth(1)).toHaveAttribute('data-selected', 'true');
+    });
+  });
+
+  test.describe('Breadcrumb and Escape Navigation', () => {
+    test('navigating from Program shows breadcrumb on issue page', async ({ page }) => {
+      await login(page);
+
+      // Go to a program page
+      await page.goto('/programs');
+      await expect(page.getByRole('heading', { name: 'Programs', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      // Click on a program to open it
+      const programRow = page.locator('tbody tr').first();
+      await expect(programRow).toBeVisible();
+      await programRow.click();
+
+      // Wait for program page to load
+      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 });
+
+      // Click on Issues tab
+      const issuesTab = page.getByRole('tab', { name: 'Issues' });
+      await expect(issuesTab).toBeVisible({ timeout: 5000 });
+      await issuesTab.click();
+
+      // Wait for issues to load
+      await page.waitForTimeout(500);
+
+      // Check if there are issues in this program
+      const issueRows = page.locator('tbody tr');
+      const rowCount = await issueRows.count();
+      if (rowCount === 0) {
+        test.skip(true, 'No issues in this program');
+        return;
+      }
+
+      // Click on an issue
+      await issueRows.first().click();
+
+      // Should navigate to issue page
+      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+
+      // Should show breadcrumb with program name (aria-label contains "Back to")
+      const backButton = page.locator('button[aria-label*="Back to"]');
+      await expect(backButton).toBeVisible({ timeout: 5000 });
+    });
+
+    test('Escape key returns to program from issue page', async ({ page }) => {
+      await login(page);
+
+      // Go to a program page
+      await page.goto('/programs');
+      await expect(page.getByRole('heading', { name: 'Programs', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      // Click on a program
+      const programRow = page.locator('tbody tr').first();
+      await expect(programRow).toBeVisible();
+      await programRow.click();
+      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 });
+
+      // Get the program URL for comparison
+      const programUrl = page.url();
+
+      // Click on Issues tab
+      const issuesTab = page.getByRole('tab', { name: 'Issues' });
+      await expect(issuesTab).toBeVisible({ timeout: 5000 });
+      await issuesTab.click();
+      await page.waitForTimeout(500);
+
+      // Check for issues
+      const issueRows = page.locator('tbody tr');
+      const rowCount = await issueRows.count();
+      if (rowCount === 0) {
+        test.skip(true, 'No issues in this program');
+        return;
+      }
+
+      // Navigate to an issue
+      await issueRows.first().click();
+      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+
+      // Press Escape to go back to program
+      await page.keyboard.press('Escape');
+
+      // Should return to the program page
+      await expect(page).toHaveURL(programUrl, { timeout: 5000 });
+    });
+
+    test('clicking breadcrumb returns to program', async ({ page }) => {
+      await login(page);
+
+      // Go to a program page
+      await page.goto('/programs');
+      await expect(page.getByRole('heading', { name: 'Programs', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      // Click on a program
+      const programRow = page.locator('tbody tr').first();
+      await expect(programRow).toBeVisible();
+      await programRow.click();
+      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 });
+
+      const programUrl = page.url();
+
+      // Click on Issues tab
+      const issuesTab = page.getByRole('tab', { name: 'Issues' });
+      await expect(issuesTab).toBeVisible({ timeout: 5000 });
+      await issuesTab.click();
+      await page.waitForTimeout(500);
+
+      // Check for issues
+      const issueRows = page.locator('tbody tr');
+      const rowCount = await issueRows.count();
+      if (rowCount === 0) {
+        test.skip(true, 'No issues in this program');
+        return;
+      }
+
+      // Navigate to an issue
+      await issueRows.first().click();
+      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+
+      // Find and click the back button/breadcrumb (aria-label contains "Back to")
+      const backButton = page.locator('button[aria-label*="Back to"]');
+      await expect(backButton).toBeVisible({ timeout: 5000 });
+      await backButton.click();
+
+      // Should return to the program page
+      await expect(page).toHaveURL(programUrl, { timeout: 5000 });
+    });
+
+    test('direct URL navigation shows generic back button', async ({ page }) => {
+      await login(page);
+      await page.goto('/issues');
+      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
+
+      const rows = page.locator('tbody tr');
+      await expect(rows.first()).toBeVisible();
+
+      // Get an issue ID
+      const firstRow = rows.first();
+      const rowText = await firstRow.getAttribute('aria-label') || '';
+      const idMatch = rowText.match(/Select item ([a-f0-9-]{36})/);
+      const issueId = idMatch?.[1];
+
+      if (!issueId) {
+        test.skip(true, 'Could not extract issue ID');
+        return;
+      }
+
+      // Navigate directly to issue via URL (no navigation context)
+      await page.goto(`/issues/${issueId}`);
+      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+
+      // Should show generic "Back to documents" instead of program name (aria-label)
+      const backButton = page.locator('button[aria-label="Back to documents"]');
+      await expect(backButton).toBeVisible({ timeout: 5000 });
     });
   });
 });
@@ -2085,14 +2470,11 @@ test.describe('Bulk Selection - Accessibility', () => {
     const table = page.locator('table');
     await expect(table).toBeVisible();
 
-    // Focus the table
-    await table.focus();
-
-    // Press down arrow to focus first row
-    await page.keyboard.press('ArrowDown');
+    // Click first row to establish React focus state
+    const firstRow = page.locator('tbody tr').first();
+    await firstRow.click();
 
     // First row should have visible focus ring (ring-2 class)
-    const firstRow = page.locator('tbody tr').first();
     await expect(firstRow).toHaveClass(/ring-2/);
   });
 

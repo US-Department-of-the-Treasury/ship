@@ -74,9 +74,13 @@ export function SelectableList<T extends { id: string }>({
     hoveredId,
   });
 
+  // Debug logging for E2E tests
+  console.log('[SelectableList] render, focusedId:', selection.focusedId);
+
   // Notify parent of selection changes with both IDs and selection object
   // Include focusedId to ensure parent has latest selection object for keyboard navigation
   useEffect(() => {
+    console.log('[SelectableList] onSelectionChange effect running, focusedId:', selection.focusedId);
     onSelectionChange?.(selection.selectedIds, selection);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection.selectedIds, selection.focusedId, onSelectionChange]);
@@ -129,11 +133,15 @@ export function SelectableList<T extends { id: string }>({
           </thead>
         )}
         <tbody>
-          {items.map((item) => {
+          {items.map((item, index) => {
             const itemId = getItemId(item);
             const isSelected = selection.isSelected(itemId);
             const isFocused = selection.isFocused(itemId);
             const isHovered = hoveredId === itemId;
+            // Debug: log when a row thinks it should be focused
+            if (isFocused) {
+              console.log('[SelectableList] Row', index, 'isFocused=true, itemId:', itemId);
+            }
 
             return (
               <SelectableRow
@@ -215,6 +223,7 @@ function SelectableRow({
       onMouseLeave={onMouseLeave}
       onContextMenu={onContextMenu}
       data-selected={isSelected}
+      data-focused={isFocused}
       className={cn(
         'group cursor-pointer border-b border-border/50 transition-colors',
         isSelected && 'bg-accent/10',
