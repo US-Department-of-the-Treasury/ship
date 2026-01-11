@@ -31,6 +31,7 @@ import { PersonEditorPage } from '@/pages/PersonEditor';
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
 import { ProjectEditorPage } from '@/pages/ProjectEditor';
+import { ProjectsPage } from '@/pages/Projects';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
@@ -188,7 +189,7 @@ function AppRoutes() {
         <Route path="docs/:id" element={<DocumentEditorPage />} />
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:id" element={<IssueEditorPage />} />
-        <Route path="projects" element={<PlaceholderPage title="Projects" subtitle="Select a project from the sidebar or create a new one" />} />
+        <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:id" element={<ProjectEditorPage />} />
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />

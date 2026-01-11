@@ -6,7 +6,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
-import { useProjects, Project } from '@/contexts/ProjectsContext';
+import { useProjects } from '@/contexts/ProjectsContext';
 import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
@@ -32,17 +32,6 @@ import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 
 type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'team' | 'settings';
 
-type ProjectSortOption = 'ice_score' | 'impact' | 'confidence' | 'ease' | 'title' | 'updated';
-
-const PROJECT_SORT_OPTIONS: { value: ProjectSortOption; label: string }[] = [
-  { value: 'ice_score', label: 'ICE Score' },
-  { value: 'impact', label: 'Impact' },
-  { value: 'confidence', label: 'Confidence' },
-  { value: 'ease', label: 'Ease' },
-  { value: 'title', label: 'Title' },
-  { value: 'updated', label: 'Updated' },
-];
-
 export function AppLayout() {
   const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
   const { currentWorkspace, workspaces, switchWorkspace } = useWorkspace();
@@ -51,18 +40,12 @@ export function AppLayout() {
   const { documents, createDocument, updateDocument, deleteDocument } = useDocuments();
   const { programs, updateProgram } = usePrograms();
   const { issues, createIssue, updateIssue } = useIssues();
-  const { projects, createProject, updateProject, deleteProject } = useProjects();
+  const { createProject } = useProjects();
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
     return localStorage.getItem('ship:leftSidebarCollapsed') === 'true';
   });
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
-  const [projectSort, setProjectSort] = useState<ProjectSortOption>(() => {
-    return (localStorage.getItem('ship:projectSort') as ProjectSortOption) || 'ice_score';
-  });
-  const [projectSortAsc, setProjectSortAsc] = useState(() => {
-    return localStorage.getItem('ship:projectSortAsc') === 'true';
-  });
 
   // Session timeout handling
   const handleSessionTimeout = useCallback(() => {
@@ -85,43 +68,6 @@ export function AppLayout() {
   useEffect(() => {
     localStorage.setItem('ship:leftSidebarCollapsed', String(leftSidebarCollapsed));
   }, [leftSidebarCollapsed]);
-
-  // Persist project sort preference
-  useEffect(() => {
-    localStorage.setItem('ship:projectSort', projectSort);
-    localStorage.setItem('ship:projectSortAsc', String(projectSortAsc));
-  }, [projectSort, projectSortAsc]);
-
-  // Sorted projects
-  const sortedProjects = useMemo(() => {
-    const sorted = [...projects].sort((a, b) => {
-      let comparison = 0;
-      switch (projectSort) {
-        case 'ice_score':
-          comparison = (b.ice_score || 0) - (a.ice_score || 0); // Default descending (highest first)
-          break;
-        case 'impact':
-          comparison = (b.impact || 0) - (a.impact || 0);
-          break;
-        case 'confidence':
-          comparison = (b.confidence || 0) - (a.confidence || 0);
-          break;
-        case 'ease':
-          comparison = (b.ease || 0) - (a.ease || 0);
-          break;
-        case 'title':
-          comparison = (a.title || '').localeCompare(b.title || ''); // Default ascending (A-Z)
-          break;
-        case 'updated':
-          comparison = new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime(); // Default descending (newest first)
-          break;
-      }
-      // For title, default is ascending. For numbers/dates, default is descending.
-      const defaultAsc = projectSort === 'title';
-      return projectSortAsc !== defaultAsc ? -comparison : comparison;
-    });
-    return sorted;
-  }, [projects, projectSort, projectSortAsc]);
 
   // Global Cmd+K keyboard shortcut for command palette
   useEffect(() => {
@@ -441,38 +387,7 @@ export function AppLayout() {
                 />
               )}
               {activeMode === 'projects' && (
-                <>
-                  {/* Sort toolbar */}
-                  <div className="flex items-center gap-1 px-2 pb-2 border-b border-border mb-2">
-                    <select
-                      value={projectSort}
-                      onChange={(e) => setProjectSort(e.target.value as ProjectSortOption)}
-                      className="flex-1 h-6 text-xs bg-transparent border border-border rounded px-1 text-muted focus:outline-none focus:ring-1 focus:ring-accent"
-                      aria-label="Sort projects by"
-                    >
-                      {PROJECT_SORT_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                    <Tooltip content={projectSortAsc ? 'Ascending' : 'Descending'}>
-                      <button
-                        onClick={() => setProjectSortAsc(!projectSortAsc)}
-                        className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                        aria-label={`Sort ${projectSortAsc ? 'ascending' : 'descending'}`}
-                      >
-                        {projectSortAsc ? <SortAscIcon /> : <SortDescIcon />}
-                      </button>
-                    </Tooltip>
-                  </div>
-                  <ProjectsList
-                    projects={sortedProjects}
-                    programs={programs}
-                    activeId={location.pathname.split('/projects/')[1]}
-                    onSelect={(id) => navigate(`/projects/${id}`)}
-                    onUpdateProject={updateProject}
-                    onDeleteProject={deleteProject}
-                  />
-                </>
+                <div className="px-3 py-2 text-sm text-muted">Use the table to manage projects</div>
               )}
               {activeMode === 'programs' && (
                 <ProgramsList
@@ -1036,143 +951,6 @@ function IssueStatusIcon({ state }: { state: string }) {
   );
 }
 
-function ProjectsList({
-  projects,
-  programs,
-  activeId,
-  onSelect,
-  onUpdateProject,
-  onDeleteProject,
-}: {
-  projects: Project[];
-  programs: Program[];
-  activeId?: string;
-  onSelect: (id: string) => void;
-  onUpdateProject: (id: string, updates: Partial<Project>) => Promise<Project | null>;
-  onDeleteProject: (id: string) => Promise<boolean>;
-}) {
-  const { showToast } = useToast();
-
-  // Helper to get program for a project
-  const getProgram = (programId: string | null) => programId ? programs.find(p => p.id === programId) : null;
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
-
-  const handleContextMenu = useCallback((e: React.MouseEvent, project: Project) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, project });
-  }, []);
-
-  const handleMenuClick = useCallback((e: React.MouseEvent, project: Project) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    setContextMenu({ x: rect.right, y: rect.bottom, project });
-  }, []);
-
-  const handleArchive = useCallback(async (project: Project) => {
-    const originalArchivedAt = project.archived_at;
-    await onUpdateProject(project.id, { archived_at: new Date().toISOString() });
-    showToast('Project archived', 'success', 5000, {
-      label: 'Undo',
-      onClick: async () => {
-        await onUpdateProject(project.id, { archived_at: originalArchivedAt });
-        showToast('Archive undone', 'info');
-      },
-    });
-    setContextMenu(null);
-  }, [onUpdateProject, showToast]);
-
-  const handleDelete = useCallback(async (project: Project) => {
-    const success = await onDeleteProject(project.id);
-    if (success) {
-      showToast(`Deleted "${project.title}"`, 'info');
-    }
-    setContextMenu(null);
-  }, [onDeleteProject, showToast]);
-
-  if (projects.length === 0) {
-    return <div className="px-3 py-2 text-sm text-muted">No projects yet</div>;
-  }
-
-  return (
-    <>
-      <ul className="space-y-0.5 px-2" data-testid="projects-list">
-        {projects.map((project) => (
-          <li key={project.id} data-testid="project-item" className="group relative">
-            <button
-              onClick={() => onSelect(project.id)}
-              onContextMenu={(e) => handleContextMenu(e, project)}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                activeId === project.id
-                  ? 'bg-border/50 text-foreground'
-                  : 'text-muted hover:bg-border/30 hover:text-foreground'
-              )}
-            >
-              {/* Color dot */}
-              <span
-                className="h-2.5 w-2.5 rounded-full flex-shrink-0"
-                style={{ backgroundColor: project.color }}
-              />
-              {/* Title */}
-              <span className="flex-1 truncate">{project.title || 'Untitled'}</span>
-              {/* Program badge */}
-              {(() => {
-                const program = getProgram(project.program_id);
-                return program ? (
-                  <span
-                    className="flex h-5 w-5 items-center justify-center rounded text-[10px] flex-shrink-0"
-                    style={{ backgroundColor: program.color, color: getContrastTextColor(program.color) }}
-                    title={program.name}
-                  >
-                    {program.emoji || program.name?.[0]?.toUpperCase() || 'P'}
-                  </span>
-                ) : null;
-              })()}
-              {/* ICE Score badge */}
-              <span className="flex items-center gap-0.5 text-xs text-muted tabular-nums">
-                <span title="ICE Score">{project.ice_score}</span>
-              </span>
-              {/* Pending sync indicator */}
-              {'_pending' in project && project._pending && (
-                <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in project ? project._syncStatus as SyncStatus : undefined} />
-              )}
-            </button>
-            {/* Three-dot menu button */}
-            <button
-              type="button"
-              onClick={(e) => handleMenuClick(e, project)}
-              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
-              aria-label={`Actions for ${project.title || 'Untitled'}`}
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="5" r="2" />
-                <circle cx="12" cy="12" r="2" />
-                <circle cx="12" cy="19" r="2" />
-              </svg>
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      {/* Context menu */}
-      {contextMenu && (
-        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
-          <ContextMenuItem onClick={() => handleArchive(contextMenu.project)}>
-            <ArchiveIcon className="h-4 w-4" />
-            Archive
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem onClick={() => handleDelete(contextMenu.project)} destructive>
-            Delete
-          </ContextMenuItem>
-        </ContextMenu>
-      )}
-    </>
-  );
-}
-
 const PROGRAM_COLORS = [
   { value: '#EF4444', label: 'Red' },
   { value: '#F97316', label: 'Orange' },
@@ -1489,22 +1267,6 @@ function PlusIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-    </svg>
-  );
-}
-
-function SortAscIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
-    </svg>
-  );
-}
-
-function SortDescIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" />
     </svg>
   );
 }
