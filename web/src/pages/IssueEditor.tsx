@@ -31,13 +31,13 @@ interface Sprint {
   sprint_number: number;
 }
 
-// Compute sprint dates from sprint number (2-week sprints)
+// Compute sprint dates from sprint number (1-week sprints)
 function computeSprintDates(sprintNumber: number, workspaceStartDate: Date): { start: Date; end: Date } {
   const start = new Date(workspaceStartDate);
-  start.setDate(start.getDate() + (sprintNumber - 1) * 14);
+  start.setDate(start.getDate() + (sprintNumber - 1) * 7);
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
-  end.setDate(end.getDate() + 13);
+  end.setDate(end.getDate() + 6);
   end.setHours(23, 59, 59, 999);
   return { start, end };
 }

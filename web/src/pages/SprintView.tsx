@@ -51,7 +51,7 @@ interface Sprint {
 // Compute sprint dates from sprint_number and workspace start date
 function computeSprintDates(sprintNumber: number, workspaceStartDate: string): { startDate: string; endDate: string; status: 'planned' | 'active' | 'completed' } {
   const baseDate = new Date(workspaceStartDate);
-  const sprintDuration = 14; // 2 weeks
+  const sprintDuration = 7; // 1 week
 
   // Sprint 1 starts on workspace start date
   const startDate = new Date(baseDate);
