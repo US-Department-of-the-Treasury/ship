@@ -6,7 +6,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
-import { useProjects } from '@/contexts/ProjectsContext';
+import { useProjects, Project } from '@/contexts/ProjectsContext';
 import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
@@ -40,7 +40,7 @@ export function AppLayout() {
   const { documents, createDocument, updateDocument, deleteDocument } = useDocuments();
   const { programs, updateProgram } = usePrograms();
   const { issues, createIssue, updateIssue } = useIssues();
-  const { createProject } = useProjects();
+  const { projects, createProject, updateProject } = useProjects();
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
     return localStorage.getItem('ship:leftSidebarCollapsed') === 'true';
   });
@@ -387,7 +387,11 @@ export function AppLayout() {
                 />
               )}
               {activeMode === 'projects' && (
-                <div className="px-3 py-2 text-sm text-muted">Use the table to manage projects</div>
+                <ProjectsList
+                  projects={projects}
+                  activeId={location.pathname.split('/projects/')[1]}
+                  onUpdateProject={updateProject}
+                />
               )}
               {activeMode === 'programs' && (
                 <ProgramsList
@@ -948,6 +952,94 @@ function IssueStatusIcon({ state }: { state: string }) {
   };
   return (
     <span className={cn('h-2 w-2 rounded-full inline-block mr-2', colors[state]?.replace('text-', 'bg-') || 'bg-gray-400')} />
+  );
+}
+
+function ProjectsList({
+  projects,
+  activeId,
+  onUpdateProject,
+}: {
+  projects: Project[];
+  activeId?: string;
+  onUpdateProject: (id: string, updates: Partial<Project>) => Promise<Project | null>;
+}) {
+  const { showToast } = useToast();
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, project: Project) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, project });
+  }, []);
+
+  const handleMenuClick = useCallback((e: React.MouseEvent, project: Project) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setContextMenu({ x: rect.right, y: rect.bottom, project });
+  }, []);
+
+  const handleArchive = useCallback(async (project: Project) => {
+    await onUpdateProject(project.id, { archived_at: new Date().toISOString() });
+    showToast('Project archived', 'success');
+    setContextMenu(null);
+  }, [onUpdateProject, showToast]);
+
+  if (projects.length === 0) {
+    return <div className="px-3 py-2 text-sm text-muted">No projects yet</div>;
+  }
+
+  return (
+    <>
+      <ul className="space-y-0.5 px-2" data-testid="projects-list">
+        {projects.map((project) => (
+          <li key={project.id} data-testid="project-item" className="group relative">
+            <Link
+              to={`/projects/${project.id}`}
+              onContextMenu={(e) => handleContextMenu(e, project)}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                activeId === project.id
+                  ? 'bg-border/50 text-foreground'
+                  : 'text-muted hover:bg-border/30 hover:text-foreground'
+              )}
+            >
+              <span
+                className="h-2 w-2 rounded-full flex-shrink-0"
+                style={{ backgroundColor: project.color || '#6366f1' }}
+              />
+              <span className="flex-1 truncate">{project.title || 'Untitled'}</span>
+              <span className="text-xs text-muted">{project.ice_score}</span>
+              {'_pending' in project && project._pending && (
+                <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in project ? project._syncStatus as SyncStatus : undefined} />
+              )}
+            </Link>
+            <button
+              type="button"
+              onClick={(e) => handleMenuClick(e, project)}
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
+              aria-label={`Actions for ${project.title || 'Untitled'}`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {contextMenu && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+          <ContextMenuItem onClick={() => handleArchive(contextMenu.project)}>
+            <ArchiveIcon className="h-4 w-4" />
+            Archive
+          </ContextMenuItem>
+        </ContextMenu>
+      )}
+    </>
   );
 }
 
