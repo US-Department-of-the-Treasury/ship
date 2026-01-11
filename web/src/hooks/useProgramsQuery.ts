@@ -8,16 +8,6 @@ export interface ProgramOwner {
   email: string;
 }
 
-export interface GitHubRepo {
-  owner: string;  // GitHub org or user
-  repo: string;   // Repository name
-}
-
-export interface AutoStatusOnMerge {
-  enabled: boolean;
-  targetStatus: string;  // Status to set when PR is merged (e.g., 'done')
-}
-
 export interface Program {
   id: string;
   name: string;
@@ -29,8 +19,6 @@ export interface Program {
   issue_count?: number;
   sprint_count?: number;
   owner: ProgramOwner | null;
-  github_repos?: GitHubRepo[];
-  auto_status_on_merge?: AutoStatusOnMerge | null;
   _pending?: boolean;
   _pendingId?: string;
 }
@@ -162,8 +150,6 @@ export function useUpdateProgram() {
       if (updates.color !== undefined) apiUpdates.color = updates.color;
       if (updates.archived_at !== undefined) apiUpdates.archived_at = updates.archived_at;
       if (updates.owner_id !== undefined) apiUpdates.owner_id = updates.owner_id;
-      if (updates.github_repos !== undefined) apiUpdates.github_repos = updates.github_repos;
-      if (updates.auto_status_on_merge !== undefined) apiUpdates.auto_status_on_merge = updates.auto_status_on_merge;
       return updateProgramApi(id, apiUpdates);
     },
     onMutate: async ({ id, updates }) => {

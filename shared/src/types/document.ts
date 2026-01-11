@@ -38,32 +38,44 @@ export interface IssueProperties {
   [key: string]: unknown;
 }
 
-// GitHub repository reference for linking to programs
-export interface GitHubRepo {
-  owner: string;  // GitHub org or user
-  repo: string;   // Repository name
-}
-
 export interface ProgramProperties {
   color: string;
   emoji?: string | null;  // Optional emoji for visual identification
-  githubRepos?: GitHubRepo[];  // Linked GitHub repositories (1:Many)
-  autoStatusOnMerge?: {
-    enabled: boolean;
-    targetStatus: string;  // Status to set when PR is merged (e.g., 'done')
-  };
   [key: string]: unknown;
 }
 
+// ICE score type (1-5 scale for prioritization)
+export type ICEScore = 1 | 2 | 3 | 4 | 5;
+
 export interface ProjectProperties {
+  // ICE prioritization scores (1-5 scale)
+  impact: ICEScore;      // How much will this move the needle?
+  confidence: ICEScore;  // How certain are we this will achieve the impact?
+  ease: ICEScore;        // How easy is this to implement? (inverse of effort)
+  // Required owner for accountability
+  owner_id: string;
+  // Visual identification
   color: string;
-  emoji?: string | null;  // Optional emoji for visual identification
+  emoji?: string | null;
   [key: string]: unknown;
+}
+
+// Hypothesis history entry for tracking hypothesis changes over time
+export interface HypothesisHistoryEntry {
+  hypothesis: string;
+  timestamp: string;  // ISO 8601 date string
+  author_id: string;
+  author_name?: string;
 }
 
 export interface SprintProperties {
   sprint_number: number;  // References implicit 2-week window, dates computed from this
   owner_id: string;       // REQUIRED - person accountable for this sprint
+  // Hypothesis tracking (for Ship-Claude integration)
+  hypothesis?: string | null;           // Current hypothesis statement
+  success_criteria?: string[] | null;   // Array of measurable success criteria
+  confidence?: number | null;           // Confidence level 0-100
+  hypothesis_history?: HypothesisHistoryEntry[] | null;  // History of hypothesis changes
   [key: string]: unknown;
 }
 
@@ -71,7 +83,6 @@ export interface PersonProperties {
   email?: string | null;
   role?: string | null;
   capacity_hours?: number | null;
-  github_username?: string | null;  // GitHub username for activity mapping
   [key: string]: unknown;
 }
 
@@ -217,6 +228,19 @@ export interface CreateSprintInput extends CreateDocumentInput {
   properties?: Partial<SprintProperties>;
 }
 
+// Helper type for project creation with required owner_id
+export interface CreateProjectInput extends CreateDocumentInput {
+  document_type: 'project';
+  properties: {
+    impact?: ICEScore;
+    confidence?: ICEScore;
+    ease?: ICEScore;
+    owner_id: string;  // REQUIRED - person accountable for this project
+    color?: string;
+    emoji?: string | null;
+  };
+}
+
 // Default property values
 export const DEFAULT_ISSUE_PROPERTIES: IssueProperties = {
   state: 'backlog',
@@ -227,6 +251,14 @@ export const DEFAULT_ISSUE_PROPERTIES: IssueProperties = {
 };
 
 export const DEFAULT_PROGRAM_PROPERTIES: Partial<ProgramProperties> = {
+  color: '#6366f1',
+};
+
+// Default project properties - ICE defaults to middle value (3)
+export const DEFAULT_PROJECT_PROPERTIES: Omit<ProjectProperties, 'owner_id'> = {
+  impact: 3,
+  confidence: 3,
+  ease: 3,
   color: '#6366f1',
 };
 
@@ -273,4 +305,23 @@ export function getCurrentSprintNumber(workspaceStartDate: Date): number {
   const today = new Date();
   const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
   return Math.max(1, Math.floor(daysSinceStart / 14) + 1);
+}
+
+// ICE Prioritization helpers
+
+/**
+ * Compute ICE score from impact, confidence, and ease values.
+ * ICE Score = Impact × Confidence × Ease
+ * With 1-5 scale, max score is 125 (5 × 5 × 5).
+ */
+export function computeICEScore(impact: number, confidence: number, ease: number): number {
+  return impact * confidence * ease;
+}
+
+/**
+ * Compute ICE score from project properties.
+ * Convenience wrapper for computeICEScore.
+ */
+export function computeProjectICEScore(properties: ProjectProperties): number {
+  return computeICEScore(properties.impact, properties.confidence, properties.ease);
 }

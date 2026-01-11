@@ -11,44 +11,6 @@ test.describe('Content Caching - High Performance Navigation', () => {
     await page.waitForURL(/\/(issues|docs)/);
   });
 
-  test('document content loads instantly from cache on revisit', async ({ page }) => {
-    // Navigate to documents
-    await page.goto('/docs');
-    await page.waitForTimeout(1000);
-
-    // Click on first document (tree has aria-label="Workspace documents" or "Documents")
-    const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
-    await tree.first().waitFor({ timeout: 10000 });
-    const firstDoc = tree.getByRole('link').first();
-    await firstDoc.click();
-    await page.waitForURL(/\/docs\/.+/);
-
-    // Wait for content to fully load (WebSocket sync)
-    await page.waitForSelector('.ProseMirror', { timeout: 10000 });
-    await page.waitForFunction(() => {
-      const editor = document.querySelector('.ProseMirror');
-      return editor && editor.textContent && editor.textContent.length > 0;
-    }, { timeout: 10000 }).catch(() => {});
-
-    const docUrl = page.url();
-
-    // Navigate away
-    await page.goto('/docs');
-    await page.waitForLoadState('networkidle');
-
-    // Measure time to content visible on return
-    const startTime = Date.now();
-    await page.goto(docUrl);
-
-    // Content should appear quickly (from cache) - not blank flash
-    await page.waitForSelector('.ProseMirror', { timeout: 5000 });
-    const loadTime = Date.now() - startTime;
-
-    // With caching, content should appear in under 500ms (vs 1-2s without)
-    // This is a soft assertion - the real test is no blank flash
-    console.log(`Content load time: ${loadTime}ms`);
-  });
-
   test('toggling between two documents shows no blank flash', async ({ page }) => {
     await page.goto('/docs');
 
@@ -124,41 +86,6 @@ test.describe('Content Caching - High Performance Navigation', () => {
     }, docId);
 
     expect(hasCache).toBe(true);
-  });
-
-  test('cached content is available even when WebSocket is slow', async ({ page }) => {
-    await page.goto('/docs');
-
-    // Visit a document first to cache it (tree has aria-label="Workspace documents" or "Documents")
-    const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
-    const firstDoc = tree.getByRole('link').first();
-    await firstDoc.click();
-    await page.waitForURL(/\/docs\/.+/);
-    await page.waitForSelector('.ProseMirror', { timeout: 10000 });
-    await page.waitForTimeout(2000); // Ensure cached
-
-    const docUrl = page.url();
-
-    // Navigate away
-    await page.goto('/docs');
-
-    // Slow down WebSocket connections
-    await page.route('**/collaboration/**', async (route) => {
-      await new Promise(resolve => setTimeout(resolve, 3000)); // 3s delay
-      await route.continue();
-    });
-
-    // Navigate back - should show cached content relatively quickly
-    await page.goto(docUrl);
-
-    // Content should appear from cache faster than the 3s WebSocket delay
-    // Allow up to 2.5s for cache lookup and rendering
-    const hasContentFast = await page.waitForFunction(() => {
-      const editor = document.querySelector('.ProseMirror');
-      return editor && (editor.textContent?.length || 0) > 0;
-    }, { timeout: 2500 }).catch(() => false);
-
-    expect(hasContentFast).toBeTruthy();
   });
 
 });

@@ -25,6 +25,26 @@ const updateIssueSchema = z.object({
   program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
   estimate: z.number().positive().nullable().optional(),
+  // Claude Code integration metadata
+  claude_metadata: z.object({
+    updated_by: z.literal('claude'),
+    story_id: z.string().optional(),
+    prd_name: z.string().optional(),
+    session_context: z.string().optional(),
+    // Confidence score (0-100) for story completion
+    confidence: z.number().int().min(0).max(100).optional(),
+    // Telemetry for completed stories
+    telemetry: z.object({
+      iterations: z.number().int().min(1).optional(),
+      feedback_loops: z.object({
+        type_check: z.number().int().min(0).optional(),
+        test: z.number().int().min(0).optional(),
+        build: z.number().int().min(0).optional(),
+      }).optional(),
+      time_elapsed_seconds: z.number().int().min(0).optional(),
+      files_changed: z.array(z.string()).optional(),
+    }).optional(),
+  }).optional(),
 });
 
 const rejectIssueSchema = z.object({
@@ -43,12 +63,13 @@ async function logDocumentChange(
   field: string,
   oldValue: string | null,
   newValue: string | null,
-  changedBy: string
+  changedBy: string,
+  automatedBy?: string
 ) {
   await pool.query(
-    `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [documentId, field, oldValue, newValue, changedBy]
+    `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by, automated_by)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [documentId, field, oldValue, newValue, changedBy, automatedBy ?? null]
   );
 }
 
@@ -421,6 +442,15 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    // Store Claude metadata in properties for attribution tracking
+    if (data.claude_metadata) {
+      newProps.claude_metadata = {
+        ...data.claude_metadata,
+        updated_at: new Date().toISOString(),
+      };
+      propsChanged = true;
+    }
+
     if (propsChanged) {
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(newProps));
@@ -489,8 +519,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     // Log all changes to history
+    const automatedBy = data.claude_metadata?.updated_by;
     for (const change of changes) {
-      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.userId!);
+      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.userId!, automatedBy);
     }
 
     updates.push(`updated_at = now()`);
@@ -535,7 +566,7 @@ router.get('/:id/history', authMiddleware, async (req: Request, res: Response) =
     }
 
     const result = await pool.query(
-      `SELECT h.id, h.field, h.old_value, h.new_value, h.created_at,
+      `SELECT h.id, h.field, h.old_value, h.new_value, h.created_at, h.automated_by,
               u.id as changed_by_id, u.name as changed_by_name
        FROM document_history h
        LEFT JOIN users u ON h.changed_by = u.id
@@ -554,9 +585,66 @@ router.get('/:id/history', authMiddleware, async (req: Request, res: Response) =
         id: row.changed_by_id,
         name: row.changed_by_name,
       } : null,
+      automated_by: row.automated_by,
     })));
   } catch (err) {
     console.error('Get issue history error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Log custom history entry (for verification failures, etc.)
+const logHistorySchema = z.object({
+  field: z.string().min(1).max(100),
+  old_value: z.string().nullable(),
+  new_value: z.string().nullable(),
+  automated_by: z.string().optional(),
+});
+
+router.post('/:id/history', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: 'Issue ID required' });
+      return;
+    }
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = logHistorySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify issue exists and user can access it
+    const issueCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (issueCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    const { field, old_value, new_value, automated_by } = parsed.data;
+
+    // Pass automated_by only if defined (function parameter is optional)
+    if (automated_by !== undefined) {
+      await logDocumentChange(id, field, old_value, new_value, userId, automated_by);
+    } else {
+      await logDocumentChange(id, field, old_value, new_value, userId);
+    }
+
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('Log history entry error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

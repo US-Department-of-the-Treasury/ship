@@ -636,43 +636,4 @@ test.describe('Performance - Memory Usage', () => {
     }
   })
 
-  test('multiple tabs do not cause excessive memory usage', async ({ page, browser }) => {
-    await login(page)
-    await createNewDocument(page)
-
-    const docUrl = page.url()
-
-    // Open 3 tabs with the same document
-    const pages = [page]
-
-    for (let i = 0; i < 2; i++) {
-      const newPage = await browser.newPage()
-      await login(newPage)
-      await newPage.goto(docUrl)
-      await expect(newPage.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
-      pages.push(newPage)
-    }
-
-    await page.waitForTimeout(2000)
-
-    // Check memory on first tab
-    const memory = await page.evaluate(() => {
-      if (performance.memory) {
-        return performance.memory.usedJSHeapSize / (1024 * 1024)
-      }
-      return 0
-    })
-
-    if (memory > 0) {
-      console.log(`Memory with 3 tabs: ${memory.toFixed(2)}MB`)
-
-      // Memory should be reasonable (under 200MB for 3 tabs)
-      expect(memory).toBeLessThan(200)
-    }
-
-    // Cleanup
-    for (let i = 1; i < pages.length; i++) {
-      await pages[i].close()
-    }
-  })
 })

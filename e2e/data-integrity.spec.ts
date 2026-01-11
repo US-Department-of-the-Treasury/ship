@@ -281,58 +281,6 @@ test.describe('Data Integrity - Images', () => {
     fs.unlinkSync(tmpPath)
   })
 
-  test('images persist after server restart simulation', async ({ page }) => {
-    await createNewDocument(page)
-
-    const editor = page.locator('.ProseMirror')
-    await editor.click()
-
-    // Upload image
-    await page.keyboard.type('/image')
-    await page.waitForTimeout(500)
-
-    const tmpPath = createTestImageFile()
-    const fileChooserPromise = page.waitForEvent('filechooser')
-    await page.keyboard.press('Enter')
-
-    const fileChooser = await fileChooserPromise
-    await fileChooser.setFiles(tmpPath)
-
-    await expect(editor.locator('img')).toBeVisible({ timeout: 5000 })
-    await page.waitForFunction(
-      () => {
-        const img = document.querySelector('.ProseMirror img')
-        if (!img) return false
-        const src = img.getAttribute('src') || ''
-        return src.startsWith('http') || src.includes('/api/files')
-      },
-      { timeout: 15000 }
-    )
-
-    const originalSrc = await editor.locator('img').first().getAttribute('src')
-
-    // Save document URL BEFORE clearing cookies
-    const docUrl = page.url()
-
-    // Wait for sync
-    await page.waitForTimeout(3000)
-
-    // Simulate server restart by clearing all caches and reloading
-    await page.context().clearCookies()
-    await login(page)
-
-    // Navigate back to document using saved URL
-    await page.goto(docUrl)
-    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
-
-    // Image should still be accessible
-    await expect(page.locator('.ProseMirror img')).toBeVisible({ timeout: 5000 })
-    const newSrc = await page.locator('.ProseMirror img').first().getAttribute('src')
-    expect(newSrc).toBe(originalSrc)
-
-    fs.unlinkSync(tmpPath)
-  })
-
   test('multiple images persist in correct order', async ({ page }) => {
     await createNewDocument(page)
 

@@ -1,4 +1,4 @@
-export type SyncStatus = 'pending' | 'syncing' | 'synced' | null;
+export type SyncStatus = 'pending' | 'syncing' | 'synced' | 'conflict' | null;
 
 interface PendingSyncIconProps {
   isPending?: boolean;
@@ -30,6 +30,12 @@ export function PendingSyncIcon({ isPending, syncStatus }: PendingSyncIconProps)
       testId: 'sync-status-synced',
       ariaLabel: 'Synced',
       className: 'text-green-500',
+      iconClass: '',
+    },
+    conflict: {
+      testId: 'sync-status-conflict',
+      ariaLabel: 'Sync conflict',
+      className: 'text-red-500',
       iconClass: '',
     },
   }[effectiveStatus];

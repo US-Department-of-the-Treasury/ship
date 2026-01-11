@@ -82,3 +82,84 @@ searchRouter.get('/mentions', authMiddleware, async (req: Request, res: Response
     res.status(500).json({ error: 'Failed to search mentions' });
   }
 });
+
+// Search for learning wiki documents
+// GET /api/search/learnings?q=:query&program_id=:program_id
+searchRouter.get('/learnings', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const searchQuery = (req.query.q as string) || '';
+    const programId = req.query.program_id as string | undefined;
+    const workspaceId = req.workspaceId!;
+    const userId = req.userId!;
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+
+    // SECURITY: Escape wildcard characters to prevent SQL wildcard injection
+    const sanitizedQuery = escapeLikePattern(searchQuery);
+
+    // Check if user is admin for visibility filtering
+    const isAdmin = await isWorkspaceAdmin(userId, workspaceId);
+
+    // Search for learning wiki documents
+    // Match documents where:
+    // - title starts with "Learning:" OR properties.tags contains "learning"
+    // - AND title/tags match the search query
+    const params: (string | boolean | number)[] = [workspaceId, userId, isAdmin];
+    let query = `
+      SELECT
+        d.id,
+        d.title,
+        d.program_id,
+        d.properties->>'category' as category,
+        d.properties->'tags' as tags,
+        d.properties->>'source_prd' as source_prd,
+        d.properties->>'source_sprint_id' as source_sprint_id,
+        d.created_at,
+        d.updated_at,
+        substring(d.content::text, 1, 500) as content_preview
+      FROM documents d
+      WHERE d.workspace_id = $1
+        AND d.document_type = 'wiki'
+        AND d.archived_at IS NULL
+        AND (d.visibility = 'workspace' OR d.created_by = $2 OR $3 = TRUE)
+        AND (
+          d.title LIKE 'Learning:%'
+          OR d.properties->'tags' ? 'learning'
+        )
+    `;
+
+    // Add search query filter if provided
+    if (searchQuery) {
+      params.push(`%${sanitizedQuery}%`);
+      const queryParamIndex = params.length;
+      query += `
+        AND (
+          d.title ILIKE $${queryParamIndex}
+          OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(d.properties->'tags') AS tag
+            WHERE tag ILIKE $${queryParamIndex}
+          )
+          OR d.properties->>'category' ILIKE $${queryParamIndex}
+        )
+      `;
+    }
+
+    // Filter by program if provided
+    if (programId) {
+      params.push(programId);
+      query += ` AND d.program_id = $${params.length}`;
+    }
+
+    params.push(limit);
+    query += ` ORDER BY d.updated_at DESC LIMIT $${params.length}`;
+
+    const result = await pool.query(query, params);
+
+    res.json({
+      learnings: result.rows,
+      total: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Error searching learnings:', error);
+    res.status(500).json({ error: 'Failed to search learnings' });
+  }
+});

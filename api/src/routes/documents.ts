@@ -42,6 +42,7 @@ const createDocumentSchema = z.object({
   title: z.string().min(1).max(255).optional().default('Untitled'),
   document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'sprint_plan', 'sprint_retro']).optional().default('wiki'),
   parent_id: z.string().uuid().optional().nullable(),
+  program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
   properties: z.record(z.unknown()).optional(),
   visibility: z.enum(['private', 'workspace']).optional(),
@@ -169,7 +170,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, document_type, parent_id, sprint_id, properties, content } = parsed.data;
+    const { title, document_type, parent_id, program_id, sprint_id, properties, content } = parsed.data;
     let { visibility } = parsed.data;
 
     // If parent_id is provided and visibility is not specified, inherit from parent
@@ -187,10 +188,10 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     visibility = visibility || 'workspace';
 
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, parent_id, sprint_id, properties, created_by, visibility, content)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO documents (workspace_id, document_type, title, parent_id, program_id, sprint_id, properties, created_by, visibility, content)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [req.workspaceId, document_type, title, parent_id || null, sprint_id || null, JSON.stringify(properties || {}), req.userId, visibility, content ? JSON.stringify(content) : null]
+      [req.workspaceId, document_type, title, parent_id || null, program_id || null, sprint_id || null, JSON.stringify(properties || {}), req.userId, visibility, content ? JSON.stringify(content) : null]
     );
 
     res.status(201).json(result.rows[0]);

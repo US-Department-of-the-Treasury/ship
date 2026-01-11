@@ -11,6 +11,7 @@ export function OfflineEmptyState({ resourceName }: OfflineEmptyStateProps) {
       className="flex flex-col items-center justify-center py-16 px-4 text-center"
       role="status"
       aria-live="polite"
+      data-testid="offline-empty-state"
     >
       <svg
         className="h-16 w-16 text-muted mb-4"
@@ -27,11 +28,10 @@ export function OfflineEmptyState({ resourceName }: OfflineEmptyStateProps) {
         />
       </svg>
       <h2 className="text-lg font-medium text-foreground mb-2">
-        Offline - No Cached Data
+        Not Available Offline
       </h2>
       <p className="text-muted max-w-md">
-        You're currently offline and no {resourceName} have been cached yet.
-        Connect to the internet to load your {resourceName}.
+        No {resourceName} have been cached yet. Visit this page while online first to cache your data.
       </p>
     </div>
   );

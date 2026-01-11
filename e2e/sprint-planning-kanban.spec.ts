@@ -27,7 +27,7 @@ async function login(page: Page) {
 async function navigateToSprintPlanningView(page: Page) {
   // Navigate to a program's Sprints tab and click "Open →" to go to SprintView
   await page.goto('/programs')
-  await page.locator('main').getByRole('button', { name: /Ship Core/i }).click()
+  await page.getByRole('row', { name: /Ship Core/i }).click()
   await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
   // Click Sprints tab
@@ -252,7 +252,7 @@ test.describe('Sprint Planning Kanban Integration', () => {
   test('Plan Sprint button from timeline navigates to this view', async ({ page }) => {
     // Go back to program view
     await page.goto('/programs')
-    await page.locator('main').getByRole('button', { name: /Ship Core/i }).click()
+    await page.getByRole('row', { name: /Ship Core/i }).click()
     await page.getByRole('tab', { name: 'Sprints' }).click()
 
     // Click Plan Sprint button (if visible)

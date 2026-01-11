@@ -6,6 +6,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
+import { useProjects, Project } from '@/contexts/ProjectsContext';
 import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
@@ -18,15 +19,18 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { StorageWarning } from '@/components/StorageWarning';
 import { CacheCorruptionAlert } from '@/components/CacheCorruptionAlert';
 import { PrivateModeWarning } from '@/components/PrivateModeWarning';
+import { SyncFailureNotification } from '@/components/SyncFailureNotification';
 import { ManualSyncButton } from '@/components/ManualSyncButton';
 import { PendingSyncCount } from '@/components/PendingSyncCount';
 import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
+import { SyncProgress } from '@/components/SyncProgress';
+import { StaleDataBanner } from '@/components/StaleDataBanner';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { useToast } from '@/components/ui/Toast';
 import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
 import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 
-type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
+type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'team' | 'settings';
 
 export function AppLayout() {
   const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
@@ -36,6 +40,7 @@ export function AppLayout() {
   const { documents, createDocument, updateDocument, deleteDocument } = useDocuments();
   const { programs, updateProgram } = usePrograms();
   const { issues, createIssue, updateIssue } = useIssues();
+  const { projects, createProject, updateProject } = useProjects();
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
     return localStorage.getItem('ship:leftSidebarCollapsed') === 'true';
   });
@@ -80,6 +85,7 @@ export function AppLayout() {
   const getActiveMode = (): Mode => {
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
+    if (location.pathname.startsWith('/projects')) return 'projects';
     if (location.pathname.startsWith('/programs') || location.pathname.startsWith('/sprints') || location.pathname.startsWith('/feedback')) return 'programs';
     if (location.pathname.startsWith('/team')) return 'team';
     if (location.pathname.startsWith('/settings')) return 'settings';
@@ -92,6 +98,7 @@ export function AppLayout() {
     switch (mode) {
       case 'docs': navigate('/docs'); break;
       case 'issues': navigate('/issues'); break;
+      case 'projects': navigate('/projects'); break;
       case 'programs': navigate('/programs'); break;
       case 'team': navigate('/team'); break;
       case 'settings': navigate('/settings'); break;
@@ -109,6 +116,15 @@ export function AppLayout() {
     const doc = await createDocument();
     if (doc) {
       navigate(`/docs/${doc.id}`);
+    }
+  };
+
+  const handleCreateProject = async () => {
+    // Projects require an owner_id - use current user as default owner
+    if (!user?.id) return;
+    const project = await createProject({ owner_id: user.id });
+    if (project) {
+      navigate(`/projects/${project.id}`);
     }
   };
 
@@ -145,6 +161,12 @@ export function AppLayout() {
 
       {/* Private browsing mode warning */}
       <PrivateModeWarning />
+
+      {/* Stale data warning (when offline with old cache) */}
+      <StaleDataBanner />
+
+      {/* Sync failure notifications */}
+      <SyncFailureNotification />
 
       {/* Impersonation banner */}
       {impersonating && (
@@ -233,6 +255,12 @@ export function AppLayout() {
               onClick={() => handleModeClick('issues')}
             />
             <RailIcon
+              icon={<ProjectsIcon />}
+              label="Projects"
+              active={activeMode === 'projects'}
+              onClick={() => handleModeClick('projects')}
+            />
+            <RailIcon
               icon={<ProgramsIcon />}
               label="Programs"
               active={activeMode === 'programs'}
@@ -291,6 +319,7 @@ export function AppLayout() {
               <h2 className="text-sm font-medium text-foreground m-0">
                 {activeMode === 'docs' && 'Docs'}
                 {activeMode === 'issues' && 'Issues'}
+                {activeMode === 'projects' && 'Projects'}
                 {activeMode === 'programs' && 'Programs'}
                 {activeMode === 'team' && 'Teams'}
                 {activeMode === 'settings' && 'Settings'}
@@ -313,6 +342,17 @@ export function AppLayout() {
                       onClick={handleCreateIssue}
                       className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
                       aria-label="New issue"
+                    >
+                      <PlusIcon />
+                    </button>
+                  </Tooltip>
+                )}
+                {activeMode === 'projects' && (
+                  <Tooltip content="New project">
+                    <button
+                      onClick={handleCreateProject}
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                      aria-label="New project"
                     >
                       <PlusIcon />
                     </button>
@@ -346,6 +386,13 @@ export function AppLayout() {
                   onUpdateIssue={updateIssue}
                 />
               )}
+              {activeMode === 'projects' && (
+                <ProjectsList
+                  projects={projects}
+                  activeId={location.pathname.split('/projects/')[1]}
+                  onUpdateProject={updateProject}
+                />
+              )}
               {activeMode === 'programs' && (
                 <ProgramsList
                   programs={programs}
@@ -363,9 +410,12 @@ export function AppLayout() {
             </div>
 
             {/* Sync controls at bottom */}
-            <div className="flex items-center gap-2">
-              <ManualSyncButton />
-              <PendingSyncCount />
+            <div className="flex flex-col gap-2 p-2 border-t border-border">
+              <SyncProgress />
+              <div className="flex items-center gap-2">
+                <ManualSyncButton />
+                <PendingSyncCount />
+              </div>
             </div>
           </div>
         </aside>
@@ -905,6 +955,94 @@ function IssueStatusIcon({ state }: { state: string }) {
   );
 }
 
+function ProjectsList({
+  projects,
+  activeId,
+  onUpdateProject,
+}: {
+  projects: Project[];
+  activeId?: string;
+  onUpdateProject: (id: string, updates: Partial<Project>) => Promise<Project | null>;
+}) {
+  const { showToast } = useToast();
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, project: Project) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, project });
+  }, []);
+
+  const handleMenuClick = useCallback((e: React.MouseEvent, project: Project) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setContextMenu({ x: rect.right, y: rect.bottom, project });
+  }, []);
+
+  const handleArchive = useCallback(async (project: Project) => {
+    await onUpdateProject(project.id, { archived_at: new Date().toISOString() });
+    showToast('Project archived', 'success');
+    setContextMenu(null);
+  }, [onUpdateProject, showToast]);
+
+  if (projects.length === 0) {
+    return <div className="px-3 py-2 text-sm text-muted">No projects yet</div>;
+  }
+
+  return (
+    <>
+      <ul className="space-y-0.5 px-2" data-testid="projects-list">
+        {projects.map((project) => (
+          <li key={project.id} data-testid="project-item" className="group relative">
+            <Link
+              to={`/projects/${project.id}`}
+              onContextMenu={(e) => handleContextMenu(e, project)}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                activeId === project.id
+                  ? 'bg-border/50 text-foreground'
+                  : 'text-muted hover:bg-border/30 hover:text-foreground'
+              )}
+            >
+              <span
+                className="h-2 w-2 rounded-full flex-shrink-0"
+                style={{ backgroundColor: project.color || '#6366f1' }}
+              />
+              <span className="flex-1 truncate">{project.title || 'Untitled'}</span>
+              <span className="text-xs text-muted">{project.ice_score}</span>
+              {'_pending' in project && project._pending && (
+                <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in project ? project._syncStatus as SyncStatus : undefined} />
+              )}
+            </Link>
+            <button
+              type="button"
+              onClick={(e) => handleMenuClick(e, project)}
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
+              aria-label={`Actions for ${project.title || 'Untitled'}`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {contextMenu && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+          <ContextMenuItem onClick={() => handleArchive(contextMenu.project)}>
+            <ArchiveIcon className="h-4 w-4" />
+            Archive
+          </ContextMenuItem>
+        </ContextMenu>
+      )}
+    </>
+  );
+}
+
 const PROGRAM_COLORS = [
   { value: '#EF4444', label: 'Red' },
   { value: '#F97316', label: 'Orange' },
@@ -1180,6 +1318,14 @@ function IssuesIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+    </svg>
+  );
+}
+
+function ProjectsIcon() {
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
     </svg>
   );
 }
