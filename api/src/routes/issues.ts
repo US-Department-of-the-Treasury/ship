@@ -485,7 +485,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         if (oldSprintResult.rows[0]) {
           const sprintNumber = parseInt(oldSprintResult.rows[0].sprint_number, 10);
           const rawStartDate = oldSprintResult.rows[0].sprint_start_date;
-          const sprintDuration = 14;
+          const sprintDuration = 7; // 1-week sprints
 
           let startDate: Date;
           if (rawStartDate instanceof Date) {

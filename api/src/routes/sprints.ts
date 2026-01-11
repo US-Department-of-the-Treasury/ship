@@ -615,7 +615,7 @@ router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Respo
 
     const sprintNumber = parseInt(sprintResult.rows[0].sprint_number, 10);
     const rawStartDate = sprintResult.rows[0].workspace_sprint_start_date;
-    const sprintDuration = 14;
+    const sprintDuration = 7; // 1-week sprints
 
     // Calculate sprint start date
     let workspaceStartDate: Date;
