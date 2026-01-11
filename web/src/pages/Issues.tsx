@@ -288,6 +288,7 @@ export function IssuesPage() {
   // Global keyboard navigation for j/k and Enter
   useGlobalListNavigation({
     selection: selectionRef.current,
+    selectionRef: selectionRef, // Pass ref directly for immediate access without waiting for re-render
     enabled: viewMode === 'list', // Only enable for list view
     onEnter: useCallback((focusedId: string) => {
       navigate(`/issues/${focusedId}`);

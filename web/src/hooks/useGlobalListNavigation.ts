@@ -1,9 +1,11 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, MutableRefObject } from 'react';
 import type { UseSelectionReturn } from './useSelection';
 
 interface UseGlobalListNavigationOptions {
   /** Selection state and actions from useSelection (can be null initially) */
   selection: UseSelectionReturn | null;
+  /** Optional ref to selection - if provided, reads from ref for latest value (avoids race conditions) */
+  selectionRef?: MutableRefObject<UseSelectionReturn | null>;
   /** Whether navigation is enabled (e.g., list is visible and active) */
   enabled?: boolean;
   /** Callback when Enter is pressed on focused item */
@@ -23,19 +25,23 @@ interface UseGlobalListNavigationOptions {
  */
 export function useGlobalListNavigation({
   selection,
+  selectionRef: externalSelectionRef,
   enabled = true,
   onEnter,
 }: UseGlobalListNavigationOptions) {
   // Use refs to avoid stale closures - selection object changes on each render
-  const selectionRef = useRef(selection);
+  const internalSelectionRef = useRef(selection);
   const onEnterRef = useRef(onEnter);
 
   // Keep refs up to date
-  selectionRef.current = selection;
+  internalSelectionRef.current = selection;
   onEnterRef.current = onEnter;
 
+  // Use external ref if provided (allows reading latest value without waiting for re-render)
+  const effectiveSelectionRef = externalSelectionRef || internalSelectionRef;
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    const currentSelection = selectionRef.current;
+    const currentSelection = effectiveSelectionRef.current;
 
     // Debug logging for E2E tests
     if (e.key === 'j' || e.key === 'k') {
@@ -89,6 +95,15 @@ export function useGlobalListNavigation({
         break;
 
       case 'Enter':
+        // Skip Enter handling if focus is on a button inside the bulk action bar
+        // Those buttons handle Enter themselves (e.g., clear selection button)
+        // We check by looking for the closest region with "Bulk actions" label
+        if (
+          (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') &&
+          target.closest('[role="region"][aria-label="Bulk actions"]')
+        ) {
+          return;
+        }
         if (currentSelection.focusedId && onEnterRef.current) {
           e.preventDefault();
           onEnterRef.current(currentSelection.focusedId);

@@ -303,6 +303,7 @@ export function useSelection<T>({
       case 'Enter':
       case ' ':
         e.preventDefault();
+        e.stopPropagation(); // Prevent global listener from also handling
         if (focusedId) {
           if (isCtrlKey) {
             toggleInGroup(focusedId);

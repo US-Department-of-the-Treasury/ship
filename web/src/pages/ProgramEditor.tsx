@@ -119,7 +119,7 @@ interface SprintsResponse {
   sprints: Sprint[];
 }
 
-// Sprint window represents a 2-week period (may or may not have a sprint document)
+// Sprint window represents a 1-week period (may or may not have a sprint document)
 interface SprintWindow {
   sprint_number: number;
   start_date: Date;
@@ -962,11 +962,11 @@ function computeSprintStatus(sprintNumber: number, workspaceStartDate: Date): 'a
   return 'active';
 }
 
-// Get current sprint number
+// Get current sprint number (1-week sprints)
 function getCurrentSprintNumber(workspaceStartDate: Date): number {
   const today = new Date();
   const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
-  return Math.max(1, Math.floor(daysSinceStart / 14) + 1);
+  return Math.max(1, Math.floor(daysSinceStart / 7) + 1);
 }
 
 // Generate sprint windows for display
@@ -1253,7 +1253,7 @@ function ActiveSprintProgress({
     return () => resizeObserver.disconnect();
   }, []);
 
-  const totalDays = 14;
+  const totalDays = 7; // 1-week sprints
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -1290,16 +1290,16 @@ function ActiveSprintProgress({
   const yScale = (value: number) => chartHeight - (value / maxY) * chartHeight;
 
   // Scale for X axis (days) - extend if prediction goes past sprint end
-  const totalXDays = isLate && remaining > 0 ? Math.min(predictedDaysFromStart, totalDays + 14) : totalDays;
+  const totalXDays = isLate && remaining > 0 ? Math.min(predictedDaysFromStart, totalDays + 7) : totalDays;
   const xScale = (day: number) => (day / totalXDays) * chartWidth;
 
-  // Generate date labels for X axis
+  // Generate date labels for X axis (1-week sprint: day 0, 3, 7)
   const dateLabels = useMemo(() => {
     const labels: { day: number; label: string }[] = [];
     // Start, middle, end of sprint
     labels.push({ day: 0, label: formatDate(sprintWindow.start_date.toISOString()) });
-    labels.push({ day: 7, label: formatDate(new Date(sprintWindow.start_date.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()) });
-    labels.push({ day: 14, label: formatDate(sprintWindow.end_date.toISOString()) });
+    labels.push({ day: 3, label: formatDate(new Date(sprintWindow.start_date.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString()) });
+    labels.push({ day: 7, label: formatDate(sprintWindow.end_date.toISOString()) });
     return labels;
   }, [sprintWindow.start_date, sprintWindow.end_date]);
 
@@ -1737,15 +1737,15 @@ function SprintTimeline({
     const windowStart = new Date(window.start_date);
     windowStart.setHours(0, 0, 0, 0);
 
-    // Days into this window (0-13)
+    // Days into this window (0-6 for 1-week sprints)
     const daysIntoWindow = Math.floor((today.getTime() - windowStart.getTime()) / (1000 * 60 * 60 * 24));
 
     // Card width = 160px, gap = 12px
     const cardWidth = 160;
     const gap = 12;
 
-    // Position = (cards before * (width + gap)) + (days / 14 * width)
-    const position = (windowIndex * (cardWidth + gap)) + (daysIntoWindow / 14) * cardWidth;
+    // Position = (cards before * (width + gap)) + (days / 7 * width)
+    const position = (windowIndex * (cardWidth + gap)) + (daysIntoWindow / 7) * cardWidth;
 
     return position;
   }, [windows]);

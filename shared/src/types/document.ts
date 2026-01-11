@@ -69,7 +69,7 @@ export interface HypothesisHistoryEntry {
 }
 
 export interface SprintProperties {
-  sprint_number: number;  // References implicit 2-week window, dates computed from this
+  sprint_number: number;  // References implicit 1-week window, dates computed from this
   owner_id: string;       // REQUIRED - person accountable for this sprint
   // Hypothesis tracking (for Ship-Claude integration)
   hypothesis?: string | null;           // Current hypothesis statement
@@ -299,12 +299,12 @@ export function computeSprintStatus(sprintNumber: number, workspaceStartDate: Da
 }
 
 /**
- * Get the current sprint number based on workspace start date.
+ * Get the current sprint number based on workspace start date (1-week sprints).
  */
 export function getCurrentSprintNumber(workspaceStartDate: Date): number {
   const today = new Date();
   const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
-  return Math.max(1, Math.floor(daysSinceStart / 14) + 1);
+  return Math.max(1, Math.floor(daysSinceStart / 7) + 1);
 }
 
 // ICE Prioritization helpers

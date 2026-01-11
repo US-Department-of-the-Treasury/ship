@@ -210,7 +210,7 @@ async function seed() {
       console.log('ℹ️  All programs already exist');
     }
 
-    // Get workspace sprint start date and calculate current sprint
+    // Get workspace sprint start date and calculate current sprint (1-week sprints)
     const wsResult = await pool.query(
       'SELECT sprint_start_date FROM workspaces WHERE id = $1',
       [workspaceId]
@@ -218,7 +218,7 @@ async function seed() {
     const sprintStartDate = new Date(wsResult.rows[0].sprint_start_date);
     const today = new Date();
     const daysSinceStart = Math.floor((today.getTime() - sprintStartDate.getTime()) / (1000 * 60 * 60 * 24));
-    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 14) + 1);
+    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
 
     // Create sprints for each program (current-3 to current+3)
     // Each sprint gets assigned an owner from the team (rotating assignment)
