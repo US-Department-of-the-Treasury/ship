@@ -120,13 +120,13 @@ document.properties = {
 Sprints are **computed time windows**, not stored entities:
 
 - Workspace has `sprint_start_date` setting
-- All sprints are exactly 14 days
+- All sprints are exactly 7 days
 - Sprint N = calculated from workspace start date
 
 ```typescript
 function getSprintNumber(date: Date, workspaceStartDate: Date): number {
   const daysSinceStart = differenceInDays(date, workspaceStartDate);
-  return Math.floor(daysSinceStart / 14) + 1;
+  return Math.floor(daysSinceStart / 7) + 1;
 }
 ```
 
@@ -156,8 +156,8 @@ What IS stored is the **Sprint document** - one per program per sprint window:
 
 ```typescript
 export function computeSprintDates(sprintNumber: number, workspaceStartDate: Date) {
-  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 14);
-  const end = addDays(start, 13); // 14 days total (0-13)
+  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 7);
+  const end = addDays(start, 6); // 7 days total (0-6)
   return { start, end };
 }
 ```

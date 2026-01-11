@@ -127,8 +127,8 @@ Sprint dates are **computed from sprint_number + workspace start date**, not sto
 
 ```typescript
 function computeSprintDates(sprintNumber: number, workspaceStartDate: Date) {
-  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 14);
-  const end = addDays(start, 13); // 14 days total
+  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 7);
+  const end = addDays(start, 6); // 7 days total
   return { start, end };
 }
 ```

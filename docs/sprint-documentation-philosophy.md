@@ -32,13 +32,13 @@ Sprints are **computed 2-week time windows**, not stored entities:
 3. **Simpler mental model**: No "which program's sprint are we talking about?"
 4. **Resource allocation**: People work on multiple programs - one sprint timeline makes planning possible
 
-**Why fixed 14-day duration:**
+**Why fixed 7-day duration:**
 
 1. **Predictability**: Teams can plan around a consistent rhythm
 2. **Comparability**: Sprint 5 velocity can be compared to Sprint 4 velocity
 3. **Simplicity**: No debates about "should this sprint be shorter?"
 
-If 14 days doesn't work for your team, the answer isn't variable sprint lengths - it's changing what you commit to within those 14 days.
+If 7 days doesn't work for your team, the answer isn't variable sprint lengths - it's changing what you commit to within those 7 days.
 
 ### Sprint Documents (Explicit)
 
@@ -145,10 +145,10 @@ The yellow → red progression gives teams grace while maintaining accountabilit
 
 - Gray (sprint active): "Not due yet - focus on the work"
 - Gray (sprint just ended): "Due soon - start thinking about it"
-- Yellow (1-13 days after): "You need to write this while it's fresh"
-- Red (14+ days after): "This is now overdue - things are spiraling"
+- Yellow (1-6 days after): "You need to write this while it's fresh"
+- Red (7+ days after): "This is now overdue - things are spiraling"
 
-The 14-day threshold for retros (one full sprint) is deliberate. If you haven't written your retro by the time the next sprint ends, you're now two sprints behind and institutional knowledge is being lost.
+The 7-day threshold for retros (one full sprint) is deliberate. If you haven't written your retro by the time the next sprint ends, you're now two sprints behind and institutional knowledge is being lost.
 
 ### Why Not Block?
 
