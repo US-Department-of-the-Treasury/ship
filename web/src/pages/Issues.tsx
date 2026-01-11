@@ -6,8 +6,10 @@ import { BulkActionBar } from '@/components/BulkActionBar';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useBulkUpdateIssues } from '@/hooks/useIssuesQuery';
+import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { useListFilters, ViewMode } from '@/hooks/useListFilters';
+import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
 import { IssuesListSkeleton } from '@/components/ui/Skeleton';
 import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
 import { Combobox } from '@/components/ui/Combobox';
@@ -71,6 +73,7 @@ export function IssuesPage() {
   const { issues: allIssues, loading, createIssue: contextCreateIssue, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
   const isOfflineEmpty = useOfflineEmptyState(allIssues, loading);
   const bulkUpdate = useBulkUpdateIssues();
+  const { data: teamMembers = [] } = useTeamMembersQuery();
   const { showToast } = useToast();
 
   // Use shared hooks for list state management
@@ -87,9 +90,11 @@ export function IssuesPage() {
   const [programFilter, setProgramFilter] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
 
-  // Track selection state for BulkActionBar
+  // Track selection state for BulkActionBar and global keyboard navigation
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const selectionRef = useRef<UseSelectionReturn | null>(null);
+  // Force re-render trigger for when selection ref updates (used by useGlobalListNavigation)
+  const [, forceUpdate] = useState(0);
 
   const stateFilter = searchParams.get('state') || '';
 
@@ -255,11 +260,39 @@ export function IssuesPage() {
     clearSelection();
   }, [selectedIds, bulkUpdate, showToast, clearSelection]);
 
+  const handleBulkAssign = useCallback((assigneeId: string | null) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const count = ids.length;
+    // Find the team member to get both the name and user_id
+    // BulkActionBar passes the team member's id (person document ID), but API needs user_id
+    const teamMember = assigneeId ? teamMembers.find(m => m.id === assigneeId) : null;
+    const assigneeName = teamMember?.name || 'Unassigned';
+    const userId = teamMember?.user_id || null;
+    bulkUpdate.mutate({ ids, action: 'update', updates: { assignee_id: userId } }, {
+      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} assigned to ${assigneeName}`, 'success'),
+      onError: () => showToast('Failed to assign issues', 'error'),
+    });
+    clearSelection();
+  }, [selectedIds, teamMembers, bulkUpdate, showToast, clearSelection]);
+
   // Selection change handler - keeps parent state in sync with SelectableList
-  const handleSelectionChange = useCallback((newSelectedIds: Set<string>, selection: UseSelectionReturn) => {
+  const handleSelectionChange = useCallback((newSelectedIds: Set<string>, newSelection: UseSelectionReturn) => {
     setSelectedIds(newSelectedIds);
-    selectionRef.current = selection;
+    // Always update the ref and trigger re-render so useGlobalListNavigation has the latest selection object
+    // This is called on both selection changes AND focus changes (via j/k navigation)
+    selectionRef.current = newSelection;
+    forceUpdate(n => n + 1);
   }, []);
+
+  // Global keyboard navigation for j/k and Enter
+  useGlobalListNavigation({
+    selection: selectionRef.current,
+    enabled: viewMode === 'list', // Only enable for list view
+    onEnter: useCallback((focusedId: string) => {
+      navigate(`/issues/${focusedId}`);
+    }, [navigate]),
+  });
 
   // Kanban checkbox click handler - manages selection directly
   const handleKanbanCheckboxClick = useCallback((id: string, e: React.MouseEvent) => {
@@ -417,6 +450,8 @@ export function IssuesPage() {
           onDelete={handleBulkDelete}
           onChangeStatus={handleBulkChangeStatus}
           onMoveToSprint={handleBulkMoveToSprint}
+          onAssign={handleBulkAssign}
+          teamMembers={teamMembers}
           loading={bulkUpdate.isPending}
         />
       ) : (

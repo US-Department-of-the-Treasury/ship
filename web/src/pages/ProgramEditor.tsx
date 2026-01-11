@@ -16,6 +16,7 @@ import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { ContextMenu, ContextMenuItem, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
+import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -227,7 +228,7 @@ export function ProgramEditorPage() {
     if (!id) return;
     const issue = await contextCreateIssue({ program_id: id });
     if (issue) {
-      navigate(`/issues/${issue.id}`);
+      navigate(`/issues/${issue.id}`, { state: { from: 'program', programId: id, programName: program?.name } });
     }
   };
 
@@ -434,7 +435,7 @@ export function ProgramEditorPage() {
               <KanbanBoard
                 issues={filteredIssues}
                 onUpdateIssue={updateIssue}
-                onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+                onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId: id, programName: program?.name } })}
               />
             ) : (
               <ProgramIssuesList
@@ -442,7 +443,7 @@ export function ProgramEditorPage() {
                 sprints={sprints}
                 selectedIssues={selectedIssues}
                 onSelectionChange={setSelectedIssues}
-                onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+                onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId: id, programName: program?.name } })}
                 onBulkMoveToSprint={async (sprintId) => {
                   const token = await getCsrfToken();
                   await Promise.all(
@@ -488,6 +489,7 @@ export function ProgramEditorPage() {
                 sprints={sprints}
                 workspaceSprintStartDate={workspaceSprintStartDate}
                 programId={id!}
+                programName={program?.name}
                 onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
                 createSprint={createSprintMutation}
               />
@@ -773,6 +775,26 @@ function ProgramIssuesList({
   const [isMoving, setIsMoving] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; issueId: string } | null>(null);
 
+  // Selection ref for global keyboard navigation
+  const selectionRef = useRef<UseSelectionReturn | null>(null);
+  const [, forceUpdate] = useState(0);
+
+  // Handle selection change - capture selection object for keyboard navigation
+  const handleSelectionChange = useCallback((_selectedIds: Set<string>, selection: UseSelectionReturn) => {
+    selectionRef.current = selection;
+    onSelectionChange(selection.selectedIds);
+    forceUpdate(n => n + 1);
+  }, [onSelectionChange]);
+
+  // Global j/k keyboard navigation
+  useGlobalListNavigation({
+    selection: selectionRef.current,
+    enabled: true,
+    onEnter: useCallback((focusedId: string) => {
+      onIssueClick(focusedId);
+    }, [onIssueClick]),
+  });
+
   // Column definitions - added Actions column
   const columns = useMemo(() => [
     { key: 'id', label: 'ID' },
@@ -894,7 +916,7 @@ function ProgramIssuesList({
           columns={columns}
           emptyState={emptyState}
           onItemClick={(issue) => onIssueClick(issue.id)}
-          onSelectionChange={onSelectionChange}
+          onSelectionChange={handleSelectionChange}
           onContextMenu={handleContextMenu}
           ariaLabel="Program issues list"
         />
@@ -986,12 +1008,14 @@ function SprintsTab({
   sprints,
   workspaceSprintStartDate,
   programId,
+  programName,
   onSprintClick,
   createSprint,
 }: {
   sprints: Sprint[];
   workspaceSprintStartDate: Date;
   programId: string;
+  programName?: string;
   onSprintClick: (id: string) => void;
   createSprint: (sprintNumber: number, ownerId: string, title?: string) => Promise<Sprint | null>;
 }) {
@@ -1103,7 +1127,7 @@ function SprintsTab({
               <SprintIssuesList
                 issues={sprintIssues}
                 loading={issuesLoading}
-                onIssueClick={(id) => navigate(`/issues/${id}`)}
+                onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId, programName } })}
               />
             </div>
           </div>

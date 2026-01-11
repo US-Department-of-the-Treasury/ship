@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { issueStatusColors, sprintStatusColors } from '@/lib/statusColors';
 import { KanbanBoard } from '@/components/KanbanBoard';
+import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
+import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
@@ -118,7 +120,7 @@ export function ProgramViewPage() {
       });
       if (res.ok) {
         const issue = await res.json();
-        navigate(`/issues/${issue.id}`);
+        navigate(`/issues/${issue.id}`, { state: { from: 'program', programId: id, programName: program?.name } });
       }
     } catch (err) {
       console.error('Failed to create issue:', err);
@@ -332,10 +334,13 @@ export function ProgramViewPage() {
             <KanbanBoard
               issues={issues}
               onUpdateIssue={updateIssue}
-              onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+              onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId: id, programName: program?.name } })}
             />
           ) : (
-            <IssuesList issues={issues} onIssueClick={(issueId) => navigate(`/issues/${issueId}`)} />
+            <IssuesList
+              issues={issues}
+              onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId: id, programName: program?.name } })}
+            />
           )
         )}
 
@@ -382,53 +387,66 @@ function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (
     cancelled: 'Cancelled',
   };
 
-  if (issues.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted">No issues in this program</p>
-      </div>
-    );
-  }
+  // Track selection for keyboard navigation
+  const selectionRef = useRef<UseSelectionReturn | null>(null);
+  const [, forceUpdate] = useState(0);
+
+  const handleSelectionChange = useCallback((_selectedIds: Set<string>, selection: UseSelectionReturn) => {
+    selectionRef.current = selection;
+    forceUpdate(n => n + 1);
+  }, []);
+
+  // Global keyboard navigation for j/k and Enter
+  useGlobalListNavigation({
+    selection: selectionRef.current,
+    enabled: true,
+    onEnter: useCallback((focusedId: string) => {
+      onIssueClick(focusedId);
+    }, [onIssueClick]),
+  });
+
+  const columns = [
+    { key: 'id', label: 'ID', className: 'w-24' },
+    { key: 'title', label: 'Title' },
+    { key: 'status', label: 'Status', className: 'w-32' },
+    { key: 'assignee', label: 'Assignee', className: 'w-40' },
+  ];
+
+  const renderRow = (issue: Issue, { isSelected, isFocused }: RowRenderProps) => (
+    <>
+      <td className="px-4 py-3 text-sm font-mono text-muted">
+        {issue.display_id}
+      </td>
+      <td className="px-4 py-3 text-sm text-foreground">
+        {issue.title}
+      </td>
+      <td className="px-4 py-3">
+        <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
+          {stateLabels[issue.state] || issue.state}
+        </span>
+      </td>
+      <td className={cn("px-4 py-3 text-sm text-muted", issue.assignee_archived && "opacity-50")}>
+        {issue.assignee_name ? (
+          <>
+            {issue.assignee_name}{issue.assignee_archived && ' (archived)'}
+          </>
+        ) : 'Unassigned'}
+      </td>
+    </>
+  );
 
   return (
-    <table className="w-full">
-      <thead className="sticky top-0 bg-background">
-        <tr className="border-b border-border text-left text-xs text-muted">
-          <th className="px-6 py-2 font-medium">ID</th>
-          <th className="px-6 py-2 font-medium">Title</th>
-          <th className="px-6 py-2 font-medium">Status</th>
-          <th className="px-6 py-2 font-medium">Assignee</th>
-        </tr>
-      </thead>
-      <tbody>
-        {issues.map((issue) => (
-          <tr
-            key={issue.id}
-            onClick={() => onIssueClick(issue.id)}
-            className="cursor-pointer border-b border-border/50 hover:bg-border/30 transition-colors"
-          >
-            <td className="px-6 py-3 text-sm font-mono text-muted">
-              {issue.display_id}
-            </td>
-            <td className="px-6 py-3 text-sm text-foreground">
-              {issue.title}
-            </td>
-            <td className="px-6 py-3">
-              <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
-                {stateLabels[issue.state] || issue.state}
-              </span>
-            </td>
-            <td className={cn("px-6 py-3 text-sm text-muted", issue.assignee_archived && "opacity-50")}>
-              {issue.assignee_name ? (
-                <>
-                  {issue.assignee_name}{issue.assignee_archived && ' (archived)'}
-                </>
-              ) : 'Unassigned'}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <SelectableList
+      items={issues}
+      loading={false}
+      emptyState={<p className="text-muted">No issues in this program</p>}
+      renderRow={renderRow}
+      selectable={true}
+      onSelectionChange={handleSelectionChange}
+      onItemClick={(issue) => onIssueClick(issue.id)}
+      columns={columns}
+      ariaLabel="Program issues"
+    />
   );
 }
 
