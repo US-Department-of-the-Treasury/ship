@@ -269,16 +269,16 @@ export const DEFAULT_PROJECT_PROPERTIES: Omit<ProjectProperties, 'owner_id'> = {
 
 /**
  * Compute sprint start and end dates from sprint number and workspace start date.
- * Each sprint is a 14-day window (days 0-13).
+ * Each sprint is a 7-day window (days 0-6).
  */
 export function computeSprintDates(sprintNumber: number, workspaceStartDate: Date): { start: Date; end: Date } {
   const start = new Date(workspaceStartDate);
-  start.setDate(start.getDate() + (sprintNumber - 1) * 14);
+  start.setDate(start.getDate() + (sprintNumber - 1) * 7);
   // Reset time to start of day
   start.setHours(0, 0, 0, 0);
 
   const end = new Date(start);
-  end.setDate(end.getDate() + 13); // 14 days total (0-13)
+  end.setDate(end.getDate() + 6); // 7 days total (0-6)
   end.setHours(23, 59, 59, 999);
 
   return { start, end };
