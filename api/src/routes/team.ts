@@ -47,7 +47,7 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
     );
 
     const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
-    const sprintDurationDays = 14; // 2-week sprints
+    const sprintDurationDays = 7; // 1-week sprints
 
     const today = new Date();
 
@@ -448,7 +448,7 @@ router.get('/accountability', authMiddleware, async (req: Request, res: Response
     );
 
     const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
-    const sprintDurationDays = 14;
+    const sprintDurationDays = 7; // 1-week sprints
     const today = new Date();
 
     let startDate: Date;
@@ -636,7 +636,7 @@ router.get('/people/:personId/sprint-metrics', authMiddleware, async (req: Reque
     );
 
     const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
-    const sprintDurationDays = 14;
+    const sprintDurationDays = 7; // 1-week sprints
     const today = new Date();
 
     let startDate: Date;
