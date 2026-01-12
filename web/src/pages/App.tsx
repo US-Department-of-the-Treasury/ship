@@ -21,7 +21,6 @@ import { StorageWarning } from '@/components/StorageWarning';
 import { CacheCorruptionAlert } from '@/components/CacheCorruptionAlert';
 import { PrivateModeWarning } from '@/components/PrivateModeWarning';
 import { SyncFailureNotification } from '@/components/SyncFailureNotification';
-import { ManualSyncButton } from '@/components/ManualSyncButton';
 import { PendingSyncCount } from '@/components/PendingSyncCount';
 import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
 import { SyncProgress } from '@/components/SyncProgress';
@@ -427,10 +426,7 @@ export function AppLayout() {
             {/* Sync controls at bottom */}
             <div className="flex flex-col gap-2 p-2 border-t border-border">
               <SyncProgress />
-              <div className="flex items-center gap-2">
-                <ManualSyncButton />
-                <PendingSyncCount />
-              </div>
+              <PendingSyncCount />
             </div>
           </div>
         </aside>

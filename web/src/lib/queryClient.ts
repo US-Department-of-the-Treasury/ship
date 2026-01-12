@@ -790,62 +790,6 @@ export function getStorageQuotaInfo(): StorageQuotaInfo | null {
 }
 
 // ===========================================
-// Manual Sync Controls
-// ===========================================
-
-let syncInProgress = false;
-let syncProgressListeners: Array<(inProgress: boolean) => void> = [];
-
-export function isSyncInProgress(): boolean {
-  return syncInProgress;
-}
-
-export function subscribeToSyncProgress(listener: (inProgress: boolean) => void): () => void {
-  syncProgressListeners.push(listener);
-  return () => {
-    syncProgressListeners = syncProgressListeners.filter(l => l !== listener);
-  };
-}
-
-function notifySyncProgressListeners(inProgress: boolean) {
-  syncInProgress = inProgress;
-  syncProgressListeners.forEach(l => l(inProgress));
-}
-
-export async function triggerManualSync(): Promise<void> {
-  if (syncInProgress) {
-    console.log('[ManualSync] Sync already in progress');
-    return;
-  }
-
-  if (!isOnline) {
-    console.log('[ManualSync] Cannot sync while offline');
-    return;
-  }
-
-  notifySyncProgressListeners(true);
-  try {
-    // Process pending mutations
-    await processPendingMutations();
-    // Also refetch active queries
-    await queryClient.invalidateQueries();
-  } finally {
-    notifySyncProgressListeners(false);
-  }
-}
-
-// Cancel stuck syncs by resetting all syncing mutations to pending
-export function cancelStuckSync(): void {
-  pendingMutations = pendingMutations.map(m =>
-    m.syncStatus === 'syncing' ? { ...m, syncStatus: 'pending' as const } : m
-  );
-  notifyPendingMutationListeners();
-  set('pending', pendingMutations, mutationStore).catch(console.error);
-  notifySyncProgressListeners(false);
-  console.log('[ManualSync] Cancelled stuck syncs');
-}
-
-// ===========================================
 // Initialization
 // ===========================================
 

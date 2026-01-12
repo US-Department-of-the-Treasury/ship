@@ -1,12 +1,14 @@
 /**
  * Category 17: User Controls
- * Tests manual sync controls and pending queue management.
+ * Tests automatic sync and pending queue management.
  *
  * Infrastructure implemented:
- * 1. ManualSyncButton with "Sync Now" text (data-testid="manual-sync-button")
+ * 1. Automatic sync via TanStack Query networkMode:'online' and 'online' event handler
  * 2. PendingSyncCount showing count and retry/discard buttons (data-testid="pending-sync-count")
  * 3. Retry button for failed mutations (data-testid="retry-sync-button")
  * 4. Discard button for failed mutations (data-testid="discard-failed-button")
+ *
+ * Note: ManualSyncButton was removed - sync happens automatically when online
  */
 import { test, expect } from './fixtures/offline'
 

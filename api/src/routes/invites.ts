@@ -227,10 +227,11 @@ router.post('/:token/accept', async (req: Request, res: Response): Promise<void>
 
     // Update the pending person document created at invite time
     // Set user_id, remove pending flag, update title to user's chosen name
+    // Note: parentheses required due to operator precedence (- binds tighter than ||)
     await pool.query(
       `UPDATE documents
        SET title = $1,
-           properties = properties || $2::jsonb - 'pending'
+           properties = (properties || $2::jsonb) - 'pending'
        WHERE workspace_id = $3
          AND document_type = 'person'
          AND properties->>'invite_id' = $4`,
