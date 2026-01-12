@@ -25,6 +25,7 @@ import { ProgramEditorPage } from '@/pages/ProgramEditor';
 import { ProgramViewPage } from '@/pages/ProgramView';
 import { SprintEditorPage } from '@/pages/SprintEditor';
 import { SprintViewPage } from '@/pages/SprintView';
+import { SprintsPage } from '@/pages/Sprints';
 import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
 import { PersonEditorPage } from '@/pages/PersonEditor';
@@ -194,6 +195,8 @@ function AppRoutes() {
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />
         <Route path="programs/:id/view" element={<ProgramViewPage />} />
+        <Route path="programs/:programId/sprints/:id" element={<SprintEditorPage />} />
+        <Route path="sprints" element={<SprintsPage />} />
         <Route path="sprints/:id" element={<SprintEditorPage />} />
         <Route path="sprints/:id/view" element={<SprintViewPage />} />
         <Route path="team" element={<Navigate to="/team/allocation" replace />} />
