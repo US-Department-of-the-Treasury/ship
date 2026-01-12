@@ -119,7 +119,7 @@ test.describe('Sprints Mode', () => {
     await expect(createButton).not.toBeVisible()
   })
 
-  test('sidebar shows active sprints with name and owner avatar', async ({ page }) => {
+  test('sidebar shows active sprints with program name and owner avatar', async ({ page }) => {
     await page.goto('/sprints')
     await expect(page.locator('h1', { hasText: 'Sprints' })).toBeVisible({ timeout: 5000 })
 
@@ -128,17 +128,21 @@ test.describe('Sprints Mode', () => {
 
     // Should show sprint items in sidebar
     // Test data creates sprints for 5 programs at the current sprint number
+    // Sidebar shows program names (not "Sprint X" which would be redundant)
     const sidebarItems = page.locator('aside ul li, aside [role="list"] [role="listitem"]')
 
     // Should have at least one sprint
     const count = await sidebarItems.count()
 
     if (count > 0) {
-      // Each sprint item should have a name and avatar
+      // Each sprint item should have program name and avatar
       const firstItem = sidebarItems.first()
 
-      // Should show sprint name (contains "Sprint" text)
-      await expect(firstItem.getByText(/Sprint \d+/)).toBeVisible()
+      // Should show program name (e.g., "API Platform", "Ship Core")
+      // The text should NOT be "Sprint X" since all active sprints share the same number
+      const itemText = await firstItem.textContent()
+      expect(itemText).toBeTruthy()
+      expect(itemText).not.toMatch(/^Sprint \d+$/) // Should not be just "Sprint X"
 
       // Should show owner avatar (typically a circle with initials)
       const avatar = firstItem.locator('.rounded-full, [class*="avatar"]')
@@ -298,11 +302,12 @@ test.describe('Sprints Mode', () => {
     // Wait for content to load
     await page.waitForTimeout(500)
 
-    // Find sprint item in sidebar and click
-    const sidebarItem = page.locator('aside').getByText(/Sprint \d+/).first()
+    // Find sprint item in sidebar and click (items show program names now)
+    const sidebarItems = page.locator('aside ul li button, aside [role="list"] [role="listitem"] button')
+    const count = await sidebarItems.count()
 
-    if (await sidebarItem.isVisible()) {
-      await sidebarItem.click()
+    if (count > 0) {
+      await sidebarItems.first().click()
 
       // Should navigate to sprint detail
       await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+\/sprints\/[a-f0-9-]+/, { timeout: 5000 })

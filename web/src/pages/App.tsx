@@ -1322,8 +1322,8 @@ function SprintsList() {
                 ?
               </span>
             )}
-            {/* Sprint name */}
-            <span className="flex-1 truncate">{sprint.name || 'Untitled'}</span>
+            {/* Program name (sprint number is redundant since all active sprints are the same) */}
+            <span className="flex-1 truncate">{sprint.program_name || 'Untitled'}</span>
           </button>
         </li>
       ))}
@@ -1414,11 +1414,10 @@ function ProjectsIcon() {
 }
 
 function SprintsIcon() {
-  // Running figure icon
+  // Lightning bolt icon (Zap - represents velocity/sprints)
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <circle cx="17" cy="4" r="2" strokeWidth={1.5} />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7l-4 4-3-1-4 4m8-4v6m0-6l5 5m-5-5l-4 4" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
     </svg>
   );
 }
