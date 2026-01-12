@@ -291,9 +291,20 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // If userId was provided instead of personId, look up the person doc ID
+    // Validate personId belongs to current workspace (SECURITY: prevent cross-workspace injection)
     let personDocId = personId;
-    if (!personId && userId) {
+    if (personId) {
+      const personCheck = await pool.query(
+        `SELECT id FROM documents
+         WHERE id = $1 AND workspace_id = $2 AND document_type = 'person'`,
+        [personId, workspaceId]
+      );
+      if (!personCheck.rows[0]) {
+        res.status(400).json({ error: 'Invalid personId for this workspace' });
+        return;
+      }
+    } else if (userId) {
+      // If userId was provided instead of personId, look up the person doc ID
       const personResult = await pool.query(
         `SELECT id FROM documents
          WHERE workspace_id = $1 AND document_type = 'person'
@@ -303,9 +314,20 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
       if (personResult.rows[0]) {
         personDocId = personResult.rows[0].id;
       } else {
-        // No person doc for this user - should not happen but handle gracefully
-        personDocId = userId; // Fall back to using userId
+        res.status(400).json({ error: 'Invalid userId for this workspace' });
+        return;
       }
+    }
+
+    // Validate programId belongs to current workspace (SECURITY: prevent cross-workspace injection)
+    const programCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
+      [programId, workspaceId]
+    );
+    if (!programCheck.rows[0]) {
+      res.status(400).json({ error: 'Invalid programId for this workspace' });
+      return;
     }
 
     // Check if person is already assigned to another program for this sprint window
@@ -385,9 +407,20 @@ router.delete('/assign', authMiddleware, async (req: Request, res: Response) => 
       return;
     }
 
-    // If userId was provided instead of personId, look up the person doc ID
+    // Validate personId belongs to current workspace (SECURITY: prevent cross-workspace injection)
     let personDocId = personId;
-    if (!personId && userId) {
+    if (personId) {
+      const personCheck = await pool.query(
+        `SELECT id FROM documents
+         WHERE id = $1 AND workspace_id = $2 AND document_type = 'person'`,
+        [personId, workspaceId]
+      );
+      if (!personCheck.rows[0]) {
+        res.status(400).json({ error: 'Invalid personId for this workspace' });
+        return;
+      }
+    } else if (userId) {
+      // If userId was provided instead of personId, look up the person doc ID
       const personResult = await pool.query(
         `SELECT id FROM documents
          WHERE workspace_id = $1 AND document_type = 'person'
@@ -397,7 +430,8 @@ router.delete('/assign', authMiddleware, async (req: Request, res: Response) => 
       if (personResult.rows[0]) {
         personDocId = personResult.rows[0].id;
       } else {
-        personDocId = userId; // Fall back
+        res.status(400).json({ error: 'Invalid userId for this workspace' });
+        return;
       }
     }
 
