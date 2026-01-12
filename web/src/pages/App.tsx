@@ -240,7 +240,7 @@ export function AppLayout() {
             )}
           </div>
 
-          {/* Mode icons */}
+          {/* Mode icons - ordered by hierarchy: Docs → Programs → Projects → Issues → Teams */}
           <div className="flex flex-1 flex-col items-center gap-1">
             <RailIcon
               icon={<DocsIcon />}
@@ -249,10 +249,10 @@ export function AppLayout() {
               onClick={() => handleModeClick('docs')}
             />
             <RailIcon
-              icon={<IssuesIcon />}
-              label="Issues"
-              active={activeMode === 'issues'}
-              onClick={() => handleModeClick('issues')}
+              icon={<ProgramsIcon />}
+              label="Programs"
+              active={activeMode === 'programs'}
+              onClick={() => handleModeClick('programs')}
             />
             <RailIcon
               icon={<ProjectsIcon />}
@@ -261,10 +261,10 @@ export function AppLayout() {
               onClick={() => handleModeClick('projects')}
             />
             <RailIcon
-              icon={<ProgramsIcon />}
-              label="Programs"
-              active={activeMode === 'programs'}
-              onClick={() => handleModeClick('programs')}
+              icon={<IssuesIcon />}
+              label="Issues"
+              active={activeMode === 'issues'}
+              onClick={() => handleModeClick('issues')}
             />
             <RailIcon
               icon={<TeamIcon />}
