@@ -21,7 +21,8 @@ async function getCsrfToken(): Promise<string> {
 }
 
 interface User {
-  id: string | null;
+  personId: string; // Document ID - used for allocations (works for both pending and active)
+  id: string | null; // User account ID - null for pending users
   name: string;
   email: string;
   isArchived?: boolean;
@@ -78,7 +79,7 @@ export function TeamModePage() {
   // Dialog states
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
-    userId: string;
+    personId: string; // Person document ID for API calls
     userName: string;
     sprintNumber: number;
     sprintName: string;
@@ -177,8 +178,8 @@ export function TeamModePage() {
     }
   }
 
-  const handleAssign = async (userId: string, programId: string, sprintNumber: number) => {
-    const cellKey = `${userId}-${sprintNumber}`;
+  const handleAssign = async (personId: string, programId: string, sprintNumber: number) => {
+    const cellKey = `${personId}-${sprintNumber}`;
     setOperationLoading(cellKey);
 
     try {
@@ -187,7 +188,7 @@ export function TeamModePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
         credentials: 'include',
-        body: JSON.stringify({ userId, programId, sprintNumber }),
+        body: JSON.stringify({ personId, programId, sprintNumber }),
       });
 
       const json = await res.json();
@@ -208,8 +209,8 @@ export function TeamModePage() {
       if (program) {
         setAssignments(prev => ({
           ...prev,
-          [userId]: {
-            ...prev[userId],
+          [personId]: {
+            ...prev[personId],
             [sprintNumber]: {
               programId,
               programName: program.name,
@@ -227,8 +228,8 @@ export function TeamModePage() {
     }
   };
 
-  const handleUnassign = async (userId: string, sprintNumber: number, skipConfirmation = false) => {
-    const cellKey = `${userId}-${sprintNumber}`;
+  const handleUnassign = async (personId: string, sprintNumber: number, skipConfirmation = false) => {
+    const cellKey = `${personId}-${sprintNumber}`;
     setOperationLoading(cellKey);
 
     try {
@@ -237,7 +238,7 @@ export function TeamModePage() {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
         credentials: 'include',
-        body: JSON.stringify({ userId, sprintNumber }),
+        body: JSON.stringify({ personId, sprintNumber }),
       });
 
       const json = await res.json();
@@ -256,9 +257,9 @@ export function TeamModePage() {
       // Update local state
       setAssignments(prev => {
         const newAssignments = { ...prev };
-        if (newAssignments[userId]) {
-          const { [sprintNumber]: _, ...rest } = newAssignments[userId];
-          newAssignments[userId] = rest;
+        if (newAssignments[personId]) {
+          const { [sprintNumber]: _, ...rest } = newAssignments[personId];
+          newAssignments[personId] = rest;
         }
         return newAssignments;
       });
@@ -270,7 +271,7 @@ export function TeamModePage() {
   };
 
   const handleCellChange = useCallback((
-    userId: string,
+    personId: string,
     userName: string,
     sprintNumber: number,
     sprintName: string,
@@ -284,13 +285,13 @@ export function TeamModePage() {
 
     // Clear assignment
     if (newProgramId === null && currentAssignment) {
-      handleUnassign(userId, sprintNumber);
+      handleUnassign(personId, sprintNumber);
       return;
     }
 
     // New assignment (no existing)
     if (newProgramId && !currentAssignment) {
-      handleAssign(userId, newProgramId, sprintNumber);
+      handleAssign(personId, newProgramId, sprintNumber);
       return;
     }
 
@@ -299,7 +300,7 @@ export function TeamModePage() {
       const newProgram = programs.find(p => p.id === newProgramId) || null;
       setConfirmDialog({
         open: true,
-        userId,
+        personId,
         userName,
         sprintNumber,
         sprintName,
@@ -313,15 +314,15 @@ export function TeamModePage() {
   const handleConfirmReassign = async () => {
     if (!confirmDialog) return;
 
-    const { userId, sprintNumber, newProgramId } = confirmDialog;
+    const { personId, sprintNumber, newProgramId } = confirmDialog;
     setConfirmDialog(null);
 
     if (!newProgramId) return;
 
     // First unassign from current program
-    await handleUnassign(userId, sprintNumber, true);
+    await handleUnassign(personId, sprintNumber, true);
     // Then assign to new program
-    await handleAssign(userId, newProgramId, sprintNumber);
+    await handleAssign(personId, newProgramId, sprintNumber);
   };
 
   // Fetch more sprints
@@ -560,11 +561,12 @@ export function TeamModePage() {
                 </div>
 
                 {/* Sprint cells for each user */}
-                {data.users.map((user, idx) => {
-                  // Pending users can't be assigned (no user_id)
+                {data.users.map((user) => {
+                  // isPending is only for visual styling (shows dashed border)
                   const isPending = user.isPending || !user.id;
-                  const assignment = user.id ? assignments[user.id]?.[sprint.number] : undefined;
-                  const cellKey = user.id ? `${user.id}-${sprint.number}` : `pending-${idx}-${sprint.number}`;
+                  // Use personId for assignments - works for both pending and active users
+                  const assignment = assignments[user.personId]?.[sprint.number];
+                  const cellKey = `${user.personId}-${sprint.number}`;
                   const isLoading = operationLoading === cellKey;
 
                   return (
@@ -576,10 +578,9 @@ export function TeamModePage() {
                       loading={isLoading}
                       isPending={isPending}
                       onChange={(programId) => {
-                        // Don't allow changes for pending users
-                        if (isPending || !user.id) return;
+                        // Both pending and active users can be assigned using personId
                         handleCellChange(
-                          user.id,
+                          user.personId,
                           user.name,
                           sprint.number,
                           sprint.name,
@@ -715,27 +716,14 @@ function SprintCell({
   onChange: (programId: string | null) => void;
   onNavigate: (programId: string) => void;
 }) {
-  // Pending users can't be assigned - show disabled cell
-  if (isPending) {
-    return (
-      <div
-        className={cn(
-          'flex h-12 w-[140px] items-center justify-center border-b border-r border-border px-1',
-          isCurrent && 'bg-accent/5',
-          'bg-gray-50 dark:bg-gray-900/20'
-        )}
-      >
-        <span className="text-xs text-muted">—</span>
-      </div>
-    );
-  }
-
+  // isPending is only used for visual styling (dashed border), not for blocking assignment
   return (
     <div
       className={cn(
         'flex h-12 w-[140px] items-center justify-start border-b border-r border-border px-1',
         isCurrent && 'bg-accent/5',
-        loading && 'animate-pulse'
+        loading && 'animate-pulse',
+        isPending && 'border-dashed'
       )}
     >
       <ProgramCombobox
