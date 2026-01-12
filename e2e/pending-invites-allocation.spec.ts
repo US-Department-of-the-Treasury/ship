@@ -226,12 +226,22 @@ test.describe('Pending Invite Acceptance Flow', () => {
   })
 
   test('accepted invite converts pending user to regular member', async ({ page }) => {
-    // This test verifies the acceptance flow conceptually via API
-    // Full acceptance would require email verification flow
-
-    // Create a pending invite
+    // Create a pending invite and get the token
     const testEmail = `pending-accept-${Date.now()}@example.com`
-    await createPendingInvite(page, testEmail)
+    const testName = 'Test Accepter'
+    const testPassword = 'securepassword123'
+
+    const csrfToken = await getCsrfToken(page)
+    const workspaceId = await getWorkspaceId(page)
+
+    // Create the invite and capture the token
+    const inviteResponse = await page.request.post(`/api/workspaces/${workspaceId}/invites`, {
+      headers: { 'x-csrf-token': csrfToken },
+      data: { email: testEmail, role: 'member' }
+    })
+    expect(inviteResponse.status()).toBe(201)
+    const inviteData = await inviteResponse.json()
+    const inviteToken = inviteData.data.invite.token
 
     // Verify they appear as pending first
     let peopleResponse = await page.request.get('/api/team/people')
@@ -242,10 +252,98 @@ test.describe('Pending Invite Acceptance Flow', () => {
     expect(pendingPerson.isPending).toBe(true)
     expect(pendingPerson.user_id).toBeNull()
 
-    // Note: Full acceptance test would require:
-    // 1. Getting the invite token from API
-    // 2. Calling POST /api/invites/:token/accept with user details
-    // 3. Verifying the user now appears with isPending=false and valid user_id
-    // This is tested in Story 6 separately
+    // Accept the invite (creates user account) - requires CSRF token
+    const acceptCsrfToken = await getCsrfToken(page)
+    const acceptResponse = await page.request.post(`/api/invites/${inviteToken}/accept`, {
+      headers: { 'x-csrf-token': acceptCsrfToken },
+      data: {
+        password: testPassword,
+        name: testName
+      }
+    })
+    expect(acceptResponse.status()).toBe(201)
+
+    // Verify the user now appears as a regular member (not pending)
+    // Re-login as admin to check (acceptance creates new session)
+    await loginAsSuperAdmin(page)
+
+    peopleResponse = await page.request.get('/api/team/people')
+    people = await peopleResponse.json()
+    const acceptedPerson = people.find((p: { email: string }) => p.email === testEmail)
+
+    expect(acceptedPerson).toBeDefined()
+    expect(acceptedPerson.isPending).toBeFalsy() // Should be false or undefined
+    expect(acceptedPerson.user_id).not.toBeNull()
+    expect(acceptedPerson.user_id.length).toBeGreaterThan(0)
+    expect(acceptedPerson.name).toBe(testName)
+  })
+
+  test('accepted user can now be assigned to programs', async ({ page }) => {
+    // Create and accept an invite
+    const testEmail = `pending-assign-${Date.now()}@example.com`
+    const testName = 'Assignable User'
+    const testPassword = 'securepassword123'
+
+    const csrfToken = await getCsrfToken(page)
+    const workspaceId = await getWorkspaceId(page)
+
+    // Create invite
+    const inviteResponse = await page.request.post(`/api/workspaces/${workspaceId}/invites`, {
+      headers: { 'x-csrf-token': csrfToken },
+      data: { email: testEmail, role: 'member' }
+    })
+    const inviteData = await inviteResponse.json()
+    const inviteToken = inviteData.data.invite.token
+
+    // Accept invite - requires CSRF token
+    const acceptCsrfToken = await getCsrfToken(page)
+    await page.request.post(`/api/invites/${inviteToken}/accept`, {
+      headers: { 'x-csrf-token': acceptCsrfToken },
+      data: { password: testPassword, name: testName }
+    })
+
+    // Re-login as admin
+    await loginAsSuperAdmin(page)
+    const newCsrfToken = await getCsrfToken(page)
+
+    // Get the user's ID (now they should have one)
+    const gridResponse = await page.request.get('/api/team/grid')
+    const gridData = await gridResponse.json()
+    const acceptedUser = gridData.users.find((u: { email: string }) => u.email === testEmail)
+
+    expect(acceptedUser).toBeDefined()
+    expect(acceptedUser.id).not.toBeNull()
+
+    // Get a program
+    const programsResponse = await page.request.get('/api/team/programs')
+    const programs = await programsResponse.json()
+    expect(programs.length).toBeGreaterThan(0)
+    const programId = programs[0].id
+
+    // Try to assign the now-accepted user to a sprint
+    const sprintNumber = 98 // Use high number to avoid conflicts
+
+    const assignResponse = await page.request.post('/api/team/assign', {
+      headers: { 'x-csrf-token': newCsrfToken },
+      data: {
+        userId: acceptedUser.id,
+        programId: programId,
+        sprintNumber: sprintNumber
+      }
+    })
+
+    // Should succeed now that they have a valid user_id
+    expect(assignResponse.status()).toBe(200)
+    const assignData = await assignResponse.json()
+    expect(assignData.success).toBe(true)
+
+    // Clean up
+    await page.request.delete('/api/team/assign', {
+      headers: { 'x-csrf-token': newCsrfToken },
+      data: {
+        userId: acceptedUser.id,
+        sprintNumber: sprintNumber
+      }
+    })
   })
 })
