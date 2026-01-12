@@ -3,9 +3,10 @@ import { apiGet } from '@/lib/api';
 
 export interface TeamMember {
   id: string;
-  user_id: string;
+  user_id: string | null;
   name: string;
   email?: string;
+  isPending?: boolean;
 }
 
 // Query keys
@@ -14,7 +15,7 @@ export const teamMemberKeys = {
   lists: () => [...teamMemberKeys.all, 'list'] as const,
 };
 
-// Fetch team members (filters out pending users who don't have user_id yet)
+// Fetch team members (includes pending users with isPending flag)
 async function fetchTeamMembers(): Promise<TeamMember[]> {
   const res = await apiGet('/api/team/people');
   if (!res.ok) {
@@ -22,9 +23,7 @@ async function fetchTeamMembers(): Promise<TeamMember[]> {
     error.status = res.status;
     throw error;
   }
-  const data: TeamMember[] = await res.json();
-  // Filter out pending users (those without user_id) - they can't be assigned yet
-  return data.filter(member => member.user_id);
+  return res.json();
 }
 
 // Hook to get team members with TanStack Query (supports offline via cache)
@@ -34,4 +33,23 @@ export function useTeamMembersQuery() {
     queryFn: fetchTeamMembers,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
+}
+
+// Assignable member type (guaranteed to have user_id)
+export interface AssignableMember {
+  id: string;
+  user_id: string;
+  name: string;
+  email?: string;
+}
+
+// Hook to get only assignable members (filters out pending users who can't be assigned)
+export function useAssignableMembersQuery() {
+  const query = useTeamMembersQuery();
+  return {
+    ...query,
+    data: query.data?.filter((m): m is TeamMember & { user_id: string } =>
+      !m.isPending && m.user_id !== null
+    ) as AssignableMember[] | undefined,
+  };
 }

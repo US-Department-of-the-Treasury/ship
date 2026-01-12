@@ -6,7 +6,7 @@ import { BulkActionBar } from '@/components/BulkActionBar';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useBulkUpdateIssues } from '@/hooks/useIssuesQuery';
-import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
+import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { useListFilters, ViewMode } from '@/hooks/useListFilters';
 import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
@@ -73,7 +73,7 @@ export function IssuesPage() {
   const { issues: allIssues, loading, createIssue: contextCreateIssue, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
   const isOfflineEmpty = useOfflineEmptyState(allIssues, loading);
   const bulkUpdate = useBulkUpdateIssues();
-  const { data: teamMembers = [] } = useTeamMembersQuery();
+  const { data: teamMembers = [] } = useAssignableMembersQuery();
   const { showToast } = useToast();
 
   // Use shared hooks for list state management

@@ -404,17 +404,17 @@ router.get('/people', authMiddleware, async (req: Request, res: Response) => {
     // Get person documents - return document id for navigation to person editor
     // Also include user_id for grid consistency
     // Email comes from properties or joined user
-    // Filter out pending users - they can't be assigned until they accept their invite
+    // Include pending users so they appear in team lists (but can't be assigned)
     const result = await pool.query(
       `SELECT d.id, d.properties->>'user_id' as user_id, d.title as name,
               COALESCE(d.properties->>'email', u.email) as email,
-              CASE WHEN d.archived_at IS NOT NULL THEN true ELSE false END as "isArchived"
+              CASE WHEN d.archived_at IS NOT NULL THEN true ELSE false END as "isArchived",
+              CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending"
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
        WHERE d.workspace_id = $1
          AND d.document_type = 'person'
          AND ($4 OR d.archived_at IS NULL)
-         AND (d.properties->>'pending' IS NULL OR d.properties->>'pending' != 'true')
          AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY d.archived_at NULLS FIRST, d.title`,
       [workspaceId, userId, isAdmin, includeArchived]
