@@ -21,10 +21,11 @@ async function getCsrfToken(): Promise<string> {
 }
 
 interface User {
-  id: string;
+  id: string | null;
   name: string;
   email: string;
   isArchived?: boolean;
+  isPending?: boolean;
 }
 
 interface Sprint {
@@ -495,27 +496,29 @@ export function TeamModePage() {
           <div className="flex h-[41.5px] w-[180px] items-center justify-center border-b border-border px-3">
             <span className="text-xs font-medium text-muted">Team Member</span>
           </div>
-          {data.users.map((user) => (
+          {data.users.map((user, idx) => (
             <div
-              key={user.id}
+              key={user.id ?? `pending-${idx}`}
               className={cn(
                 "flex h-12 w-[180px] items-center border-b border-border px-3",
-                user.isArchived && "opacity-50"
+                user.isArchived && "opacity-50",
+                user.isPending && "opacity-70"
               )}
             >
               <div className="flex items-center gap-2 overflow-hidden">
                 <div className={cn(
                   "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white",
-                  user.isArchived ? "bg-gray-400" : "bg-accent/80"
+                  user.isArchived ? "bg-gray-400" : user.isPending ? "bg-gray-400" : "bg-accent/80"
                 )}>
                   {user.name.charAt(0).toUpperCase()}
                 </div>
                 <span className={cn(
                   "truncate text-sm",
-                  user.isArchived ? "text-muted" : "text-foreground"
+                  user.isArchived ? "text-muted" : user.isPending ? "text-muted italic" : "text-foreground"
                 )}>
                   {user.name}
                   {user.isArchived && <span className="ml-1 text-xs">(archived)</span>}
+                  {user.isPending && <span className="ml-1 text-xs font-normal not-italic">(pending)</span>}
                 </span>
               </div>
             </div>
@@ -557,9 +560,11 @@ export function TeamModePage() {
                 </div>
 
                 {/* Sprint cells for each user */}
-                {data.users.map((user) => {
-                  const assignment = assignments[user.id]?.[sprint.number];
-                  const cellKey = `${user.id}-${sprint.number}`;
+                {data.users.map((user, idx) => {
+                  // Pending users can't be assigned (no user_id)
+                  const isPending = user.isPending || !user.id;
+                  const assignment = user.id ? assignments[user.id]?.[sprint.number] : undefined;
+                  const cellKey = user.id ? `${user.id}-${sprint.number}` : `pending-${idx}-${sprint.number}`;
                   const isLoading = operationLoading === cellKey;
 
                   return (
@@ -569,7 +574,10 @@ export function TeamModePage() {
                       programs={programs}
                       isCurrent={sprint.isCurrent}
                       loading={isLoading}
-                      onChange={(programId) =>
+                      isPending={isPending}
+                      onChange={(programId) => {
+                        // Don't allow changes for pending users
+                        if (isPending || !user.id) return;
                         handleCellChange(
                           user.id,
                           user.name,
@@ -577,8 +585,8 @@ export function TeamModePage() {
                           sprint.name,
                           programId,
                           assignment || null
-                        )
-                      }
+                        );
+                      }}
                       onNavigate={(programId) => navigate(`/programs/${programId}`)}
                     />
                   );
@@ -695,6 +703,7 @@ function SprintCell({
   programs,
   isCurrent,
   loading,
+  isPending,
   onChange,
   onNavigate,
 }: {
@@ -702,9 +711,25 @@ function SprintCell({
   programs: Program[];
   isCurrent: boolean;
   loading: boolean;
+  isPending?: boolean;
   onChange: (programId: string | null) => void;
   onNavigate: (programId: string) => void;
 }) {
+  // Pending users can't be assigned - show disabled cell
+  if (isPending) {
+    return (
+      <div
+        className={cn(
+          'flex h-12 w-[140px] items-center justify-center border-b border-r border-border px-1',
+          isCurrent && 'bg-accent/5',
+          'bg-gray-50 dark:bg-gray-900/20'
+        )}
+      >
+        <span className="text-xs text-muted">—</span>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(

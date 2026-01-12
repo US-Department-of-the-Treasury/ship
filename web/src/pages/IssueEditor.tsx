@@ -8,7 +8,7 @@ import { Combobox } from '@/components/ui/Combobox';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useProgramsQuery } from '@/hooks/useProgramsQuery';
-import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
+import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { apiPost } from '@/lib/api';
 
 interface TeamMember {
@@ -172,7 +172,8 @@ export function IssueEditorPage() {
 
   // Use TanStack Query for programs and team members (supports offline via cache)
   const { data: programsData = [], isLoading: programsLoading } = useProgramsQuery();
-  const { data: teamMembersData = [], isLoading: teamMembersLoading } = useTeamMembersQuery();
+  // Use assignable members only - pending users can't be assigned to issues
+  const { data: teamMembersData = [], isLoading: teamMembersLoading } = useAssignableMembersQuery();
 
   // Map programs to the format needed by combobox
   const programs: ProgramOption[] = programsData.map(p => ({
