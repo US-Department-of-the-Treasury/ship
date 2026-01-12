@@ -164,27 +164,71 @@ router.post('/workspaces', async (req: Request, res: Response): Promise<void> =>
 
 // PATCH /api/admin/workspaces/:id - Update workspace
 router.patch('/workspaces/:id', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const { name } = req.body;
+  const workspaceId = req.params.id!; // Always defined from route
+  const { name, sprintStartDate } = req.body;
 
-  if (!name || typeof name !== 'string' || name.trim().length === 0) {
+  // At least one field must be provided
+  if (!name && !sprintStartDate) {
     res.status(HTTP_STATUS.BAD_REQUEST).json({
       success: false,
       error: {
         code: ERROR_CODES.VALIDATION_ERROR,
-        message: 'Workspace name is required',
+        message: 'At least one field (name or sprintStartDate) is required',
       },
     });
     return;
   }
 
+  // Validate name if provided
+  if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0)) {
+    res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.VALIDATION_ERROR,
+        message: 'Workspace name must be a non-empty string',
+      },
+    });
+    return;
+  }
+
+  // Validate sprintStartDate if provided (should be YYYY-MM-DD format)
+  if (sprintStartDate !== undefined) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(sprintStartDate)) {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: 'sprintStartDate must be in YYYY-MM-DD format',
+        },
+      });
+      return;
+    }
+  }
+
   try {
+    // Build dynamic update query
+    const updates: string[] = [];
+    const values: string[] = [];
+    let paramIndex = 1;
+
+    if (name) {
+      updates.push(`name = $${paramIndex++}`);
+      values.push(name.trim());
+    }
+    if (sprintStartDate) {
+      updates.push(`sprint_start_date = $${paramIndex++}`);
+      values.push(sprintStartDate);
+    }
+    updates.push('updated_at = NOW()');
+    values.push(workspaceId);
+
     const result = await pool.query(
       `UPDATE workspaces
-       SET name = $1, updated_at = NOW()
-       WHERE id = $2
+       SET ${updates.join(', ')}
+       WHERE id = $${paramIndex}
        RETURNING id, name, sprint_start_date, archived_at, created_at, updated_at`,
-      [name.trim(), id]
+      values
     );
 
     if (!result.rows[0]) {
@@ -201,12 +245,12 @@ router.patch('/workspaces/:id', async (req: Request, res: Response): Promise<voi
     const workspace = result.rows[0];
 
     await logAuditEvent({
-      workspaceId: id,
+      workspaceId,
       actorUserId: req.userId!,
       action: 'workspace.update',
       resourceType: 'workspace',
-      resourceId: id,
-      details: { name },
+      resourceId: workspaceId,
+      details: { name, sprintStartDate },
       req,
     });
 
