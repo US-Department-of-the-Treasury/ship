@@ -70,6 +70,94 @@ function extractSprintFromRow(row: any) {
   };
 }
 
+// Get all active sprints across the workspace
+// Active = sprint_number matches the current 7-day window based on workspace.sprint_start_date
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // First, get the workspace sprint_start_date to calculate current sprint number
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    if (workspaceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Workspace not found' });
+      return;
+    }
+
+    const rawStartDate = workspaceResult.rows[0].sprint_start_date;
+    const sprintDuration = 7; // 7-day sprints
+
+    // Calculate the current sprint number
+    let workspaceStartDate: Date;
+    if (rawStartDate instanceof Date) {
+      workspaceStartDate = new Date(Date.UTC(rawStartDate.getFullYear(), rawStartDate.getMonth(), rawStartDate.getDate()));
+    } else if (typeof rawStartDate === 'string') {
+      workspaceStartDate = new Date(rawStartDate + 'T00:00:00Z');
+    } else {
+      workspaceStartDate = new Date();
+    }
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
+
+    // Calculate days remaining in current sprint
+    const currentSprintStart = new Date(workspaceStartDate);
+    currentSprintStart.setUTCDate(currentSprintStart.getUTCDate() + (currentSprintNumber - 1) * sprintDuration);
+    const currentSprintEnd = new Date(currentSprintStart);
+    currentSprintEnd.setUTCDate(currentSprintEnd.getUTCDate() + sprintDuration - 1);
+    const daysRemaining = Math.max(0, Math.ceil((currentSprintEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+
+    // Get all sprints that match the current sprint number
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.program_id,
+              p.title as program_name, p.properties->>'prefix' as program_prefix,
+              $5::timestamp as workspace_sprint_start_date,
+              u.id as owner_id, u.name as owner_name, u.email as owner_email,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
+       FROM documents d
+       JOIN documents p ON d.program_id = p.id
+       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       WHERE d.workspace_id = $1 AND d.document_type = 'sprint'
+         AND (d.properties->>'sprint_number')::int = $2
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
+       ORDER BY (d.properties->>'sprint_number')::int, p.title`,
+      [workspaceId, currentSprintNumber, userId, isAdmin, rawStartDate]
+    );
+
+    const sprints = result.rows.map(row => ({
+      ...extractSprintFromRow(row),
+      days_remaining: daysRemaining,
+      status: 'active' as const,
+    }));
+
+    res.json({
+      sprints,
+      current_sprint_number: currentSprintNumber,
+      days_remaining: daysRemaining,
+      sprint_start_date: currentSprintStart.toISOString().split('T')[0],
+      sprint_end_date: currentSprintEnd.toISOString().split('T')[0],
+    });
+  } catch (err) {
+    console.error('Get active sprints error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get single sprint
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
