@@ -35,9 +35,47 @@ export const sprintKeys = {
   all: ['sprints'] as const,
   lists: () => [...sprintKeys.all, 'list'] as const,
   list: (programId: string) => [...sprintKeys.lists(), programId] as const,
+  active: () => [...sprintKeys.all, 'active'] as const,
   details: () => [...sprintKeys.all, 'detail'] as const,
   detail: (id: string) => [...sprintKeys.details(), id] as const,
 };
+
+// Extended Sprint type for active sprints endpoint
+export interface ActiveSprint extends Sprint {
+  program_id: string;
+  program_name: string;
+  program_prefix?: string;
+  days_remaining: number;
+  status: 'active';
+}
+
+export interface ActiveSprintsResponse {
+  sprints: ActiveSprint[];
+  current_sprint_number: number;
+  days_remaining: number;
+  sprint_start_date: string;
+  sprint_end_date: string;
+}
+
+// Fetch all active sprints across workspace
+async function fetchActiveSprints(): Promise<ActiveSprintsResponse> {
+  const res = await apiGet('/api/sprints');
+  if (!res.ok) {
+    const error = new Error('Failed to fetch active sprints') as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+// Hook to get all active sprints across the workspace
+export function useActiveSprintsQuery() {
+  return useQuery({
+    queryKey: sprintKeys.active(),
+    queryFn: fetchActiveSprints,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
 
 // Fetch sprints for a program
 async function fetchSprints(programId: string): Promise<SprintsResponse> {

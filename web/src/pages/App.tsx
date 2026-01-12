@@ -10,6 +10,7 @@ import { useProjects, Project } from '@/contexts/ProjectsContext';
 import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
+import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -29,7 +30,7 @@ import { useToast } from '@/components/ui/Toast';
 import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
 import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 
-type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'team' | 'settings';
+type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings';
 
 export function AppLayout() {
   const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
@@ -85,7 +86,10 @@ export function AppLayout() {
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
     if (location.pathname.startsWith('/projects')) return 'projects';
-    if (location.pathname.startsWith('/programs') || location.pathname.startsWith('/sprints') || location.pathname.startsWith('/feedback')) return 'programs';
+    // Sprints mode: /sprints/* or /programs/*/sprints/* paths
+    if (location.pathname.startsWith('/sprints')) return 'sprints';
+    if (location.pathname.match(/^\/programs\/[^/]+\/sprints/)) return 'sprints';
+    if (location.pathname.startsWith('/programs') || location.pathname.startsWith('/feedback')) return 'programs';
     if (location.pathname.startsWith('/team')) return 'team';
     if (location.pathname.startsWith('/settings')) return 'settings';
     return 'docs';
@@ -99,6 +103,7 @@ export function AppLayout() {
       case 'issues': navigate('/issues'); break;
       case 'projects': navigate('/projects'); break;
       case 'programs': navigate('/programs'); break;
+      case 'sprints': navigate('/sprints'); break;
       case 'team': navigate('/team'); break;
       case 'settings': navigate('/settings'); break;
     }
@@ -239,7 +244,7 @@ export function AppLayout() {
             )}
           </div>
 
-          {/* Mode icons */}
+          {/* Mode icons - ordered by hierarchy: Docs → Programs → Projects → Issues → Teams */}
           <div className="flex flex-1 flex-col items-center gap-1">
             <RailIcon
               icon={<DocsIcon />}
@@ -248,10 +253,10 @@ export function AppLayout() {
               onClick={() => handleModeClick('docs')}
             />
             <RailIcon
-              icon={<IssuesIcon />}
-              label="Issues"
-              active={activeMode === 'issues'}
-              onClick={() => handleModeClick('issues')}
+              icon={<ProgramsIcon />}
+              label="Programs"
+              active={activeMode === 'programs'}
+              onClick={() => handleModeClick('programs')}
             />
             <RailIcon
               icon={<ProjectsIcon />}
@@ -260,10 +265,16 @@ export function AppLayout() {
               onClick={() => handleModeClick('projects')}
             />
             <RailIcon
-              icon={<ProgramsIcon />}
-              label="Programs"
-              active={activeMode === 'programs'}
-              onClick={() => handleModeClick('programs')}
+              icon={<SprintsIcon />}
+              label="Sprints"
+              active={activeMode === 'sprints'}
+              onClick={() => handleModeClick('sprints')}
+            />
+            <RailIcon
+              icon={<IssuesIcon />}
+              label="Issues"
+              active={activeMode === 'issues'}
+              onClick={() => handleModeClick('issues')}
             />
             <RailIcon
               icon={<TeamIcon />}
@@ -320,6 +331,7 @@ export function AppLayout() {
                 {activeMode === 'issues' && 'Issues'}
                 {activeMode === 'projects' && 'Projects'}
                 {activeMode === 'programs' && 'Programs'}
+                {activeMode === 'sprints' && 'Sprints'}
                 {activeMode === 'team' && 'Teams'}
                 {activeMode === 'settings' && 'Settings'}
               </h2>
@@ -399,6 +411,9 @@ export function AppLayout() {
                   onSelect={(id) => navigate(`/programs/${id}`)}
                   onUpdateProgram={updateProgram}
                 />
+              )}
+              {activeMode === 'sprints' && (
+                <SprintsList />
               )}
               {activeMode === 'team' && (
                 <TeamSidebar />
@@ -1244,6 +1259,74 @@ function ArchiveIcon({ className }: { className?: string }) {
   );
 }
 
+function SprintsList() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { data, isLoading, error } = useActiveSprintsQuery();
+
+  // Extract active sprint ID from URL if viewing a sprint
+  const getActiveSprintId = (): string | undefined => {
+    // Match /sprints/:id or /programs/:programId/sprints/:id
+    const sprintMatch = location.pathname.match(/\/sprints\/([^/]+)/);
+    return sprintMatch ? sprintMatch[1] : undefined;
+  };
+
+  const activeId = getActiveSprintId();
+
+  if (isLoading) {
+    return <div className="px-3 py-2 text-sm text-muted">Loading sprints...</div>;
+  }
+
+  if (error) {
+    return <div className="px-3 py-2 text-sm text-muted">Failed to load sprints</div>;
+  }
+
+  const sprints = data?.sprints || [];
+
+  if (sprints.length === 0) {
+    return (
+      <div className="px-3 py-2 text-sm text-muted">
+        <p>No active sprints</p>
+        <p className="mt-1 text-xs">Check Programs to see upcoming sprints</p>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="space-y-0.5 px-2" data-testid="sprints-list">
+      {sprints.map((sprint) => (
+        <li key={sprint.id} data-testid="sprint-item">
+          <button
+            onClick={() => navigate(`/programs/${sprint.program_id}/sprints/${sprint.id}`)}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              activeId === sprint.id
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            {/* Owner avatar */}
+            {sprint.owner ? (
+              <span
+                className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent/80 text-[10px] font-medium text-white"
+                title={sprint.owner.name}
+              >
+                {sprint.owner.name?.charAt(0).toUpperCase() || '?'}
+              </span>
+            ) : (
+              <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-border text-[10px] text-muted">
+                ?
+              </span>
+            )}
+            {/* Program name (sprint number is redundant since all active sprints are the same) */}
+            <span className="flex-1 truncate">{sprint.program_name || 'Untitled'}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function TeamSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -1322,6 +1405,15 @@ function ProjectsIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+    </svg>
+  );
+}
+
+function SprintsIcon() {
+  // Lightning bolt icon (Zap - represents velocity/sprints)
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
     </svg>
   );
 }
