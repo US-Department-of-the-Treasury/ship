@@ -47,18 +47,20 @@ function isValidReturnTo(returnTo: string): boolean {
 }
 
 // GET /api/auth/caia/status - Check if CAIA auth is available
-router.get('/status', (_req: Request, res: Response): void => {
+router.get('/status', async (_req: Request, res: Response): Promise<void> => {
+  const available = await isCAIAConfigured();
   res.json({
     success: true,
     data: {
-      available: isCAIAConfigured(),
+      available,
     },
   });
 });
 
 // GET /api/auth/caia/login - Initiate CAIA login flow
 router.get('/login', async (req: Request, res: Response): Promise<void> => {
-  if (!isCAIAConfigured()) {
+  const configured = await isCAIAConfigured();
+  if (!configured) {
     res.status(503).json({
       success: false,
       error: { code: 'CAIA_NOT_CONFIGURED', message: 'CAIA authentication not configured' },

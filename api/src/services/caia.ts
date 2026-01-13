@@ -2,22 +2,17 @@
  * CAIA OAuth Client Service
  *
  * Provides PIV smartcard authentication via Treasury's CAIA (Customer Authentication
- * & Identity Architecture) OAuth server. Uses openid-client directly for OIDC flows.
+ * & Identity Architecture) OAuth server. Uses openid-client v6 for OIDC flows.
  *
- * Key differences from FPKI Validator:
- * - CAIA's `sub` claim is NOT persistent (changes on re-provisioning)
- * - Email is the primary identifier for user matching
- * - No x509_subject_dn claim (CAIA acts as broker, doesn't expose certificate details)
- * - Uses client_secret_post authentication (no private_key_jwt needed)
+ * Credentials are stored in AWS Secrets Manager and fetched fresh on each auth flow.
+ * This ensures credential updates take effect immediately without restart.
  */
 
-import { Issuer, generators, type Client, type TokenSet } from 'openid-client';
-import { getCachedCredentials, loadCredentials } from './credential-store.js';
-
-// CAIA client singleton
-let caiaIssuer: Issuer | null = null;
-let caiaClient: Client | null = null;
-let initializationAttempted = false;
+import * as client from 'openid-client';
+import {
+  getCAIACredentials,
+  type CAIACredentials,
+} from './secrets-manager.js';
 
 /**
  * User information extracted from CAIA ID token
@@ -42,7 +37,7 @@ export interface CAIAUserInfo {
 }
 
 /**
- * Authorization URL result (matches FPKI pattern)
+ * Authorization URL result
  */
 export interface CAIAAuthorizationUrlResult {
   /** Full authorization URL to redirect user to */
@@ -61,101 +56,102 @@ export interface CAIAAuthorizationUrlResult {
 export interface CAIACallbackResult {
   /** Authenticated user information */
   user: CAIAUserInfo;
-  /** Raw token set (for debugging, not stored) */
-  tokens: TokenSet;
+}
+
+/**
+ * Get redirect URI from environment (auto-derived from APP_BASE_URL)
+ */
+function getRedirectUri(): string {
+  const baseUrl = process.env.APP_BASE_URL;
+  if (!baseUrl) {
+    throw new Error('APP_BASE_URL environment variable is required');
+  }
+  return `${baseUrl}/api/auth/caia/callback`;
 }
 
 /**
  * Check if CAIA integration is configured
+ * Fetches from Secrets Manager on each call (no caching)
  */
-export function isCAIAConfigured(): boolean {
-  const cached = getCachedCredentials('caia');
-
-  // Check Secrets Manager credentials
-  if (cached?.clientId && cached?.issuerUrl && cached?.redirectUri) {
-    return true;
+export async function isCAIAConfigured(): Promise<boolean> {
+  // In local dev without Secrets Manager, fall back to env vars
+  if (process.env.NODE_ENV !== 'production') {
+    return !!(
+      process.env.CAIA_ISSUER_URL &&
+      process.env.CAIA_CLIENT_ID &&
+      process.env.CAIA_CLIENT_SECRET
+    );
   }
 
-  // Fall back to env vars
-  return !!(
-    process.env.CAIA_ISSUER_URL &&
-    process.env.CAIA_CLIENT_ID &&
-    process.env.CAIA_REDIRECT_URI
-  );
+  const result = await getCAIACredentials();
+  return result.configured;
 }
 
 /**
- * Initialize CAIA client by loading credentials from Secrets Manager
- * Call this at startup to ensure credentials are loaded
+ * Initialize CAIA client by discovering the issuer
+ * Called at startup to validate configuration (optional)
  */
 export async function initializeCAIA(): Promise<void> {
-  if (initializationAttempted) return;
-  initializationAttempted = true;
+  const configured = await isCAIAConfigured();
+  if (!configured) {
+    console.log('CAIA not configured, skipping initialization');
+    return;
+  }
 
   try {
-    await loadCredentials('caia');
-    console.log('CAIA credentials loaded from Secrets Manager');
+    const config = await discoverIssuer();
+    console.log('CAIA issuer discovered:', config.serverMetadata().issuer);
   } catch (err) {
-    console.log('No CAIA credentials in Secrets Manager, using env vars');
+    console.error('Failed to discover CAIA issuer:', err);
+    throw err;
   }
 }
 
 /**
- * Discover the CAIA issuer (lazy, cached)
+ * Discover OIDC issuer and create configuration
+ * Fetches credentials fresh from Secrets Manager
  */
-async function getIssuer(): Promise<Issuer> {
-  if (caiaIssuer) {
-    return caiaIssuer;
-  }
+async function discoverIssuer(): Promise<client.Configuration> {
+  const creds = await fetchCredentials();
 
-  const cached = getCachedCredentials('caia');
-  const issuerUrl = cached?.issuerUrl || process.env.CAIA_ISSUER_URL;
+  const config = await client.discovery(
+    new URL(creds.issuer_url),
+    creds.client_id,
+    creds.client_secret,
+  );
 
-  if (!issuerUrl) {
-    throw new Error('CAIA issuerUrl not configured');
-  }
-
-  console.log('Discovering CAIA issuer:', issuerUrl);
-  caiaIssuer = await Issuer.discover(issuerUrl);
-  console.log('CAIA issuer discovered:', caiaIssuer.issuer);
-
-  return caiaIssuer;
+  return config;
 }
 
 /**
- * Get the CAIA OpenID Client (lazy, cached)
+ * Fetch credentials from Secrets Manager (or env vars in dev)
+ * @throws Error if credentials not configured
  */
-async function getClient(): Promise<Client> {
-  if (caiaClient) {
-    return caiaClient;
+async function fetchCredentials(): Promise<CAIACredentials> {
+  // In local dev, use env vars
+  if (process.env.NODE_ENV !== 'production') {
+    const issuer_url = process.env.CAIA_ISSUER_URL;
+    const client_id = process.env.CAIA_CLIENT_ID;
+    const client_secret = process.env.CAIA_CLIENT_SECRET;
+
+    if (!issuer_url || !client_id || !client_secret) {
+      throw new Error('CAIA not configured: set CAIA_ISSUER_URL, CAIA_CLIENT_ID, CAIA_CLIENT_SECRET');
+    }
+
+    return { issuer_url, client_id, client_secret };
   }
 
-  const issuer = await getIssuer();
-  const cached = getCachedCredentials('caia');
+  // In production, fetch from Secrets Manager
+  const result = await getCAIACredentials();
 
-  const clientId = cached?.clientId || process.env.CAIA_CLIENT_ID;
-  const clientSecret = cached?.clientSecret || process.env.CAIA_CLIENT_SECRET;
-  const redirectUri = cached?.redirectUri || process.env.CAIA_REDIRECT_URI;
-
-  if (!clientId) {
-    throw new Error('CAIA clientId not configured');
+  if (!result.configured || !result.credentials) {
+    if (result.error) {
+      throw new Error(`CAIA credentials unavailable: ${result.error}`);
+    }
+    throw new Error('CAIA not configured: configure credentials in admin settings');
   }
 
-  if (!redirectUri) {
-    throw new Error('CAIA redirectUri not configured');
-  }
-
-  console.log('Creating CAIA client:', { clientId, hasSecret: !!clientSecret });
-
-  caiaClient = new issuer.Client({
-    client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uris: [redirectUri],
-    response_types: ['code'],
-    token_endpoint_auth_method: clientSecret ? 'client_secret_post' : 'none',
-  });
-
-  return caiaClient;
+  return result.credentials;
 }
 
 /**
@@ -163,30 +159,35 @@ async function getClient(): Promise<Client> {
  * Uses PKCE for security (required for public clients, recommended for all)
  */
 export async function getAuthorizationUrl(): Promise<CAIAAuthorizationUrlResult> {
-  const client = await getClient();
-  const cached = getCachedCredentials('caia');
-  const redirectUri = cached?.redirectUri || process.env.CAIA_REDIRECT_URI;
+  const config = await discoverIssuer();
+  const redirectUri = getRedirectUri();
 
-  if (!redirectUri) {
-    throw new Error('CAIA redirectUri not configured');
-  }
+  // Generate PKCE code verifier and challenge
+  const codeVerifier = client.randomPKCECodeVerifier();
+  const codeChallenge = await client.calculatePKCECodeChallenge(codeVerifier);
 
-  // Generate PKCE and OAuth state
-  const codeVerifier = generators.codeVerifier();
-  const codeChallenge = generators.codeChallenge(codeVerifier);
-  const state = generators.state();
-  const nonce = generators.nonce();
+  // Generate state and nonce for security
+  const state = client.randomState();
+  const nonce = client.randomNonce();
 
-  const url = client.authorizationUrl({
-    scope: 'openid email profile',
+  // Build authorization URL with all parameters
+  const parameters: Record<string, string> = {
     redirect_uri: redirectUri,
-    state,
-    nonce,
+    scope: 'openid email profile',
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
-  });
+    state,
+    nonce,
+  };
 
-  return { url, state, nonce, codeVerifier };
+  const authorizationUrl = client.buildAuthorizationUrl(config, parameters);
+
+  return {
+    url: authorizationUrl.href,
+    state,
+    nonce,
+    codeVerifier,
+  };
 }
 
 /**
@@ -197,27 +198,27 @@ export async function handleCallback(
   code: string,
   params: { state: string; nonce: string; codeVerifier: string }
 ): Promise<CAIACallbackResult> {
-  const client = await getClient();
-  const cached = getCachedCredentials('caia');
-  const redirectUri = cached?.redirectUri || process.env.CAIA_REDIRECT_URI;
+  const config = await discoverIssuer();
+  const redirectUri = getRedirectUri();
 
-  if (!redirectUri) {
-    throw new Error('CAIA redirectUri not configured');
+  // Build the callback URL that was called (with code and state)
+  const callbackUrl = new URL(redirectUri);
+  callbackUrl.searchParams.set('code', code);
+  callbackUrl.searchParams.set('state', params.state);
+
+  // Exchange code for tokens using openid-client v6 API
+  const tokens = await client.authorizationCodeGrant(config, callbackUrl, {
+    pkceCodeVerifier: params.codeVerifier,
+    expectedState: params.state,
+    expectedNonce: params.nonce,
+    idTokenExpected: true,
+  });
+
+  // Get claims from ID token
+  const claims = tokens.claims();
+  if (!claims) {
+    throw new Error('No ID token claims returned');
   }
-
-  // Exchange code for tokens with PKCE verification
-  const tokenSet = await client.callback(
-    redirectUri,
-    { code, state: params.state },
-    {
-      state: params.state,
-      nonce: params.nonce,
-      code_verifier: params.codeVerifier,
-    }
-  );
-
-  // Extract claims from ID token with runtime type validation (SEC-02)
-  const claims = tokenSet.claims();
 
   // Type-safe claim extraction with validation
   const sub = claims.sub;
@@ -225,12 +226,12 @@ export async function handleCallback(
   const givenName = typeof claims.given_name === 'string' ? claims.given_name : undefined;
   const familyName = typeof claims.family_name === 'string' ? claims.family_name : undefined;
   const csp = typeof claims.csp === 'string' ? claims.csp : undefined;
-  const ial = typeof claims.ial === 'string' ? String(claims.ial) : undefined;
-  const aal = typeof claims.aal === 'string' ? String(claims.aal) : undefined;
+  const ial = claims.ial !== undefined ? String(claims.ial) : undefined;
+  const aal = claims.aal !== undefined ? String(claims.aal) : undefined;
 
   const user: CAIAUserInfo = {
     sub,
-    email: email || '', // Will be validated in callback route
+    email: email || '',
     givenName,
     familyName,
     csp,
@@ -239,14 +240,37 @@ export async function handleCallback(
     rawClaims: claims as Record<string, unknown>,
   };
 
-  return { user, tokens: tokenSet };
+  return { user };
 }
 
 /**
- * Reset the CAIA client singleton (for credential updates or testing)
+ * Validate CAIA issuer URL by attempting discovery
+ * Used by admin UI to validate credentials before saving
+ *
+ * @returns true if discovery succeeds, throws on failure
+ */
+export async function validateIssuerDiscovery(
+  issuerUrl: string,
+  clientId: string,
+  clientSecret: string
+): Promise<{ success: true; issuer: string }> {
+  const config = await client.discovery(
+    new URL(issuerUrl),
+    clientId,
+    clientSecret,
+  );
+
+  return {
+    success: true,
+    issuer: config.serverMetadata().issuer,
+  };
+}
+
+/**
+ * Reset the CAIA configuration singleton (for testing)
+ * With per-request credential fetching, this is now a no-op
+ * but kept for API compatibility
  */
 export function resetCAIAClient(): void {
-  caiaIssuer = null;
-  caiaClient = null;
-  initializationAttempted = false;
+  // No-op - credentials are fetched fresh each request
 }
