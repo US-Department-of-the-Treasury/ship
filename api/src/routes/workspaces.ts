@@ -142,7 +142,7 @@ router.get('/current', authMiddleware, async (req: Request, res: Response): Prom
 
 // POST /api/workspaces/:id/switch - Switch to a workspace
 router.post('/:id/switch', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id: workspaceId } = req.params;
+  const workspaceId = String(req.params.id);
 
   try {
     // Check user has access to this workspace (member or super-admin)
@@ -236,7 +236,7 @@ router.post('/:id/switch', authMiddleware, async (req: Request, res: Response): 
 
 // GET /api/workspaces/:id/members - List workspace members (admin only)
 router.get('/:id/members', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id: workspaceId } = req.params;
+  const workspaceId = String(req.params.id);
   const includeArchived = req.query.includeArchived === 'true';
 
   try {
@@ -323,7 +323,7 @@ router.get('/:id/members', authMiddleware, workspaceAdminMiddleware, async (req:
 
 // POST /api/workspaces/:id/members - Add member to workspace (admin only)
 router.post('/:id/members', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id: workspaceId } = req.params;
+  const workspaceId = String(req.params.id);
   const { userId, role = 'member' } = req.body;
 
   if (!userId) {
@@ -422,7 +422,8 @@ router.post('/:id/members', authMiddleware, workspaceAdminMiddleware, async (req
 
 // PATCH /api/workspaces/:id/members/:userId - Update member role (admin only)
 router.patch('/:id/members/:userId', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id: workspaceId, userId } = req.params;
+  const workspaceId = String(req.params.id);
+  const userId = String(req.params.userId);
   const { role } = req.body;
 
   if (!role || !['admin', 'member'].includes(role)) {
@@ -512,7 +513,8 @@ router.patch('/:id/members/:userId', authMiddleware, workspaceAdminMiddleware, a
 
 // DELETE /api/workspaces/:id/members/:userId - Remove member (admin only)
 router.delete('/:id/members/:userId', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id: workspaceId, userId } = req.params;
+  const workspaceId = String(req.params.id);
+  const userId = String(req.params.userId);
 
   try {
     // Check this isn't the last admin
@@ -608,7 +610,8 @@ router.delete('/:id/members/:userId', authMiddleware, workspaceAdminMiddleware, 
 
 // POST /api/workspaces/:id/members/:userId/restore - Restore archived member (admin only)
 router.post('/:id/members/:userId/restore', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id: workspaceId, userId } = req.params;
+  const workspaceId = String(req.params.id);
+  const userId = String(req.params.userId);
 
   try {
     // Verify the person document exists and is archived
@@ -689,7 +692,7 @@ router.post('/:id/members/:userId/restore', authMiddleware, workspaceAdminMiddle
 
 // GET /api/workspaces/:id/invites - List pending invites (admin only)
 router.get('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id: workspaceId } = req.params;
+  const workspaceId = String(req.params.id);
 
   try {
     const result = await pool.query(
@@ -732,7 +735,7 @@ router.get('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req:
 // Email is always required (it's the login identifier)
 // x509SubjectDn is optional - for PIV certificate matching when cert doesn't contain email
 router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id: workspaceId } = req.params;
+  const workspaceId = String(req.params.id);
   const { email, x509SubjectDn, role = 'member' } = req.body;
 
   // Email is always required
@@ -929,7 +932,8 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
 
 // DELETE /api/workspaces/:id/invites/:inviteId - Revoke invite (admin only)
 router.delete('/:id/invites/:inviteId', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id: workspaceId, inviteId } = req.params;
+  const workspaceId = String(req.params.id);
+  const inviteId = String(req.params.inviteId);
 
   try {
     const result = await pool.query(
@@ -981,7 +985,7 @@ router.delete('/:id/invites/:inviteId', authMiddleware, workspaceAdminMiddleware
 
 // GET /api/workspaces/:id/audit-logs - Get workspace audit logs (admin only)
 router.get('/:id/audit-logs', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id: workspaceId } = req.params;
+  const workspaceId = String(req.params.id);
   const { limit = '100', offset = '0' } = req.query;
 
   try {

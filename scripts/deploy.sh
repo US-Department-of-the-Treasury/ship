@@ -81,13 +81,14 @@ fi
 
 # Verify container can start and imports work
 # Provide minimal env vars for import test (actual values come from EB environment)
+# Note: app.js starts Express server so we explicitly exit(0) after import succeeds
 echo "Verifying container starts..."
 IMPORT_TEST=$(docker run --rm \
   -e SESSION_SECRET=test-secret-for-import-check \
   -e DATABASE_URL=postgres://test:test@localhost/test \
   ship-api:pre-deploy-test node -e "
   import('./dist/app.js')
-    .then(() => console.log('OK'))
+    .then(() => { console.log('OK'); process.exit(0); })
     .catch(e => { console.error('FAIL:', e.message); process.exit(1); })
 " 2>&1)
 

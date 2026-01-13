@@ -123,7 +123,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 // Get single document
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const id = req.params.id!;
+    const id = String(req.params.id);
     const userId = String(req.userId);
     const workspaceId = String(req.workspaceId);
 
@@ -205,7 +205,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 // Update document
 router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const id = req.params.id!;
+    const id = String(req.params.id);
     const userId = String(req.userId);
     const workspaceId = String(req.workspaceId);
 
@@ -327,7 +327,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 // Delete document
 router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const id = req.params.id!;
+    const id = String(req.params.id);
     const userId = String(req.userId);
     const workspaceId = String(req.workspaceId);
 
