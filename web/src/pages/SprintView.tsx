@@ -20,6 +20,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/cn';
 import { sprintStatusColors, priorityColors } from '@/lib/statusColors';
+import { TabBar, Tab } from '@/components/ui/TabBar';
+import { StandupFeed } from '@/components/StandupFeed';
 
 interface SprintApiResponse {
   id: string;
@@ -159,6 +161,7 @@ export function SprintViewPage() {
   const [loading, setLoading] = useState(true);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalText, setGoalText] = useState('');
+  const [activeTab, setActiveTab] = useState<'planning' | 'standups'>('planning');
   const [activeId, setActiveId] = useState<string | null>(null);
   // Estimate modal state
   const [pendingIssue, setPendingIssue] = useState<Issue | null>(null);
@@ -598,8 +601,20 @@ export function SprintViewPage() {
         </div>
       </div>
 
-      {/* Sprint planning columns with drag-and-drop */}
-      <DndContext
+      {/* Tabs */}
+      <TabBar
+        tabs={[
+          { id: 'planning', label: 'Planning' },
+          { id: 'standups', label: 'Standups' },
+        ]}
+        activeTab={activeTab}
+        onTabChange={(tabId) => setActiveTab(tabId as 'planning' | 'standups')}
+      />
+
+      {/* Tab content */}
+      {activeTab === 'planning' ? (
+        /* Sprint planning columns with drag-and-drop */
+        <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
@@ -641,6 +656,10 @@ export function SprintViewPage() {
           {activeIssue ? <IssueCardPreview issue={activeIssue} /> : null}
         </DragOverlay>
       </DndContext>
+      ) : (
+        /* Standups feed */
+        <StandupFeed sprintId={sprint.id} />
+      )}
 
       {/* Estimate Required Modal */}
       {pendingIssue && (
