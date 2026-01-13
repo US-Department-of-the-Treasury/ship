@@ -58,6 +58,9 @@ export async function uploadFile(
     // Step 1: Request upload URL
     updateProgress({ status: 'pending', progress: 10 });
 
+    // Use effective MIME type (fallback to extension-based detection if browser returns empty)
+    const effectiveMimeType = file.type || getMimeTypeFromExtension(file.name) || 'application/octet-stream';
+
     const uploadReqRes = await fetch(`${API_BASE}/api/files/upload`, {
       method: 'POST',
       headers: {
@@ -67,7 +70,7 @@ export async function uploadFile(
       credentials: 'include',
       body: JSON.stringify({
         filename: file.name,
-        mimeType: file.type,
+        mimeType: effectiveMimeType,
         sizeBytes: file.size,
       }),
     });
@@ -95,7 +98,7 @@ export async function uploadFile(
         method: 'POST',
         headers: {
           'x-csrf-token': csrfToken,
-          'Content-Type': file.type,
+          'Content-Type': effectiveMimeType,
         },
         credentials: 'include',
         body: fileBuffer,
@@ -130,7 +133,7 @@ export async function uploadFile(
       const uploadRes = await fetch(fullUploadUrl, {
         method: 'PUT',
         headers: {
-          'Content-Type': file.type,
+          'Content-Type': effectiveMimeType,
         },
         body: fileBuffer,
       });
@@ -186,34 +189,84 @@ export async function uploadDataUrl(
 }
 
 /**
- * Check if a file type is allowed for upload
+ * Blocked file extensions for security (executables and scripts)
+ * We allow ANY file type EXCEPT these dangerous extensions.
+ * Check by extension, not MIME type (MIME types are unreliable and can be spoofed).
  */
-export function isAllowedFileType(mimeType: string): boolean {
-  const allowedTypes = new Set([
-    // Images
-    'image/jpeg',
-    'image/png',
-    'image/gif',
-    'image/webp',
-    'image/svg+xml',
-    // Documents
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'application/vnd.ms-powerpoint',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    // Text
-    'text/plain',
-    'text/csv',
-    'text/markdown',
-    // Archives
-    'application/zip',
-    'application/x-zip-compressed',
-  ]);
+const BLOCKED_EXTENSIONS = new Set([
+  // Windows executables
+  '.exe', '.bat', '.cmd', '.com', '.msi', '.scr', '.pif',
+  // Windows scripts
+  '.vbs', '.vbe', '.js', '.jse', '.ws', '.wsf', '.wsc', '.wsh',
+  // Windows system files
+  '.dll', '.sys', '.drv', '.cpl', '.ocx',
+  // Windows shortcuts and config
+  '.lnk', '.inf', '.reg', '.msc',
+  // macOS executables
+  '.app', '.dmg', '.pkg',
+  // Linux executables and packages
+  '.sh', '.bash', '.deb', '.rpm', '.run',
+  // Cross-platform
+  '.jar', '.ps1', '.psm1', '.psd1',
+]);
 
-  return allowedTypes.has(mimeType);
+/**
+ * Map file extensions to MIME types for fallback detection
+ * Browsers sometimes return empty MIME type for Office files (especially on macOS)
+ */
+const EXTENSION_TO_MIME: Record<string, string> = {
+  // Images
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  // Documents
+  '.pdf': 'application/pdf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // Text
+  '.txt': 'text/plain',
+  '.csv': 'text/csv',
+  '.md': 'text/markdown',
+  // Archives
+  '.zip': 'application/zip',
+};
+
+/**
+ * Get MIME type from filename extension as fallback
+ */
+export function getMimeTypeFromExtension(filename: string): string | null {
+  const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
+  return EXTENSION_TO_MIME[ext] || null;
+}
+
+/**
+ * Check if a file type is allowed for upload
+ * Uses blocklist approach: allow ANY file EXCEPT dangerous executables.
+ * Checks by extension (not MIME type) since MIME types can be spoofed.
+ */
+export function isAllowedFileType(mimeType: string, filename?: string): boolean {
+  // If no filename provided, allow (can't check extension)
+  if (!filename) {
+    return true;
+  }
+
+  // Extract extension from filename
+  const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
+
+  // Block dangerous file types
+  if (BLOCKED_EXTENSIONS.has(ext)) {
+    return false;
+  }
+
+  // Allow everything else
+  return true;
 }
 
 /**
