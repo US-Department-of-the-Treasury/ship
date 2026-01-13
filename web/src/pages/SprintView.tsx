@@ -22,6 +22,7 @@ import { cn } from '@/lib/cn';
 import { sprintStatusColors, priorityColors } from '@/lib/statusColors';
 import { TabBar, Tab } from '@/components/ui/TabBar';
 import { StandupFeed } from '@/components/StandupFeed';
+import { SprintReview } from '@/components/SprintReview';
 
 interface SprintApiResponse {
   id: string;
@@ -161,7 +162,7 @@ export function SprintViewPage() {
   const [loading, setLoading] = useState(true);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalText, setGoalText] = useState('');
-  const [activeTab, setActiveTab] = useState<'planning' | 'standups'>('planning');
+  const [activeTab, setActiveTab] = useState<'planning' | 'standups' | 'review'>('planning');
   const [activeId, setActiveId] = useState<string | null>(null);
   // Estimate modal state
   const [pendingIssue, setPendingIssue] = useState<Issue | null>(null);
@@ -606,9 +607,10 @@ export function SprintViewPage() {
         tabs={[
           { id: 'planning', label: 'Planning' },
           { id: 'standups', label: 'Standups' },
+          { id: 'review', label: 'Review' },
         ]}
         activeTab={activeTab}
-        onTabChange={(tabId) => setActiveTab(tabId as 'planning' | 'standups')}
+        onTabChange={(tabId) => setActiveTab(tabId as 'planning' | 'standups' | 'review')}
       />
 
       {/* Tab content */}
@@ -656,9 +658,12 @@ export function SprintViewPage() {
           {activeIssue ? <IssueCardPreview issue={activeIssue} /> : null}
         </DragOverlay>
       </DndContext>
-      ) : (
+      ) : activeTab === 'standups' ? (
         /* Standups feed */
         <StandupFeed sprintId={sprint.id} />
+      ) : (
+        /* Sprint review editor */
+        <SprintReview sprintId={sprint.id} />
       )}
 
       {/* Estimate Required Modal */}
