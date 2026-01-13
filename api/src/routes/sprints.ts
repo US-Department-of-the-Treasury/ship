@@ -871,7 +871,32 @@ function formatStandupResponse(row: any) {
   };
 }
 
-// GET /api/sprints/:id/standups - List standups for a sprint (newest first)
+/**
+ * @swagger
+ * /sprints/{id}/standups:
+ *   get:
+ *     summary: List standups for a sprint
+ *     tags: [Sprints, Standups]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Sprint ID
+ *     responses:
+ *       200:
+ *         description: List of standups
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Standup'
+ *       404:
+ *         description: Sprint not found
+ */
 router.get('/:id/standups', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -914,7 +939,43 @@ router.get('/:id/standups', authMiddleware, async (req: Request, res: Response) 
   }
 });
 
-// POST /api/sprints/:id/standups - Create a standup entry
+/**
+ * @swagger
+ * /sprints/{id}/standups:
+ *   post:
+ *     summary: Create a standup entry
+ *     tags: [Sprints, Standups]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Sprint ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               content:
+ *                 type: object
+ *                 description: TipTap editor content
+ *               title:
+ *                 type: string
+ *                 default: Untitled
+ *     responses:
+ *       201:
+ *         description: Standup created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Standup'
+ *       404:
+ *         description: Sprint not found
+ */
 router.post('/:id/standups', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

@@ -1,0 +1,303 @@
+openapi: 3.0.0
+info:
+  title: Ship API
+  version: 1.0.0
+  description: API for Ship - Project and Sprint Management Platform
+servers:
+  - url: /api
+        description: API base path
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+  schemas:
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        document_type:
+          type: string
+          enum:
+            - wiki
+            - issue
+            - program
+            - project
+            - sprint
+            - person
+            - standup
+            - sprint_review
+        content:
+          type: object
+        properties:
+          type: object
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        sprint_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Issue:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: object
+        state:
+          type: string
+          enum:
+            - backlog
+            - planned
+            - in_progress
+            - in_review
+            - done
+            - cancelled
+        priority:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+        estimate:
+          type: number
+          nullable: true
+        project_id:
+          type: string
+          format: uuid
+          nullable: true
+        sprint_id:
+          type: string
+          format: uuid
+          nullable: true
+        assignee_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+    Sprint:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        hypothesis:
+          type: string
+          nullable: true
+        goal:
+          type: string
+          nullable: true
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: object
+        hypothesis:
+          type: string
+          nullable: true
+        ice_impact:
+          type: number
+          nullable: true
+        ice_confidence:
+          type: number
+          nullable: true
+        ice_ease:
+          type: number
+          nullable: true
+        status:
+          type: string
+          enum:
+            - active
+            - completed
+            - on_hold
+            - cancelled
+    Standup:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        content:
+          type: object
+        author_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+    SprintReview:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        content:
+          type: object
+        hypothesis_validated:
+          type: boolean
+          nullable: true
+        sprint_id:
+          type: string
+          format: uuid
+        owner_id:
+          type: string
+          format: uuid
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+security:
+  - bearerAuth:
+    []
+  - cookieAuth:
+    []
+paths:
+  /sprints/{id}/standups:
+    get:
+      summary: List standups for a sprint
+      tags:
+        - Sprints
+        - Standups
+      parameters:
+        - in: path
+                    name: id
+                    required: true
+                    schema:
+                      type: string
+                      format: uuid
+                    description: Sprint ID
+      responses:
+        200:
+          description: List of standups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Standup"
+        404:
+          description: Sprint not found
+    post:
+      summary: Create a standup entry
+      tags:
+        - Sprints
+        - Standups
+      parameters:
+        - in: path
+                    name: id
+                    required: true
+                    schema:
+                      type: string
+                      format: uuid
+                    description: Sprint ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: object
+                  description: TipTap editor content
+                title:
+                  type: string
+                  default: Untitled
+      responses:
+        201:
+          description: Standup created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Standup"
+        404:
+          description: Sprint not found
+  /standups/{id}:
+    patch:
+      summary: Update a standup entry
+      tags:
+        - Standups
+      parameters:
+        - in: path
+                    name: id
+                    required: true
+                    schema:
+                      type: string
+                      format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: object
+                title:
+                  type: string
+      responses:
+        200:
+          description: Standup updated successfully
+        403:
+          description: Forbidden - only author or admin can update
+        404:
+          description: Standup not found
+    delete:
+      summary: Delete a standup entry
+      tags:
+        - Standups
+      parameters:
+        - in: path
+                    name: id
+                    required: true
+                    schema:
+                      type: string
+                      format: uuid
+      responses:
+        200:
+          description: Standup deleted successfully
+        403:
+          description: Forbidden - only author or admin can delete
+        404:
+          description: Standup not found
+tags:
+[]

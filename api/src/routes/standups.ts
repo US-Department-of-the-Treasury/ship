@@ -13,7 +13,38 @@ const updateStandupSchema = z.object({
   title: z.string().max(200).optional(),
 });
 
-// PATCH /api/standups/:id - Update a standup entry
+/**
+ * @swagger
+ * /standups/{id}:
+ *   patch:
+ *     summary: Update a standup entry
+ *     tags: [Standups]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               content:
+ *                 type: object
+ *               title:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Standup updated successfully
+ *       404:
+ *         description: Standup not found
+ *       403:
+ *         description: Forbidden - only author or admin can update
+ */
 router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -109,7 +140,27 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/standups/:id - Delete a standup entry
+/**
+ * @swagger
+ * /standups/{id}:
+ *   delete:
+ *     summary: Delete a standup entry
+ *     tags: [Standups]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Standup deleted successfully
+ *       404:
+ *         description: Standup not found
+ *       403:
+ *         description: Forbidden - only author or admin can delete
+ */
 router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

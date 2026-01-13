@@ -28,6 +28,7 @@ import apiTokensRoutes from './routes/api-tokens.js';
 import { createJwksHandler } from '@fpki/auth-client';
 import { getPublicJwk } from './services/credential-store.js';
 import { initializeFPKI } from './services/fpki.js';
+import { setupSwagger } from './swagger.js';
 
 // Validate SESSION_SECRET in production
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -161,6 +162,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
+
+  // API documentation (no auth needed)
+  setupSwagger(app);
 
   // Setup routes (CSRF protected - first-time setup only)
   app.use('/api/setup', conditionalCsrf, setupRoutes);
