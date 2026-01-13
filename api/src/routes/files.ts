@@ -31,46 +31,32 @@ const uploadRequestSchema = z.object({
   sizeBytes: z.number().int().positive(),
 });
 
-// Allowed MIME types for security
-const ALLOWED_MIME_TYPES = new Set([
-  // Images
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/svg+xml',
-  // Documents
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  // Text
-  'text/plain',
-  'text/csv',
-  'text/markdown',
-  // Archives
-  'application/zip',
-  'application/x-zip-compressed',
-]);
-
-// Blocked file extensions (security)
+/**
+ * Blocked file extensions for security (executables and scripts)
+ * We allow ANY file type EXCEPT these dangerous extensions.
+ * Check by extension, not MIME type (MIME types are unreliable and can be spoofed).
+ */
 const BLOCKED_EXTENSIONS = new Set([
-  '.exe', '.bat', '.cmd', '.sh', '.ps1', '.vbs', '.js', '.jar',
-  '.msi', '.dll', '.com', '.scr', '.pif', '.application',
+  // Windows executables
+  '.exe', '.bat', '.cmd', '.com', '.msi', '.scr', '.pif',
+  // Windows scripts
+  '.vbs', '.vbe', '.js', '.jse', '.ws', '.wsf', '.wsc', '.wsh',
+  // Windows system files
+  '.dll', '.sys', '.drv', '.cpl', '.ocx',
+  // Windows shortcuts and config
+  '.lnk', '.inf', '.reg', '.msc',
+  // macOS executables
+  '.app', '.dmg', '.pkg',
+  // Linux executables and packages
+  '.sh', '.bash', '.deb', '.rpm', '.run',
+  // Cross-platform
+  '.jar', '.ps1', '.psm1', '.psd1',
 ]);
 
-function isAllowedFile(filename: string, mimeType: string): boolean {
-  // Check extension
+function isAllowedFile(filename: string, _mimeType: string): boolean {
+  // Check extension against blocklist (allow everything except dangerous types)
   const ext = filename.toLowerCase().slice(filename.lastIndexOf('.'));
-  if (BLOCKED_EXTENSIONS.has(ext)) {
-    return false;
-  }
-
-  // Check MIME type
-  return ALLOWED_MIME_TYPES.has(mimeType);
+  return !BLOCKED_EXTENSIONS.has(ext);
 }
 
 // POST /api/files/upload - Get presigned URL for upload
