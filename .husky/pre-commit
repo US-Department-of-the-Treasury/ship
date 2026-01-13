@@ -3,6 +3,11 @@ if [ -f "./scripts/check-empty-tests.sh" ]; then
   ./scripts/check-empty-tests.sh
 fi
 
+# Check API coverage for new UI routes
+if [ -f "./scripts/check-api-coverage.sh" ]; then
+  ./scripts/check-api-coverage.sh --staged
+fi
+
 # Open source compliance checks (secrets scan + AI analysis)
 if command -v comply &> /dev/null; then
   # NOTE: --skip-trivy is temporary workaround for compliance-toolkit bug
