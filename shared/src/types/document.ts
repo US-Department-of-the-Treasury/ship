@@ -59,6 +59,12 @@ export interface ProjectProperties {
   // Visual identification
   color: string;
   emoji?: string | null;
+  // Project retro properties - track hypothesis validation and outcomes
+  hypothesis_validated?: boolean | null;  // null = not yet determined, true = validated, false = invalidated
+  monetary_impact_expected?: string | null;  // Expected monetary value (e.g., "$50K annual savings")
+  monetary_impact_actual?: string | null;    // Actual monetary impact after completion
+  success_criteria?: string[] | null;        // Array of measurable success criteria
+  next_steps?: string | null;                // Recommended follow-up actions
   [key: string]: unknown;
 }
 
