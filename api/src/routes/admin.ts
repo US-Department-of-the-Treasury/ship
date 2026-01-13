@@ -1089,6 +1089,15 @@ router.delete('/workspaces/:workspaceId/invites/:inviteId', async (req: Request,
       return;
     }
 
+    // Archive the pending person document associated with this invite
+    await pool.query(
+      `UPDATE documents SET archived_at = NOW()
+       WHERE workspace_id = $1
+         AND document_type = 'person'
+         AND properties->>'invite_id' = $2`,
+      [workspaceId, inviteId]
+    );
+
     await logAuditEvent({
       workspaceId,
       actorUserId: req.userId!,

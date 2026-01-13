@@ -22,9 +22,11 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
     const includeArchived = req.query.includeArchived === 'true';
 
     // Get all people in workspace via person documents (only visible ones)
-    // Include pending users so they appear in the grid (but they can't be assigned)
+    // Include pending users so they appear in the grid
+    // personId is the document ID (used for allocations), id is the user_id (null for pending users)
     const usersResult = await pool.query(
       `SELECT
+         d.id as "personId",
          d.properties->>'user_id' as id,
          d.title as name,
          COALESCE(d.properties->>'email', u.email) as email,
@@ -273,17 +275,63 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
 });
 
 // POST /api/team/assign - Assign user as sprint owner for a program
+// Accepts personId (person document ID) - preferred for pending users
+// Falls back to userId for backward compatibility
 router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.workspaceId!;
-    const { userId, programId, sprintNumber } = req.body;
+    const { personId, userId, programId, sprintNumber } = req.body;
 
-    if (!userId || !programId || !sprintNumber) {
+    // personId is preferred (works for both pending and active users)
+    // userId is for backward compatibility
+    const ownerId = personId || userId;
+
+    if (!ownerId || !programId || !sprintNumber) {
       res.status(400).json({ error: 'Missing required fields' });
       return;
     }
 
-    // Check if user is already assigned to another program for this sprint window
+    // Validate personId belongs to current workspace (SECURITY: prevent cross-workspace injection)
+    let personDocId = personId;
+    if (personId) {
+      const personCheck = await pool.query(
+        `SELECT id FROM documents
+         WHERE id = $1 AND workspace_id = $2 AND document_type = 'person'`,
+        [personId, workspaceId]
+      );
+      if (!personCheck.rows[0]) {
+        res.status(400).json({ error: 'Invalid personId for this workspace' });
+        return;
+      }
+    } else if (userId) {
+      // If userId was provided instead of personId, look up the person doc ID
+      const personResult = await pool.query(
+        `SELECT id FROM documents
+         WHERE workspace_id = $1 AND document_type = 'person'
+           AND properties->>'user_id' = $2 AND archived_at IS NULL`,
+        [workspaceId, userId]
+      );
+      if (personResult.rows[0]) {
+        personDocId = personResult.rows[0].id;
+      } else {
+        res.status(400).json({ error: 'Invalid userId for this workspace' });
+        return;
+      }
+    }
+
+    // Validate programId belongs to current workspace (SECURITY: prevent cross-workspace injection)
+    const programCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
+      [programId, workspaceId]
+    );
+    if (!programCheck.rows[0]) {
+      res.status(400).json({ error: 'Invalid programId for this workspace' });
+      return;
+    }
+
+    // Check if person is already assigned to another program for this sprint window
+    // owner_id now stores person document ID (works for both pending and active users)
     const existingAssignment = await pool.query(
       `SELECT s.id, p.id as program_id, p.title as program_name
        FROM documents s
@@ -292,7 +340,7 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
          AND s.properties->>'owner_id' = $2
          AND (s.properties->>'sprint_number')::int = $3
          AND p.id != $4`,
-      [workspaceId, userId, sprintNumber, programId]
+      [workspaceId, personDocId, sprintNumber, programId]
     );
 
     if (existingAssignment.rows[0]) {
@@ -314,22 +362,22 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
 
     let sprintId: string;
     if (sprintResult.rows[0]) {
-      // Update existing sprint's owner_id
+      // Update existing sprint's owner_id (now stores person doc ID)
       sprintId = sprintResult.rows[0].id;
       const currentProps = sprintResult.rows[0].properties || {};
-      const updatedProps = { ...currentProps, owner_id: userId };
+      const updatedProps = { ...currentProps, owner_id: personDocId };
 
       await pool.query(
         `UPDATE documents SET properties = $1, updated_at = now() WHERE id = $2`,
         [JSON.stringify(updatedProps), sprintId]
       );
     } else {
-      // Create new sprint with owner_id
+      // Create new sprint with owner_id (person doc ID)
       const newSprintResult = await pool.query(
         `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
          VALUES ($1, 'sprint', $2, $3, $4)
          RETURNING id`,
-        [workspaceId, `Sprint ${sprintNumber}`, programId, JSON.stringify({ sprint_number: sprintNumber, owner_id: userId })]
+        [workspaceId, `Sprint ${sprintNumber}`, programId, JSON.stringify({ sprint_number: sprintNumber, owner_id: personDocId })]
       );
       sprintId = newSprintResult.rows[0].id;
     }
@@ -342,28 +390,60 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/team/assign - Remove user as sprint owner
+// Accepts personId (person document ID) - preferred
+// Falls back to userId for backward compatibility
 router.delete('/assign', authMiddleware, async (req: Request, res: Response) => {
   try {
     const currentUserId = req.userId!;
     const workspaceId = req.workspaceId!;
-    const { userId, sprintNumber } = req.body;
+    const { personId, userId, sprintNumber } = req.body;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(currentUserId, workspaceId);
 
-    if (!userId || !sprintNumber) {
+    const ownerId = personId || userId;
+    if (!ownerId || !sprintNumber) {
       res.status(400).json({ error: 'Missing required fields' });
       return;
     }
 
-// Find the sprint this user owns for this sprint number (only visible sprints)
+    // Validate personId belongs to current workspace (SECURITY: prevent cross-workspace injection)
+    let personDocId = personId;
+    if (personId) {
+      const personCheck = await pool.query(
+        `SELECT id FROM documents
+         WHERE id = $1 AND workspace_id = $2 AND document_type = 'person'`,
+        [personId, workspaceId]
+      );
+      if (!personCheck.rows[0]) {
+        res.status(400).json({ error: 'Invalid personId for this workspace' });
+        return;
+      }
+    } else if (userId) {
+      // If userId was provided instead of personId, look up the person doc ID
+      const personResult = await pool.query(
+        `SELECT id FROM documents
+         WHERE workspace_id = $1 AND document_type = 'person'
+           AND properties->>'user_id' = $2 AND archived_at IS NULL`,
+        [workspaceId, userId]
+      );
+      if (personResult.rows[0]) {
+        personDocId = personResult.rows[0].id;
+      } else {
+        res.status(400).json({ error: 'Invalid userId for this workspace' });
+        return;
+      }
+    }
+
+    // Find the sprint this person owns for this sprint number (only visible sprints)
+    // owner_id now stores person document ID
     const sprintResult = await pool.query(
       `SELECT id, properties FROM documents
        WHERE workspace_id = $1 AND document_type = 'sprint'
          AND properties->>'owner_id' = $2
          AND (properties->>'sprint_number')::int = $3
          AND ${VISIBILITY_FILTER_SQL('documents', '$4', '$5')}`,
-      [workspaceId, userId, sprintNumber, currentUserId, isAdmin]
+      [workspaceId, personDocId, sprintNumber, currentUserId, isAdmin]
     );
 
     if (!sprintResult.rows[0]) {
