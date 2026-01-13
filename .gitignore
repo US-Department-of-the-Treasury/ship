@@ -36,6 +36,9 @@ Thumbs.db
 # Ralph loop local state
 .claude/ralph-loop.local.md
 
+# Claude agents
+.claude/agents/
+
 # Playwright MCP screenshots
 .playwright-mcp/
 
@@ -91,3 +94,6 @@ ship-api-*.zip
 
 # Vendor (local SDK links)
 vendor/
+
+# SSDF-Helper - Memory Safety Analysis Reports (CUI/ISVI)
+/SSDF-Helper/

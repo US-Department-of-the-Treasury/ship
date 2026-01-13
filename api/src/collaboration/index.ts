@@ -80,7 +80,7 @@ function recordMessage(ws: WebSocket): void {
 // Store documents and awareness by room name
 const docs = new Map<string, Y.Doc>();
 const awareness = new Map<string, awarenessProtocol.Awareness>();
-const conns = new Map<WebSocket, { docName: string; awarenessClientId: number }>();
+const conns = new Map<WebSocket, { docName: string; awarenessClientId: number; userId: string; workspaceId: string }>();
 
 // Debounce persistence (save every 2 seconds after changes)
 const pendingSaves = new Map<string, NodeJS.Timeout>();
@@ -378,6 +378,62 @@ async function canAccessDocumentForCollab(
   }
 }
 
+/**
+ * Handle document visibility change.
+ * When a document's visibility changes (especially to 'private'),
+ * we need to disconnect any users who no longer have access.
+ *
+ * @param docId - The document ID that changed visibility
+ * @param newVisibility - The new visibility value ('private' or 'workspace')
+ * @param creatorId - The user ID of the document creator
+ */
+export async function handleVisibilityChange(
+  docId: string,
+  newVisibility: 'private' | 'workspace',
+  creatorId: string
+): Promise<void> {
+  // Find all connections to this document (across all doc types)
+  const connectionsToCheck: Array<{ ws: WebSocket; conn: { docName: string; awarenessClientId: number; userId: string; workspaceId: string } }> = [];
+
+  conns.forEach((conn, ws) => {
+    const connDocId = parseDocId(conn.docName);
+    if (connDocId === docId) {
+      connectionsToCheck.push({ ws, conn });
+    }
+  });
+
+  if (connectionsToCheck.length === 0) {
+    return; // No active connections to this document
+  }
+
+  console.log(`[Collaboration] Visibility change for doc ${docId} to '${newVisibility}', checking ${connectionsToCheck.length} connections`);
+
+  // For private documents, only creator and admins can access
+  // For workspace documents, all workspace members can access (no action needed)
+  if (newVisibility === 'workspace') {
+    return; // All workspace members can access, no need to disconnect anyone
+  }
+
+  // For private documents, check each connection
+  for (const { ws, conn } of connectionsToCheck) {
+    // Creator always has access
+    if (conn.userId === creatorId) {
+      continue;
+    }
+
+    // Check if user is admin
+    const canAccess = await canAccessDocumentForCollab(docId, conn.userId, conn.workspaceId);
+
+    if (!canAccess) {
+      console.log(`[Collaboration] Disconnecting user ${conn.userId} from private doc ${docId}`);
+
+      // Close with code 4403 (custom code for "access revoked")
+      // Frontend should handle this code and show appropriate message
+      ws.close(4403, 'Document access revoked');
+    }
+  }
+}
+
 export function setupCollaboration(server: Server) {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -426,13 +482,13 @@ export function setupCollaboration(server: Server) {
     });
   });
 
-  wss.on('connection', async (ws: WebSocket, _request: IncomingMessage, docName: string, _sessionData: { userId: string; workspaceId: string }) => {
+  wss.on('connection', async (ws: WebSocket, _request: IncomingMessage, docName: string, sessionData: { userId: string; workspaceId: string }) => {
     const doc = await getOrCreateDoc(docName);
     const aw = getAwareness(docName, doc);
 
-    // Track this connection
+    // Track this connection with user info for visibility change handling
     const clientId = doc.clientID;
-    conns.set(ws, { docName, awarenessClientId: clientId });
+    conns.set(ws, { docName, awarenessClientId: clientId, userId: sessionData.userId, workspaceId: sessionData.workspaceId });
 
     // Send sync step 1
     const encoder = encoding.createEncoder();

@@ -241,6 +241,19 @@ export function Editor({
         }
       });
 
+      // Handle WebSocket close events to detect access revoked
+      wsProvider.on('connection-close', (event: CloseEvent | null) => {
+        if (event?.code === 4403) {
+          console.log(`[Editor] Access revoked for document ${documentId}`);
+          // Disable auto-reconnect since access was revoked
+          wsProvider!.shouldConnect = false;
+          // Show user-friendly message
+          alert('Access to this document has been revoked. The document is now private.');
+          // Navigate back if possible
+          onBack?.();
+        }
+      });
+
       wsProvider.on('sync', (isSynced: boolean) => {
         console.log(`[Editor] WebSocket sync: ${isSynced} for ${roomPrefix}:${documentId}`);
         if (isSynced) {
