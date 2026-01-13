@@ -32,16 +32,36 @@ function createDragHandle(): HTMLButtonElement {
   handle.className = 'editor-drag-handle';
   handle.draggable = true;
   handle.setAttribute('aria-label', 'Drag to reorder block');
-  handle.innerHTML = `
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-      <circle cx="9" cy="5" r="1.5"/>
-      <circle cx="9" cy="12" r="1.5"/>
-      <circle cx="9" cy="19" r="1.5"/>
-      <circle cx="15" cy="5" r="1.5"/>
-      <circle cx="15" cy="12" r="1.5"/>
-      <circle cx="15" cy="19" r="1.5"/>
-    </svg>
-  `;
+
+  // Create SVG using DOM APIs to avoid innerHTML security risk
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('aria-hidden', 'true');
+
+  // Create the six dots (2 columns x 3 rows)
+  const dots = [
+    { cx: '9', cy: '5' },
+    { cx: '9', cy: '12' },
+    { cx: '9', cy: '19' },
+    { cx: '15', cy: '5' },
+    { cx: '15', cy: '12' },
+    { cx: '15', cy: '19' },
+  ];
+
+  dots.forEach(({ cx, cy }) => {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', cx);
+    circle.setAttribute('cy', cy);
+    circle.setAttribute('r', '1.5');
+    svg.appendChild(circle);
+  });
+
+  handle.appendChild(svg);
   return handle;
 }
 

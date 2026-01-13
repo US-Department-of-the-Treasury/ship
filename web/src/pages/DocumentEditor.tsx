@@ -7,7 +7,7 @@ import { useAutoSave } from '@/hooks/useAutoSave';
 import { PersonCombobox } from '@/components/PersonCombobox';
 import { VisibilityDropdown } from '@/components/VisibilityDropdown';
 import { BacklinksPanel } from '@/components/editor/BacklinksPanel';
-import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
+import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { getIsOnline } from '@/lib/queryClient';
 
 export function DocumentEditorPage() {
@@ -17,7 +17,8 @@ export function DocumentEditorPage() {
   const { documents, loading: documentsLoading, createDocument, updateDocument: contextUpdateDocument, deleteDocument, refreshDocuments } = useDocuments();
 
   // Use TanStack Query for team members (supports offline via cache)
-  const { data: teamMembersData = [] } = useTeamMembersQuery();
+  // Use assignable members only - pending users can't own documents
+  const { data: teamMembersData = [] } = useAssignableMembersQuery();
   const teamMembers = teamMembersData.map(m => ({
     id: m.id,
     user_id: m.user_id,

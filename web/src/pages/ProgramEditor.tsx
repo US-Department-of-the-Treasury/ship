@@ -16,6 +16,7 @@ import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { ContextMenu, ContextMenuItem, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
+import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -83,6 +84,7 @@ interface Issue {
   ticket_number: number;
   assignee_id: string | null;
   assignee_name: string | null;
+  assignee_archived?: boolean;
   display_id: string;
   sprint_id: string | null;
 }
@@ -117,7 +119,7 @@ interface SprintsResponse {
   sprints: Sprint[];
 }
 
-// Sprint window represents a 2-week period (may or may not have a sprint document)
+// Sprint window represents a 1-week period (may or may not have a sprint document)
 interface SprintWindow {
   sprint_number: number;
   start_date: Date;
@@ -226,7 +228,7 @@ export function ProgramEditorPage() {
     if (!id) return;
     const issue = await contextCreateIssue({ program_id: id });
     if (issue) {
-      navigate(`/issues/${issue.id}`);
+      navigate(`/issues/${issue.id}`, { state: { from: 'program', programId: id, programName: program?.name } });
     }
   };
 
@@ -433,7 +435,7 @@ export function ProgramEditorPage() {
               <KanbanBoard
                 issues={filteredIssues}
                 onUpdateIssue={updateIssue}
-                onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+                onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId: id, programName: program?.name } })}
               />
             ) : (
               <ProgramIssuesList
@@ -441,7 +443,7 @@ export function ProgramEditorPage() {
                 sprints={sprints}
                 selectedIssues={selectedIssues}
                 onSelectionChange={setSelectedIssues}
-                onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+                onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId: id, programName: program?.name } })}
                 onBulkMoveToSprint={async (sprintId) => {
                   const token = await getCsrfToken();
                   await Promise.all(
@@ -487,6 +489,7 @@ export function ProgramEditorPage() {
                 sprints={sprints}
                 workspaceSprintStartDate={workspaceSprintStartDate}
                 programId={id!}
+                programName={program?.name}
                 onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
                 createSprint={createSprintMutation}
               />
@@ -772,6 +775,26 @@ function ProgramIssuesList({
   const [isMoving, setIsMoving] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; issueId: string } | null>(null);
 
+  // Selection ref for global keyboard navigation
+  const selectionRef = useRef<UseSelectionReturn | null>(null);
+  const [, forceUpdate] = useState(0);
+
+  // Handle selection change - capture selection object for keyboard navigation
+  const handleSelectionChange = useCallback((_selectedIds: Set<string>, selection: UseSelectionReturn) => {
+    selectionRef.current = selection;
+    onSelectionChange(selection.selectedIds);
+    forceUpdate(n => n + 1);
+  }, [onSelectionChange]);
+
+  // Global j/k keyboard navigation
+  useGlobalListNavigation({
+    selection: selectionRef.current,
+    enabled: true,
+    onEnter: useCallback((focusedId: string) => {
+      onIssueClick(focusedId);
+    }, [onIssueClick]),
+  });
+
   // Column definitions - added Actions column
   const columns = useMemo(() => [
     { key: 'id', label: 'ID' },
@@ -893,7 +916,7 @@ function ProgramIssuesList({
           columns={columns}
           emptyState={emptyState}
           onItemClick={(issue) => onIssueClick(issue.id)}
-          onSelectionChange={onSelectionChange}
+          onSelectionChange={handleSelectionChange}
           onContextMenu={handleContextMenu}
           ariaLabel="Program issues list"
         />
@@ -918,13 +941,13 @@ function ProgramIssuesList({
   );
 }
 
-// Compute sprint dates from sprint number
+// Compute sprint dates from sprint number (1-week sprints)
 function computeSprintDates(sprintNumber: number, workspaceStartDate: Date): { start: Date; end: Date } {
   const start = new Date(workspaceStartDate);
-  start.setDate(start.getDate() + (sprintNumber - 1) * 14);
+  start.setDate(start.getDate() + (sprintNumber - 1) * 7);
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
-  end.setDate(end.getDate() + 13);
+  end.setDate(end.getDate() + 6);
   end.setHours(23, 59, 59, 999);
   return { start, end };
 }
@@ -939,11 +962,11 @@ function computeSprintStatus(sprintNumber: number, workspaceStartDate: Date): 'a
   return 'active';
 }
 
-// Get current sprint number
+// Get current sprint number (1-week sprints)
 function getCurrentSprintNumber(workspaceStartDate: Date): number {
   const today = new Date();
   const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
-  return Math.max(1, Math.floor(daysSinceStart / 14) + 1);
+  return Math.max(1, Math.floor(daysSinceStart / 7) + 1);
 }
 
 // Generate sprint windows for display
@@ -985,12 +1008,14 @@ function SprintsTab({
   sprints,
   workspaceSprintStartDate,
   programId,
+  programName,
   onSprintClick,
   createSprint,
 }: {
   sprints: Sprint[];
   workspaceSprintStartDate: Date;
   programId: string;
+  programName?: string;
   onSprintClick: (id: string) => void;
   createSprint: (sprintNumber: number, ownerId: string, title?: string) => Promise<Sprint | null>;
 }) {
@@ -1071,7 +1096,21 @@ function SprintsTab({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Top Section: Two-column layout - chart left, issues right */}
+      {/* Top Section: Horizontal Timeline - fixed height */}
+      <div className="flex-shrink-0 border-b border-border p-4">
+        <h3 className="mb-3 text-sm font-medium text-muted uppercase tracking-wide">Timeline</h3>
+        <SprintTimeline
+          sprints={sprints}
+          workspaceSprintStartDate={workspaceSprintStartDate}
+          currentSprintNumber={currentSprintNumber}
+          selectedSprintNumber={selectedSprintNumber}
+          onSelectSprint={handleSelectSprint}
+          onOpenSprint={onSprintClick}
+          onCreateClick={(num) => setShowOwnerPrompt(num)}
+        />
+      </div>
+
+      {/* Bottom Section: Two-column layout - chart left, issues right */}
       <div className="flex-1 min-h-0 p-6 overflow-hidden">
         {selectedSprint && selectedWindow ? (
           <div className="flex gap-6 h-full">
@@ -1088,7 +1127,7 @@ function SprintsTab({
               <SprintIssuesList
                 issues={sprintIssues}
                 loading={issuesLoading}
-                onIssueClick={(id) => navigate(`/issues/${id}`)}
+                onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId, programName } })}
               />
             </div>
           </div>
@@ -1098,20 +1137,6 @@ function SprintsTab({
             currentSprintNumber={currentSprintNumber}
           />
         )}
-      </div>
-
-      {/* Bottom Section: Horizontal Timeline - fixed height */}
-      <div className="flex-shrink-0 border-t border-border p-4">
-        <h3 className="mb-3 text-sm font-medium text-muted uppercase tracking-wide">Timeline</h3>
-        <SprintTimeline
-          sprints={sprints}
-          workspaceSprintStartDate={workspaceSprintStartDate}
-          currentSprintNumber={currentSprintNumber}
-          selectedSprintNumber={selectedSprintNumber}
-          onSelectSprint={handleSelectSprint}
-          onOpenSprint={onSprintClick}
-          onCreateClick={(num) => setShowOwnerPrompt(num)}
-        />
       </div>
 
       {/* Owner Selection Prompt */}
@@ -1206,6 +1231,7 @@ function ActiveSprintProgress({
   window: SprintWindow;
   onClick: () => void;
 }) {
+  const navigate = useNavigate();
   const chartRef = useRef<HTMLDivElement>(null);
   const [chartSize, setChartSize] = useState({ width: 400, height: 150 }); // Start with reasonable defaults
 
@@ -1227,7 +1253,7 @@ function ActiveSprintProgress({
     return () => resizeObserver.disconnect();
   }, []);
 
-  const totalDays = 14;
+  const totalDays = 7; // 1-week sprints
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -1264,16 +1290,16 @@ function ActiveSprintProgress({
   const yScale = (value: number) => chartHeight - (value / maxY) * chartHeight;
 
   // Scale for X axis (days) - extend if prediction goes past sprint end
-  const totalXDays = isLate && remaining > 0 ? Math.min(predictedDaysFromStart, totalDays + 14) : totalDays;
+  const totalXDays = isLate && remaining > 0 ? Math.min(predictedDaysFromStart, totalDays + 7) : totalDays;
   const xScale = (day: number) => (day / totalXDays) * chartWidth;
 
-  // Generate date labels for X axis
+  // Generate date labels for X axis (1-week sprint: day 0, 3, 7)
   const dateLabels = useMemo(() => {
     const labels: { day: number; label: string }[] = [];
     // Start, middle, end of sprint
     labels.push({ day: 0, label: formatDate(sprintWindow.start_date.toISOString()) });
-    labels.push({ day: 7, label: formatDate(new Date(sprintWindow.start_date.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()) });
-    labels.push({ day: 14, label: formatDate(sprintWindow.end_date.toISOString()) });
+    labels.push({ day: 3, label: formatDate(new Date(sprintWindow.start_date.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString()) });
+    labels.push({ day: 7, label: formatDate(sprintWindow.end_date.toISOString()) });
     return labels;
   }, [sprintWindow.start_date, sprintWindow.end_date]);
 
@@ -1359,12 +1385,20 @@ function ActiveSprintProgress({
             </>
           )}
         </div>
-        <button
-          onClick={onClick}
-          className="rounded-md px-3 py-1.5 text-sm text-accent hover:bg-accent/10 transition-colors"
-        >
-          Open →
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate(`/sprints/${sprint.id}/view`)}
+            className="rounded-md px-3 py-1.5 text-sm bg-accent text-white hover:bg-accent/90 transition-colors"
+          >
+            Plan Sprint
+          </button>
+          <button
+            onClick={onClick}
+            className="rounded-md px-3 py-1.5 text-sm text-accent hover:bg-accent/10 transition-colors"
+          >
+            Open →
+          </button>
+        </div>
       </div>
 
       {/* Progress Graph - fills remaining space */}
@@ -1611,9 +1645,15 @@ function SprintTimeline({
   // Center on current sprint on mount
   useEffect(() => {
     if (scrollRef.current && !hasInitialized) {
-      const activeCard = scrollRef.current.querySelector('[data-active="true"]');
+      const activeCard = scrollRef.current.querySelector('[data-active="true"]') as HTMLElement;
       if (activeCard) {
-        activeCard.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+        // Manual centering calculation - scrollIntoView doesn't work well for first/last elements
+        const container = scrollRef.current;
+        const cardRect = activeCard.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const cardCenterInContainer = cardRect.left - containerRect.left + cardRect.width / 2;
+        const targetOffset = cardCenterInContainer - container.clientWidth / 2;
+        container.scrollLeft = container.scrollLeft + targetOffset;
         setHasInitialized(true);
       }
     }
@@ -1656,23 +1696,123 @@ function SprintTimeline({
     return () => container.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
+  // Group windows by month
+  const monthGroups = useMemo(() => {
+    const groups: { month: string; year: number; windows: typeof windows }[] = [];
+    let currentGroup: { month: string; year: number; windows: typeof windows } | null = null;
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    windows.forEach((window) => {
+      const monthName = monthNames[window.start_date.getMonth()];
+      const year = window.start_date.getFullYear();
+
+      if (!currentGroup || currentGroup.month !== monthName || currentGroup.year !== year) {
+        currentGroup = { month: monthName, year, windows: [] };
+        groups.push(currentGroup);
+      }
+      currentGroup.windows.push(window);
+    });
+
+    return groups;
+  }, [windows]);
+
+  // Calculate "Today" marker position
+  const todayMarkerPosition = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Find which window today falls within
+    const windowIndex = windows.findIndex(w => {
+      const windowStart = new Date(w.start_date);
+      windowStart.setHours(0, 0, 0, 0);
+      const windowEnd = new Date(w.end_date);
+      windowEnd.setHours(23, 59, 59, 999);
+      return today >= windowStart && today <= windowEnd;
+    });
+
+    if (windowIndex === -1) return null; // Today is not visible in current range
+
+    const window = windows[windowIndex];
+    const windowStart = new Date(window.start_date);
+    windowStart.setHours(0, 0, 0, 0);
+
+    // Days into this window (0-6 for 1-week sprints)
+    const daysIntoWindow = Math.floor((today.getTime() - windowStart.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Card width = 160px, gap = 12px
+    const cardWidth = 160;
+    const gap = 12;
+
+    // Position = (cards before * (width + gap)) + (days / 7 * width)
+    const position = (windowIndex * (cardWidth + gap)) + (daysIntoWindow / 7) * cardWidth;
+
+    return position;
+  }, [windows]);
+
   return (
     <div
       ref={scrollRef}
-      className="flex gap-3 overflow-x-auto py-2 scrollbar-hide"
+      className="overflow-x-auto scrollbar-hide"
       style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
     >
-      {windows.map((window) => (
-        <SprintWindowCard
-          key={window.sprint_number}
-          window={window}
-          isCurrentWindow={window.sprint_number === currentSprintNumber}
-          isSelected={window.sprint_number === selectedSprintNumber}
-          onSelectSprint={onSelectSprint}
-          onOpenSprint={onOpenSprint}
-          onCreateClick={onCreateClick}
-        />
-      ))}
+      {/* Wrapper with padding to allow centering first/last cards */}
+      <div style={{ paddingLeft: 'calc(50% - 80px)', paddingRight: 'calc(50% - 80px)' }}>
+        {/* Month headers row */}
+        <div className="flex gap-3 mb-2">
+          {monthGroups.map((group, idx) => (
+            <div
+              key={`${group.month}-${group.year}-${idx}`}
+              className="flex-shrink-0"
+              style={{ width: `calc(${group.windows.length} * 160px + ${(group.windows.length - 1) * 12}px)` }}
+            >
+              <div className="text-xs font-medium text-muted uppercase tracking-wide px-1">
+                {group.month} {group.year !== new Date().getFullYear() ? group.year : ''}
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Sprint cards row with connecting line */}
+        <div className="relative py-2">
+          {/* Connecting line - runs horizontally through all cards */}
+          <div
+            className="absolute left-0 right-0 h-0.5 bg-border pointer-events-none"
+            style={{ top: '50%', transform: 'translateY(-50%)' }}
+          />
+          {/* Today marker */}
+          {todayMarkerPosition !== null && (
+            <div
+              className="absolute top-0 bottom-0 pointer-events-none z-10"
+              style={{ left: todayMarkerPosition }}
+            >
+              <div className="relative h-full">
+                {/* Vertical line */}
+                <div className="absolute top-0 bottom-0 w-0.5 bg-accent" />
+                {/* Today label */}
+                <div className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                  <span className="text-xs font-medium text-accent bg-background px-1 rounded">
+                    Today
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Sprint cards */}
+          <div className="relative flex gap-3">
+            {windows.map((window) => (
+              <SprintWindowCard
+                key={window.sprint_number}
+                window={window}
+                isCurrentWindow={window.sprint_number === currentSprintNumber}
+                isSelected={window.sprint_number === selectedSprintNumber}
+                onSelectSprint={onSelectSprint}
+                onOpenSprint={onOpenSprint}
+                onCreateClick={onCreateClick}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
@@ -6,9 +6,11 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
+import { useProjects, Project } from '@/contexts/ProjectsContext';
 import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
+import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -18,20 +20,27 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { StorageWarning } from '@/components/StorageWarning';
 import { CacheCorruptionAlert } from '@/components/CacheCorruptionAlert';
 import { PrivateModeWarning } from '@/components/PrivateModeWarning';
-import { ManualSyncButton } from '@/components/ManualSyncButton';
+import { SyncFailureNotification } from '@/components/SyncFailureNotification';
 import { PendingSyncCount } from '@/components/PendingSyncCount';
 import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
+import { SyncProgress } from '@/components/SyncProgress';
+import { StaleDataBanner } from '@/components/StaleDataBanner';
+import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
+import { useToast } from '@/components/ui/Toast';
+import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
+import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 
-type Mode = 'docs' | 'issues' | 'programs' | 'team' | 'settings';
+type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings';
 
 export function AppLayout() {
   const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
   const { currentWorkspace, workspaces, switchWorkspace } = useWorkspace();
   const location = useLocation();
   const navigate = useNavigate();
-  const { documents, createDocument } = useDocuments();
-  const { programs } = usePrograms();
-  const { issues, createIssue } = useIssues();
+  const { documents, createDocument, updateDocument, deleteDocument } = useDocuments();
+  const { programs, updateProgram } = usePrograms();
+  const { issues, createIssue, updateIssue } = useIssues();
+  const { projects, createProject, updateProject } = useProjects();
   const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
     return localStorage.getItem('ship:leftSidebarCollapsed') === 'true';
   });
@@ -76,7 +85,11 @@ export function AppLayout() {
   const getActiveMode = (): Mode => {
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
-    if (location.pathname.startsWith('/programs') || location.pathname.startsWith('/sprints') || location.pathname.startsWith('/feedback')) return 'programs';
+    if (location.pathname.startsWith('/projects')) return 'projects';
+    // Sprints mode: /sprints/* or /programs/*/sprints/* paths
+    if (location.pathname.startsWith('/sprints')) return 'sprints';
+    if (location.pathname.match(/^\/programs\/[^/]+\/sprints/)) return 'sprints';
+    if (location.pathname.startsWith('/programs') || location.pathname.startsWith('/feedback')) return 'programs';
     if (location.pathname.startsWith('/team')) return 'team';
     if (location.pathname.startsWith('/settings')) return 'settings';
     return 'docs';
@@ -88,7 +101,9 @@ export function AppLayout() {
     switch (mode) {
       case 'docs': navigate('/docs'); break;
       case 'issues': navigate('/issues'); break;
+      case 'projects': navigate('/projects'); break;
       case 'programs': navigate('/programs'); break;
+      case 'sprints': navigate('/sprints'); break;
       case 'team': navigate('/team'); break;
       case 'settings': navigate('/settings'); break;
     }
@@ -108,6 +123,15 @@ export function AppLayout() {
     }
   };
 
+  const handleCreateProject = async () => {
+    // Projects require an owner_id - use current user as default owner
+    if (!user?.id) return;
+    const project = await createProject({ owner_id: user.id });
+    if (project) {
+      navigate(`/projects/${project.id}`);
+    }
+  };
+
   const handleSwitchWorkspace = async (workspaceId: string) => {
     const success = await switchWorkspace(workspaceId);
     if (success) {
@@ -118,6 +142,7 @@ export function AppLayout() {
   };
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Skip link for keyboard/screen reader users - Section 508 compliance */}
       <a
@@ -140,6 +165,12 @@ export function AppLayout() {
 
       {/* Private browsing mode warning */}
       <PrivateModeWarning />
+
+      {/* Stale data warning (when offline with old cache) */}
+      <StaleDataBanner />
+
+      {/* Sync failure notifications */}
+      <SyncFailureNotification />
 
       {/* Impersonation banner */}
       {impersonating && (
@@ -213,7 +244,7 @@ export function AppLayout() {
             )}
           </div>
 
-          {/* Mode icons */}
+          {/* Mode icons - ordered by hierarchy: Docs → Programs → Projects → Issues → Teams */}
           <div className="flex flex-1 flex-col items-center gap-1">
             <RailIcon
               icon={<DocsIcon />}
@@ -222,16 +253,28 @@ export function AppLayout() {
               onClick={() => handleModeClick('docs')}
             />
             <RailIcon
-              icon={<IssuesIcon />}
-              label="Issues"
-              active={activeMode === 'issues'}
-              onClick={() => handleModeClick('issues')}
-            />
-            <RailIcon
               icon={<ProgramsIcon />}
               label="Programs"
               active={activeMode === 'programs'}
               onClick={() => handleModeClick('programs')}
+            />
+            <RailIcon
+              icon={<ProjectsIcon />}
+              label="Projects"
+              active={activeMode === 'projects'}
+              onClick={() => handleModeClick('projects')}
+            />
+            <RailIcon
+              icon={<SprintsIcon />}
+              label="Sprints"
+              active={activeMode === 'sprints'}
+              onClick={() => handleModeClick('sprints')}
+            />
+            <RailIcon
+              icon={<IssuesIcon />}
+              label="Issues"
+              active={activeMode === 'issues'}
+              onClick={() => handleModeClick('issues')}
             />
             <RailIcon
               icon={<TeamIcon />}
@@ -243,13 +286,15 @@ export function AppLayout() {
 
           {/* Expand sidebar button (shows when collapsed) */}
           {leftSidebarCollapsed && (
-            <button
-              onClick={() => setLeftSidebarCollapsed(false)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-border/50 hover:text-foreground transition-colors"
-              aria-label="Expand sidebar"
-            >
-              <ExpandRightIcon />
-            </button>
+            <Tooltip content="Expand sidebar" side="right">
+              <button
+                onClick={() => setLeftSidebarCollapsed(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-border/50 hover:text-foreground transition-colors"
+                aria-label="Expand sidebar"
+              >
+                <ExpandRightIcon />
+              </button>
+            </Tooltip>
           )}
 
           {/* User avatar & settings at bottom */}
@@ -284,36 +329,55 @@ export function AppLayout() {
               <h2 className="text-sm font-medium text-foreground m-0">
                 {activeMode === 'docs' && 'Docs'}
                 {activeMode === 'issues' && 'Issues'}
+                {activeMode === 'projects' && 'Projects'}
                 {activeMode === 'programs' && 'Programs'}
+                {activeMode === 'sprints' && 'Sprints'}
                 {activeMode === 'team' && 'Teams'}
                 {activeMode === 'settings' && 'Settings'}
               </h2>
               <div className="flex items-center gap-1">
                 {activeMode === 'docs' && (
-                  <button
-                    onClick={handleCreateDocument}
-                    className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                    aria-label="New document"
-                  >
-                    <PlusIcon />
-                  </button>
+                  <Tooltip content="New document">
+                    <button
+                      onClick={handleCreateDocument}
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                      aria-label="New document"
+                    >
+                      <PlusIcon />
+                    </button>
+                  </Tooltip>
                 )}
                 {activeMode === 'issues' && (
-                  <button
-                    onClick={handleCreateIssue}
-                    className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                    aria-label="New issue"
-                  >
-                    <PlusIcon />
-                  </button>
+                  <Tooltip content="New issue">
+                    <button
+                      onClick={handleCreateIssue}
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                      aria-label="New issue"
+                    >
+                      <PlusIcon />
+                    </button>
+                  </Tooltip>
                 )}
-                <button
-                  onClick={() => setLeftSidebarCollapsed(true)}
-                  className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
-                  aria-label="Collapse sidebar"
-                >
-                  <CollapseLeftIcon />
-                </button>
+                {activeMode === 'projects' && (
+                  <Tooltip content="New project">
+                    <button
+                      onClick={handleCreateProject}
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                      aria-label="New project"
+                    >
+                      <PlusIcon />
+                    </button>
+                  </Tooltip>
+                )}
+                <Tooltip content="Collapse sidebar">
+                  <button
+                    onClick={() => setLeftSidebarCollapsed(true)}
+                    className="flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-border hover:text-foreground transition-colors"
+                    aria-label="Collapse sidebar"
+                  >
+                    <CollapseLeftIcon />
+                  </button>
+                </Tooltip>
               </div>
             </div>
 
@@ -330,6 +394,14 @@ export function AppLayout() {
                 <IssuesList
                   issues={issues}
                   activeId={location.pathname.split('/issues/')[1]}
+                  onUpdateIssue={updateIssue}
+                />
+              )}
+              {activeMode === 'projects' && (
+                <ProjectsList
+                  projects={projects}
+                  activeId={location.pathname.split('/projects/')[1]}
+                  onUpdateProject={updateProject}
                 />
               )}
               {activeMode === 'programs' && (
@@ -337,7 +409,11 @@ export function AppLayout() {
                   programs={programs}
                   activeId={location.pathname.split('/programs/')[1]}
                   onSelect={(id) => navigate(`/programs/${id}`)}
+                  onUpdateProgram={updateProgram}
                 />
+              )}
+              {activeMode === 'sprints' && (
+                <SprintsList />
               )}
               {activeMode === 'team' && (
                 <TeamSidebar />
@@ -348,8 +424,8 @@ export function AppLayout() {
             </div>
 
             {/* Sync controls at bottom */}
-            <div className="flex items-center gap-2">
-              <ManualSyncButton />
+            <div className="flex flex-col gap-2 p-2 border-t border-border">
+              <SyncProgress />
               <PendingSyncCount />
             </div>
           </div>
@@ -376,21 +452,24 @@ export function AppLayout() {
         onStayLoggedIn={resetSessionTimer}
       />
     </div>
+    </TooltipProvider>
   );
 }
 
 function RailIcon({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
-        active ? 'bg-border text-foreground' : 'text-muted hover:bg-border/50 hover:text-foreground'
-      )}
-      aria-label={label}
-    >
-      {icon}
-    </button>
+    <Tooltip content={label} side="right">
+      <button
+        onClick={onClick}
+        className={cn(
+          'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+          active ? 'bg-border text-foreground' : 'text-muted hover:bg-border/50 hover:text-foreground'
+        )}
+        aria-label={label}
+      >
+        {icon}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -509,9 +588,17 @@ function DocumentTreeItem({
   onSelect: (id: string) => void;
   depth: number;
 }) {
+  const { createDocument, updateDocument, deleteDocument } = useDocuments();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+
   // Auto-expand if this node or any descendant is active
   const shouldAutoExpand = hasActiveDescendant(document, activeId);
   const [isOpen, setIsOpen] = useState(shouldAutoExpand);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   // Update isOpen when activeId changes (for navigation)
   useEffect(() => {
@@ -522,6 +609,83 @@ function DocumentTreeItem({
 
   const isActive = activeId === document.id;
   const hasChildren = document.children.length > 0;
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const handleMenuButtonClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (menuButtonRef.current) {
+      const rect = menuButtonRef.current.getBoundingClientRect();
+      setContextMenu({ x: rect.right - 180, y: rect.bottom + 4 });
+    }
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  // Action handlers
+  const handleCreateSubdocument = useCallback(async () => {
+    closeContextMenu();
+    const newDoc = await createDocument(document.id);
+    if (newDoc) {
+      navigate(`/docs/${newDoc.id}`);
+    }
+  }, [createDocument, document.id, navigate, closeContextMenu]);
+
+  const handleRename = useCallback(() => {
+    closeContextMenu();
+    // Navigate to document and focus title (the title becomes editable when you click it)
+    navigate(`/docs/${document.id}`);
+  }, [document.id, navigate, closeContextMenu]);
+
+  const handleChangeVisibility = useCallback(async (visibility: string) => {
+    closeContextMenu();
+    await updateDocument(document.id, { visibility: visibility as 'private' | 'workspace' });
+    showToast(`Visibility changed to ${visibility}`, 'success');
+  }, [document.id, updateDocument, showToast, closeContextMenu]);
+
+  const handleDelete = useCallback(async () => {
+    closeContextMenu();
+    const docTitle = document.title || 'Untitled';
+    const childCount = document.children.length;
+
+    // Store document data for undo
+    const docData = {
+      id: document.id,
+      title: document.title,
+      visibility: document.visibility,
+      parent_id: document.parent_id,
+    };
+
+    const success = await deleteDocument(document.id);
+    if (success) {
+      const message = childCount > 0
+        ? `Deleted "${docTitle}" and ${childCount} child document${childCount > 1 ? 's' : ''}`
+        : `Deleted "${docTitle}"`;
+
+      showToast(message, 'info', 5000, {
+        label: 'Undo',
+        onClick: async () => {
+          // Recreate the document (undo)
+          const restored = await createDocument(docData.parent_id || undefined);
+          if (restored) {
+            await updateDocument(restored.id, {
+              title: docData.title,
+              visibility: docData.visibility,
+            });
+            showToast('Document restored', 'success');
+          }
+        },
+      });
+    }
+  }, [document, deleteDocument, createDocument, updateDocument, showToast, closeContextMenu]);
 
   return (
     <li
@@ -540,6 +704,7 @@ function DocumentTreeItem({
           'focus-within:bg-border/30 focus-within:text-foreground'
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
+        onContextMenu={handleContextMenu}
       >
         {/* Expand/collapse button - always visible for accessibility */}
         {hasChildren ? (
@@ -571,7 +736,46 @@ function DocumentTreeItem({
         {'_pending' in document && document._pending && (
           <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in document ? document._syncStatus as SyncStatus : undefined} />
         )}
+        {/* Three-dot menu button - visible on hover */}
+        <button
+          ref={menuButtonRef}
+          type="button"
+          onClick={handleMenuButtonClick}
+          className="p-0.5 rounded hover:bg-border/50 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+          aria-label="Document actions"
+          aria-haspopup="menu"
+        >
+          <MoreHorizontalIcon className="h-3.5 w-3.5" />
+        </button>
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={closeContextMenu}>
+          <ContextMenuItem onClick={handleCreateSubdocument}>
+            Create sub-document
+          </ContextMenuItem>
+          <ContextMenuItem onClick={handleRename}>
+            Rename
+          </ContextMenuItem>
+          <ContextMenuSubmenu label="Change visibility">
+            {VISIBILITY_OPTIONS.map((opt) => (
+              <ContextMenuItem
+                key={opt.value}
+                onClick={() => handleChangeVisibility(opt.value)}
+              >
+                {opt.value === 'private' && <LockIcon className="h-3.5 w-3.5 mr-2" />}
+                {opt.value === 'workspace' && <GlobeIcon className="h-3.5 w-3.5 mr-2" />}
+                {opt.label}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubmenu>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={handleDelete} destructive>
+            Delete
+          </ContextMenuItem>
+        </ContextMenu>
+      )}
 
       {/* Children (collapsible) */}
       {hasChildren && isOpen && (
@@ -588,6 +792,22 @@ function DocumentTreeItem({
         </ul>
       )}
     </li>
+  );
+}
+
+function MoreHorizontalIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
+      <circle cx="19" cy="12" r="1" fill="currentColor" />
+      <circle cx="5" cy="12" r="1" fill="currentColor" />
+    </svg>
   );
 }
 
@@ -612,7 +832,45 @@ function ChevronIcon({ isOpen }: { isOpen: boolean }) {
   );
 }
 
-function IssuesList({ issues, activeId }: { issues: Issue[]; activeId?: string }) {
+function IssuesList({
+  issues,
+  activeId,
+  onUpdateIssue,
+}: {
+  issues: Issue[];
+  activeId?: string;
+  onUpdateIssue: (id: string, updates: Partial<Issue>) => Promise<Issue | null>;
+}) {
+  const { showToast } = useToast();
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; issue: Issue } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, issue: Issue) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, issue });
+  }, []);
+
+  const handleMenuClick = useCallback((e: React.MouseEvent, issue: Issue) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setContextMenu({ x: rect.right, y: rect.bottom, issue });
+  }, []);
+
+  const handleChangeStatus = useCallback(async (issue: Issue, state: string) => {
+    const originalState = issue.state;
+    await onUpdateIssue(issue.id, { state });
+    showToast(`Status changed to ${state.replace('_', ' ')}`, 'success');
+    setContextMenu(null);
+  }, [onUpdateIssue, showToast]);
+
+  const handleArchive = useCallback(async (issue: Issue) => {
+    const originalState = issue.state;
+    await onUpdateIssue(issue.id, { state: 'cancelled' });
+    showToast('Issue archived', 'success');
+    setContextMenu(null);
+  }, [onUpdateIssue, showToast]);
+
   if (issues.length === 0) {
     return <div className="px-3 py-2 text-sm text-muted">No issues yet</div>;
   }
@@ -626,58 +884,442 @@ function IssuesList({ issues, activeId }: { issues: Issue[]; activeId?: string }
   };
 
   return (
-    <ul className="space-y-0.5 px-2" data-testid="issues-list">
-      {issues.map((issue) => (
-        <li key={issue.id} data-testid="issue-item">
-          <Link
-            to={`/issues/${issue.id}`}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-              activeId === issue.id
-                ? 'bg-border/50 text-foreground'
-                : 'text-muted hover:bg-border/30 hover:text-foreground'
-            )}
-          >
-            <span className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state] || stateColors.backlog)} />
-            <span className="flex-1 truncate">{issue.title || 'Untitled'}</span>
-            {'_pending' in issue && issue._pending && (
-              <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in issue ? issue._syncStatus as SyncStatus : undefined} />
-            )}
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="space-y-0.5 px-2" data-testid="issues-list">
+        {issues.map((issue) => (
+          <li key={issue.id} data-testid="issue-item" className="group relative">
+            <Link
+              to={`/issues/${issue.id}`}
+              onContextMenu={(e) => handleContextMenu(e, issue)}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                activeId === issue.id
+                  ? 'bg-border/50 text-foreground'
+                  : 'text-muted hover:bg-border/30 hover:text-foreground'
+              )}
+            >
+              <span className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state] || stateColors.backlog)} />
+              <span className="flex-1 truncate">{issue.title || 'Untitled'}</span>
+              {'_pending' in issue && issue._pending && (
+                <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in issue ? issue._syncStatus as SyncStatus : undefined} />
+              )}
+            </Link>
+            {/* Three-dot menu button */}
+            <button
+              type="button"
+              onClick={(e) => handleMenuClick(e, issue)}
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
+              aria-label={`Actions for ${issue.title || 'Untitled'}`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+          <ContextMenuSubmenu label="Change Status">
+            <ContextMenuItem onClick={() => handleChangeStatus(contextMenu.issue, 'backlog')}>
+              <IssueStatusIcon state="backlog" />
+              Backlog
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => handleChangeStatus(contextMenu.issue, 'todo')}>
+              <IssueStatusIcon state="todo" />
+              Todo
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => handleChangeStatus(contextMenu.issue, 'in_progress')}>
+              <IssueStatusIcon state="in_progress" />
+              In Progress
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => handleChangeStatus(contextMenu.issue, 'done')}>
+              <IssueStatusIcon state="done" />
+              Done
+            </ContextMenuItem>
+          </ContextMenuSubmenu>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => handleArchive(contextMenu.issue)}>
+            <ArchiveIcon className="h-4 w-4" />
+            Archive
+          </ContextMenuItem>
+        </ContextMenu>
+      )}
+    </>
   );
 }
 
-function ProgramsList({ programs, activeId, onSelect }: { programs: Program[]; activeId?: string; onSelect: (id: string) => void }) {
+function IssueStatusIcon({ state }: { state: string }) {
+  const colors: Record<string, string> = {
+    backlog: 'text-gray-400',
+    todo: 'text-blue-400',
+    in_progress: 'text-yellow-400',
+    done: 'text-green-400',
+    cancelled: 'text-red-400',
+  };
+  return (
+    <span className={cn('h-2 w-2 rounded-full inline-block mr-2', colors[state]?.replace('text-', 'bg-') || 'bg-gray-400')} />
+  );
+}
+
+function ProjectsList({
+  projects,
+  activeId,
+  onUpdateProject,
+}: {
+  projects: Project[];
+  activeId?: string;
+  onUpdateProject: (id: string, updates: Partial<Project>) => Promise<Project | null>;
+}) {
+  const { showToast } = useToast();
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, project: Project) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, project });
+  }, []);
+
+  const handleMenuClick = useCallback((e: React.MouseEvent, project: Project) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setContextMenu({ x: rect.right, y: rect.bottom, project });
+  }, []);
+
+  const handleArchive = useCallback(async (project: Project) => {
+    await onUpdateProject(project.id, { archived_at: new Date().toISOString() });
+    showToast('Project archived', 'success');
+    setContextMenu(null);
+  }, [onUpdateProject, showToast]);
+
+  if (projects.length === 0) {
+    return <div className="px-3 py-2 text-sm text-muted">No projects yet</div>;
+  }
+
+  return (
+    <>
+      <ul className="space-y-0.5 px-2" data-testid="projects-list">
+        {projects.map((project) => (
+          <li key={project.id} data-testid="project-item" className="group relative">
+            <Link
+              to={`/projects/${project.id}`}
+              onContextMenu={(e) => handleContextMenu(e, project)}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                activeId === project.id
+                  ? 'bg-border/50 text-foreground'
+                  : 'text-muted hover:bg-border/30 hover:text-foreground'
+              )}
+            >
+              <span
+                className="h-2 w-2 rounded-full flex-shrink-0"
+                style={{ backgroundColor: project.color || '#6366f1' }}
+              />
+              <span className="flex-1 truncate">{project.title || 'Untitled'}</span>
+              <span className="text-xs text-muted">{project.ice_score}</span>
+              {'_pending' in project && project._pending && (
+                <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in project ? project._syncStatus as SyncStatus : undefined} />
+              )}
+            </Link>
+            <button
+              type="button"
+              onClick={(e) => handleMenuClick(e, project)}
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
+              aria-label={`Actions for ${project.title || 'Untitled'}`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {contextMenu && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+          <ContextMenuItem onClick={() => handleArchive(contextMenu.project)}>
+            <ArchiveIcon className="h-4 w-4" />
+            Archive
+          </ContextMenuItem>
+        </ContextMenu>
+      )}
+    </>
+  );
+}
+
+const PROGRAM_COLORS = [
+  { value: '#EF4444', label: 'Red' },
+  { value: '#F97316', label: 'Orange' },
+  { value: '#EAB308', label: 'Yellow' },
+  { value: '#22C55E', label: 'Green' },
+  { value: '#06B6D4', label: 'Cyan' },
+  { value: '#3B82F6', label: 'Blue' },
+  { value: '#8B5CF6', label: 'Purple' },
+  { value: '#EC4899', label: 'Pink' },
+  { value: '#6B7280', label: 'Gray' },
+];
+
+function ProgramsList({
+  programs,
+  activeId,
+  onSelect,
+  onUpdateProgram,
+}: {
+  programs: Program[];
+  activeId?: string;
+  onSelect: (id: string) => void;
+  onUpdateProgram: (id: string, updates: Partial<Program>) => Promise<Program | null>;
+}) {
+  const { showToast } = useToast();
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; programId: string } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, programId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, programId });
+  }, []);
+
+  const handleMenuClick = useCallback((e: React.MouseEvent, programId: string) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setContextMenu({ x: rect.right, y: rect.bottom, programId });
+  }, []);
+
+  const handleRename = useCallback((program: Program) => {
+    setContextMenu(null);
+    setEditingId(program.id);
+    setEditingName(program.name);
+    // Focus input after render
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
+
+  const handleRenameSubmit = useCallback(async (programId: string) => {
+    if (editingName.trim()) {
+      await onUpdateProgram(programId, { name: editingName.trim() });
+      showToast('Program renamed', 'success');
+    }
+    setEditingId(null);
+    setEditingName('');
+  }, [editingName, onUpdateProgram, showToast]);
+
+  const handleRenameKeyDown = useCallback((e: React.KeyboardEvent, programId: string) => {
+    if (e.key === 'Enter') {
+      handleRenameSubmit(programId);
+    } else if (e.key === 'Escape') {
+      setEditingId(null);
+      setEditingName('');
+    }
+  }, [handleRenameSubmit]);
+
+  const handleChangeColor = useCallback(async (programId: string, color: string) => {
+    setContextMenu(null);
+    await onUpdateProgram(programId, { color });
+    showToast('Color updated', 'success');
+  }, [onUpdateProgram, showToast]);
+
+  const handleArchive = useCallback(async (program: Program) => {
+    setContextMenu(null);
+    const originalArchivedAt = program.archived_at;
+    await onUpdateProgram(program.id, { archived_at: new Date().toISOString() });
+    showToast('Program archived', 'success', 5000, {
+      label: 'Undo',
+      onClick: async () => {
+        await onUpdateProgram(program.id, { archived_at: originalArchivedAt });
+        showToast('Archive undone', 'info');
+      },
+    });
+  }, [onUpdateProgram, showToast]);
+
   if (programs.length === 0) {
     return <div className="px-3 py-2 text-sm text-muted">No programs yet</div>;
   }
 
+  const contextMenuProgram = contextMenu ? programs.find(p => p.id === contextMenu.programId) : null;
+
   return (
-    <ul className="space-y-0.5 px-2" data-testid="programs-list">
-      {programs.map((program) => (
-        <li key={program.id} data-testid="program-item">
+    <>
+      <ul className="space-y-0.5 px-2" data-testid="programs-list">
+        {programs.map((program) => (
+          <li key={program.id} data-testid="program-item">
+            <div
+              className="group relative"
+              onContextMenu={(e) => handleContextMenu(e, program.id)}
+            >
+              {editingId === program.id ? (
+                <div className="flex items-center gap-2 px-2 py-1.5">
+                  <span
+                    className="h-4 w-4 rounded flex-shrink-0 flex items-center justify-center text-[10px] font-bold"
+                    style={{ backgroundColor: program.color, color: getContrastTextColor(program.color) }}
+                  >
+                    {program.emoji || program.name?.[0]?.toUpperCase() || '?'}
+                  </span>
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onBlur={() => handleRenameSubmit(program.id)}
+                    onKeyDown={(e) => handleRenameKeyDown(e, program.id)}
+                    className="flex-1 bg-transparent border-none outline-none text-sm text-foreground"
+                  />
+                </div>
+              ) : (
+                <button
+                  onClick={() => onSelect(program.id)}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                    activeId === program.id
+                      ? 'bg-border/50 text-foreground'
+                      : 'text-muted hover:bg-border/30 hover:text-foreground'
+                  )}
+                >
+                  <span
+                    className="h-4 w-4 rounded flex-shrink-0 flex items-center justify-center text-[10px] font-bold"
+                    style={{ backgroundColor: program.color, color: getContrastTextColor(program.color) }}
+                  >
+                    {program.emoji || program.name?.[0]?.toUpperCase() || '?'}
+                  </span>
+                  <span className="flex-1 truncate">{program.name}</span>
+                  {'_pending' in program && program._pending && (
+                    <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in program ? program._syncStatus as SyncStatus : undefined} />
+                  )}
+                </button>
+              )}
+              {/* Three-dot menu button */}
+              {editingId !== program.id && (
+                <button
+                  type="button"
+                  onClick={(e) => handleMenuClick(e, program.id)}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-border/50 opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-label={`Actions for ${program.name}`}
+                >
+                  <MoreHorizontalIcon />
+                </button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {/* Context Menu */}
+      {contextMenu && contextMenuProgram && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)}>
+          <ContextMenuItem onClick={() => handleRename(contextMenuProgram)}>
+            <EditIcon className="h-4 w-4" />
+            Rename
+          </ContextMenuItem>
+          <ContextMenuSubmenu label="Change Color">
+            {PROGRAM_COLORS.map((color) => (
+              <ContextMenuItem
+                key={color.value}
+                onClick={() => handleChangeColor(contextMenuProgram.id, color.value)}
+              >
+                <span
+                  className="h-3 w-3 rounded-full"
+                  style={{ backgroundColor: color.value }}
+                />
+                {color.label}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubmenu>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => handleArchive(contextMenuProgram)}>
+            <ArchiveIcon className="h-4 w-4" />
+            Archive
+          </ContextMenuItem>
+        </ContextMenu>
+      )}
+    </>
+  );
+}
+
+function EditIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  );
+}
+
+function ArchiveIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+    </svg>
+  );
+}
+
+function SprintsList() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { data, isLoading, error } = useActiveSprintsQuery();
+
+  // Extract active sprint ID from URL if viewing a sprint
+  const getActiveSprintId = (): string | undefined => {
+    // Match /sprints/:id or /programs/:programId/sprints/:id
+    const sprintMatch = location.pathname.match(/\/sprints\/([^/]+)/);
+    return sprintMatch ? sprintMatch[1] : undefined;
+  };
+
+  const activeId = getActiveSprintId();
+
+  if (isLoading) {
+    return <div className="px-3 py-2 text-sm text-muted">Loading sprints...</div>;
+  }
+
+  if (error) {
+    return <div className="px-3 py-2 text-sm text-muted">Failed to load sprints</div>;
+  }
+
+  const sprints = data?.sprints || [];
+
+  if (sprints.length === 0) {
+    return (
+      <div className="px-3 py-2 text-sm text-muted">
+        <p>No active sprints</p>
+        <p className="mt-1 text-xs">Check Programs to see upcoming sprints</p>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="space-y-0.5 px-2" data-testid="sprints-list">
+      {sprints.map((sprint) => (
+        <li key={sprint.id} data-testid="sprint-item">
           <button
-            onClick={() => onSelect(program.id)}
+            onClick={() => navigate(`/programs/${sprint.program_id}/sprints/${sprint.id}`)}
             className={cn(
               'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-              activeId === program.id
+              activeId === sprint.id
                 ? 'bg-border/50 text-foreground'
                 : 'text-muted hover:bg-border/30 hover:text-foreground'
             )}
           >
-            <span
-              className="h-4 w-4 rounded flex-shrink-0 flex items-center justify-center text-[10px] font-bold"
-              style={{ backgroundColor: program.color, color: getContrastTextColor(program.color) }}
-            >
-              {program.emoji || program.name?.[0]?.toUpperCase() || '?'}
-            </span>
-            <span className="flex-1 truncate">{program.name}</span>
-            {'_pending' in program && program._pending && (
-              <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in program ? program._syncStatus as SyncStatus : undefined} />
+            {/* Owner avatar */}
+            {sprint.owner ? (
+              <span
+                className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent/80 text-[10px] font-medium text-white"
+                title={sprint.owner.name}
+              >
+                {sprint.owner.name?.charAt(0).toUpperCase() || '?'}
+              </span>
+            ) : (
+              <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-border text-[10px] text-muted">
+                ?
+              </span>
             )}
+            {/* Program name (sprint number is redundant since all active sprints are the same) */}
+            <span className="flex-1 truncate">{sprint.program_name || 'Untitled'}</span>
           </button>
         </li>
       ))}
@@ -755,6 +1397,23 @@ function IssuesIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+    </svg>
+  );
+}
+
+function ProjectsIcon() {
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+    </svg>
+  );
+}
+
+function SprintsIcon() {
+  // Lightning bolt icon (Zap - represents velocity/sprints)
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
     </svg>
   );
 }

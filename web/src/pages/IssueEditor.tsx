@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
@@ -8,7 +8,7 @@ import { Combobox } from '@/components/ui/Combobox';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useProgramsQuery } from '@/hooks/useProgramsQuery';
-import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
+import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { apiPost } from '@/lib/api';
 
 interface TeamMember {
@@ -28,6 +28,30 @@ interface Sprint {
   id: string;
   name: string;
   status: string;
+  sprint_number: number;
+}
+
+// Compute sprint dates from sprint number (1-week sprints)
+function computeSprintDates(sprintNumber: number, workspaceStartDate: Date): { start: Date; end: Date } {
+  const start = new Date(workspaceStartDate);
+  start.setDate(start.getDate() + (sprintNumber - 1) * 7);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+// Format date range for display (e.g., "Jan 6 - Jan 19")
+function formatDateRange(start: Date, end: Date): string {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const startMonth = monthNames[start.getMonth()];
+  const endMonth = monthNames[end.getMonth()];
+
+  if (startMonth === endMonth) {
+    return `${startMonth} ${start.getDate()} - ${end.getDate()}`;
+  }
+  return `${startMonth} ${start.getDate()} - ${endMonth} ${end.getDate()}`;
 }
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -106,13 +130,28 @@ const PRIORITIES = [
   { value: 'none', label: 'No Priority' },
 ];
 
+// Navigation context passed when navigating from another page
+interface NavigationContext {
+  from?: 'program';
+  programId?: string;
+  programName?: string;
+}
+
 export function IssueEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const navContext = (location.state as NavigationContext) || {};
   const { user } = useAuth();
   const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
   const { createDocument } = useDocuments();
   const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [workspaceSprintStartDate, setWorkspaceSprintStartDate] = useState<Date | null>(null);
+
+  // Direct-fetched issue (when not found in context cache)
+  const [directFetchedIssue, setDirectFetchedIssue] = useState<Issue | null>(null);
+  const [directFetchLoading, setDirectFetchLoading] = useState(false);
+  const [directFetchFailed, setDirectFetchFailed] = useState(false);
 
   // Create sub-document (for slash commands) - creates a wiki doc linked to this issue
   const handleCreateSubDocument = useCallback(async () => {
@@ -133,7 +172,8 @@ export function IssueEditorPage() {
 
   // Use TanStack Query for programs and team members (supports offline via cache)
   const { data: programsData = [], isLoading: programsLoading } = useProgramsQuery();
-  const { data: teamMembersData = [], isLoading: teamMembersLoading } = useTeamMembersQuery();
+  // Use assignable members only - pending users can't be assigned to issues
+  const { data: teamMembersData = [], isLoading: teamMembersLoading } = useAssignableMembersQuery();
 
   // Map programs to the format needed by combobox
   const programs: ProgramOption[] = programsData.map(p => ({
@@ -150,33 +190,84 @@ export function IssueEditorPage() {
     name: m.name,
   }));
 
-  // Get the current issue from context
-  const issue = issues.find(i => i.id === id) || null;
+  // Get the current issue from context, or use direct-fetched issue
+  const contextIssue = issues.find(i => i.id === id) || null;
+  const issue = contextIssue || directFetchedIssue;
+
+  // Fetch issue directly by ID if not in context (e.g., when navigating from Programs view)
+  useEffect(() => {
+    // Skip if we already have the issue from context
+    if (contextIssue) {
+      setDirectFetchedIssue(null);
+      setDirectFetchFailed(false);
+      return;
+    }
+
+    // Skip if no ID or temp ID (offline creation)
+    if (!id || id.startsWith('temp-')) return;
+
+    // Skip if still loading from context
+    if (issuesLoading) return;
+
+    // Skip if already fetching or already failed
+    if (directFetchLoading || directFetchFailed) return;
+
+    setDirectFetchLoading(true);
+
+    fetch(`${API_URL}/api/issues/${id}`, { credentials: 'include' })
+      .then(res => {
+        if (!res.ok) {
+          throw new Error('Issue not found');
+        }
+        return res.json();
+      })
+      .then(data => {
+        setDirectFetchedIssue(data);
+        setDirectFetchLoading(false);
+      })
+      .catch(() => {
+        setDirectFetchFailed(true);
+        setDirectFetchLoading(false);
+      });
+  }, [id, contextIssue, issuesLoading, directFetchLoading, directFetchFailed]);
 
   // Fetch sprints when issue's program changes with cancellation
   useEffect(() => {
     if (!issue?.program_id) {
       setSprints([]);
+      setWorkspaceSprintStartDate(null);
       return;
     }
 
     let cancelled = false;
 
     fetch(`${API_URL}/api/programs/${issue.program_id}/sprints`, { credentials: 'include' })
-      .then(res => res.ok ? res.json() : { sprints: [] })
-      .then(data => { if (!cancelled) setSprints(data.sprints || []); })
-      .catch(() => { if (!cancelled) setSprints([]); });
+      .then(res => res.ok ? res.json() : { sprints: [], workspace_sprint_start_date: null })
+      .then(data => {
+        if (!cancelled) {
+          setSprints(data.sprints || []);
+          if (data.workspace_sprint_start_date) {
+            setWorkspaceSprintStartDate(new Date(data.workspace_sprint_start_date));
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSprints([]);
+          setWorkspaceSprintStartDate(null);
+        }
+      });
 
     return () => { cancelled = true; };
   }, [issue?.program_id]);
 
-  // Redirect if issue not found after loading
+  // Redirect only if direct fetch failed (issue truly doesn't exist)
   // Skip redirect for temp IDs (pending offline creation) - give cache time to sync
   useEffect(() => {
-    if (!issuesLoading && id && !issue && !id.startsWith('temp-')) {
+    if (directFetchFailed && !id?.startsWith('temp-')) {
       navigate('/issues');
     }
-  }, [issuesLoading, id, issue, navigate]);
+  }, [directFetchFailed, id, navigate]);
 
   // Update handler using shared context
   const handleUpdateIssue = useCallback(async (updates: Partial<Issue>) => {
@@ -222,7 +313,10 @@ export function IssueEditorPage() {
 
   // Only wait for issues to load - programs/team can load in background
   // This allows the page to render with cached data when offline
-  const loading = issuesLoading;
+  // Also wait for direct fetch if we're fetching an issue not in context
+  // We're loading if: issues are loading, OR (not in context AND not fetched AND not failed)
+  const needsDirectFetch = !contextIssue && !directFetchedIssue && !directFetchFailed && !id?.startsWith('temp-');
+  const loading = issuesLoading || directFetchLoading || (!issuesLoading && needsDirectFetch);
 
   if (loading) {
     return <EditorSkeleton />;
@@ -258,6 +352,37 @@ export function IssueEditorPage() {
     // Sprints will be fetched automatically via the useEffect when issue.program_id changes
   };
 
+  // Handle back navigation - return to context if available, otherwise issues list
+  const handleBack = useCallback(() => {
+    if (navContext.from === 'program' && navContext.programId) {
+      navigate(`/programs/${navContext.programId}`);
+    } else {
+      navigate('/issues');
+    }
+  }, [navigate, navContext]);
+
+  // Escape key handler - return to previous context
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle Escape when not in an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+      if (e.key === 'Escape') {
+        handleBack();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleBack]);
+
+  // Breadcrumb label based on navigation context
+  const backLabel = navContext.from === 'program' && navContext.programName
+    ? navContext.programName
+    : undefined;
+
   return (
     <>
     <Editor
@@ -265,7 +390,8 @@ export function IssueEditorPage() {
       userName={user.name}
       initialTitle={displayIssue.title}
       onTitleChange={throttledTitleSave}
-      onBack={() => navigate('/issues')}
+      onBack={handleBack}
+      backLabel={backLabel}
       roomPrefix="issue"
       placeholder="Add a description..."
       onCreateSubDocument={handleCreateSubDocument}
@@ -350,7 +476,17 @@ export function IssueEditorPage() {
 
             <PropertyRow label="Assignee">
               <Combobox
-                options={teamMembers.map((m) => ({ value: m.user_id, label: m.name }))}
+                options={(() => {
+                  const options = teamMembers.map((m) => ({ value: m.user_id, label: m.name }));
+                  // If current assignee is archived and not in the active team members list, add them
+                  if (displayIssue.assignee_id && displayIssue.assignee_archived && displayIssue.assignee_name) {
+                    const exists = options.some(o => o.value === displayIssue.assignee_id);
+                    if (!exists) {
+                      options.unshift({ value: displayIssue.assignee_id, label: `${displayIssue.assignee_name} (archived)` });
+                    }
+                  }
+                  return options;
+                })()}
                 value={displayIssue.assignee_id}
                 onChange={(value) => handleUpdateIssue({ assignee_id: value })}
                 placeholder="Unassigned"
@@ -377,7 +513,14 @@ export function IssueEditorPage() {
             {displayIssue.program_id && (
               <PropertyRow label="Sprint">
                 <Combobox
-                  options={sprints.map((s) => ({ value: s.id, label: s.name, description: s.status }))}
+                  options={sprints.map((s) => {
+                    let dateRange = '';
+                    if (workspaceSprintStartDate) {
+                      const { start, end } = computeSprintDates(s.sprint_number, workspaceSprintStartDate);
+                      dateRange = formatDateRange(start, end);
+                    }
+                    return { value: s.id, label: s.name, description: dateRange };
+                  })}
                   value={displayIssue.sprint_id}
                   onChange={(value) => {
                     if (value && !displayIssue.estimate) {

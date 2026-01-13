@@ -332,12 +332,17 @@ export function useDocuments() {
   const updateDocument = async (id: string, updates: Partial<WikiDocument>): Promise<WikiDocument | null> => {
     // When offline, manually handle optimistic update since onMutate won't run
     if (!navigator.onLine) {
-      // Add to our custom pending mutations tracking
+      // Get current document for rollback
+      const currentDocs = queryClient.getQueryData<WikiDocument[]>(documentKeys.wikiList());
+      const originalDoc = currentDocs?.find(d => d.id === id);
+
+      // Add to our custom pending mutations tracking with original data for rollback
       const pendingId = addPendingMutation({
         type: 'update',
         resource: 'document',
         resourceId: id,
         data: updates,
+        originalData: originalDoc,
       });
 
       // Manually update the query cache
@@ -366,12 +371,17 @@ export function useDocuments() {
   const deleteDocument = async (id: string): Promise<boolean> => {
     // When offline, manually handle optimistic update since onMutate won't run
     if (!navigator.onLine) {
-      // Add to our custom pending mutations tracking
+      // Get current document for rollback
+      const currentDocs = queryClient.getQueryData<WikiDocument[]>(documentKeys.wikiList());
+      const originalDoc = currentDocs?.find(d => d.id === id);
+
+      // Add to our custom pending mutations tracking with original data for rollback
       addPendingMutation({
         type: 'delete',
         resource: 'document',
         resourceId: id,
         data: null,
+        originalData: originalDoc,
       });
 
       // Manually update the query cache (remove the document)

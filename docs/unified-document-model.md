@@ -127,8 +127,8 @@ Sprint dates are **computed from sprint_number + workspace start date**, not sto
 
 ```typescript
 function computeSprintDates(sprintNumber: number, workspaceStartDate: Date) {
-  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 14);
-  const end = addDays(start, 13); // 14 days total
+  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 7);
+  const end = addDays(start, 6); // 7 days total
   return { start, end };
 }
 ```
@@ -151,6 +151,34 @@ Each sprint requires exactly **one owner** (`owner_id`). A person can only own o
 - Clear accountability
 - Resource visibility
 - No overallocation
+
+### Sprint Iterations (Claude Code Integration)
+
+The `sprint_iterations` table tracks story completion attempts during Claude Code `/work` sessions:
+
+```
+sprint_iterations
+├── id: UUID
+├── sprint_id: UUID (FK → documents)
+├── workspace_id: UUID
+├── story_id: VARCHAR(200) - PRD story ID
+├── story_title: VARCHAR(500)
+├── status: ENUM('pass', 'fail', 'in_progress')
+├── what_attempted: TEXT - Description of work done
+├── blockers_encountered: TEXT - What failed/blocked
+├── author_id: UUID (FK → users)
+└── created_at, updated_at
+```
+
+**Use cases:**
+- Real-time progress visibility during `/work` execution
+- Sprint velocity analysis (iterations per story)
+- Learning extraction from failed attempts
+- Historical record for retrospectives
+
+**API endpoints:**
+- `POST /api/sprints/:id/iterations` - Log an iteration
+- `GET /api/sprints/:id/iterations` - List iterations (filterable by status, story_id)
 
 ## Issue Lifecycle
 
@@ -217,6 +245,21 @@ interface IssueProperties {
   assignee_id?: string;
   ticket_number?: number;
   estimate_hours?: number;
+  claude_metadata?: ClaudeMetadata; // Claude Code integration
+}
+
+// Claude Code workflow tracking (see application-architecture.md)
+interface ClaudeMetadata {
+  updated_by: 'claude';           // Attribution flag
+  story_id?: string;              // PRD story ID
+  prd_name?: string;              // Source PRD
+  confidence?: number;            // 0-100 completion confidence
+  telemetry?: {                   // Completion metrics
+    iterations: number;
+    feedback_loops: { type_check: number; test: number; build: number };
+    time_elapsed_seconds: number;
+    files_changed: string[];
+  };
 }
 
 interface SprintProperties {

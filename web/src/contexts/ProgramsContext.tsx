@@ -8,6 +8,7 @@ interface ProgramsContextValue {
   loading: boolean;
   createProgram: () => Promise<Program | null>;
   updateProgram: (id: string, updates: Partial<Program> & { owner_id?: string | null }) => Promise<Program | null>;
+  deleteProgram: (id: string) => Promise<boolean>;
   refreshPrograms: () => Promise<void>;
 }
 

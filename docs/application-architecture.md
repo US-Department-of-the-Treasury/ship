@@ -375,6 +375,8 @@ awareness.setLocalState({
 
 ## Authentication
 
+### Session-Based (Browser)
+
 **PIV/CAC primary, password fallback**:
 
 ```
@@ -402,6 +404,36 @@ For non-PIV users (testing, external):
 - Username/password authentication
 - Session stored in secure cookie
 - Configurable per environment
+
+### API Tokens (Programmatic Access)
+
+For CLI tools and automation (e.g., Claude Code integration):
+
+**Token format:** `ship_<64 hex characters>`
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/api-tokens` | POST | Generate new token (requires session auth) |
+| `/api/api-tokens` | GET | List user's tokens (prefix only, never full token) |
+| `/api/api-tokens/:id` | DELETE | Revoke a token |
+
+**Security properties:**
+- Tokens are SHA-256 hashed before storage (plaintext never stored)
+- Token shown only once on creation - user must save immediately
+- Soft-delete on revoke (audit trail preserved)
+- Optional expiration (default: no expiry)
+- CSRF protection skipped for Bearer token requests (not browser-vulnerable)
+
+**Usage:**
+```bash
+# Configure in ~/.claude/.env
+SHIP_API_TOKEN=ship_<your_token>
+SHIP_API_URL=https://ship.example.com/api
+
+# Use in requests
+curl -H "Authorization: Bearer $SHIP_API_TOKEN" \
+  "$SHIP_API_URL/api/issues"
+```
 
 ## Deployment
 
@@ -714,6 +746,66 @@ pnpm dev
   "db:generate": "pnpm --filter api db:generate"
 }
 ```
+
+## Claude Code Integration
+
+Ship integrates with Claude Code CLI for AI-assisted development workflows. See [Ship + Claude CLI Integration Guide](./ship-claude-cli-integration.md) for full documentation.
+
+### Key Integration Points
+
+| API Endpoint | Purpose | Claude Workflow |
+|--------------|---------|-----------------|
+| `POST /api/sprints` | Create sprint from PRD | `/prd` |
+| `POST /api/issues` | Create issues from user stories | `/prd` |
+| `PATCH /api/issues/:id` | Update issue state, add telemetry | `/work` |
+| `POST /api/sprints/:id/iterations` | Log iteration attempts | `/work` |
+| `POST /api/issues/:id/history` | Log verification failures | `/work` |
+| `GET /api/sprints/:id/iterations` | Get sprint progress | `/standup` |
+| `POST /api/documents` | Create retro/wiki docs | `/document` |
+| `GET /api/search/learnings` | Query past learnings | `/prd` |
+
+### Issue Metadata for Claude
+
+Issues track Claude-specific metadata in `properties.claude_metadata`:
+
+```typescript
+interface ClaudeMetadata {
+  updated_by: 'claude';           // Attribution flag
+  story_id?: string;              // PRD story ID reference
+  prd_name?: string;              // Source PRD name
+  session_context?: string;       // Session info
+  confidence?: number;            // 0-100 completion confidence
+  telemetry?: {
+    iterations: number;           // Fix attempt count
+    feedback_loops: {
+      type_check: number;
+      test: number;
+      build: number;
+    };
+    time_elapsed_seconds: number;
+    files_changed: string[];
+  };
+}
+```
+
+### Sprint Iterations
+
+The `sprint_iterations` table logs each attempt at completing a story:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `sprint_id` | UUID | Parent sprint |
+| `story_id` | VARCHAR | PRD story ID |
+| `story_title` | VARCHAR | Story name |
+| `status` | ENUM | `pass`, `fail`, `in_progress` |
+| `what_attempted` | TEXT | What was tried |
+| `blockers_encountered` | TEXT | What failed |
+| `author_id` | UUID | Who logged it |
+
+This enables:
+- Real-time progress visibility in Ship dashboard
+- Sprint velocity analysis
+- Learning extraction from failed attempts
 
 ## Decision Log
 

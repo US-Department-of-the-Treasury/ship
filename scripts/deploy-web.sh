@@ -34,11 +34,9 @@ if [ -z "$CF_DISTRIBUTION" ]; then
   exit 1
 fi
 
-# Build if needed
-if [ ! -d "web/dist" ]; then
-  echo "Building frontend..."
-  pnpm build:web
-fi
+# Always build fresh to ensure we deploy latest code
+echo "Building frontend..."
+pnpm build:web
 
 echo "Syncing to S3: $S3_BUCKET"
 aws s3 sync web/dist/ "s3://${S3_BUCKET}/" --delete

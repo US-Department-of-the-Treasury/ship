@@ -154,7 +154,7 @@ test.describe('Issue Estimates', () => {
     test('sprint header shows total estimated hours', async ({ page }) => {
       // Navigate to a program with sprints
       await page.goto('/programs')
-      await page.locator('main').getByRole('button', { name: /API Platform/i }).click()
+      await page.locator('tr[role="row"]', { hasText: /API Platform/i }).first().click()
       await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
       // Go to Sprints tab (it's a tab, not a button)
@@ -166,7 +166,7 @@ test.describe('Issue Estimates', () => {
 
     test('sprint timeline cards show estimate totals when issues have estimates', async ({ page }) => {
       await page.goto('/programs')
-      await page.locator('main').getByRole('button', { name: /API Platform/i }).click()
+      await page.locator('tr[role="row"]', { hasText: /API Platform/i }).first().click()
       await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
       await page.getByRole('tab', { name: 'Sprints' }).click()
@@ -391,7 +391,7 @@ test.describe('Progress Chart Integration', () => {
 
   test('progress chart shows estimate-based metrics', async ({ page }) => {
     await page.goto('/programs')
-    await page.locator('main').getByRole('button', { name: /API Platform/i }).click()
+    await page.locator('tr[role="row"]', { hasText: /API Platform/i }).first().click()
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
     await page.getByRole('tab', { name: 'Sprints' }).click()

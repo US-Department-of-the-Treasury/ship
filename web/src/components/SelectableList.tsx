@@ -75,9 +75,12 @@ export function SelectableList<T extends { id: string }>({
   });
 
   // Notify parent of selection changes with both IDs and selection object
+  // NOTE: We intentionally don't include moveFocus/extendSelection in dependencies
+  // because extendSelection depends on focusedId, causing infinite loops when hover
+  // changes focus. The parent receives fresh selection object on selectedIds/focusedId changes.
   useEffect(() => {
     onSelectionChange?.(selection.selectedIds, selection);
-  }, [selection.selectedIds, selection, onSelectionChange]);
+  }, [selection.selectedIds, selection.focusedId, onSelectionChange]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, item: T) => {
     e.preventDefault();
@@ -113,6 +116,12 @@ export function SelectableList<T extends { id: string }>({
         aria-label={ariaLabel}
         tabIndex={0}
         onKeyDown={selectable ? selection.handleKeyDown : undefined}
+        onMouseLeave={() => {
+          // Clear focusedId when mouse leaves the table entirely.
+          // This ensures pressing 'j' after mouse exits starts from the first row.
+          setHoveredId(null);
+          selection.setFocusedId(null);
+        }}
       >
         {columns && (
           <thead className="sticky top-0 bg-background z-10">
@@ -127,7 +136,7 @@ export function SelectableList<T extends { id: string }>({
           </thead>
         )}
         <tbody>
-          {items.map((item) => {
+          {items.map((item, index) => {
             const itemId = getItemId(item);
             const isSelected = selection.isSelected(itemId);
             const isFocused = selection.isFocused(itemId);
@@ -144,7 +153,13 @@ export function SelectableList<T extends { id: string }>({
                 onCheckboxClick={(e) => selection.handleClick(itemId, e)}
                 onRowClick={() => onItemClick?.(item)}
                 onFocus={() => selection.setFocusedId(itemId)}
-                onMouseEnter={() => setHoveredId(itemId)}
+                onMouseEnter={() => {
+                  setHoveredId(itemId);
+                  // Set focusedId on hover for Superhuman-style UX.
+                  // When mouse leaves the table entirely (see onMouseLeave on <table>),
+                  // focusedId is cleared so 'j' starts from the first row.
+                  selection.setFocusedId(itemId);
+                }}
                 onMouseLeave={() => setHoveredId(null)}
                 onContextMenu={(e) => handleContextMenu(e, item)}
               >
@@ -209,6 +224,7 @@ function SelectableRow({
       onMouseLeave={onMouseLeave}
       onContextMenu={onContextMenu}
       data-selected={isSelected}
+      data-focused={isFocused}
       className={cn(
         'group cursor-pointer border-b border-border/50 transition-colors',
         isSelected && 'bg-accent/10',

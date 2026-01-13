@@ -607,6 +607,107 @@ test.describe('Private Documents', () => {
     }
   });
 
+  // Live visibility change (WebSocket disconnection)
+  test('member gets disconnected when doc changes to private while editing', async ({ browser, baseURL }) => {
+    // Create two browser contexts for two different users
+    const adminContext = await browser.newContext({ baseURL });
+    const memberContext = await browser.newContext({ baseURL });
+
+    const adminPage = await adminContext.newPage();
+    const memberPage = await memberContext.newPage();
+
+    try {
+      // Login as admin and create a workspace document
+      await loginAsAdmin(adminPage);
+      const doc = await createDocument(adminPage, { title: 'Collab Test Doc', visibility: 'workspace' });
+
+      // Admin opens the document
+      await adminPage.goto(`/docs/${doc.id}`);
+      await adminPage.waitForLoadState('networkidle');
+
+      // Wait for WebSocket connection to establish (sync status shows "Saved")
+      await expect(adminPage.getByTestId('sync-status').getByText('Saved')).toBeVisible({ timeout: 10000 });
+
+      // Login as member and open the same document
+      await loginAsMember(memberPage);
+      await memberPage.goto(`/docs/${doc.id}`);
+      await memberPage.waitForLoadState('networkidle');
+
+      // Wait for member's WebSocket connection to establish
+      await expect(memberPage.getByTestId('sync-status').getByText('Saved')).toBeVisible({ timeout: 10000 });
+
+      // Set up dialog handler for the member page BEFORE the visibility change
+      // The dialog will show when WebSocket is closed with code 4403
+      let dialogMessage = '';
+      memberPage.on('dialog', async (dialog) => {
+        dialogMessage = dialog.message();
+        await dialog.accept();
+      });
+
+      // Admin changes document to private via API
+      await updateDocument(adminPage, doc.id, { visibility: 'private' });
+
+      // Wait for the WebSocket close event to trigger the dialog
+      await memberPage.waitForTimeout(3000);
+
+      // Verify the member saw the access revoked message
+      expect(dialogMessage.toLowerCase()).toContain('access');
+
+      // After dismissing the dialog, member should be navigated away
+      // The onBack() handler navigates to /docs or parent
+      await expect(memberPage).toHaveURL(/\/docs$/, { timeout: 5000 });
+
+      // Member should no longer see the document in the sidebar
+      await clearQueryCache(memberPage);
+      await memberPage.reload();
+      await memberPage.waitForLoadState('networkidle');
+      await expect(memberPage.getByRole('link', { name: 'Collab Test Doc' })).not.toBeVisible();
+
+      // Cleanup
+      await deleteDocument(adminPage, doc.id);
+    } finally {
+      await adminContext.close();
+      await memberContext.close();
+    }
+  });
+
+  test('admin can still see doc after visibility change', async ({ browser, baseURL }) => {
+    // Verify that the admin (document creator) is NOT disconnected when changing to private
+    const adminContext = await browser.newContext({ baseURL });
+    const adminPage = await adminContext.newPage();
+
+    try {
+      // Login as admin and create a workspace document
+      await loginAsAdmin(adminPage);
+      const doc = await createDocument(adminPage, { title: 'Admin Keep Access', visibility: 'workspace' });
+
+      // Admin opens the document
+      await adminPage.goto(`/docs/${doc.id}`);
+      await adminPage.waitForLoadState('networkidle');
+
+      // Wait for WebSocket connection to establish
+      await expect(adminPage.getByTestId('sync-status').getByText('Saved')).toBeVisible({ timeout: 10000 });
+
+      // Admin changes document to private via API
+      await updateDocument(adminPage, doc.id, { visibility: 'private' });
+
+      // Wait a moment for any WebSocket events
+      await adminPage.waitForTimeout(2000);
+
+      // Admin should still be on the document page (not redirected)
+      await expect(adminPage).toHaveURL(new RegExp(`/docs/${doc.id}`));
+
+      // Admin should still see "Saved" status (WebSocket still connected)
+      // Note: There might be a brief reconnect, so we wait for it to stabilize
+      await expect(adminPage.getByTestId('sync-status').getByText(/Saved|Cached/)).toBeVisible({ timeout: 10000 });
+
+      // Cleanup
+      await deleteDocument(adminPage, doc.id);
+    } finally {
+      await adminContext.close();
+    }
+  });
+
   // Moving documents
   test('moving private doc to workspace parent shows in Workspace section', async ({ page }) => {
     await loginAsAdmin(page);

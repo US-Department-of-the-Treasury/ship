@@ -225,17 +225,49 @@ router.post('/:token/accept', async (req: Request, res: Response): Promise<void>
       [invite.workspace_id, user.id, invite.role]
     );
 
-    // Update the pending person document created at invite time
-    // Set user_id, remove pending flag, update title to user's chosen name
-    await pool.query(
-      `UPDATE documents
-       SET title = $1,
-           properties = properties || $2::jsonb - 'pending'
-       WHERE workspace_id = $3
+    // Check if user already has a non-pending person doc in this workspace
+    // This can happen if they were added directly as a member before the invite
+    const existingPersonDoc = await pool.query(
+      `SELECT id FROM documents
+       WHERE workspace_id = $1
          AND document_type = 'person'
-         AND properties->>'invite_id' = $4`,
-      [user.name, JSON.stringify({ user_id: user.id }), invite.workspace_id, invite.id]
+         AND properties->>'user_id' = $2
+         AND (properties->>'pending' IS NULL OR properties->>'pending' != 'true')`,
+      [invite.workspace_id, user.id]
     );
+
+    if (existingPersonDoc.rows[0]) {
+      // User already has a person doc - archive the pending one FIRST
+      // (before transferring invite_id, otherwise archive query would match both)
+      await pool.query(
+        `UPDATE documents SET archived_at = NOW()
+         WHERE workspace_id = $1
+           AND document_type = 'person'
+           AND properties->>'invite_id' = $2`,
+        [invite.workspace_id, invite.id]
+      );
+
+      // Transfer invite_id to existing doc for history tracking
+      await pool.query(
+        `UPDATE documents
+         SET properties = properties || $1::jsonb
+         WHERE id = $2`,
+        [JSON.stringify({ invite_id: invite.id }), existingPersonDoc.rows[0].id]
+      );
+    } else {
+      // Update the pending person document created at invite time
+      // Set user_id, remove pending flag, update title to user's chosen name
+      // Note: parentheses required due to operator precedence (- binds tighter than ||)
+      await pool.query(
+        `UPDATE documents
+         SET title = $1,
+             properties = (properties || $2::jsonb) - 'pending'
+         WHERE workspace_id = $3
+           AND document_type = 'person'
+           AND properties->>'invite_id' = $4`,
+        [user.name, JSON.stringify({ user_id: user.id }), invite.workspace_id, invite.id]
+      );
+    }
 
     // Mark invite as used
     await pool.query(

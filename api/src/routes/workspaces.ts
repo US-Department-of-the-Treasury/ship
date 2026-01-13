@@ -237,13 +237,15 @@ router.post('/:id/switch', authMiddleware, async (req: Request, res: Response): 
 // GET /api/workspaces/:id/members - List workspace members (admin only)
 router.get('/:id/members', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
   const { id: workspaceId } = req.params;
+  const includeArchived = req.query.includeArchived === 'true';
 
   try {
-    // Query memberships and join to person docs via properties.user_id
-    const result = await pool.query(
+    // Query active members (with memberships)
+    const activeResult = await pool.query(
       `SELECT wm.id, wm.user_id, wm.role, wm.created_at,
               u.email, u.name,
-              d.id as person_document_id
+              d.id as person_document_id,
+              false as is_archived
        FROM workspace_memberships wm
        JOIN users u ON wm.user_id = u.id
        LEFT JOIN documents d ON d.workspace_id = wm.workspace_id
@@ -254,15 +256,54 @@ router.get('/:id/members', authMiddleware, workspaceAdminMiddleware, async (req:
       [workspaceId]
     );
 
-    const members = result.rows.map(row => ({
-      id: row.id,
-      userId: row.user_id,
-      email: row.email,
-      name: row.name,
-      role: row.role,
-      personDocumentId: row.person_document_id,
-      joinedAt: row.created_at,
-    }));
+    let archivedRows: typeof activeResult.rows = [];
+    if (includeArchived) {
+      // Query archived members (person docs with archived_at but no membership)
+      const archivedResult = await pool.query(
+        `SELECT d.id as person_document_id,
+                d.properties->>'user_id' as user_id,
+                d.archived_at,
+                COALESCE(d.properties->>'email', u.email) as email,
+                COALESCE(d.title, u.name) as name,
+                true as is_archived
+         FROM documents d
+         LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
+         WHERE d.workspace_id = $1
+           AND d.document_type = 'person'
+           AND d.archived_at IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM workspace_memberships wm
+             WHERE wm.workspace_id = d.workspace_id
+               AND wm.user_id = (d.properties->>'user_id')::uuid
+           )
+         ORDER BY d.title`,
+        [workspaceId]
+      );
+      archivedRows = archivedResult.rows;
+    }
+
+    const members = [
+      ...activeResult.rows.map(row => ({
+        id: row.id,
+        userId: row.user_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        personDocumentId: row.person_document_id,
+        joinedAt: row.created_at,
+        isArchived: false,
+      })),
+      ...archivedRows.map(row => ({
+        id: row.person_document_id, // Use person doc ID for archived
+        userId: row.user_id,
+        email: row.email,
+        name: row.name,
+        role: null as unknown as string, // Archived users have no role
+        personDocumentId: row.person_document_id,
+        joinedAt: null as unknown as string, // No membership join date
+        isArchived: true,
+      })),
+    ];
 
     res.json({
       success: true,
@@ -523,6 +564,20 @@ router.delete('/:id/members/:userId', authMiddleware, workspaceAdminMiddleware, 
       [workspaceId, userId]
     );
 
+    // Clear owner_id on programs owned by this user (set to Unassigned)
+    await pool.query(
+      `UPDATE documents SET properties = properties - 'owner_id', updated_at = NOW()
+       WHERE workspace_id = $1 AND document_type = 'program' AND properties->>'owner_id' = $2`,
+      [workspaceId, userId]
+    );
+
+    // Clear owner_id on sprints owned by this user (set to Unassigned)
+    await pool.query(
+      `UPDATE documents SET properties = properties - 'owner_id', updated_at = NOW()
+       WHERE workspace_id = $1 AND document_type = 'sprint' AND properties->>'owner_id' = $2`,
+      [workspaceId, userId]
+    );
+
     // Invalidate all sessions for this user in this workspace
     await pool.query(
       'DELETE FROM sessions WHERE user_id = $1 AND workspace_id = $2',
@@ -546,6 +601,87 @@ router.delete('/:id/members/:userId', authMiddleware, workspaceAdminMiddleware, 
       error: {
         code: ERROR_CODES.INTERNAL_ERROR,
         message: 'Failed to remove member',
+      },
+    });
+  }
+});
+
+// POST /api/workspaces/:id/members/:userId/restore - Restore archived member (admin only)
+router.post('/:id/members/:userId/restore', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const { id: workspaceId, userId } = req.params;
+
+  try {
+    // Verify the person document exists and is archived
+    const personResult = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.archived_at
+       FROM documents d
+       WHERE d.workspace_id = $1
+         AND d.document_type = 'person'
+         AND d.properties->>'user_id' = $2`,
+      [workspaceId, userId]
+    );
+
+    if (personResult.rows.length === 0) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'Person document not found',
+        },
+      });
+      return;
+    }
+
+    const person = personResult.rows[0];
+    if (!person.archived_at) {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: 'User is not archived',
+        },
+      });
+      return;
+    }
+
+    // Check if membership already exists (shouldn't, but be safe)
+    const membershipCheck = await pool.query(
+      'SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+      [workspaceId, userId]
+    );
+
+    if (membershipCheck.rows.length === 0) {
+      // Re-create the membership as a regular member
+      await pool.query(
+        'INSERT INTO workspace_memberships (workspace_id, user_id, role) VALUES ($1, $2, $3)',
+        [workspaceId, userId, 'member']
+      );
+    }
+
+    // Clear archived_at from person document
+    await pool.query(
+      `UPDATE documents SET archived_at = NULL, updated_at = NOW()
+       WHERE workspace_id = $1 AND document_type = 'person' AND properties->>'user_id' = $2`,
+      [workspaceId, userId]
+    );
+
+    await logAuditEvent({
+      workspaceId,
+      actorUserId: req.userId!,
+      action: 'membership.restore',
+      resourceType: 'user',
+      resourceId: userId,
+      req,
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Restore member error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to restore member',
       },
     });
   }
@@ -628,6 +764,81 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
         error: {
           code: ERROR_CODES.VALIDATION_ERROR,
           message: 'User is already a member of this workspace',
+        },
+      });
+      return;
+    }
+
+    // Check if user exists but is not a member (e.g., super admin or member of other workspace)
+    // If so, directly add them as a member instead of creating a pending invite
+    const existingNonMemberResult = await pool.query(
+      `SELECT id, name, email FROM users
+       WHERE ($1::TEXT IS NOT NULL AND LOWER(email) = LOWER($1))
+          OR ($2::TEXT IS NOT NULL AND x509_subject_dn = $2)`,
+      [email || null, x509SubjectDn || null]
+    );
+
+    if (existingNonMemberResult.rows[0]) {
+      const existingUser = existingNonMemberResult.rows[0];
+
+      // Create membership directly
+      await pool.query(
+        `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+         VALUES ($1, $2, $3)`,
+        [workspaceId, existingUser.id, role]
+      );
+
+      // Check for existing pending person doc (from a previous invite attempt)
+      const existingPendingPerson = await pool.query(
+        `SELECT id FROM documents
+         WHERE workspace_id = $1
+           AND document_type = 'person'
+           AND properties->>'pending' = 'true'
+           AND LOWER(properties->>'email') = LOWER($2)`,
+        [workspaceId, existingUser.email]
+      );
+
+      if (existingPendingPerson.rows[0]) {
+        // Update existing pending person doc to be a real person doc
+        await pool.query(
+          `UPDATE documents
+           SET title = $1,
+               properties = jsonb_build_object('user_id', $2::text, 'email', $3)
+           WHERE id = $4`,
+          [existingUser.name, existingUser.id, existingUser.email, existingPendingPerson.rows[0].id]
+        );
+      } else {
+        // Create person document with user_id (not pending)
+        await pool.query(
+          `INSERT INTO documents (workspace_id, document_type, title, properties)
+           VALUES ($1, 'person', $2, $3)`,
+          [workspaceId, existingUser.name, JSON.stringify({
+            user_id: existingUser.id,
+            email: existingUser.email
+          })]
+        );
+      }
+
+      await logAuditEvent({
+        workspaceId,
+        actorUserId: req.userId!,
+        action: 'member.add',
+        resourceType: 'user',
+        resourceId: existingUser.id,
+        details: { email: existingUser.email, role },
+        req,
+      });
+
+      res.status(HTTP_STATUS.CREATED).json({
+        success: true,
+        data: {
+          member: {
+            id: existingUser.id,
+            email: existingUser.email,
+            name: existingUser.name,
+            role,
+          },
+          message: 'User added as member (existing account)',
         },
       });
       return;

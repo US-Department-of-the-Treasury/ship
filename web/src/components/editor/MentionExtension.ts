@@ -1,8 +1,9 @@
 import Mention from '@tiptap/extension-mention';
-import { ReactRenderer } from '@tiptap/react';
+import { ReactRenderer, ReactNodeViewRenderer } from '@tiptap/react';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
 import { MentionList, MentionItem } from './MentionList';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { MentionNodeView } from './MentionNodeView';
 
 // API URL for fetching mention suggestions
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -100,7 +101,15 @@ export function createMentionExtension(options: CreateMentionExtensionOptions = 
       };
     },
 
-    // Custom rendering for mention marks
+    // Use React NodeView for dynamic rendering (supports archived status)
+    addNodeView() {
+      return ReactNodeViewRenderer(MentionNodeView, {
+        // Render inline, not as a block
+        as: 'span',
+      });
+    },
+
+    // Fallback rendering for SSR or non-React contexts
     renderHTML({ node, HTMLAttributes }) {
       const mentionType = node.attrs.mentionType || 'person';
       const documentType = node.attrs.documentType;
@@ -112,7 +121,7 @@ export function createMentionExtension(options: CreateMentionExtensionOptions = 
           ...HTMLAttributes,
           class: `mention mention-${mentionType}${documentType ? ` mention-${documentType}` : ''}`,
           href: mentionType === 'person'
-            ? `/people/${id}`
+            ? `/team/${id}`
             : `/${documentType || 'documents'}/${id}`,
         },
         `@${node.attrs.label}`,

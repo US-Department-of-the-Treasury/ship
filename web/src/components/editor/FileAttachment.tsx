@@ -4,7 +4,7 @@
  */
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
-import { uploadFile, isAllowedFileType } from '@/services/upload';
+import { uploadFile, isAllowedFileType, getMimeTypeFromExtension } from '@/services/upload';
 import { useState, useEffect } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -143,19 +143,23 @@ export const FileAttachmentExtension = Node.create({
 export function triggerFileUpload(editor: any) {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.md,.zip';
+  // No accept restriction - allow any file type (blocklist enforced in isAllowedFileType)
   input.multiple = false;
 
   input.onchange = async () => {
     const file = input.files?.[0];
     if (!file) return;
 
-    // Check if file type is allowed
-    if (!isAllowedFileType(file.type)) {
-      console.error('File type not allowed:', file.type);
-      alert('This file type is not allowed. Please upload a document, PDF, or archive file.');
+    // Check if file type is blocked (executables/scripts are blocked for security)
+    if (!isAllowedFileType(file.type, file.name)) {
+      const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+      console.error('File type blocked:', { name: file.name, type: file.type, extension: ext });
+      alert(`Cannot upload "${ext}" files.\n\nExecutable files and scripts are blocked for security reasons.`);
       return;
     }
+
+    // Get effective MIME type (use extension fallback if browser returns empty)
+    const effectiveMimeType = file.type || getMimeTypeFromExtension(file.name) || 'application/octet-stream';
 
     // Insert placeholder with uploading state
     const pos = editor.state.selection.from;
@@ -166,7 +170,7 @@ export function triggerFileUpload(editor: any) {
         filename: file.name,
         url: '',
         size: file.size,
-        mimeType: file.type,
+        mimeType: effectiveMimeType,
         uploading: true,
       })
       .run();
@@ -209,8 +213,9 @@ export function triggerFileUpload(editor: any) {
         view.dispatch(transaction);
       }
     } catch (error) {
-      console.error('File upload failed:', error);
-      alert('File upload failed. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('File upload failed:', { filename: file.name, error: errorMessage, fullError: error });
+      alert(`Upload failed: ${errorMessage}\n\nPlease try again.`);
 
       // Remove the failed upload node
       const { state, view } = editor;

@@ -94,6 +94,7 @@ interface IssueProperties {
   priority?: 'low' | 'medium' | 'high';
   assignee_id?: string;
   ticket_number?: number;
+  claude_metadata?: ClaudeMetadata; // Claude Code integration tracking
   [key: string]: any; // allows custom properties
 }
 
@@ -119,13 +120,13 @@ document.properties = {
 Sprints are **computed time windows**, not stored entities:
 
 - Workspace has `sprint_start_date` setting
-- All sprints are exactly 14 days
+- All sprints are exactly 7 days
 - Sprint N = calculated from workspace start date
 
 ```typescript
 function getSprintNumber(date: Date, workspaceStartDate: Date): number {
   const daysSinceStart = differenceInDays(date, workspaceStartDate);
-  return Math.floor(daysSinceStart / 14) + 1;
+  return Math.floor(daysSinceStart / 7) + 1;
 }
 ```
 
@@ -155,8 +156,8 @@ What IS stored is the **Sprint document** - one per program per sprint window:
 
 ```typescript
 export function computeSprintDates(sprintNumber: number, workspaceStartDate: Date) {
-  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 14);
-  const end = addDays(start, 13); // 14 days total (0-13)
+  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 7);
+  const end = addDays(start, 6); // 7 days total (0-6)
   return { start, end };
 }
 ```
@@ -438,6 +439,107 @@ Use for browsable collections where users navigate to items.
 
 **Philosophy alignment:** This follows Ship's principle of consistency over specialization.
 
+## Standard Document List View
+
+When using SelectableList for document collections (Issues, Programs, Documents), follow this standardized pattern to ensure consistency across all list views.
+
+### Required Components and Hooks
+
+| Component/Hook | Purpose | File |
+|----------------|---------|------|
+| `useColumnVisibility` | Manages column visibility state with localStorage persistence | `web/src/hooks/useColumnVisibility.ts` |
+| `useListFilters` | Manages sort options and view mode (list/kanban/tree) | `web/src/hooks/useListFilters.ts` |
+| `DocumentListToolbar` | Reusable toolbar with sort dropdown, view toggle, column picker | `web/src/components/DocumentListToolbar.tsx` |
+| `SelectableList` | Table component with selection, keyboard nav, context menu | `web/src/components/SelectableList.tsx` |
+
+### Standard Features
+
+Every document list view should include:
+
+1. **Sort dropdown** - Configurable sort options (Updated, Created, Title, etc.)
+2. **Column picker** - Toggle column visibility, persisted to localStorage
+3. **Multi-select** - Checkboxes on hover, Shift+Click range selection
+4. **Bulk actions** - Action bar appears when items selected (Archive, Delete, etc.)
+5. **Context menu** - Right-click for same actions as bulk action bar
+6. **Keyboard navigation** - Arrow keys, Space to select, Escape to clear
+
+### Implementation Pattern
+
+```typescript
+// 1. Define columns with ColumnDefinition type
+const ALL_COLUMNS: ColumnDefinition[] = [
+  { key: 'title', label: 'Title', hideable: false },  // Required column
+  { key: 'status', label: 'Status', hideable: true },
+  { key: 'updated', label: 'Updated', hideable: true },
+];
+
+// 2. Define sort options
+const SORT_OPTIONS = [
+  { value: 'updated', label: 'Updated' },
+  { value: 'created', label: 'Created' },
+  { value: 'title', label: 'Title' },
+];
+
+// 3. Use shared hooks
+const { sortBy, setSortBy, viewMode, setViewMode } = useListFilters({
+  sortOptions: SORT_OPTIONS,
+  defaultSort: 'updated',
+});
+
+const { visibleColumns, columns, hiddenCount, toggleColumn } = useColumnVisibility({
+  columns: ALL_COLUMNS,
+  storageKey: 'my-list-column-visibility',
+});
+
+// 4. Render toolbar and list
+<DocumentListToolbar
+  sortOptions={SORT_OPTIONS}
+  sortBy={sortBy}
+  onSortChange={setSortBy}
+  viewModes={['list', 'kanban']}
+  viewMode={viewMode}
+  onViewModeChange={setViewMode}
+  allColumns={ALL_COLUMNS}
+  visibleColumns={visibleColumns}
+  onToggleColumn={toggleColumn}
+  hiddenCount={hiddenCount}
+/>
+
+<SelectableList
+  items={sortedItems}
+  columns={columns}
+  renderRow={(item) => <MyRowContent item={item} columns={columns} />}
+  selectable={true}
+  onSelectionChange={setSelectedIds}
+  onContextMenu={handleContextMenu}
+/>
+```
+
+### When to Use List View
+
+| Document Type | Primary View | Secondary View | Notes |
+|---------------|--------------|----------------|-------|
+| **Issues** | List | Kanban | List for bulk operations, Kanban for workflow |
+| **Programs** | List | - | Replaced CardGrid with List for bulk actions |
+| **Documents** | Tree | List | Tree for hierarchy, List for flat view with bulk actions |
+
+**Decision criteria:**
+- Use **List** when users need to select/filter/sort/bulk-operate on items
+- Use **Tree** when hierarchy is the primary organizational principle
+- Use **Kanban** when status workflow visualization is the primary use case
+- Avoid **CardGrid** for document collections (prefer List with bulk actions)
+
+### Column Visibility Storage
+
+Column visibility is stored in localStorage with the pattern `{storageKey}`:
+
+```typescript
+// Stored as JSON array of hidden column keys
+localStorage.setItem('issues-column-visibility', '["assignee", "priority"]');
+```
+
+Each list view should use a unique `storageKey` to prevent conflicts.
+
 ## Editor Conventions
 
 All document types share a single `Editor` component. This ensures consistent UX across docs, issues, projects, and sprints.
@@ -474,6 +576,65 @@ Document types differ by:
 - **Room prefix** for collaboration (`doc:`, `issue:`, `project:`)
 
 They do NOT differ by title handling. Keep it simple.
+
+## Icon Tooltip Convention
+
+**Every icon-only interactive element must have both an `aria-label` AND a `Tooltip` wrapper.**
+
+### Why Both?
+
+| Attribute | Purpose | Audience |
+|-----------|---------|----------|
+| `aria-label` | Screen reader accessibility (WCAG) | Users with visual impairments |
+| `Tooltip` | Visual hover hint | Sighted users who don't recognize the icon |
+
+`aria-label` alone is not sufficient—sighted users can't see it. `Tooltip` alone is not sufficient—screen readers can't announce it.
+
+### Pattern
+
+```tsx
+import { Tooltip } from '@/components/ui/Tooltip';
+
+// Icon-only button: MUST have both aria-label AND Tooltip
+<Tooltip content="Delete document">
+  <button
+    aria-label="Delete document"
+    onClick={handleDelete}
+  >
+    <TrashIcon />
+  </button>
+</Tooltip>
+
+// Button with visible text: aria-label optional, Tooltip NOT needed
+<button onClick={handleDelete}>
+  <TrashIcon />
+  Delete
+</button>
+```
+
+### When to Use Tooltips
+
+| Element | Needs Tooltip? |
+|---------|----------------|
+| Icon-only button | Yes |
+| Icon with visible text label | No |
+| Icon used purely decoratively | No (but should have `aria-hidden="true"`) |
+
+### Tooltip Component
+
+The `Tooltip` component wraps any trigger element and displays on hover/focus:
+
+```tsx
+<Tooltip
+  content="Label text"    // Required: tooltip text
+  side="top"              // Optional: top, right, bottom, left (default: top)
+  delayDuration={300}     // Optional: hover delay in ms (default: 300)
+>
+  <button>...</button>
+</Tooltip>
+```
+
+Use `side="right"` for icons in the left rail, `side="bottom"` for icons in headers.
 
 ## Decision Log
 

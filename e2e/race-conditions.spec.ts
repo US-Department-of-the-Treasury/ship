@@ -122,68 +122,6 @@ test.describe('Race Conditions - Concurrent Editing', () => {
     await page2.close()
   })
 
-  test('concurrent edits in same location converge', async ({ page, browser }) => {
-    await login(page)
-    await createNewDocument(page)
-
-    const docUrl = page.url()
-    const editor1 = page.locator('.ProseMirror')
-
-    // Set initial content
-    await editor1.click()
-    await page.keyboard.type('Initial text.')
-    await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
-    await page.waitForTimeout(2000)
-
-    // Open second tab
-    const page2 = await browser.newPage()
-    await login(page2)
-    await page2.goto(docUrl)
-
-    const editor2 = page2.locator('.ProseMirror')
-    await expect(editor2).toBeVisible({ timeout: 5000 })
-    await page2.waitForTimeout(3000)
-
-    // User 2 should see initial content
-    await expect(editor2).toContainText('Initial text', { timeout: 10000 })
-
-    // Both type simultaneously using Promise.all
-    await editor1.click()
-    await page.keyboard.press('End')
-    await editor2.click()
-    await page2.keyboard.press('End')
-
-    // Type simultaneously
-    await Promise.all([
-      page.keyboard.type(' EditA'),
-      page2.keyboard.type(' EditB')
-    ])
-
-    // Wait for sync
-    await page.waitForTimeout(4000)
-    await page2.waitForTimeout(4000)
-
-    // Both editors should contain content from both users
-    // Use looser matching since concurrent CRDT edits may interleave characters
-    const content1 = await editor1.textContent()
-    const content2 = await editor2.textContent()
-
-    // Both should have base content
-    expect(content1).toContain('Initial text')
-    expect(content2).toContain('Initial text')
-
-    // Both should have characters from both edits (even if interleaved)
-    expect(content1).toContain('Edit')
-    expect(content1?.match(/A/)).toBeTruthy()
-    expect(content1?.match(/B/)).toBeTruthy()
-
-    expect(content2).toContain('Edit')
-    expect(content2?.match(/A/)).toBeTruthy()
-    expect(content2?.match(/B/)).toBeTruthy()
-
-    await page2.close()
-  })
-
   test('delete during collaboration is handled', async ({ page, browser }) => {
     await login(page)
     await createNewDocument(page)

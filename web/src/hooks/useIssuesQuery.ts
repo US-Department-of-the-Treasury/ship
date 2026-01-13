@@ -11,6 +11,7 @@ export interface Issue {
   display_id: string;
   assignee_id: string | null;
   assignee_name: string | null;
+  assignee_archived?: boolean;
   estimate: number | null;
   program_id: string | null;
   sprint_id: string | null;
@@ -225,6 +226,7 @@ interface BulkUpdateRequest {
   updates?: {
     state?: string;
     sprint_id?: string | null;
+    assignee_id?: string | null;
   };
 }
 

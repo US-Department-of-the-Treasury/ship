@@ -225,6 +225,44 @@ The intended workflow:
 
 ---
 
+## Workflow 6: Claude Code Integration
+
+### Goal
+Use AI-assisted development workflows with real-time Ship visibility.
+
+### Overview
+
+Ship integrates with Claude Code CLI for automated sprint planning and execution. See [Ship + Claude CLI Integration Guide](./ship-claude-cli-integration.md) for complete documentation.
+
+### Key Commands
+
+| Command | Description | Ship Integration |
+|---------|-------------|------------------|
+| `/prd` | Generate PRD with user stories | Creates sprint + issues in Ship |
+| `/work` | Execute PRD stories | Updates issue states in real-time |
+| `/standup` | Daily progress summary | Pulls data from Ship |
+| `/document` | Capture learnings | Creates wiki docs in Ship |
+
+### Setup
+
+1. Generate API token in **Workspace Settings → API Tokens**
+2. Configure `~/.claude/.env`:
+   ```bash
+   SHIP_API_TOKEN=ship_<your_token>
+   SHIP_API_URL=https://your-ship-instance.example.com/api
+   ```
+3. Run `/prd` to create a linked sprint
+
+### Observable Outcomes
+
+While `/work` runs:
+- Issue states transition: `todo` → `in_progress` → `done`
+- Sprint progress percentage updates live
+- Iteration attempts logged to sprint history
+- Verification failures recorded with context
+
+---
+
 ## Future Improvements
 
 Once bugs are fixed, the following improvements are planned:

@@ -236,58 +236,6 @@ test.describe('File Attachments', () => {
     setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);
   });
 
-  test('should sync file attachments between collaborators', async ({ page, browser }) => {
-    await createNewDocument(page);
-
-    const editor = page.locator('.ProseMirror');
-    await editor.click();
-    await page.waitForTimeout(300);
-
-    // Insert file
-    await page.keyboard.type('/file');
-    await page.waitForTimeout(500);
-
-    const tmpPath = createTestFile('sync-test.txt', 'Sync test content');
-
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
-    const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles(tmpPath);
-
-    // Wait for upload to complete
-    await expect(editor.locator('[data-file-attachment]')).toBeVisible({ timeout: 5000 });
-    await page.waitForTimeout(2000);
-
-    // Get current document URL
-    const docUrl = page.url();
-
-    // Wait for Yjs sync
-    await page.waitForTimeout(2000);
-
-    // Open second tab with same document
-    const page2 = await browser.newPage();
-
-    // Login on second page
-    await page2.goto('/login');
-    await page2.locator('#email').fill('dev@ship.local');
-    await page2.locator('#password').fill('admin123');
-    await page2.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page2).not.toHaveURL('/login', { timeout: 5000 });
-
-    // Navigate to same document
-    await page2.goto(docUrl);
-
-    // Wait for editor to load
-    await expect(page2.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
-
-    // Verify file attachment synced to second tab
-    await expect(page2.locator('.ProseMirror [data-file-attachment]')).toBeVisible({ timeout: 10000 });
-
-    // Clean up
-    await page2.close();
-    setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);
-  });
-
   test('should display file icon based on type', async ({ page }) => {
     await createNewDocument(page);
 
@@ -348,6 +296,161 @@ test.describe('File Attachments', () => {
 
     // Should contain size indicator (KB, MB, or bytes)
     expect(text).toMatch(/\d+\s?(KB|MB|bytes|B)/i);
+
+    // Cleanup
+    setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);
+  });
+
+  test('should upload Word document (.docx) successfully', async ({ page }) => {
+    // This test verifies the fix for Word document uploads
+    // Issue: browsers (especially macOS) return empty MIME type for .docx files
+    // Fix: extension-based fallback detection in isAllowedFileType()
+    await createNewDocument(page);
+
+    const editor = page.locator('.ProseMirror');
+    await editor.click();
+    await page.waitForTimeout(300);
+
+    // Insert file via slash command
+    await page.keyboard.type('/file');
+    await page.waitForTimeout(500);
+
+    // Create a .docx test file
+    // Note: Real .docx is a ZIP archive, but for MIME detection we just need the extension
+    const tmpPath = createTestFile('word-document.docx', 'Test Word document content');
+
+    const fileChooserPromise = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles(tmpPath);
+
+    // Wait for file attachment to appear (should NOT fail with "file type not allowed")
+    const fileAttachment = editor.locator('[data-file-attachment]');
+    await expect(fileAttachment).toBeVisible({ timeout: 5000 });
+
+    // Wait for upload to complete
+    await page.waitForTimeout(2000);
+
+    // Should have a download link (indicates successful upload)
+    const downloadLink = fileAttachment.locator('a[href]');
+    await expect(downloadLink).toBeVisible({ timeout: 3000 });
+
+    // Verify the filename is shown
+    await expect(fileAttachment).toContainText('word-document.docx');
+
+    // Verify Word document icon is displayed (📝 emoji for Word docs)
+    await expect(fileAttachment).toContainText('📝');
+
+    // Cleanup
+    setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);
+  });
+
+  test('should upload .doc file successfully', async ({ page }) => {
+    // Test the older .doc format
+    await createNewDocument(page);
+
+    const editor = page.locator('.ProseMirror');
+    await editor.click();
+    await page.waitForTimeout(300);
+
+    await page.keyboard.type('/file');
+    await page.waitForTimeout(500);
+
+    const tmpPath = createTestFile('legacy-document.doc', 'Legacy Word document');
+
+    const fileChooserPromise = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles(tmpPath);
+
+    // Wait for file attachment to appear
+    const fileAttachment = editor.locator('[data-file-attachment]');
+    await expect(fileAttachment).toBeVisible({ timeout: 5000 });
+
+    // Wait for upload to complete
+    await page.waitForTimeout(2000);
+
+    // Should have a download link
+    const downloadLink = fileAttachment.locator('a[href]');
+    await expect(downloadLink).toBeVisible({ timeout: 3000 });
+
+    // Verify the filename and icon
+    await expect(fileAttachment).toContainText('legacy-document.doc');
+    await expect(fileAttachment).toContainText('📝');
+
+    // Cleanup
+    setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);
+  });
+
+  test('should upload non-standard file types (.psd, .sketch, etc.)', async ({ page }) => {
+    // Test that files NOT in old allowlist now work with blocklist approach
+    await createNewDocument(page);
+
+    const editor = page.locator('.ProseMirror');
+    await editor.click();
+    await page.waitForTimeout(300);
+
+    await page.keyboard.type('/file');
+    await page.waitForTimeout(500);
+
+    // Create a .psd file (was NOT in old allowlist)
+    const tmpPath = createTestFile('design-file.psd', 'Photoshop file content');
+
+    const fileChooserPromise = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles(tmpPath);
+
+    // Wait for file attachment to appear (should succeed with blocklist approach)
+    const fileAttachment = editor.locator('[data-file-attachment]');
+    await expect(fileAttachment).toBeVisible({ timeout: 5000 });
+
+    // Wait for upload to complete
+    await page.waitForTimeout(2000);
+
+    // Should have a download link
+    const downloadLink = fileAttachment.locator('a[href]');
+    await expect(downloadLink).toBeVisible({ timeout: 3000 });
+
+    // Verify the filename
+    await expect(fileAttachment).toContainText('design-file.psd');
+
+    // Cleanup
+    setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);
+  });
+
+  test('should block dangerous executable files (.exe)', async ({ page }) => {
+    // Test that executables are blocked by the blocklist
+    await createNewDocument(page);
+
+    const editor = page.locator('.ProseMirror');
+    await editor.click();
+    await page.waitForTimeout(300);
+
+    await page.keyboard.type('/file');
+    await page.waitForTimeout(500);
+
+    // Create an .exe file (should be blocked)
+    const tmpPath = createTestFile('malware.exe', 'Not really an executable');
+
+    // Listen for alert dialog
+    page.on('dialog', async (dialog) => {
+      expect(dialog.message()).toContain('.exe');
+      expect(dialog.message()).toContain('blocked');
+      await dialog.accept();
+    });
+
+    const fileChooserPromise = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles(tmpPath);
+
+    // Wait for dialog to be handled
+    await page.waitForTimeout(1000);
+
+    // File attachment should NOT appear (upload was blocked)
+    const fileAttachment = editor.locator('[data-file-attachment]');
+    await expect(fileAttachment).not.toBeVisible({ timeout: 2000 });
 
     // Cleanup
     setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);

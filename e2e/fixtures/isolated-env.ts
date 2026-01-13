@@ -390,10 +390,10 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     programIds[prog.key] = result.rows[0].id;
   }
 
-  // Calculate current sprint number
+  // Calculate current sprint number (1-week sprints)
   const today = new Date();
   const daysSinceStart = Math.floor((today.getTime() - threeMonthsAgo.getTime()) / (1000 * 60 * 60 * 24));
-  const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 14) + 1);
+  const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
 
   // Create sprints for each program (current-2 to current+2)
   const sprintIds: Record<string, Record<number, string>> = {};

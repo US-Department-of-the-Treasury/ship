@@ -12,6 +12,8 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DocumentsProvider } from '@/contexts/DocumentsContext';
 import { ProgramsProvider } from '@/contexts/ProgramsContext';
 import { IssuesProvider } from '@/contexts/IssuesContext';
+import { ProjectsProvider } from '@/contexts/ProjectsContext';
+import { ArchivedPersonsProvider } from '@/contexts/ArchivedPersonsContext';
 import { LoginPage } from '@/pages/Login';
 import { AppLayout } from '@/pages/App';
 import { DocumentsPage } from '@/pages/Documents';
@@ -23,11 +25,14 @@ import { ProgramEditorPage } from '@/pages/ProgramEditor';
 import { ProgramViewPage } from '@/pages/ProgramView';
 import { SprintEditorPage } from '@/pages/SprintEditor';
 import { SprintViewPage } from '@/pages/SprintView';
+import { SprintsPage } from '@/pages/Sprints';
 import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
 import { PersonEditorPage } from '@/pages/PersonEditor';
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
+import { ProjectEditorPage } from '@/pages/ProjectEditor';
+import { ProjectsPage } from '@/pages/Projects';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
@@ -166,13 +171,17 @@ function AppRoutes() {
         path="/"
         element={
           <ProtectedRoute>
-            <DocumentsProvider>
-              <ProgramsProvider>
-                <IssuesProvider>
-                  <AppLayout />
-                </IssuesProvider>
-              </ProgramsProvider>
-            </DocumentsProvider>
+            <ArchivedPersonsProvider>
+              <DocumentsProvider>
+                <ProgramsProvider>
+                  <ProjectsProvider>
+                    <IssuesProvider>
+                      <AppLayout />
+                    </IssuesProvider>
+                  </ProjectsProvider>
+                </ProgramsProvider>
+              </DocumentsProvider>
+            </ArchivedPersonsProvider>
           </ProtectedRoute>
         }
       >
@@ -181,9 +190,13 @@ function AppRoutes() {
         <Route path="docs/:id" element={<DocumentEditorPage />} />
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:id" element={<IssueEditorPage />} />
+        <Route path="projects" element={<ProjectsPage />} />
+        <Route path="projects/:id" element={<ProjectEditorPage />} />
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />
         <Route path="programs/:id/view" element={<ProgramViewPage />} />
+        <Route path="programs/:programId/sprints/:id" element={<SprintEditorPage />} />
+        <Route path="sprints" element={<SprintsPage />} />
         <Route path="sprints/:id" element={<SprintEditorPage />} />
         <Route path="sprints/:id/view" element={<SprintViewPage />} />
         <Route path="team" element={<Navigate to="/team/allocation" replace />} />

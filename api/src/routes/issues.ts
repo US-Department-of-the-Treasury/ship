@@ -25,6 +25,26 @@ const updateIssueSchema = z.object({
   program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
   estimate: z.number().positive().nullable().optional(),
+  // Claude Code integration metadata
+  claude_metadata: z.object({
+    updated_by: z.literal('claude'),
+    story_id: z.string().optional(),
+    prd_name: z.string().optional(),
+    session_context: z.string().optional(),
+    // Confidence score (0-100) for story completion
+    confidence: z.number().int().min(0).max(100).optional(),
+    // Telemetry for completed stories
+    telemetry: z.object({
+      iterations: z.number().int().min(1).optional(),
+      feedback_loops: z.object({
+        type_check: z.number().int().min(0).optional(),
+        test: z.number().int().min(0).optional(),
+        build: z.number().int().min(0).optional(),
+      }).optional(),
+      time_elapsed_seconds: z.number().int().min(0).optional(),
+      files_changed: z.array(z.string()).optional(),
+    }).optional(),
+  }).optional(),
 });
 
 const rejectIssueSchema = z.object({
@@ -43,12 +63,13 @@ async function logDocumentChange(
   field: string,
   oldValue: string | null,
   newValue: string | null,
-  changedBy: string
+  changedBy: string,
+  automatedBy?: string
 ) {
   await pool.query(
-    `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [documentId, field, oldValue, newValue, changedBy]
+    `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by, automated_by)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [documentId, field, oldValue, newValue, changedBy, automatedBy ?? null]
   );
 }
 
@@ -99,6 +120,7 @@ function extractIssueFromRow(row: any) {
     cancelled_at: row.cancelled_at || null,
     reopened_at: row.reopened_at || null,
     assignee_name: row.assignee_name,
+    assignee_archived: row.assignee_archived || false,
     program_name: row.program_name,
     program_prefix: row.program_prefix,
     program_color: row.program_color,
@@ -123,11 +145,15 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
              d.created_at, d.updated_at, d.created_by,
              d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
              u.name as assignee_name,
+             CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
              p.title as program_name,
              p.properties->>'prefix' as program_prefix,
              p.properties->>'color' as program_color
       FROM documents d
       LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+      LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
+        AND person_doc.document_type = 'person'
+        AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
       LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
       WHERE d.workspace_id = $1 AND d.document_type = 'issue'
         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
@@ -218,6 +244,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               d.created_at, d.updated_at, d.created_by,
               d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
               u.name as assignee_name,
+              CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
               p.title as program_name,
               p.properties->>'prefix' as program_prefix,
               p.properties->>'color' as program_color,
@@ -225,6 +252,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               creator.name as created_by_name
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+       LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
+         AND person_doc.document_type = 'person'
+         AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
        LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
        LEFT JOIN documents s ON d.sprint_id = s.id AND s.document_type = 'sprint'
        LEFT JOIN users creator ON d.created_by = creator.id
@@ -412,6 +442,15 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    // Store Claude metadata in properties for attribution tracking
+    if (data.claude_metadata) {
+      newProps.claude_metadata = {
+        ...data.claude_metadata,
+        updated_at: new Date().toISOString(),
+      };
+      propsChanged = true;
+    }
+
     if (propsChanged) {
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(newProps));
@@ -446,7 +485,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         if (oldSprintResult.rows[0]) {
           const sprintNumber = parseInt(oldSprintResult.rows[0].sprint_number, 10);
           const rawStartDate = oldSprintResult.rows[0].sprint_start_date;
-          const sprintDuration = 14;
+          const sprintDuration = 7; // 1-week sprints
 
           let startDate: Date;
           if (rawStartDate instanceof Date) {
@@ -480,8 +519,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     // Log all changes to history
+    const automatedBy = data.claude_metadata?.updated_by;
     for (const change of changes) {
-      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.userId!);
+      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.userId!, automatedBy);
     }
 
     updates.push(`updated_at = now()`);
@@ -526,7 +566,7 @@ router.get('/:id/history', authMiddleware, async (req: Request, res: Response) =
     }
 
     const result = await pool.query(
-      `SELECT h.id, h.field, h.old_value, h.new_value, h.created_at,
+      `SELECT h.id, h.field, h.old_value, h.new_value, h.created_at, h.automated_by,
               u.id as changed_by_id, u.name as changed_by_name
        FROM document_history h
        LEFT JOIN users u ON h.changed_by = u.id
@@ -545,9 +585,66 @@ router.get('/:id/history', authMiddleware, async (req: Request, res: Response) =
         id: row.changed_by_id,
         name: row.changed_by_name,
       } : null,
+      automated_by: row.automated_by,
     })));
   } catch (err) {
     console.error('Get issue history error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Log custom history entry (for verification failures, etc.)
+const logHistorySchema = z.object({
+  field: z.string().min(1).max(100),
+  old_value: z.string().nullable(),
+  new_value: z.string().nullable(),
+  automated_by: z.string().optional(),
+});
+
+router.post('/:id/history', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      res.status(400).json({ error: 'Issue ID required' });
+      return;
+    }
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = logHistorySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify issue exists and user can access it
+    const issueCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (issueCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    const { field, old_value, new_value, automated_by } = parsed.data;
+
+    // Pass automated_by only if defined (function parameter is optional)
+    if (automated_by !== undefined) {
+      await logDocumentChange(id, field, old_value, new_value, userId, automated_by);
+    } else {
+      await logDocumentChange(id, field, old_value, new_value, userId);
+    }
+
+    res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('Log history entry error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -559,6 +656,7 @@ const bulkUpdateSchema = z.object({
   updates: z.object({
     state: z.enum(['triage', 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional(),
     sprint_id: z.string().uuid().nullable().optional(),
+    assignee_id: z.string().uuid().nullable().optional(),
   }).optional(),
 });
 
@@ -656,6 +754,13 @@ router.post('/bulk', authMiddleware, async (req: Request, res: Response) => {
         if (updates.sprint_id !== undefined) {
           setClauses.push(`sprint_id = $${paramIdx}`);
           values.push(updates.sprint_id);
+          paramIdx++;
+        }
+
+        if (updates.assignee_id !== undefined) {
+          // Update assignee_id in properties JSONB
+          setClauses.push(`properties = jsonb_set(COALESCE(properties, '{}'), '{assignee_id}', $${paramIdx}::jsonb)`);
+          values.push(updates.assignee_id === null ? 'null' : JSON.stringify(updates.assignee_id));
           paramIdx++;
         }
 

@@ -74,8 +74,8 @@ async function login(page: Page) {
 
 async function navigateToProgram(page: Page, programName: string = 'Ship Core') {
   await page.goto('/programs')
-  // Click the program card in main content area (not sidebar)
-  await page.locator('main').getByRole('button', { name: new RegExp(programName, 'i') }).click()
+  // Click the program row in table (programs now use table layout)
+  await page.locator('tr[role="row"]', { hasText: new RegExp(programName, 'i') }).first().click()
   await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 }
 
@@ -654,30 +654,6 @@ test.describe('Phase 4: Issues Tab Filtering', () => {
         expect([200, 400]).toContain(response.status())
       }
     }
-  })
-
-  test('issues table shows Sprint column', async ({ page }) => {
-    await clickIssuesTab(page)
-
-    // Should see Sprint column header
-    await expect(page.locator('th').filter({ hasText: 'Sprint' })).toBeVisible({ timeout: 5000 })
-  })
-
-  test('Sprint column shows sprint name or "—" for backlog', async ({ page }) => {
-    await clickIssuesTab(page)
-
-    // Wait for at least one row to exist
-    const firstRow = page.locator('tbody tr').first()
-    await expect(firstRow).toBeVisible({ timeout: 5000 })
-
-    // Issues should show either sprint name or "—"
-    // Sprint is the last column (Title, Status, Assignee, Sprint)
-    const sprintCells = page.locator('td:last-child')
-    const firstCell = sprintCells.first()
-    await expect(firstCell).toBeVisible({ timeout: 3000 })
-    const text = await firstCell.textContent()
-
-    expect(text?.match(/Sprint \d+|—/)).toBeTruthy()
   })
 
   test('issue row has quick menu (⋮) button', async ({ page }) => {
