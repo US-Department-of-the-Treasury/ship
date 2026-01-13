@@ -3,6 +3,7 @@ import { useEditor, EditorContent, JSONContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { cn } from '@/lib/cn';
+import { useToast } from '@/components/ui/Toast';
 
 interface ProjectRetroProps {
   projectId: string;
@@ -90,6 +91,7 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
   const [successCriteria, setSuccessCriteria] = useState<string[]>([]);
   const [newCriterion, setNewCriterion] = useState('');
   const [isDirty, setIsDirty] = useState(false);
+  const { showToast } = useToast();
 
   const editor = useEditor({
     extensions: [
@@ -116,13 +118,16 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
         if (editor && data.content) {
           editor.commands.setContent(data.content);
         }
+      } else {
+        showToast('Failed to load project retrospective', 'error');
       }
     } catch (err) {
       console.error('Failed to fetch project retro:', err);
+      showToast('Failed to load project retrospective. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
-  }, [projectId, editor]);
+  }, [projectId, editor, showToast]);
 
   useEffect(() => {
     if (editor) {
@@ -149,6 +154,10 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
           const data = await res.json();
           setRetroData({ ...retroData, ...data, is_draft: false });
           setIsDirty(false);
+          showToast('Project retrospective saved', 'success');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          showToast(data.error || 'Failed to save project retrospective', 'error');
         }
       } else {
         // PATCH to update existing retro
@@ -160,10 +169,15 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
         });
         if (res.ok) {
           setIsDirty(false);
+          showToast('Project retrospective updated', 'success');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          showToast(data.error || 'Failed to update project retrospective', 'error');
         }
       }
     } catch (err) {
       console.error('Failed to save project retro:', err);
+      showToast('Failed to save project retrospective. Please try again.', 'error');
     } finally {
       setSaving(false);
     }

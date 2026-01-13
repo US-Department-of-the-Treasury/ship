@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/cn';
+import { useToast } from '@/components/ui/Toast';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Standup {
   id: string;
@@ -31,23 +33,22 @@ async function getCsrfToken(): Promise<string> {
   return csrfToken!;
 }
 
-async function postWithCsrf(url: string, body: object): Promise<Response> {
+async function fetchWithCsrf(url: string, method: string, body?: object): Promise<Response> {
   const token = await getCsrfToken();
-  let res = await fetch(url, {
-    method: 'POST',
+  const options: RequestInit = {
+    method,
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
     credentials: 'include',
-    body: JSON.stringify(body),
-  });
+  };
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+  let res = await fetch(url, options);
   if (res.status === 403) {
     csrfToken = null;
     const newToken = await getCsrfToken();
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': newToken },
-      credentials: 'include',
-      body: JSON.stringify(body),
-    });
+    options.headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': newToken };
+    res = await fetch(url, options);
   }
   return res;
 }
@@ -58,6 +59,10 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
   const [showEditor, setShowEditor] = useState(false);
   const [editorContent, setEditorContent] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const { showToast } = useToast();
+  const { user } = useAuth();
 
   const fetchStandups = useCallback(async () => {
     try {
@@ -65,13 +70,16 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
       if (res.ok) {
         const data = await res.json();
         setStandups(data);
+      } else {
+        showToast('Failed to load standups', 'error');
       }
     } catch (err) {
       console.error('Failed to fetch standups:', err);
+      showToast('Failed to load standups. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
-  }, [sprintId]);
+  }, [sprintId, showToast]);
 
   useEffect(() => {
     fetchStandups();
@@ -91,7 +99,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
         })),
       };
 
-      const res = await postWithCsrf(`${API_URL}/api/sprints/${sprintId}/standups`, {
+      const res = await fetchWithCsrf(`${API_URL}/api/sprints/${sprintId}/standups`, 'POST', {
         content,
         title: `Standup - ${new Date().toLocaleDateString()}`,
       });
@@ -100,11 +108,73 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
         setEditorContent('');
         setShowEditor(false);
         fetchStandups();
+        showToast('Standup posted', 'success');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || 'Failed to post standup', 'error');
       }
     } catch (err) {
       console.error('Failed to create standup:', err);
+      showToast('Failed to post standup. Please try again.', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleEdit = (standup: Standup) => {
+    setEditingId(standup.id);
+    setEditContent(extractTextFromContent(standup.content));
+  };
+
+  const handleSaveEdit = async (standupId: string) => {
+    if (!editContent.trim()) return;
+
+    try {
+      const content = {
+        type: 'doc',
+        content: editContent.split('\n').map(line => ({
+          type: 'paragraph',
+          content: line ? [{ type: 'text', text: line }] : [],
+        })),
+      };
+
+      const res = await fetchWithCsrf(`${API_URL}/api/standups/${standupId}`, 'PATCH', { content });
+
+      if (res.ok) {
+        setEditingId(null);
+        setEditContent('');
+        fetchStandups();
+        showToast('Standup updated', 'success');
+      } else if (res.status === 403) {
+        showToast('You can only edit your own standups', 'error');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || 'Failed to update standup', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to update standup:', err);
+      showToast('Failed to update standup. Please try again.', 'error');
+    }
+  };
+
+  const handleDelete = async (standupId: string) => {
+    if (!confirm('Delete this standup update?')) return;
+
+    try {
+      const res = await fetchWithCsrf(`${API_URL}/api/standups/${standupId}`, 'DELETE');
+
+      if (res.ok || res.status === 204) {
+        fetchStandups();
+        showToast('Standup deleted', 'success');
+      } else if (res.status === 403) {
+        showToast('You can only delete your own standups', 'error');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || 'Failed to delete standup', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to delete standup:', err);
+      showToast('Failed to delete standup. Please try again.', 'error');
     }
   };
 
@@ -142,7 +212,18 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
                 </div>
                 <div className="space-y-3">
                   {dateStandups.map((standup) => (
-                    <StandupCard key={standup.id} standup={standup} />
+                    <StandupCard
+                      key={standup.id}
+                      standup={standup}
+                      isOwner={user?.id === standup.author_id}
+                      isEditing={editingId === standup.id}
+                      editContent={editContent}
+                      onEditContentChange={setEditContent}
+                      onEdit={() => handleEdit(standup)}
+                      onSaveEdit={() => handleSaveEdit(standup.id)}
+                      onCancelEdit={() => { setEditingId(null); setEditContent(''); }}
+                      onDelete={() => handleDelete(standup.id)}
+                    />
                   ))}
                 </div>
               </div>
@@ -194,7 +275,29 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
   );
 }
 
-function StandupCard({ standup }: { standup: Standup }) {
+interface StandupCardProps {
+  standup: Standup;
+  isOwner: boolean;
+  isEditing: boolean;
+  editContent: string;
+  onEditContentChange: (content: string) => void;
+  onEdit: () => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDelete: () => void;
+}
+
+function StandupCard({
+  standup,
+  isOwner,
+  isEditing,
+  editContent,
+  onEditContentChange,
+  onEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onDelete,
+}: StandupCardProps) {
   // Extract text from TipTap content
   const textContent = extractTextFromContent(standup.content);
 
@@ -215,10 +318,59 @@ function StandupCard({ standup }: { standup: Standup }) {
             {formatTime(standup.created_at)}
           </p>
         </div>
+        {/* Edit/Delete buttons for owner */}
+        {isOwner && !isEditing && (
+          <div className="flex gap-1">
+            <button
+              onClick={onEdit}
+              className="p-1.5 rounded text-muted hover:text-foreground hover:bg-border transition-colors"
+              title="Edit"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+            <button
+              onClick={onDelete}
+              className="p-1.5 rounded text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+              title="Delete"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
-      <div className="text-sm text-foreground whitespace-pre-wrap">
-        {textContent}
-      </div>
+      {isEditing ? (
+        <div className="space-y-2">
+          <textarea
+            value={editContent}
+            onChange={(e) => onEditContentChange(e.target.value)}
+            className="w-full h-24 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent resize-none"
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onCancelEdit}
+              className="rounded-md px-3 py-1.5 text-xs text-muted hover:bg-border transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onSaveEdit}
+              disabled={!editContent.trim()}
+              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90 transition-colors disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="text-sm text-foreground whitespace-pre-wrap">
+          {textContent}
+        </div>
+      )}
     </div>
   );
 }

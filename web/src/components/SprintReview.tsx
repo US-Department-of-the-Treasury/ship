@@ -3,6 +3,7 @@ import { useEditor, EditorContent, JSONContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { cn } from '@/lib/cn';
+import { useToast } from '@/components/ui/Toast';
 
 interface SprintReviewProps {
   sprintId: string;
@@ -77,6 +78,7 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
   const [saving, setSaving] = useState(false);
   const [hypothesisValidated, setHypothesisValidated] = useState<boolean | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const { showToast } = useToast();
 
   const editor = useEditor({
     extensions: [
@@ -101,13 +103,16 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
         if (editor && data.content) {
           editor.commands.setContent(data.content);
         }
+      } else {
+        showToast('Failed to load sprint review', 'error');
       }
     } catch (err) {
       console.error('Failed to fetch sprint review:', err);
+      showToast('Failed to load sprint review. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
-  }, [sprintId, editor]);
+  }, [sprintId, editor, showToast]);
 
   useEffect(() => {
     if (editor) {
@@ -132,6 +137,14 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
           const data = await res.json();
           setReviewData({ ...data, is_draft: false });
           setIsDirty(false);
+          showToast('Sprint review saved', 'success');
+        } else if (res.status === 409) {
+          // Review already exists - someone else created it
+          showToast('A review already exists for this sprint. Refreshing...', 'error');
+          fetchReview();
+        } else {
+          const data = await res.json().catch(() => ({}));
+          showToast(data.error || 'Failed to save sprint review', 'error');
         }
       } else {
         // PATCH to update existing review
@@ -141,10 +154,17 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
         });
         if (res.ok) {
           setIsDirty(false);
+          showToast('Sprint review updated', 'success');
+        } else if (res.status === 403) {
+          showToast('You can only edit reviews you created', 'error');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          showToast(data.error || 'Failed to update sprint review', 'error');
         }
       }
     } catch (err) {
       console.error('Failed to save sprint review:', err);
+      showToast('Failed to save sprint review. Please try again.', 'error');
     } finally {
       setSaving(false);
     }
