@@ -846,4 +846,651 @@ router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Respo
   }
 });
 
+// ============================================
+// Standup Endpoints - Comment-like entries on sprints
+// ============================================
+
+// Schema for creating a standup
+const createStandupSchema = z.object({
+  content: z.record(z.unknown()).default({ type: 'doc', content: [{ type: 'paragraph' }] }),
+  title: z.string().max(200).optional().default('Standup Update'),
+});
+
+// Helper to format standup response
+function formatStandupResponse(row: any) {
+  return {
+    id: row.id,
+    sprint_id: row.parent_id,
+    title: row.title,
+    content: row.content,
+    author_id: row.author_id,
+    author_name: row.author_name,
+    author_email: row.author_email,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+/**
+ * @swagger
+ * /sprints/{id}/standups:
+ *   get:
+ *     summary: List standups for a sprint
+ *     tags: [Sprints, Standups]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Sprint ID
+ *     responses:
+ *       200:
+ *         description: List of standups
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Standup'
+ *       404:
+ *         description: Sprint not found
+ */
+router.get('/:id/standups', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists and user can access it
+    const sprintCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    // Get all standups for this sprint (parent_id = sprint.id)
+    const result = await pool.query(
+      `SELECT d.id, d.parent_id, d.title, d.content, d.created_at, d.updated_at,
+              d.properties->>'author_id' as author_id,
+              u.name as author_name, u.email as author_email
+       FROM documents d
+       LEFT JOIN users u ON (d.properties->>'author_id')::uuid = u.id
+       WHERE d.parent_id = $1 AND d.document_type = 'standup'
+         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
+       ORDER BY d.created_at DESC`,
+      [id, userId, isAdmin]
+    );
+
+    res.json(result.rows.map(formatStandupResponse));
+  } catch (err) {
+    console.error('Get sprint standups error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /sprints/{id}/standups:
+ *   post:
+ *     summary: Create a standup entry
+ *     tags: [Sprints, Standups]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Sprint ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               content:
+ *                 type: object
+ *                 description: TipTap editor content
+ *               title:
+ *                 type: string
+ *                 default: Untitled
+ *     responses:
+ *       201:
+ *         description: Standup created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Standup'
+ *       404:
+ *         description: Sprint not found
+ */
+router.post('/:id/standups', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = createStandupSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    const { content, title } = parsed.data;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists and user can access it
+    const sprintCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    // Create the standup document
+    // parent_id = sprint.id, properties.author_id = current user
+    const properties = { author_id: userId };
+
+    const result = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, content, parent_id, properties, created_by, visibility)
+       VALUES ($1, 'standup', $2, $3, $4, $5, $6, 'workspace')
+       RETURNING id, parent_id, title, content, properties, created_at, updated_at`,
+      [workspaceId, title, JSON.stringify(content), id, JSON.stringify(properties), userId]
+    );
+
+    // Get author info
+    const authorResult = await pool.query(
+      `SELECT name, email FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    const standup = result.rows[0];
+    const author = authorResult.rows[0];
+
+    res.status(201).json({
+      id: standup.id,
+      sprint_id: standup.parent_id,
+      title: standup.title,
+      content: standup.content,
+      author_id: userId,
+      author_name: author?.name || null,
+      author_email: author?.email || null,
+      created_at: standup.created_at,
+      updated_at: standup.updated_at,
+    });
+  } catch (err) {
+    console.error('Create standup error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================
+// Sprint Review Endpoints - One per sprint with hypothesis validation
+// ============================================
+
+// Schema for creating/updating a sprint review
+const sprintReviewSchema = z.object({
+  content: z.record(z.unknown()).optional(),
+  title: z.string().max(200).optional(),
+  hypothesis_validated: z.boolean().nullable().optional(),
+});
+
+// Helper to generate pre-filled sprint review content
+async function generatePrefilledReviewContent(sprintData: any, issues: any[]) {
+  // Categorize issues
+  const issuesPlanned = issues.filter(i => {
+    const props = i.properties || {};
+    // An issue is "planned" if it was in the sprint from the start (no carryover_from_sprint_id)
+    return !props.carryover_from_sprint_id;
+  });
+
+  const issuesCompleted = issues.filter(i => {
+    const props = i.properties || {};
+    return props.state === 'done';
+  });
+
+  const issuesIntroduced = issues.filter(i => {
+    const props = i.properties || {};
+    // Issues introduced mid-sprint would have carryover_from_sprint_id
+    return !!props.carryover_from_sprint_id;
+  });
+
+  const issuesCancelled = issues.filter(i => {
+    const props = i.properties || {};
+    return props.state === 'cancelled';
+  });
+
+  // Build TipTap content with suggested sections
+  const content: any = {
+    type: 'doc',
+    content: [
+      {
+        type: 'heading',
+        attrs: { level: 2 },
+        content: [{ type: 'text', text: 'Sprint Summary' }]
+      },
+      {
+        type: 'paragraph',
+        content: [{ type: 'text', text: `Sprint ${sprintData.sprint_number} review for ${sprintData.program_name || 'Program'}.` }]
+      },
+    ]
+  };
+
+  // Add hypothesis section if sprint has one
+  if (sprintData.hypothesis) {
+    content.content.push(
+      {
+        type: 'heading',
+        attrs: { level: 3 },
+        content: [{ type: 'text', text: 'Hypothesis' }]
+      },
+      {
+        type: 'paragraph',
+        content: [{ type: 'text', text: sprintData.hypothesis }]
+      }
+    );
+  }
+
+  // Add issues summary section
+  content.content.push(
+    {
+      type: 'heading',
+      attrs: { level: 3 },
+      content: [{ type: 'text', text: 'Issues Summary' }]
+    },
+    {
+      type: 'bulletList',
+      content: [
+        {
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [{ type: 'text', text: `Planned: ${issuesPlanned.length} issues` }]
+          }]
+        },
+        {
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [{ type: 'text', text: `Completed: ${issuesCompleted.length} issues` }]
+          }]
+        },
+        {
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [{ type: 'text', text: `Introduced mid-sprint: ${issuesIntroduced.length} issues` }]
+          }]
+        },
+        {
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [{ type: 'text', text: `Cancelled: ${issuesCancelled.length} issues` }]
+          }]
+        },
+      ]
+    }
+  );
+
+  // Add completed issues list
+  if (issuesCompleted.length > 0) {
+    content.content.push(
+      {
+        type: 'heading',
+        attrs: { level: 3 },
+        content: [{ type: 'text', text: 'Deliverables' }]
+      },
+      {
+        type: 'bulletList',
+        content: issuesCompleted.map(i => ({
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [{ type: 'text', text: `#${i.ticket_number}: ${i.title}` }]
+          }]
+        }))
+      }
+    );
+  }
+
+  // Add next steps placeholder
+  content.content.push(
+    {
+      type: 'heading',
+      attrs: { level: 3 },
+      content: [{ type: 'text', text: 'Next Steps' }]
+    },
+    {
+      type: 'paragraph',
+      content: [{ type: 'text', text: 'Add follow-up actions and learnings here.' }]
+    }
+  );
+
+  return content;
+}
+
+// GET /api/sprints/:id/review - Get or generate pre-filled sprint review
+router.get('/:id/review', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists and user can access it
+    const sprintResult = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.program_id,
+              p.title as program_name
+       FROM documents d
+       JOIN documents p ON d.program_id = p.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintResult.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    const sprint = sprintResult.rows[0];
+    const sprintProps = sprint.properties || {};
+
+    // Check if a sprint_review already exists for this sprint
+    const existingReview = await pool.query(
+      `SELECT d.id, d.title, d.content, d.properties, d.created_at, d.updated_at,
+              u.name as owner_name, u.email as owner_email
+       FROM documents d
+       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       WHERE d.properties->>'sprint_id' = $1 AND d.document_type = 'sprint_review'
+         AND d.workspace_id = $2
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (existingReview.rows.length > 0) {
+      // Return existing review
+      const review = existingReview.rows[0];
+      const reviewProps = review.properties || {};
+      res.json({
+        id: review.id,
+        sprint_id: id,
+        title: review.title,
+        content: review.content,
+        hypothesis_validated: reviewProps.hypothesis_validated ?? null,
+        owner_id: reviewProps.owner_id || null,
+        owner_name: review.owner_name || null,
+        owner_email: review.owner_email || null,
+        created_at: review.created_at,
+        updated_at: review.updated_at,
+        is_draft: false,
+      });
+      return;
+    }
+
+    // No existing review - generate pre-filled draft
+    // Get issues for this sprint
+    const issuesResult = await pool.query(
+      `SELECT id, title, properties, ticket_number
+       FROM documents
+       WHERE sprint_id = $1 AND document_type = 'issue'`,
+      [id]
+    );
+
+    const sprintData = {
+      sprint_number: sprintProps.sprint_number || 1,
+      program_name: sprint.program_name,
+      hypothesis: sprintProps.hypothesis || null,
+    };
+
+    const prefilledContent = await generatePrefilledReviewContent(sprintData, issuesResult.rows);
+
+    res.json({
+      id: null, // No ID yet - this is a draft
+      sprint_id: id,
+      title: `Sprint ${sprintData.sprint_number} Review`,
+      content: prefilledContent,
+      hypothesis_validated: null,
+      owner_id: null,
+      owner_name: null,
+      owner_email: null,
+      created_at: null,
+      updated_at: null,
+      is_draft: true,
+    });
+  } catch (err) {
+    console.error('Get sprint review error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/sprints/:id/review - Create finalized sprint review
+router.post('/:id/review', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = sprintReviewSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    const { content, title, hypothesis_validated } = parsed.data;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists and user can access it
+    const sprintCheck = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    // Check if a sprint_review already exists
+    const existingCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE properties->>'sprint_id' = $1 AND document_type = 'sprint_review'
+         AND workspace_id = $2`,
+      [id, workspaceId]
+    );
+
+    if (existingCheck.rows.length > 0) {
+      res.status(409).json({ error: 'Sprint review already exists. Use PATCH to update.' });
+      return;
+    }
+
+    const sprintProps = sprintCheck.rows[0].properties || {};
+
+    // Create the sprint_review document
+    const properties = {
+      sprint_id: id,
+      owner_id: userId,
+      hypothesis_validated: hypothesis_validated ?? null,
+    };
+
+    const reviewTitle = title || `Sprint ${sprintProps.sprint_number || 'N'} Review`;
+    const reviewContent = content || { type: 'doc', content: [{ type: 'paragraph' }] };
+
+    const result = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, content, properties, created_by, visibility)
+       VALUES ($1, 'sprint_review', $2, $3, $4, $5, 'workspace')
+       RETURNING id, title, content, properties, created_at, updated_at`,
+      [workspaceId, reviewTitle, JSON.stringify(reviewContent), JSON.stringify(properties), userId]
+    );
+
+    // Get owner info
+    const ownerResult = await pool.query(
+      `SELECT name, email FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    const review = result.rows[0];
+    const owner = ownerResult.rows[0];
+
+    res.status(201).json({
+      id: review.id,
+      sprint_id: id,
+      title: review.title,
+      content: review.content,
+      hypothesis_validated: hypothesis_validated ?? null,
+      owner_id: userId,
+      owner_name: owner?.name || null,
+      owner_email: owner?.email || null,
+      created_at: review.created_at,
+      updated_at: review.updated_at,
+      is_draft: false,
+    });
+  } catch (err) {
+    console.error('Create sprint review error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PATCH /api/sprints/:id/review - Update existing sprint review
+router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = sprintReviewSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    const { content, title, hypothesis_validated } = parsed.data;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Find existing sprint_review for this sprint
+    const existing = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE properties->>'sprint_id' = $1 AND document_type = 'sprint_review'
+         AND workspace_id = $2
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (existing.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint review not found. Use POST to create.' });
+      return;
+    }
+
+    const reviewId = existing.rows[0].id;
+    const currentProps = existing.rows[0].properties || {};
+
+    // Check if user is owner or admin
+    const ownerId = currentProps.owner_id;
+    if (ownerId !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the owner or admin can update this review' });
+      return;
+    }
+
+    // Build update query
+    const updates: string[] = [];
+    const values: any[] = [];
+    let paramIndex = 1;
+
+    if (content !== undefined) {
+      updates.push(`content = $${paramIndex++}`);
+      values.push(JSON.stringify(content));
+    }
+
+    if (title !== undefined) {
+      updates.push(`title = $${paramIndex++}`);
+      values.push(title);
+    }
+
+    // Handle properties update
+    let propsChanged = false;
+    const newProps = { ...currentProps };
+
+    if (hypothesis_validated !== undefined) {
+      newProps.hypothesis_validated = hypothesis_validated;
+      propsChanged = true;
+    }
+
+    if (propsChanged) {
+      updates.push(`properties = $${paramIndex++}`);
+      values.push(JSON.stringify(newProps));
+    }
+
+    if (updates.length === 0) {
+      res.status(400).json({ error: 'No fields to update' });
+      return;
+    }
+
+    updates.push(`updated_at = now()`);
+
+    await pool.query(
+      `UPDATE documents SET ${updates.join(', ')}
+       WHERE id = $${paramIndex} AND document_type = 'sprint_review'`,
+      [...values, reviewId]
+    );
+
+    // Re-query to get full review with owner info
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.content, d.properties, d.created_at, d.updated_at,
+              u.name as owner_name, u.email as owner_email
+       FROM documents d
+       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       WHERE d.id = $1 AND d.document_type = 'sprint_review'`,
+      [reviewId]
+    );
+
+    const review = result.rows[0];
+    const reviewProps = review.properties || {};
+
+    res.json({
+      id: review.id,
+      sprint_id: id,
+      title: review.title,
+      content: review.content,
+      hypothesis_validated: reviewProps.hypothesis_validated ?? null,
+      owner_id: reviewProps.owner_id || null,
+      owner_name: review.owner_name || null,
+      owner_email: review.owner_email || null,
+      created_at: review.created_at,
+      updated_at: review.updated_at,
+      is_draft: false,
+    });
+  } catch (err) {
+    console.error('Update sprint review error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

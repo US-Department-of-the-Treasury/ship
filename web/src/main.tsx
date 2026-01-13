@@ -33,6 +33,7 @@ import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
 import { ProjectEditorPage } from '@/pages/ProjectEditor';
 import { ProjectsPage } from '@/pages/Projects';
+import { DashboardPage } from '@/pages/Dashboard';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
@@ -186,6 +187,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<Navigate to="/docs" replace />} />
+        <Route path="dashboard" element={<DashboardPage />} />
         <Route path="docs" element={<DocumentsPage />} />
         <Route path="docs/:id" element={<DocumentEditorPage />} />
         <Route path="issues" element={<IssuesPage />} />
