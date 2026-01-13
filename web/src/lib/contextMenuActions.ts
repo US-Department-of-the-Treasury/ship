@@ -375,6 +375,51 @@ const CONTEXT_ACTIONS: Record<DocumentType, ContextMenuItem[]> = {
       handlerKey: 'onCopyLink',
     },
   ],
+
+  // Standup document actions - minimal (view/delete)
+  standup: [
+    {
+      type: 'action',
+      id: 'open',
+      label: 'Open',
+      singleOnly: true,
+      handlerKey: 'onOpen',
+    },
+    { type: 'separator' },
+    {
+      type: 'action',
+      id: 'delete',
+      label: 'Delete',
+      destructive: true,
+      singleOnly: true,
+      handlerKey: 'onDelete',
+    },
+  ],
+
+  // Sprint review document actions - minimal (view only, tied to sprint)
+  sprint_review: [
+    {
+      type: 'action',
+      id: 'open',
+      label: 'Open',
+      singleOnly: true,
+      handlerKey: 'onOpen',
+    },
+    {
+      type: 'action',
+      id: 'open-new-tab',
+      label: 'Open in new tab',
+      singleOnly: true,
+      handlerKey: 'onOpenInNewTab',
+    },
+    {
+      type: 'action',
+      id: 'copy-link',
+      label: 'Copy link',
+      singleOnly: true,
+      handlerKey: 'onCopyLink',
+    },
+  ],
 };
 
 // Backlink-specific actions (not a document type, but used in BacklinksPanel)

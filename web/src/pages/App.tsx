@@ -30,7 +30,7 @@ import { useToast } from '@/components/ui/Toast';
 import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
 import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 
-type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings';
+type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard';
 
 export function AppLayout() {
   const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
@@ -83,6 +83,7 @@ export function AppLayout() {
 
   // Determine active mode from path
   const getActiveMode = (): Mode => {
+    if (location.pathname.startsWith('/dashboard')) return 'dashboard';
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
     if (location.pathname.startsWith('/projects')) return 'projects';
@@ -99,6 +100,7 @@ export function AppLayout() {
 
   const handleModeClick = (mode: Mode) => {
     switch (mode) {
+      case 'dashboard': navigate('/dashboard'); break;
       case 'docs': navigate('/docs'); break;
       case 'issues': navigate('/issues'); break;
       case 'projects': navigate('/projects'); break;
@@ -244,8 +246,14 @@ export function AppLayout() {
             )}
           </div>
 
-          {/* Mode icons - ordered by hierarchy: Docs → Programs → Projects → Issues → Teams */}
+          {/* Mode icons - ordered by hierarchy: Dashboard → Docs → Programs → Projects → Issues → Teams */}
           <div className="flex flex-1 flex-col items-center gap-1">
+            <RailIcon
+              icon={<DashboardIcon />}
+              label="Dashboard"
+              active={activeMode === 'dashboard'}
+              onClick={() => handleModeClick('dashboard')}
+            />
             <RailIcon
               icon={<DocsIcon />}
               label="Docs"
@@ -327,6 +335,7 @@ export function AppLayout() {
             {/* Sidebar header */}
             <div className="flex h-10 items-center justify-between border-b border-border px-3">
               <h2 className="text-sm font-medium text-foreground m-0">
+                {activeMode === 'dashboard' && 'Dashboard'}
                 {activeMode === 'docs' && 'Docs'}
                 {activeMode === 'issues' && 'Issues'}
                 {activeMode === 'projects' && 'Projects'}
@@ -420,6 +429,9 @@ export function AppLayout() {
               )}
               {activeMode === 'settings' && (
                 <div className="px-3 py-2 text-sm text-muted">Settings</div>
+              )}
+              {activeMode === 'dashboard' && (
+                <div className="px-3 py-2 text-sm text-muted">Cross-program overview</div>
               )}
             </div>
 
@@ -1385,6 +1397,14 @@ function PeopleIcon() {
 }
 
 // Icons
+function DashboardIcon() {
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v2a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 13a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z" />
+    </svg>
+  );
+}
+
 function DocsIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
