@@ -33,7 +33,9 @@ export function LoginPage() {
   const [isCheckingSetup, setIsCheckingSetup] = useState(true);
   const [isOnline, setIsOnline] = useState(getIsOnline());
   const [pivAvailable, setPivAvailable] = useState(false);
+  const [caiaAvailable, setCaiaAvailable] = useState(false);
   const [isPivLoading, setIsPivLoading] = useState(false);
+  const [isCaiaLoading, setIsCaiaLoading] = useState(false);
 
   // Subscribe to online/offline status changes
   useEffect(() => {
@@ -101,8 +103,24 @@ export function LoginPage() {
       }
     }
 
+    async function checkCaiaStatus() {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/caia/status`, {
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (data.success && data.data.available) {
+          setCaiaAvailable(true);
+        }
+      } catch (err) {
+        // CAIA not available, that's fine
+        console.debug('CAIA auth not available:', err);
+      }
+    }
+
     checkSetup();
     checkPivStatus();
+    checkCaiaStatus();
   }, [navigate]);
 
   async function handlePivLogin() {
@@ -129,6 +147,33 @@ export function LoginPage() {
       setError('Failed to connect to PIV authentication service');
       setErrorField('general');
       setIsPivLoading(false);
+    }
+  }
+
+  async function handleCaiaLogin() {
+    setError('');
+    setErrorField(null);
+    setIsCaiaLoading(true);
+
+    try {
+      const res = await fetch(`${API_URL}/api/auth/caia/login`, {
+        credentials: 'include',
+      });
+      const data = await res.json();
+
+      if (data.success && data.data.authorizationUrl) {
+        // Redirect to CAIA for PIV authentication
+        window.location.href = data.data.authorizationUrl;
+      } else {
+        setError(data.error?.message || 'Failed to initiate CAIA login');
+        setErrorField('general');
+        setIsCaiaLoading(false);
+      }
+    } catch (err) {
+      console.error('CAIA login error:', err);
+      setError('Failed to connect to CAIA authentication service');
+      setErrorField('general');
+      setIsCaiaLoading(false);
     }
   }
 
@@ -289,48 +334,87 @@ export function LoginPage() {
           </button>
         </form>
 
-        {/* PIV Authentication - shown when FPKI is configured */}
-        {pivAvailable && (
+        {/* PIV Authentication - shown when FPKI and/or CAIA is configured */}
+        {(pivAvailable || caiaAvailable) && (
           <>
             <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center text-xs">
-                <span className="bg-background px-2 text-muted">or</span>
+                <span className="bg-background px-2 text-muted">or sign in with PIV</span>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handlePivLogin}
-              disabled={isPivLoading || !isOnline}
-              className={cn(
-                'w-full rounded-md border border-border bg-background px-4 py-2.5',
-                'text-sm font-medium text-foreground',
-                'transition-colors hover:bg-muted/50',
-                'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background',
-                'disabled:cursor-not-allowed disabled:opacity-50',
-                'flex items-center justify-center gap-2'
+            <div className="space-y-2">
+              {/* FPKI Validator button */}
+              {pivAvailable && (
+                <button
+                  type="button"
+                  onClick={handlePivLogin}
+                  disabled={isPivLoading || isCaiaLoading || !isOnline}
+                  className={cn(
+                    'w-full rounded-md border border-border bg-background px-4 py-2.5',
+                    'text-sm font-medium text-foreground',
+                    'transition-colors hover:bg-muted/50',
+                    'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background',
+                    'disabled:cursor-not-allowed disabled:opacity-50',
+                    'flex items-center justify-center gap-2'
+                  )}
+                >
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                    <rect x="7" y="8" width="3" height="3" rx="0.5" />
+                    <line x1="14" y1="9.5" x2="17" y2="9.5" />
+                    <line x1="7" y1="14" x2="17" y2="14" />
+                    <line x1="7" y1="17" x2="13" y2="17" />
+                  </svg>
+                  {isPivLoading ? 'Connecting...' : 'FPKI Validator'}
+                </button>
               )}
-            >
-              <svg
-                className="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="4" width="18" height="16" rx="2" />
-                <rect x="7" y="8" width="3" height="3" rx="0.5" />
-                <line x1="14" y1="9.5" x2="17" y2="9.5" />
-                <line x1="7" y1="14" x2="17" y2="14" />
-                <line x1="7" y1="17" x2="13" y2="17" />
-              </svg>
-              {isPivLoading ? 'Connecting...' : 'Sign in with PIV Card'}
-            </button>
+
+              {/* CAIA button */}
+              {caiaAvailable && (
+                <button
+                  type="button"
+                  onClick={handleCaiaLogin}
+                  disabled={isPivLoading || isCaiaLoading || !isOnline}
+                  className={cn(
+                    'w-full rounded-md border border-border bg-background px-4 py-2.5',
+                    'text-sm font-medium text-foreground',
+                    'transition-colors hover:bg-muted/50',
+                    'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background',
+                    'disabled:cursor-not-allowed disabled:opacity-50',
+                    'flex items-center justify-center gap-2'
+                  )}
+                >
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                    <rect x="7" y="8" width="3" height="3" rx="0.5" />
+                    <line x1="14" y1="9.5" x2="17" y2="9.5" />
+                    <line x1="7" y1="14" x2="17" y2="14" />
+                    <line x1="7" y1="17" x2="13" y2="17" />
+                  </svg>
+                  {isCaiaLoading ? 'Connecting...' : 'Treasury CAIA'}
+                </button>
+              )}
+            </div>
           </>
         )}
 

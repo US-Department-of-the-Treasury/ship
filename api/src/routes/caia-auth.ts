@@ -1,14 +1,23 @@
 /**
- * PIV Authentication Routes
+ * CAIA Authentication Routes
  *
- * Provides OAuth-based PIV smartcard authentication via FPKI Validator.
- * These routes are only active when FPKI environment variables are configured.
+ * Provides OAuth-based PIV smartcard authentication via Treasury's CAIA
+ * (Customer Authentication & Identity Architecture) OAuth server.
+ *
+ * Key differences from FPKI Validator:
+ * - CAIA's `sub` claim is NOT persistent (changes on re-provisioning)
+ * - Email is the primary identifier for user matching
+ * - No x509_subject_dn claim (CAIA acts as broker, doesn't expose certificate details)
  */
 
 import { Router, Request, Response } from 'express';
 import type { Router as RouterType } from 'express';
 import { pool } from '../db/client.js';
-import { getFPKIClient, isFPKIConfigured } from '../services/fpki.js';
+import {
+  isCAIAConfigured,
+  getAuthorizationUrl,
+  handleCallback,
+} from '../services/caia.js';
 import {
   generateSecureSessionId,
   storeOAuthState,
@@ -19,29 +28,46 @@ import { logAuditEvent } from '../services/audit.js';
 
 const router: RouterType = Router();
 
-// GET /api/auth/piv/status - Check if PIV auth is available
+/**
+ * Basic email format validation
+ * Validates federal .gov/.mil email addresses
+ */
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(gov|mil)$/i;
+
+function isValidEmail(email: string): boolean {
+  return EMAIL_REGEX.test(email) && email.length <= 254;
+}
+
+/**
+ * Validate returnTo URL is same-origin (prevent open redirect)
+ */
+function isValidReturnTo(returnTo: string): boolean {
+  // Only allow relative paths starting with /
+  return returnTo.startsWith('/') && !returnTo.startsWith('//');
+}
+
+// GET /api/auth/caia/status - Check if CAIA auth is available
 router.get('/status', (_req: Request, res: Response): void => {
   res.json({
     success: true,
     data: {
-      available: isFPKIConfigured(),
+      available: isCAIAConfigured(),
     },
   });
 });
 
-// GET /api/auth/piv/login - Initiate PIV login flow
+// GET /api/auth/caia/login - Initiate CAIA login flow
 router.get('/login', async (req: Request, res: Response): Promise<void> => {
-  if (!isFPKIConfigured()) {
+  if (!isCAIAConfigured()) {
     res.status(503).json({
       success: false,
-      error: { code: 'PIV_NOT_CONFIGURED', message: 'PIV authentication not configured' },
+      error: { code: 'CAIA_NOT_CONFIGURED', message: 'CAIA authentication not configured' },
     });
     return;
   }
 
   try {
-    const client = getFPKIClient();
-    const { url, state, nonce, codeVerifier } = await client.getAuthorizationUrl();
+    const { url, state, nonce, codeVerifier } = await getAuthorizationUrl();
 
     // Store OAuth state in database (survives server restarts)
     await storeOAuthState(state, nonce, codeVerifier);
@@ -51,23 +77,23 @@ router.get('/login', async (req: Request, res: Response): Promise<void> => {
       data: { authorizationUrl: url },
     });
   } catch (error) {
-    console.error('PIV login initiation error:', error);
+    console.error('CAIA login initiation error:', error);
     res.status(500).json({
       success: false,
-      error: { code: 'PIV_INIT_ERROR', message: 'Failed to initiate PIV login' },
+      error: { code: 'CAIA_INIT_ERROR', message: 'Failed to initiate CAIA login' },
     });
   }
 });
 
-// GET /api/auth/piv/callback - Handle OAuth callback from FPKI Validator
+// GET /api/auth/caia/callback - Handle OAuth callback from CAIA
 router.get('/callback', async (req: Request, res: Response): Promise<void> => {
   const { code, state, error, error_description } = req.query;
 
   // Handle OAuth errors from the authorization server
   if (error) {
-    console.error('PIV OAuth error:', error, error_description);
+    console.error('CAIA OAuth error:', error, error_description);
     await logAuditEvent({
-      action: 'auth.piv_login_failed',
+      action: 'auth.caia_login_failed',
       details: { reason: 'oauth_error', error: String(error), errorDescription: String(error_description || '') },
       req,
     });
@@ -77,9 +103,9 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
   // Validate and consume state from database (one-time use)
   if (!state || typeof state !== 'string') {
-    console.error('PIV callback: Missing state parameter');
+    console.error('CAIA callback: Missing state parameter');
     await logAuditEvent({
-      action: 'auth.piv_login_failed',
+      action: 'auth.caia_login_failed',
       details: { reason: 'missing_state_param' },
       req,
     });
@@ -89,9 +115,9 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
   const oauthState = await consumeOAuthState(state);
   if (!oauthState) {
-    console.error('PIV state not found or expired:', { state });
+    console.error('CAIA state not found or expired:', { state });
     await logAuditEvent({
-      action: 'auth.piv_login_failed',
+      action: 'auth.caia_login_failed',
       details: { reason: 'invalid_or_expired_state' },
       req,
     });
@@ -99,45 +125,56 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const { nonce: pivNonce, codeVerifier } = oauthState;
+  const { nonce: caiaNonce, codeVerifier } = oauthState;
 
   try {
-    const client = getFPKIClient();
-    const { user: userInfo } = await client.handleCallback(
+    const { user: userInfo } = await handleCallback(
       String(code),
-      { state, nonce: pivNonce, codeVerifier }
+      { state, nonce: caiaNonce, codeVerifier }
     );
 
-    // Extract user identity from PIV certificate claims
+    // Extract user identity from CAIA claims
+    // Note: CAIA doesn't provide x509_subject_dn (it's a broker)
     const email = userInfo.email;
-    const x509Subject = userInfo.x509Subject || ''; // e.g., "CN=LASTNAME.FIRSTNAME.MIDDLE.1234567890"
-    const name = extractNameFromX509Subject(x509Subject) || email || 'Unknown';
+    const name = buildNameFromClaims(userInfo.givenName, userInfo.familyName, email);
 
     if (!email) {
-      console.error('PIV callback: No email in userInfo', userInfo);
+      console.error('CAIA callback: No email in userInfo', userInfo);
       await logAuditEvent({
-        action: 'auth.piv_login_failed',
-        details: { reason: 'no_email_in_certificate', x509Subject },
+        action: 'auth.caia_login_failed',
+        details: { reason: 'no_email_in_token' },
         req,
       });
-      res.redirect('/login?error=No+email+in+certificate');
+      res.redirect('/login?error=No+email+in+token');
       return;
     }
 
-    // Find existing user by email OR X.509 subject DN
-    let user = await findUserByEmailOrSubjectDn(email, x509Subject);
-    console.log(`[PIV DEBUG] User lookup for ${email}:`, user ? { id: user.id, email: user.email, is_super_admin: user.is_super_admin, last_workspace_id: user.last_workspace_id } : 'NOT FOUND');
+    // Validate email format (SEC-01: Basic regex check for .gov/.mil addresses)
+    if (!isValidEmail(email)) {
+      console.error('CAIA callback: Invalid email format', { email });
+      await logAuditEvent({
+        action: 'auth.caia_login_failed',
+        details: { reason: 'invalid_email_format', email },
+        req,
+      });
+      res.redirect('/login?error=Invalid+email+format');
+      return;
+    }
+
+    // Find existing user by email only (CAIA doesn't provide x509_subject_dn)
+    let user = await findUserByEmail(email);
+    console.log(`[CAIA DEBUG] User lookup for ${email}:`, user ? { id: user.id, email: user.email, is_super_admin: user.is_super_admin, last_workspace_id: user.last_workspace_id } : 'NOT FOUND');
 
     if (!user) {
-      // No existing user - check for pending invite matching certificate identity
-      const invite = await findPendingInvite(email, x509Subject);
+      // No existing user - check for pending invite matching email
+      const invite = await findPendingInviteByEmail(email);
 
       if (!invite) {
-        // No invite = no access (PIV users must be pre-invited)
-        console.log(`PIV login rejected: No invite found for ${email} / ${x509Subject}`);
+        // No invite = no access (CAIA users must be pre-invited)
+        console.log(`CAIA login rejected: No invite found for ${email}`);
         await logAuditEvent({
-          action: 'auth.piv_login_failed',
-          details: { reason: 'no_invite', email, x509Subject },
+          action: 'auth.caia_login_failed',
+          details: { reason: 'no_invite', email },
           req,
         });
         res.redirect('/login?error=' + encodeURIComponent('No invitation found. Please contact an administrator to request access.'));
@@ -145,30 +182,24 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
       }
 
       // Create user from invite
-      user = await createUserFromInvite(invite, email, name, x509Subject);
+      user = await createUserFromInvite(invite, email, name);
 
       // Log the invite acceptance
       await logAuditEvent({
         workspaceId: invite.workspace_id,
         actorUserId: user.id,
-        action: 'invite.accept_piv',
+        action: 'invite.accept_caia',
         resourceType: 'invite',
         resourceId: invite.id,
-        details: { email, x509Subject, role: invite.role },
+        details: { email, role: invite.role },
         req,
       });
-    } else if (!user.x509_subject_dn && x509Subject) {
-      // Update existing user with X.509 subject DN on first PIV login
-      await pool.query(
-        'UPDATE users SET x509_subject_dn = $1, piv_first_login_at = COALESCE(piv_first_login_at, NOW()), updated_at = NOW() WHERE id = $2',
-        [x509Subject, user.id]
-      );
     }
 
     // Update last_auth_provider to track which provider was used
     await pool.query(
       'UPDATE users SET last_auth_provider = $1, updated_at = NOW() WHERE id = $2',
-      ['fpki_validator', user.id]
+      ['caia', user.id]
     );
 
     // Session fixation prevention: delete any existing session
@@ -189,7 +220,7 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
     const workspaces = workspacesResult.rows;
     let workspaceId = user.last_workspace_id;
-    console.log(`[PIV DEBUG] Workspaces for user ${user.id}:`, { count: workspaces.length, workspaces, is_super_admin: user.is_super_admin });
+    console.log(`[CAIA DEBUG] Workspaces for user ${user.id}:`, { count: workspaces.length, workspaces, is_super_admin: user.is_super_admin });
 
     // Validate workspace access
     if (workspaceId && !workspaces.some((w: { id: string }) => w.id === workspaceId)) {
@@ -201,11 +232,11 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
     // Super-admins can log in without workspace membership
     if (!workspaceId && !user.is_super_admin && workspaces.length === 0) {
-      console.log(`PIV user ${email} has no workspace access`);
+      console.log(`CAIA user ${email} has no workspace access`);
       await logAuditEvent({
         actorUserId: user.id,
-        action: 'auth.piv_login_failed',
-        details: { reason: 'no_workspace_access', email, x509Subject },
+        action: 'auth.caia_login_failed',
+        details: { reason: 'no_workspace_access', email },
         req,
       });
       res.redirect('/login?error=' + encodeURIComponent('You are not authorized to access this application. Please contact an administrator to request access.'));
@@ -242,8 +273,8 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
     await logAuditEvent({
       workspaceId: workspaceId || undefined,
       actorUserId: user.id,
-      action: 'auth.piv_login',
-      details: { x509Subject },
+      action: 'auth.caia_login',
+      details: { csp: userInfo.csp },
       req,
     });
 
@@ -256,28 +287,30 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
       path: '/',
     });
 
+    // Get returnTo from query param (preserved through OAuth flow)
+    const returnTo = req.query.returnTo;
+    let redirectUrl = '/';
+    if (typeof returnTo === 'string' && isValidReturnTo(returnTo)) {
+      redirectUrl = returnTo;
+    }
+
     // Redirect to app (OAuth state was already consumed from database above)
-    res.redirect('/');
+    res.redirect(redirectUrl);
 
   } catch (error) {
-    console.error('PIV callback error:', error);
+    console.error('CAIA callback error:', error);
 
     // Extract specific error message for user feedback
     let errorMessage = 'Authentication failed';
-    const fpkiError = error as { code?: string; details?: { originalError?: { error_description?: string } } };
-    let errorCode = fpkiError.code || 'unknown';
+    const caiaError = error as { message?: string };
+    const errorCode = 'callback_error';
 
-    if (fpkiError.code === 'TOKEN_EXCHANGE_FAILED') {
-      const desc = fpkiError.details?.originalError?.error_description;
-      if (desc?.includes('No matching public key')) {
-        errorMessage = 'Server configuration error - please contact administrator';
-      } else if (desc) {
-        errorMessage = desc;
-      }
+    if (caiaError.message) {
+      errorMessage = caiaError.message;
     }
 
     await logAuditEvent({
-      action: 'auth.piv_login_failed',
+      action: 'auth.caia_login_failed',
       details: { reason: 'callback_error', errorCode, errorMessage },
       req,
     });
@@ -287,64 +320,55 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 });
 
 /**
- * Extract a human-readable name from X.509 subject DN
- * Handles formats like: CN=LASTNAME.FIRSTNAME.MIDDLE.1234567890
+ * Build a human-readable name from CAIA claims
+ * Falls back to email prefix if names not available
  */
-function extractNameFromX509Subject(subject: string): string | null {
-  if (!subject) return null;
-
-  // Parse CN=LASTNAME.FIRSTNAME.MIDDLE.1234567890
-  const cnMatch = subject.match(/CN=([^,]+)/i);
-  if (cnMatch && cnMatch[1]) {
-    const parts = cnMatch[1].split('.');
-    const lastName = parts[0];
-    const firstName = parts[1];
-    if (lastName && firstName) {
-      // LASTNAME.FIRSTNAME -> Firstname Lastname
-      const formatName = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
-      return `${formatName(firstName)} ${formatName(lastName)}`;
-    }
+function buildNameFromClaims(givenName?: string, familyName?: string, email?: string): string {
+  if (givenName && familyName) {
+    return `${givenName} ${familyName}`;
   }
-
-  return null;
+  if (givenName) {
+    return givenName;
+  }
+  if (familyName) {
+    return familyName;
+  }
+  // Fall back to email prefix
+  if (email) {
+    const prefix = email.split('@')[0] || 'Unknown';
+    // Try to format "firstname.lastname" -> "Firstname Lastname"
+    if (prefix.includes('.')) {
+      return prefix
+        .split('.')
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join(' ');
+    }
+    return prefix;
+  }
+  return 'Unknown';
 }
 
 /**
- * Find user by email OR X.509 subject DN (case-insensitive email match)
+ * Find user by email (case-insensitive)
  *
- * DUPLICATE USER HANDLING:
- * PIV certificates may return email with different casing than what was originally
- * stored (e.g., "Sean.McBride@treasury.gov" vs "sean.mcbride@treasury.gov").
- * If duplicates exist, we prefer the user with workspace memberships to ensure
- * the user can actually access the application.
- *
- * ORDER BY priority:
- *   1. has_membership DESC - users with workspace access first
- *   2. is_super_admin DESC - super admins next
- *   3. created_at ASC - oldest user as tiebreaker
- *
- * FUTURE CONSIDERATION:
- * Treasury users may have multiple email addresses (role-based, contractor, etc.).
- * A user_emails table could support this use case, allowing PIV login to match
- * any of a user's registered emails. See migration 013 for schema sketch.
+ * Note: CAIA doesn't provide x509_subject_dn, so we can only match by email.
+ * This is different from FPKI which can match by either email OR subject DN.
  */
-async function findUserByEmailOrSubjectDn(email: string | undefined, subjectDn: string | undefined): Promise<{
+async function findUserByEmail(email: string): Promise<{
   id: string;
   email: string;
   name: string;
   is_super_admin: boolean;
   last_workspace_id: string | null;
-  x509_subject_dn: string | null;
 } | null> {
   const result = await pool.query(
-    `SELECT u.id, u.email, u.name, u.is_super_admin, u.last_workspace_id, u.x509_subject_dn,
+    `SELECT u.id, u.email, u.name, u.is_super_admin, u.last_workspace_id,
             EXISTS(SELECT 1 FROM workspace_memberships wm WHERE wm.user_id = u.id) as has_membership
      FROM users u
-     WHERE ($1::TEXT IS NOT NULL AND LOWER(u.email) = LOWER($1))
-        OR ($2::TEXT IS NOT NULL AND u.x509_subject_dn = $2)
+     WHERE LOWER(u.email) = LOWER($1)
      ORDER BY has_membership DESC, u.is_super_admin DESC, u.created_at ASC
      LIMIT 1`,
-    [email || null, subjectDn || null]
+    [email]
   );
   return result.rows[0] || null;
 }
@@ -357,53 +381,48 @@ interface PendingInvite {
   workspace_id: string;
   workspace_name: string;
   email: string | null;
-  x509_subject_dn: string | null;
   role: 'admin' | 'member';
 }
 
 /**
- * Find a pending invite matching certificate identity (by email OR subject DN)
+ * Find a pending invite matching email
  */
-async function findPendingInvite(email: string | undefined, subjectDn: string | undefined): Promise<PendingInvite | null> {
+async function findPendingInviteByEmail(email: string): Promise<PendingInvite | null> {
   const result = await pool.query(
-    `SELECT wi.id, wi.workspace_id, w.name as workspace_name, wi.email, wi.x509_subject_dn, wi.role
+    `SELECT wi.id, wi.workspace_id, w.name as workspace_name, wi.email, wi.role
      FROM workspace_invites wi
      JOIN workspaces w ON wi.workspace_id = w.id
      WHERE wi.used_at IS NULL
        AND wi.expires_at > NOW()
-       AND (
-         ($1::TEXT IS NOT NULL AND LOWER(wi.email) = LOWER($1))
-         OR ($2::TEXT IS NOT NULL AND wi.x509_subject_dn = $2)
-       )
+       AND LOWER(wi.email) = LOWER($1)
      ORDER BY wi.created_at DESC
      LIMIT 1`,
-    [email || null, subjectDn || null]
+    [email]
   );
   return result.rows[0] || null;
 }
 
 /**
  * Create a new user from an invite and set up workspace membership
+ * Note: No x509_subject_dn for CAIA users
  */
 async function createUserFromInvite(
   invite: PendingInvite,
   email: string,
-  name: string,
-  x509Subject: string
+  name: string
 ): Promise<{
   id: string;
   email: string;
   name: string;
   is_super_admin: boolean;
   last_workspace_id: string | null;
-  x509_subject_dn: string | null;
 }> {
-  // Create user (no password - PIV only)
+  // Create user (no password - CAIA/PIV only, no x509_subject_dn for CAIA)
   const userResult = await pool.query(
-    `INSERT INTO users (email, name, x509_subject_dn, password_hash, last_workspace_id, piv_first_login_at, last_auth_provider)
-     VALUES ($1, $2, $3, NULL, $4, NOW(), 'fpki_validator')
-     RETURNING id, email, name, is_super_admin, last_workspace_id, x509_subject_dn`,
-    [email, name, x509Subject, invite.workspace_id]
+    `INSERT INTO users (email, name, password_hash, last_workspace_id, last_auth_provider)
+     VALUES ($1, $2, NULL, $3, 'caia')
+     RETURNING id, email, name, is_super_admin, last_workspace_id`,
+    [email, name, invite.workspace_id]
   );
   const user = userResult.rows[0];
 
@@ -424,7 +443,7 @@ async function createUserFromInvite(
   // Mark invite as used
   await pool.query('UPDATE workspace_invites SET used_at = NOW() WHERE id = $1', [invite.id]);
 
-  console.log(`Created PIV user from invite: ${email} (${x509Subject}) -> workspace ${invite.workspace_name}`);
+  console.log(`Created CAIA user from invite: ${email} -> workspace ${invite.workspace_name}`);
   return user;
 }
 

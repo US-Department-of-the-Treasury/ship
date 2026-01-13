@@ -2,7 +2,7 @@
  * OAuth Credential Store Service
  *
  * Manages OAuth client credentials using AWS Secrets Manager via the SDK.
- * Credentials are loaded at startup and can be updated via the federation endpoints.
+ * Supports multiple OAuth providers (FPKI Validator, CAIA) with separate secrets.
  */
 
 import {
@@ -14,92 +14,124 @@ import {
 // Re-export StoredCredentials for convenience
 export type { StoredCredentials };
 
-// Singleton credential store
-let credentialStore: SecretsManagerCredentialStore | null = null;
-
-// In-memory cache of credentials (loaded from Secrets Manager)
-let cachedCredentials: StoredCredentials | null = null;
+/**
+ * Supported OAuth providers
+ */
+export type OAuthProvider = 'fpki' | 'caia';
 
 /**
- * Get the credential store singleton
+ * Secret names for each provider
  */
-export function getCredentialStore(): SecretsManagerCredentialStore {
-  if (!credentialStore) {
-    credentialStore = new SecretsManagerCredentialStore({
-      secretName: process.env.FPKI_SECRET_NAME || 'ship/fpki-oauth-credentials',
+const PROVIDER_SECRET_NAMES: Record<OAuthProvider, string> = {
+  fpki: process.env.FPKI_SECRET_NAME || 'ship/fpki-oauth-credentials',
+  caia: process.env.CAIA_SECRET_NAME || 'ship/caia-credentials',
+};
+
+// Singleton credential stores (one per provider)
+const credentialStores: Map<OAuthProvider, SecretsManagerCredentialStore> = new Map();
+
+// In-memory cache of credentials per provider
+const cachedCredentials: Map<OAuthProvider, StoredCredentials> = new Map();
+
+/**
+ * Get the credential store for a specific provider
+ */
+export function getCredentialStore(provider: OAuthProvider = 'fpki'): SecretsManagerCredentialStore {
+  if (!credentialStores.has(provider)) {
+    credentialStores.set(provider, new SecretsManagerCredentialStore({
+      secretName: PROVIDER_SECRET_NAMES[provider],
       region: process.env.AWS_REGION || 'us-east-1',
-    });
+    }));
   }
-  return credentialStore;
+  return credentialStores.get(provider)!;
 }
 
 /**
- * Load credentials from Secrets Manager (cached)
+ * Load credentials from Secrets Manager for a provider (cached)
  */
-export async function loadCredentials(): Promise<StoredCredentials | null> {
-  if (cachedCredentials) {
-    return cachedCredentials;
+export async function loadCredentials(provider: OAuthProvider = 'fpki'): Promise<StoredCredentials | null> {
+  if (cachedCredentials.has(provider)) {
+    return cachedCredentials.get(provider)!;
   }
 
   try {
-    const store = getCredentialStore();
-    cachedCredentials = await store.load();
-    if (cachedCredentials) {
-      console.log('Loaded OAuth credentials from Secrets Manager');
+    const store = getCredentialStore(provider);
+    const credentials = await store.load();
+    if (credentials) {
+      cachedCredentials.set(provider, credentials);
+      console.log(`Loaded ${provider.toUpperCase()} OAuth credentials from Secrets Manager`);
     }
-    return cachedCredentials;
+    return credentials;
   } catch (err) {
-    console.warn('Failed to load credentials from Secrets Manager:', err);
+    console.warn(`Failed to load ${provider} credentials from Secrets Manager:`, err);
     return null;
   }
 }
 
 /**
- * Save credentials to Secrets Manager
+ * Save credentials to Secrets Manager for a provider
  */
-export async function saveCredentials(credentials: StoredCredentials): Promise<boolean> {
+export async function saveCredentials(credentials: StoredCredentials, provider: OAuthProvider = 'fpki'): Promise<boolean> {
   try {
-    const store = getCredentialStore();
+    const store = getCredentialStore(provider);
     const success = await store.save(credentials);
     if (success) {
       // Update cache
-      cachedCredentials = credentials;
-      console.log('Saved OAuth credentials to Secrets Manager');
+      cachedCredentials.set(provider, credentials);
+      console.log(`Saved ${provider.toUpperCase()} OAuth credentials to Secrets Manager`);
     }
     return success;
   } catch (err) {
-    console.error('Failed to save credentials to Secrets Manager:', err);
+    console.error(`Failed to save ${provider} credentials to Secrets Manager:`, err);
     return false;
   }
 }
 
 /**
- * Get cached credentials (without loading from Secrets Manager)
+ * Get cached credentials for a provider (without loading from Secrets Manager)
  */
-export function getCachedCredentials(): StoredCredentials | null {
-  return cachedCredentials;
+export function getCachedCredentials(provider: OAuthProvider = 'fpki'): StoredCredentials | null {
+  return cachedCredentials.get(provider) || null;
 }
 
 /**
- * Get the public JWK for JWKS endpoint
+ * Get the public JWK for JWKS endpoint (FPKI only - for private_key_jwt)
  */
 export function getPublicJwk(): JsonWebKey | null {
-  if (!cachedCredentials) return null;
-  if (cachedCredentials.tokenEndpointAuthMethod !== 'private_key_jwt') return null;
-  return cachedCredentials.publicJwk || null;
+  const fpkiCreds = cachedCredentials.get('fpki');
+  if (!fpkiCreds) return null;
+  if (fpkiCreds.tokenEndpointAuthMethod !== 'private_key_jwt') return null;
+  return fpkiCreds.publicJwk || null;
 }
 
 /**
- * Clear the credential cache (for testing)
+ * Clear the credential cache for a provider (for testing)
  */
-export function clearCredentialCache(): void {
-  cachedCredentials = null;
+export function clearCredentialCache(provider?: OAuthProvider): void {
+  if (provider) {
+    cachedCredentials.delete(provider);
+  } else {
+    cachedCredentials.clear();
+  }
 }
 
 /**
- * Check if credential store is available
+ * Check if credential store is available for a provider
  */
-export async function isCredentialStoreAvailable(): Promise<boolean> {
-  const store = getCredentialStore();
+export async function isCredentialStoreAvailable(provider: OAuthProvider = 'fpki'): Promise<boolean> {
+  const store = getCredentialStore(provider);
   return store.isAvailable();
+}
+
+/**
+ * List all configured providers (that have credentials)
+ */
+export function getConfiguredProviders(): OAuthProvider[] {
+  const providers: OAuthProvider[] = [];
+  for (const [provider, creds] of cachedCredentials) {
+    if (creds?.clientId && creds?.issuerUrl) {
+      providers.push(provider);
+    }
+  }
+  return providers;
 }

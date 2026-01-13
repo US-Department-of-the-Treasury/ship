@@ -98,6 +98,9 @@ importers:
       lib0:
         specifier: ^0.2.99
         version: 0.2.116
+      openid-client:
+        specifier: ^5.7.1
+        version: 5.7.1
       pg:
         specifier: ^8.13.1
         version: 8.16.3
@@ -292,10 +295,10 @@ importers:
         specifier: ^2.10.4
         version: 2.27.1(@tiptap/core@2.27.1(@tiptap/pm@2.27.1))
       '@tiptap/extension-task-item':
-        specifier: ^2.10.4
+        specifier: ^2.27.1
         version: 2.27.1(@tiptap/core@2.27.1(@tiptap/pm@2.27.1))(@tiptap/pm@2.27.1)
       '@tiptap/extension-task-list':
-        specifier: ^2.10.4
+        specifier: ^2.27.1
         version: 2.27.1(@tiptap/core@2.27.1(@tiptap/pm@2.27.1))
       '@tiptap/pm':
         specifier: ^2.10.4

@@ -20,7 +20,7 @@ let initializationAttempted = false;
  * Returns true if we have complete credentials from Secrets Manager OR env vars
  */
 export function isFPKIConfigured(): boolean {
-  const cached = getCachedCredentials();
+  const cached = getCachedCredentials('fpki');
 
   // Check Secrets Manager credentials (preferred - includes issuerUrl and redirectUri)
   if (cached?.clientId && cached?.issuerUrl && cached?.redirectUri) {
@@ -44,7 +44,7 @@ export async function initializeFPKI(): Promise<void> {
   initializationAttempted = true;
 
   try {
-    await loadCredentials();
+    await loadCredentials('fpki');
     console.log('FPKI credentials loaded from Secrets Manager');
   } catch (err) {
     console.log('No FPKI credentials in Secrets Manager, using env vars');
@@ -58,7 +58,7 @@ export async function initializeFPKI(): Promise<void> {
 export function getFPKIClient(): FPKIAuthClient {
   if (!fpkiClient) {
     // Try credentials from Secrets Manager first (includes issuerUrl and redirectUri)
-    const cached = getCachedCredentials();
+    const cached = getCachedCredentials('fpki');
 
     let issuerUrl: string;
     let redirectUri: string;

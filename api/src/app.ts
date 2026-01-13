@@ -20,10 +20,12 @@ import backlinksRoutes from './routes/backlinks.js';
 import { searchRouter } from './routes/search.js';
 import { filesRouter } from './routes/files.js';
 import pivAuthRoutes from './routes/piv-auth.js';
+import caiaAuthRoutes from './routes/caia-auth.js';
 import federationRoutes from './routes/federation.js';
 import { createJwksHandler } from '@fpki/auth-client';
 import { getPublicJwk } from './services/credential-store.js';
 import { initializeFPKI } from './services/fpki.js';
+import { initializeCAIA } from './services/caia.js';
 
 // Validate SESSION_SECRET in production
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -174,6 +176,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   // PIV auth routes - no CSRF protection (OAuth flow with external callback)
   app.use('/api/auth/piv', pivAuthRoutes);
 
+  // CAIA auth routes - no CSRF protection (OAuth flow with external callback)
+  app.use('/api/auth/caia', caiaAuthRoutes);
+
   // Federation routes - CSRF protected (admin credential management)
   // Note: mTLS happens between browser and FPKI Validator, not browser and this API.
   // These endpoints are standard POSTs from our frontend and need CSRF protection.
@@ -186,9 +191,12 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   // File upload routes (CSRF protected for POST endpoints)
   app.use('/api/files', csrfSynchronisedProtection, filesRouter);
 
-  // Initialize FPKI credentials from Secrets Manager at startup
+  // Initialize OAuth credentials from Secrets Manager at startup
   initializeFPKI().catch((err) => {
     console.warn('FPKI initialization failed:', err);
+  });
+  initializeCAIA().catch((err) => {
+    console.warn('CAIA initialization failed:', err);
   });
 
   return app;

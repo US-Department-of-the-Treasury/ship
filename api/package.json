@@ -35,6 +35,7 @@
     "express-session": "^1.18.2",
     "helmet": "^8.0.0",
     "lib0": "^0.2.99",
+    "openid-client": "^5.7.1",
     "pg": "^8.13.1",
     "undici": "^6.0.0",
     "uuid": "^11.0.3",
