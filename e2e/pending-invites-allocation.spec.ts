@@ -113,7 +113,7 @@ test.describe('Pending Invites in Allocation Grid', () => {
     await expect(page.getByText(emailPrefix)).toBeVisible({ timeout: 10000 })
 
     // Should have "(pending)" badge next to the name
-    await expect(page.getByText('(pending)')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('(pending)').first()).toBeVisible({ timeout: 5000 })
   })
 
   test('clicking pending user cell DOES open program selector', async ({ page }) => {
@@ -133,7 +133,7 @@ test.describe('Pending Invites in Allocation Grid', () => {
     await expect(page.getByText(emailPrefix)).toBeVisible({ timeout: 10000 })
 
     // Wait for "(pending)" indicator
-    await expect(page.getByText('(pending)')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('(pending)').first()).toBeVisible({ timeout: 5000 })
 
     // Find the "+" button in the pending user's row - pending users CAN now be assigned
     // Look for a "+" button in a row that contains the email prefix
@@ -510,7 +510,7 @@ test.describe('Full Pending User Allocation Flow (Story 7)', () => {
 
     const emailPrefix = testEmail.split('@')[0]
     await expect(page.getByText(emailPrefix)).toBeVisible({ timeout: 10000 })
-    await expect(page.getByText('(pending)')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('(pending)').first()).toBeVisible({ timeout: 5000 })
 
     // Step 3: Click on pending user's cell and assign a program
     const pendingUserRow = page.locator('div').filter({ hasText: emailPrefix }).filter({ hasText: '(pending)' }).first()

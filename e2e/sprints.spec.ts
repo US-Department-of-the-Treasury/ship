@@ -26,8 +26,8 @@ test.describe('Sprints - Issue Editor Integration', () => {
     await page.locator('tr[role="row"]', { hasText: /ship core/i }).first().click()
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Should see Sprints tab in the program editor (can be tab or button depending on implementation)
-    await expect(page.getByRole('tab', { name: 'Sprints' }).or(page.getByRole('button', { name: 'Sprints' }))).toBeVisible({ timeout: 5000 })
+    // Should see Sprints tab in the program editor
+    await expect(page.getByRole('tab', { name: 'Sprints' })).toBeVisible({ timeout: 5000 })
   })
 
   test('can assign issue to sprint via sprint picker in issue editor', async ({ page }) => {

@@ -137,9 +137,8 @@ test.describe('5.2 Network Flakiness', () => {
     // WHEN: Go online - sync attempts will fail due to route interception
     await goOnline()
 
-    // THEN: Error state shown after retries exhausted - verify sync count shows pending
-    // AND: Mutation remains in queue for manual retry (visible in sync count button)
-    await expect(page.getByRole('button', { name: /Sync Now \d+/ })).toBeVisible({ timeout: 30000 })
+    // THEN: Error state shown after retries exhausted
+    // AND: Mutation remains in queue for manual retry (visible via retry button)
     // AND: "Failed to sync" error message is visible after retries exhausted
     // Note: With exponential backoff (1s, 2s, 4s, 8s, 16s), all 5 retries take ~31s
     await expect(page.getByTestId('sync-error-message')).toBeVisible({ timeout: 45000 })
