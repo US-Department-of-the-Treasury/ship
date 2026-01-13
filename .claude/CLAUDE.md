@@ -49,83 +49,13 @@ pnpm test             # Runs api unit tests via vitest
 
 ## Worktree Preflight Checklist
 
-**Run this at the start of EVERY session on a worktree.** This ensures the dev environment is ready before making code changes.
-
-```bash
-# 1. Check PostgreSQL is running
-pg_isready -h localhost || brew services restart postgresql@16
-
-# 2. Install dependencies (worktrees don't share node_modules)
-pnpm install
-
-# 3. Build shared package (required for type-checking)
-pnpm build:shared
-
-# 4. Create database if it doesn't exist (dev.sh creates .env.local but NOT the DB)
-source api/.env.local 2>/dev/null
-DB_NAME=$(echo $DATABASE_URL | sed 's/.*\///')
-createdb $DB_NAME 2>/dev/null || echo "Database exists"
-
-# 5. Run migrations
-pnpm db:migrate
-
-# 6. Verify tests pass
-pnpm test
-```
-
-**Common issues:**
-- `pg_isready` fails → PostgreSQL not in PATH, use: `export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"`
-- `Cannot find module @ship/shared` → Run `pnpm build:shared` first
-- `database "X" does not exist` → Run the createdb command above
-- vendor/@fpki missing → Create symlink: `mkdir -p vendor/@fpki && ln -sf /path/to/main/repo/vendor/@fpki/auth-client vendor/@fpki/auth-client`
+**Run this at the start of EVERY session on a worktree.** See `/ship-worktree-preflight` skill for full checklist and common issue fixes.
 
 ## E2E Testing
 
-**ALWAYS use `/e2e-test-runner` when running E2E tests.** Never run `pnpm test:e2e` directly.
+**ALWAYS use `/e2e-test-runner` when running E2E tests.** Never run `pnpm test:e2e` directly - it causes output explosion (600+ tests crash Claude Code). The skill handles background execution, progress polling via `test-results/summary.json`, and `--last-failed` for iterative fixing.
 
-### Why This Matters
-
-Running `pnpm test:e2e` directly causes two problems:
-1. **Output explosion** - 600+ tests produce thousands of lines, crashing Claude Code
-2. **No progress visibility** - You can't report status to the user during long runs
-
-### The Correct Approach
-
-The `/e2e-test-runner` skill:
-1. Runs tests in background with output redirected
-2. Polls `test-results/summary.json` for progress (report every 30s: "**Progress: 145/639 passed, 3 failed**")
-3. Uses `--last-failed` for iterative fixing (avoids re-running passing tests)
-4. Reads error details from `test-results/errors/*.log` only when investigating failures
-
-### Key Files
-
-| File | Purpose |
-|------|---------|
-| `test-results/summary.json` | Poll this for pass/fail counts (6 lines, safe to read) |
-| `test-results/errors/*.log` | Detailed error logs per failure |
-| `e2e/progress-reporter.ts` | Custom reporter that writes progress |
-| `scripts/watch-tests.sh` | Terminal watcher for humans |
-
-### Quick Reference
-
-```bash
-# WRONG - Don't do this
-pnpm test:e2e                           # Output explosion, no progress
-
-# RIGHT - Use the skill
-/e2e-test-runner                        # Handles everything correctly
-
-# Or manually with background + polling
-pnpm test:e2e > /tmp/tests.log 2>&1 &   # Background
-cat test-results/summary.json           # Poll progress
-pnpm test:e2e --last-failed             # Verify fixes
-```
-
-### Anti-Patterns
-
-- **Never** run full test suite after each fix - use `--last-failed`
-- **Never** read raw test output - poll `summary.json` instead
-- **Never** skip progress updates - user needs visibility during 5+ min runs
+**Empty test footgun:** Tests with only TODO comments pass silently. Use `test.fixme()` for unimplemented tests. Pre-commit hook (`scripts/check-empty-tests.sh`) catches these.
 
 ## Architecture
 
@@ -174,50 +104,7 @@ Local dev uses `.env.local` for DB connection.
 
 ## Deployment
 
-**"Deploy" means deploy BOTH API and frontend.** Never deploy just one - they must stay in sync.
-
-### Full deploy sequence:
-```bash
-# 1. Deploy API
-./scripts/deploy.sh
-
-# 2. Monitor API until healthy (poll every 30s until Green/Ready)
-aws elasticbeanstalk describe-environments --environment-names ship-api-prod --query 'Environments[0].[Health,HealthStatus,Status]'
-
-# 3. Deploy frontend
-pnpm build:web
-aws s3 sync web/dist/ s3://$(cd terraform && terraform output -raw s3_bucket_name)/ --delete
-aws cloudfront create-invalidation --distribution-id $(cd terraform && terraform output -raw cloudfront_distribution_id) --paths "/*"
-
-# 4. Wait for CloudFront invalidation to complete
-aws cloudfront get-invalidation --distribution-id DIST_ID --id INVALIDATION_ID --query 'Invalidation.Status'
-```
-
-**After deploying, monitor until complete.** Poll every 30 seconds until Status is `Ready` and Health is `Green`. During rolling updates, temporary `Red/Degraded` status is normal while old instances drain. Don't report "done" until both API and frontend are fully deployed.
-
-**Deployment details:**
-- API uses **RollingWithAdditionalBatch** for zero-downtime deploys (3-5 min)
-- ALB health check hits `/health` endpoint
-- Frontend deploys to S3, served via CloudFront
-- CloudFront invalidation typically completes in 30-60 seconds
-
-## E2E Testing
-
-**Empty Playwright tests pass silently - major footgun.** A test with only a TODO comment passes as if it were real:
-
-```typescript
-// WRONG - passes silently, gives false confidence
-test('my test', async ({ page }) => {
-  // TODO: implement this test
-});
-
-// RIGHT - shows as "fixme" in report, not "passed"
-test.fixme('my test', async ({ page }) => {
-  // TODO: implement this test
-});
-```
-
-A pre-commit hook (`scripts/check-empty-tests.sh`) catches empty tests. Tests must have `expect()` or `page.` calls to be considered non-empty.
+**"Deploy" means deploy BOTH API and frontend.** Never deploy just one - they must stay in sync. See `/ship-deploy` skill for full sequence and monitoring steps.
 
 ## Philosophy Enforcement
 
@@ -255,10 +142,3 @@ GitHub Actions runs the same compliance checks on every PR. Even if someone bypa
 - `attestation-check` verifies ATTESTATION.md exists and is recent
 
 These are **required status checks** - PRs cannot merge without passing.
-
-### Why This Matters
-
-Using `--no-verify` to bypass a broken compliance check:
-- Defeats the purpose of security scanning
-- Can leak secrets to the repo
-- Violates FISMA compliance requirements
