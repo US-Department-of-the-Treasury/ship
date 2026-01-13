@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
+import { handleVisibilityChange } from '../collaboration/index.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -309,6 +310,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         WHERE id IN (SELECT id FROM descendants)`,
         [id, data.visibility]
       );
+
+      // Notify WebSocket collaboration server to disconnect users who lost access
+      handleVisibilityChange(id, data.visibility, existing.created_by).catch((err) => {
+        console.error('Failed to handle visibility change for collaboration:', err);
+      });
     }
 
     res.json(result.rows[0]);
