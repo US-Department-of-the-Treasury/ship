@@ -388,8 +388,8 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       const rows = page.locator('tbody tr');
       await expect(rows.first()).toBeVisible();
 
-      // Click on first row to establish React focus state (triggers handleClick which sets focusedId)
-      await rows.nth(0).click();
+      // Hover on first row to establish React focus state (triggers setFocusedId via onMouseEnter)
+      await rows.nth(0).hover();
 
       // First row should have focus ring (ring-2 class indicates focus)
       await expect(rows.nth(0)).toHaveClass(/ring-2/);
@@ -1182,6 +1182,10 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       // Navigate to an issue
       await issueRows.first().click();
       await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+
+      // Move focus out of the editor (Escape is ignored when editor has focus)
+      // Click on the back button area to move focus out of the contenteditable
+      await page.locator('button[aria-label*="Back to"]').focus();
 
       // Press Escape to go back to program
       await page.keyboard.press('Escape');
@@ -2470,9 +2474,10 @@ test.describe('Bulk Selection - Accessibility', () => {
     const table = page.locator('table');
     await expect(table).toBeVisible();
 
-    // Click first row to establish React focus state
+    // Hover first row to establish React focus state (hover triggers setFocusedId)
     const firstRow = page.locator('tbody tr').first();
-    await firstRow.click();
+    await expect(firstRow).toBeVisible({ timeout: 10000 });
+    await firstRow.hover();
 
     // First row should have visible focus ring (ring-2 class)
     await expect(firstRow).toHaveClass(/ring-2/);

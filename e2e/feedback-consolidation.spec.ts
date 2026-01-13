@@ -233,6 +233,7 @@ test.describe('Triage Workflow: Reject', () => {
 
     // Open a triage issue
     const triageIssue = page.locator('tr[role="row"]', { hasText: 'External feature request' });
+    await expect(triageIssue).toBeVisible({ timeout: 10000 });
     await triageIssue.click();
     await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
 
