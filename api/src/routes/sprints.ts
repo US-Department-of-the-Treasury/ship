@@ -1412,6 +1412,13 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
     const reviewId = existing.rows[0].id;
     const currentProps = existing.rows[0].properties || {};
 
+    // Check if user is owner or admin
+    const ownerId = currentProps.owner_id;
+    if (ownerId !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the owner or admin can update this review' });
+      return;
+    }
+
     // Build update query
     const updates: string[] = [];
     const values: any[] = [];
