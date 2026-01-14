@@ -8,13 +8,15 @@ const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 interface Standup {
   id: string;
-  author: {
-    id: string;
-    name: string;
-  };
-  created_at: string;
-  content: unknown;
   sprint_id: string;
+  title: string;
+  content: unknown;
+  author_id: string;
+  author_name: string | null;
+  author_email: string | null;
+  created_at: string;
+  updated_at: string;
+  // Added by Dashboard fetch:
   sprint_title?: string;
   program_name?: string;
 }
@@ -338,16 +340,18 @@ function ProjectCard({ project }: { project: Project }) {
 
 function StandupCard({ standup }: { standup: Standup }) {
   const contentPreview = extractTextFromContent(standup.content);
+  const authorInitial = standup.author_name?.charAt(0).toUpperCase() || '?';
+  const authorDisplay = standup.author_name || 'Unknown';
 
   return (
     <div className="rounded-md border border-border bg-background p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/80 text-xs font-medium text-white">
-            {standup.author.name?.charAt(0).toUpperCase()}
+            {authorInitial}
           </span>
           <span className="font-medium text-foreground text-sm">
-            {standup.author.name}
+            {authorDisplay}
           </span>
           <span className="text-xs text-muted">
             in {standup.program_name}

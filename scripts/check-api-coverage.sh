@@ -83,7 +83,14 @@ for route_file in api/src/routes/*.ts; do
     grep -h "router\.put" "$route_file" 2>/dev/null | sed -n "s/.*router\.put('\([^']*\)'.*/\1/p"
     grep -h "router\.patch" "$route_file" 2>/dev/null | sed -n "s/.*router\.patch('\([^']*\)'.*/\1/p"
     grep -h "router\.delete" "$route_file" 2>/dev/null | sed -n "s/.*router\.delete('\([^']*\)'.*/\1/p"
-  } | sed 's/^\///' | sed "s|^|${mount_prefix}|" | grep -v '^$' >> "$TEMP_FILE" || true
+  } | sed 's/^\///' | while read -r route; do
+    if [ -z "$route" ]; then
+      # Base route '/' becomes just the mount prefix (without trailing slash)
+      echo "${mount_prefix%/}"
+    else
+      echo "${mount_prefix}${route}"
+    fi
+  done | grep -v '^$' >> "$TEMP_FILE" || true
 done
 
 # Also add direct app routes (app.get, app.post, etc.)

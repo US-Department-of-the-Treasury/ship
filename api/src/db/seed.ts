@@ -544,6 +544,123 @@ async function seed() {
       console.log(`✅ Created ${standaloneDocsCreated} standalone wiki documents`);
     }
 
+    // Create sample standups for Ship Core sprints (tests the standup feed feature)
+    const shipCoreSprints = sprints.filter(s => s.programId === shipCoreProgram.id);
+    let standupsCreated = 0;
+
+    // Add standups to current and recent sprints
+    for (const sprint of shipCoreSprints) {
+      if (sprint.number >= currentSprintNumber - 1 && sprint.number <= currentSprintNumber) {
+        // Check if standups already exist for this sprint
+        const existingStandups = await pool.query(
+          `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'standup' AND sprint_id = $2`,
+          [workspaceId, sprint.id]
+        );
+
+        if (existingStandups.rows.length === 0) {
+          // Create 2-3 standups per sprint from different team members
+          const standupAuthors = allUsers.slice(0, 3);
+          const standupMessages = [
+            {
+              content: {
+                type: 'doc',
+                content: [
+                  { type: 'paragraph', content: [{ type: 'text', text: 'Yesterday: Finished implementing the sprint timeline UI component.' }] },
+                  { type: 'paragraph', content: [{ type: 'text', text: 'Today: Working on the progress chart integration.' }] },
+                  { type: 'paragraph', content: [{ type: 'text', text: 'Blockers: None' }] },
+                ],
+              },
+            },
+            {
+              content: {
+                type: 'doc',
+                content: [
+                  { type: 'paragraph', content: [{ type: 'text', text: 'Yesterday: Code review and bug fixes.' }] },
+                  { type: 'paragraph', content: [{ type: 'text', text: 'Today: Starting on issue assignment flow.' }] },
+                  { type: 'paragraph', content: [{ type: 'text', text: 'Blockers: Waiting on API spec clarification.' }] },
+                ],
+              },
+            },
+            {
+              content: {
+                type: 'doc',
+                content: [
+                  { type: 'paragraph', content: [{ type: 'text', text: 'Yesterday: Team sync and planning session.' }] },
+                  { type: 'paragraph', content: [{ type: 'text', text: 'Today: Documentation and testing.' }] },
+                  { type: 'paragraph', content: [{ type: 'text', text: 'Blockers: None' }] },
+                ],
+              },
+            },
+          ];
+
+          for (let i = 0; i < standupAuthors.length; i++) {
+            const author = standupAuthors[i]!;
+            const message = standupMessages[i]!;
+            const daysAgo = i; // Stagger the standups over recent days
+            const properties = { author_id: author.id };
+
+            await pool.query(
+              `INSERT INTO documents (workspace_id, document_type, title, parent_id, content, created_by, properties, created_at)
+               VALUES ($1, 'standup', $2, $3, $4, $5, $6, NOW() - INTERVAL '${daysAgo} days')`,
+              [workspaceId, `Standup - ${author.name}`, sprint.id, JSON.stringify(message.content), author.id, JSON.stringify(properties)]
+            );
+            standupsCreated++;
+          }
+        }
+      }
+    }
+
+    if (standupsCreated > 0) {
+      console.log(`✅ Created ${standupsCreated} standups`);
+    } else {
+      console.log('ℹ️  All standups already exist');
+    }
+
+    // Create sample sprint reviews for completed sprints
+    let sprintReviewsCreated = 0;
+
+    for (const sprint of shipCoreSprints) {
+      // Only add reviews to completed sprints (before current)
+      if (sprint.number < currentSprintNumber && sprint.number >= currentSprintNumber - 2) {
+        const existingReview = await pool.query(
+          `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'sprint_review' AND sprint_id = $2`,
+          [workspaceId, sprint.id]
+        );
+
+        if (!existingReview.rows[0]) {
+          const reviewContent = {
+            type: 'doc',
+            content: [
+              { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'What went well' }] },
+              { type: 'bulletList', content: [
+                { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Team collaboration was excellent' }] }] },
+                { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Met most of our sprint goals' }] }] },
+              ]},
+              { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'What could be improved' }] },
+              { type: 'bulletList', content: [
+                { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Better estimation on complex tasks' }] }] },
+                { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'More frequent check-ins' }] }] },
+              ]},
+            ],
+          };
+
+          const owner = allUsers[sprint.number % allUsers.length]!;
+          await pool.query(
+            `INSERT INTO documents (workspace_id, document_type, title, sprint_id, content, created_by)
+             VALUES ($1, 'sprint_review', $2, $3, $4, $5)`,
+            [workspaceId, `Sprint ${sprint.number} Review`, sprint.id, JSON.stringify(reviewContent), owner.id]
+          );
+          sprintReviewsCreated++;
+        }
+      }
+    }
+
+    if (sprintReviewsCreated > 0) {
+      console.log(`✅ Created ${sprintReviewsCreated} sprint reviews`);
+    } else {
+      console.log('ℹ️  All sprint reviews already exist');
+    }
+
     console.log('');
     console.log('🎉 Seed complete!');
     console.log('');

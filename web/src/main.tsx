@@ -22,7 +22,6 @@ import { IssuesPage } from '@/pages/Issues';
 import { IssueEditorPage } from '@/pages/IssueEditor';
 import { ProgramsPage } from '@/pages/Programs';
 import { ProgramEditorPage } from '@/pages/ProgramEditor';
-import { ProgramViewPage } from '@/pages/ProgramView';
 import { SprintEditorPage } from '@/pages/SprintEditor';
 import { SprintViewPage } from '@/pages/SprintView';
 import { SprintsPage } from '@/pages/Sprints';
@@ -196,7 +195,9 @@ function AppRoutes() {
         <Route path="projects/:id" element={<ProjectEditorPage />} />
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />
-        <Route path="programs/:id/view" element={<ProgramViewPage />} />
+        <Route path="programs/:id/issues" element={<ProgramEditorPage />} />
+        <Route path="programs/:id/sprints" element={<ProgramEditorPage />} />
+        <Route path="programs/:id/sprints/:sprintId" element={<ProgramEditorPage />} />
         <Route path="programs/:programId/sprints/:id" element={<SprintEditorPage />} />
         <Route path="sprints" element={<SprintsPage />} />
         <Route path="sprints/:id" element={<SprintEditorPage />} />

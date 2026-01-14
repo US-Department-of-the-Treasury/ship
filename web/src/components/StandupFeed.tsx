@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { cn } from '@/lib/cn';
+import { useEditor, EditorContent, JSONContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -7,7 +9,7 @@ interface Standup {
   id: string;
   sprint_id: string;
   title: string;
-  content: Record<string, unknown>;
+  content: JSONContent;
   author_id: string;
   author_name: string | null;
   author_email: string | null;
@@ -57,12 +59,32 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
   const [standups, setStandups] = useState<Standup[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
-  const [editorContent, setEditorContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState('');
   const { showToast } = useToast();
   const { user } = useAuth();
+
+  // TipTap editor for creating new standups
+  const createEditor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: 'What did you work on? Any blockers? What\'s next?',
+      }),
+    ],
+    content: '',
+  });
+
+  // TipTap editor for editing existing standups
+  const editEditor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: 'Edit your standup update...',
+      }),
+    ],
+    content: '',
+  });
 
   const fetchStandups = useCallback(async () => {
     try {
@@ -86,18 +108,11 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
   }, [fetchStandups]);
 
   const handleSubmit = async () => {
-    if (!editorContent.trim()) return;
+    if (!createEditor || createEditor.isEmpty) return;
 
     setSaving(true);
     try {
-      // Create simple TipTap content from plain text
-      const content = {
-        type: 'doc',
-        content: editorContent.split('\n').map(line => ({
-          type: 'paragraph',
-          content: line ? [{ type: 'text', text: line }] : [],
-        })),
-      };
+      const content = createEditor.getJSON();
 
       const res = await fetchWithCsrf(`${API_URL}/api/sprints/${sprintId}/standups`, 'POST', {
         content,
@@ -105,7 +120,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
       });
 
       if (res.ok) {
-        setEditorContent('');
+        createEditor.commands.clearContent();
         setShowEditor(false);
         fetchStandups();
         showToast('Standup posted', 'success');
@@ -123,26 +138,22 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
 
   const handleEdit = (standup: Standup) => {
     setEditingId(standup.id);
-    setEditContent(extractTextFromContent(standup.content));
+    if (editEditor) {
+      editEditor.commands.setContent(standup.content);
+    }
   };
 
   const handleSaveEdit = async (standupId: string) => {
-    if (!editContent.trim()) return;
+    if (!editEditor || editEditor.isEmpty) return;
 
     try {
-      const content = {
-        type: 'doc',
-        content: editContent.split('\n').map(line => ({
-          type: 'paragraph',
-          content: line ? [{ type: 'text', text: line }] : [],
-        })),
-      };
+      const content = editEditor.getJSON();
 
       const res = await fetchWithCsrf(`${API_URL}/api/standups/${standupId}`, 'PATCH', { content });
 
       if (res.ok) {
         setEditingId(null);
-        setEditContent('');
+        editEditor.commands.clearContent();
         fetchStandups();
         showToast('Standup updated', 'success');
       } else if (res.status === 403) {
@@ -217,11 +228,10 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
                       standup={standup}
                       isOwner={user?.id === standup.author_id}
                       isEditing={editingId === standup.id}
-                      editContent={editContent}
-                      onEditContentChange={setEditContent}
+                      editEditor={editEditor}
                       onEdit={() => handleEdit(standup)}
                       onSaveEdit={() => handleSaveEdit(standup.id)}
-                      onCancelEdit={() => { setEditingId(null); setEditContent(''); }}
+                      onCancelEdit={() => { setEditingId(null); editEditor?.commands.clearContent(); }}
                       onDelete={() => handleDelete(standup.id)}
                     />
                   ))}
@@ -236,18 +246,17 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
       <div className="border-t border-border px-6 py-4">
         {showEditor ? (
           <div className="space-y-3">
-            <textarea
-              value={editorContent}
-              onChange={(e) => setEditorContent(e.target.value)}
-              placeholder="What did you work on? Any blockers? What's next?"
-              className="w-full h-32 rounded-lg border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-              autoFocus
-            />
+            <div className="min-h-[8rem] rounded-lg border border-border bg-background px-4 py-3 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
+              <EditorContent
+                editor={createEditor}
+                className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[6rem] [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-muted [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
+              />
+            </div>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => {
                   setShowEditor(false);
-                  setEditorContent('');
+                  createEditor?.commands.clearContent();
                 }}
                 className="rounded-md px-4 py-2 text-sm text-muted hover:bg-border transition-colors"
               >
@@ -255,7 +264,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={!editorContent.trim() || saving}
+                disabled={!createEditor || createEditor.isEmpty || saving}
                 className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? 'Posting...' : 'Post Update'}
@@ -279,8 +288,7 @@ interface StandupCardProps {
   standup: Standup;
   isOwner: boolean;
   isEditing: boolean;
-  editContent: string;
-  onEditContentChange: (content: string) => void;
+  editEditor: ReturnType<typeof useEditor>;
   onEdit: () => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
@@ -291,15 +299,18 @@ function StandupCard({
   standup,
   isOwner,
   isEditing,
-  editContent,
-  onEditContentChange,
+  editEditor,
   onEdit,
   onSaveEdit,
   onCancelEdit,
   onDelete,
 }: StandupCardProps) {
-  // Extract text from TipTap content
-  const textContent = extractTextFromContent(standup.content);
+  // Create a read-only editor for displaying content
+  const displayEditor = useEditor({
+    extensions: [StarterKit],
+    content: standup.content,
+    editable: false,
+  }, [standup.content]);
 
   return (
     <div className="rounded-lg border border-border bg-background p-4">
@@ -344,12 +355,12 @@ function StandupCard({
       </div>
       {isEditing ? (
         <div className="space-y-2">
-          <textarea
-            value={editContent}
-            onChange={(e) => onEditContentChange(e.target.value)}
-            className="w-full h-24 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-            autoFocus
-          />
+          <div className="min-h-[6rem] rounded-lg border border-border bg-background px-3 py-2 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
+            <EditorContent
+              editor={editEditor}
+              className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[4rem] [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-muted [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
+            />
+          </div>
           <div className="flex justify-end gap-2">
             <button
               onClick={onCancelEdit}
@@ -359,7 +370,7 @@ function StandupCard({
             </button>
             <button
               onClick={onSaveEdit}
-              disabled={!editContent.trim()}
+              disabled={!editEditor || editEditor.isEmpty}
               className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent/90 transition-colors disabled:opacity-50"
             >
               Save
@@ -367,37 +378,12 @@ function StandupCard({
           </div>
         </div>
       ) : (
-        <div className="text-sm text-foreground whitespace-pre-wrap">
-          {textContent}
+        <div className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none">
+          <EditorContent editor={displayEditor} />
         </div>
       )}
     </div>
   );
-}
-
-// Helper to extract text from TipTap content
-function extractTextFromContent(content: Record<string, unknown>): string {
-  if (!content || typeof content !== 'object') return '';
-
-  const doc = content as { type?: string; content?: unknown[] };
-  if (doc.type !== 'doc' || !Array.isArray(doc.content)) return '';
-
-  const lines: string[] = [];
-  for (const node of doc.content) {
-    const nodeObj = node as { type?: string; content?: unknown[] };
-    if (nodeObj.type === 'paragraph' && Array.isArray(nodeObj.content)) {
-      const texts = nodeObj.content
-        .filter((c): c is { type: string; text: string } =>
-          typeof c === 'object' && c !== null && 'text' in c
-        )
-        .map(c => c.text);
-      lines.push(texts.join(''));
-    } else if (nodeObj.type === 'paragraph') {
-      lines.push('');
-    }
-  }
-
-  return lines.join('\n');
 }
 
 // Group standups by date with friendly labels

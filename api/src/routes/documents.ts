@@ -264,6 +264,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.content !== undefined) {
       updates.push(`content = $${paramIndex++}`);
       values.push(JSON.stringify(data.content));
+      // Clear yjs_state when content is updated via API
+      // This forces the collaboration server to regenerate Yjs state from new content
+      updates.push(`yjs_state = NULL`);
     }
     if (data.parent_id !== undefined) {
       updates.push(`parent_id = $${paramIndex++}`);
