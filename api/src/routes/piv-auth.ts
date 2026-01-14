@@ -144,7 +144,7 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
   try {
     const client = getFPKIClient();
     const { user: userInfo } = await client.handleCallback(
-      String(code),
+      { code: String(code), state },
       { state, nonce: pivNonce, codeVerifier }
     );
 
