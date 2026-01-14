@@ -2,41 +2,68 @@
 set -euo pipefail
 
 # Ship API Deployment Script
-# Deploys the API to Elastic Beanstalk
+# Deploys the API to Elastic Beanstalk for the specified environment
+#
+# Usage: ./scripts/deploy.sh <dev|prod>
 #
 # Prerequisites:
 #   - AWS CLI configured with appropriate credentials
-#   - Terraform outputs available (run from terraform/ directory first if needed)
+#   - Terraform infrastructure deployed for the target environment
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# Sync terraform config from SSM (source of truth)
-"$SCRIPT_DIR/sync-terraform-config.sh"
+# Parse environment argument
+ENV="${1:-}"
+if [[ ! "$ENV" =~ ^(dev|prod)$ ]]; then
+  echo "Usage: $0 <dev|prod>"
+  echo ""
+  echo "Examples:"
+  echo "  $0 dev     # Deploy to dev environment"
+  echo "  $0 prod    # Deploy to prod environment"
+  exit 1
+fi
+
+# Environment-specific configuration
+# - prod uses existing terraform at root with original app name (ship-api)
+# - dev uses new modular structure with environment-suffixed app name
+if [ "$ENV" = "prod" ]; then
+  TF_DIR="$PROJECT_ROOT/terraform"
+  APP_NAME="ship-api"
+  ENV_NAME="ship-api-prod"
+else
+  TF_DIR="$PROJECT_ROOT/terraform/environments/$ENV"
+  APP_NAME="ship-api-${ENV}"
+  ENV_NAME="ship-api-${ENV}"
+fi
+
+# Sync terraform config from SSM (source of truth for this environment)
+"$SCRIPT_DIR/sync-terraform-config.sh" "$ENV"
 
 VERSION="v$(date +%Y%m%d%H%M%S)"
 
-# Get config from Terraform outputs or environment
-if [ -d "terraform" ] && command -v terraform &> /dev/null; then
-  S3_BUCKET=$(cd terraform && terraform output -raw s3_bucket_name 2>/dev/null || echo "")
+# Get S3 bucket from Terraform outputs
+if [ -d "$TF_DIR" ] && command -v terraform &> /dev/null; then
+  S3_BUCKET=$(cd "$TF_DIR" && terraform output -raw s3_bucket_name 2>/dev/null || echo "")
 fi
 S3_BUCKET="${S3_BUCKET:-${DEPLOY_S3_BUCKET:-}}"
 
 if [ -z "$S3_BUCKET" ]; then
   echo "ERROR: S3_BUCKET not found. Either:"
-  echo "  1. Run 'terraform output' in terraform/ directory"
+  echo "  1. Run 'terraform apply' in terraform/environments/$ENV/ directory"
   echo "  2. Set DEPLOY_S3_BUCKET environment variable"
   exit 1
 fi
 
-APP_NAME="${DEPLOY_APP_NAME:-ship-api}"
-ENV_NAME="${DEPLOY_ENV_NAME:-ship-api-prod}"
-
 echo "=== Ship API Deploy ==="
+echo "Environment: $ENV"
 echo "Version: $VERSION"
+echo "EB Environment: $ENV_NAME"
 
 # ALWAYS rebuild for 100% reliable deploys
 # The api/package.json build script copies SQL files automatically
 echo "Building..."
+cd "$PROJECT_ROOT"
 rm -rf shared/dist shared/tsconfig.tsbuildinfo api/dist api/tsconfig.tsbuildinfo
 pnpm build:shared && pnpm build:api
 
@@ -87,7 +114,7 @@ IMPORT_TEST=$(docker run --rm \
   -e DATABASE_URL=postgres://test:test@localhost/test \
   ship-api:pre-deploy-test node -e "
   import('./dist/app.js')
-    .then(() => console.log('OK'))
+    .then(() => { console.log('OK'); process.exit(0); })
     .catch(e => { console.error('FAIL:', e.message); process.exit(1); })
 " 2>&1)
 
@@ -119,7 +146,6 @@ zip -r "$BUNDLE" \
   api/package.json \
   shared/dist \
   shared/package.json \
-  vendor \
   -x "*.git*"
 
 echo "Bundle: $BUNDLE"

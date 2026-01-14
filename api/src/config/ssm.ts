@@ -3,26 +3,24 @@
  *
  * This file loads application configuration from AWS SSM Parameter Store.
  *
- * Secrets Storage Strategy:
- * ─────────────────────────
+ * Secrets Storage:
+ * ─────────────────
  * SSM Parameter Store (/ship/{env}/):
  *   - DATABASE_URL, SESSION_SECRET, CORS_ORIGIN
  *   - Application config that changes per environment
- *
- * Secrets Manager (ship/fpki-oauth-credentials):
- *   - FPKI OAuth credentials (issuer_url, client_id, private_key_pem)
- *   - Loaded by SecretsManagerCredentialStore in services/credential-store.ts
- *   - Cryptographic credentials requiring stricter access controls
- *
- * Why the split?
- *   - Secrets Manager provides automatic rotation, fine-grained IAM policies,
- *     and audit logging appropriate for cryptographic credentials
- *   - SSM Parameter Store is simpler for application config that doesn't
- *     require rotation or cross-account access patterns
+ *   - CAIA OAuth credentials (CAIA_ISSUER_URL, CAIA_CLIENT_ID, etc.)
  */
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 
-const client = new SSMClient({ region: process.env.AWS_REGION || 'us-east-1' });
+// Lazy-initialized client to avoid keeping Node.js alive during import tests
+let _client: SSMClient | null = null;
+
+function getClient(): SSMClient {
+  if (!_client) {
+    _client = new SSMClient({ region: process.env.AWS_REGION || 'us-east-1' });
+  }
+  return _client;
+}
 
 export async function getSSMSecret(name: string): Promise<string> {
   const command = new GetParameterCommand({
@@ -30,7 +28,7 @@ export async function getSSMSecret(name: string): Promise<string> {
     WithDecryption: true,
   });
 
-  const response = await client.send(command);
+  const response = await getClient().send(command);
   if (!response.Parameter?.Value) {
     throw new Error(`SSM parameter ${name} not found`);
   }

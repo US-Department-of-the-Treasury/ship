@@ -1447,4 +1447,179 @@ router.delete('/workspaces/:workspaceId/members/:userId', async (req: Request, r
   }
 });
 
+// GET /api/admin/debug/users - Raw user data for debugging duplicates
+router.get('/debug/users', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get all users with raw data
+    const usersResult = await pool.query(
+      `SELECT
+         u.id,
+         u.email,
+         u.name,
+         u.x509_subject_dn,
+         u.is_super_admin,
+         u.last_auth_provider,
+         u.last_workspace_id,
+         u.created_at,
+         u.updated_at,
+         LOWER(u.email) as email_lower,
+         (SELECT COUNT(*) FROM workspace_memberships wm WHERE wm.user_id = u.id) as membership_count,
+         (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) as session_count
+       FROM users u
+       ORDER BY LOWER(u.email), u.created_at`
+    );
+
+    // Get workspace memberships separately for detail
+    const membershipsResult = await pool.query(
+      `SELECT
+         wm.user_id,
+         wm.workspace_id,
+         wm.role,
+         w.name as workspace_name,
+         w.archived_at
+       FROM workspace_memberships wm
+       JOIN workspaces w ON wm.workspace_id = w.id
+       ORDER BY wm.user_id`
+    );
+
+    // Group memberships by user
+    const membershipsByUser: Record<string, Array<{
+      workspaceId: string;
+      workspaceName: string;
+      role: string;
+      archived: boolean;
+    }>> = {};
+
+    for (const m of membershipsResult.rows) {
+      const userId = m.user_id as string;
+      if (!membershipsByUser[userId]) {
+        membershipsByUser[userId] = [];
+      }
+      membershipsByUser[userId]!.push({
+        workspaceId: m.workspace_id,
+        workspaceName: m.workspace_name,
+        role: m.role,
+        archived: !!m.archived_at,
+      });
+    }
+
+    // Identify potential duplicates (same email_lower)
+    const emailCounts: Record<string, number> = {};
+    for (const u of usersResult.rows) {
+      const emailLower = u.email_lower as string;
+      emailCounts[emailLower] = (emailCounts[emailLower] ?? 0) + 1;
+    }
+
+    const users = usersResult.rows.map(row => ({
+      id: row.id,
+      email: row.email,
+      emailLower: row.email_lower,
+      name: row.name,
+      x509SubjectDn: row.x509_subject_dn,
+      isSuperAdmin: row.is_super_admin,
+      lastAuthProvider: row.last_auth_provider,
+      lastWorkspaceId: row.last_workspace_id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      membershipCount: parseInt(row.membership_count),
+      sessionCount: parseInt(row.session_count),
+      memberships: membershipsByUser[row.id] || [],
+      isDuplicate: (emailCounts[row.email_lower as string] ?? 0) > 1,
+    }));
+
+    // Summary stats
+    const duplicateEmails = Object.entries(emailCounts)
+      .filter(([, count]) => count > 1)
+      .map(([email, count]) => ({ email, count }));
+
+    res.json({
+      success: true,
+      data: {
+        users,
+        summary: {
+          totalUsers: users.length,
+          duplicateEmails,
+          usersWithNoMemberships: users.filter(u => u.membershipCount === 0).length,
+          usersWithNoSessions: users.filter(u => u.sessionCount === 0).length,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Debug users error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to get debug user data',
+      },
+    });
+  }
+});
+
+// DELETE /api/admin/debug/users/:id - Delete a specific user (for cleanup)
+router.delete('/debug/users/:id', async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    // Get user info for audit log
+    const userResult = await pool.query(
+      'SELECT id, email, name FROM users WHERE id = $1',
+      [id]
+    );
+
+    if (!userResult.rows[0]) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.NOT_FOUND,
+          message: 'User not found',
+        },
+      });
+      return;
+    }
+
+    const targetUser = userResult.rows[0];
+
+    // Prevent deleting yourself
+    if (id === req.userId) {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: {
+          code: ERROR_CODES.VALIDATION_ERROR,
+          message: 'Cannot delete your own account',
+        },
+      });
+      return;
+    }
+
+    // Delete in order: sessions, workspace_memberships, user
+    await pool.query('DELETE FROM sessions WHERE user_id = $1', [id]);
+    await pool.query('DELETE FROM workspace_memberships WHERE user_id = $1', [id]);
+    await pool.query('DELETE FROM users WHERE id = $1', [id]);
+
+    await logAuditEvent({
+      actorUserId: req.userId!,
+      action: 'user.delete',
+      resourceType: 'user',
+      resourceId: id,
+      details: { email: targetUser.email, name: targetUser.name },
+      req,
+    });
+
+    res.json({
+      success: true,
+      data: { deletedUser: targetUser },
+    });
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to delete user',
+      },
+    });
+  }
+});
+
 export default router;

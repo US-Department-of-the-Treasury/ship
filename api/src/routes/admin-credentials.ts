@@ -29,14 +29,15 @@ function getBaseUrl(): string {
   return process.env.APP_BASE_URL || '';
 }
 
-// Get auto-derived redirect URI
+// Get auto-derived redirect URI (must match CAIA client registration)
 function getRedirectUri(): string {
   const baseUrl = getBaseUrl();
-  return baseUrl ? `${baseUrl}/api/auth/caia/callback` : '';
+  return baseUrl ? `${baseUrl}/api/auth/piv/callback` : '';
 }
 
 /**
  * Render the admin credentials page HTML
+ * Uses JavaScript fetch() for form submission - no page reloads
  */
 function renderPage(options: {
   currentConfig: {
@@ -47,10 +48,8 @@ function renderPage(options: {
   isConfigured: boolean;
   redirectUri: string;
   secretPath: string;
-  error?: string;
-  success?: string;
 }): string {
-  const { currentConfig, isConfigured, redirectUri, secretPath, error, success } = options;
+  const { currentConfig, isConfigured, redirectUri, secretPath } = options;
 
   return `
 <!DOCTYPE html>
@@ -143,9 +142,12 @@ function renderPage(options: {
       border-radius: 6px;
       margin-bottom: 16px;
       font-size: 14px;
+      display: none;
     }
+    .alert.show { display: block; }
     .alert.error { background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5; }
     .alert.success { background: #052e16; border: 1px solid #166534; color: #86efac; }
+    .alert.warning { background: #451a03; border: 1px solid #92400e; color: #fcd34d; }
     .back-link {
       display: inline-block;
       color: #3b82f6;
@@ -176,6 +178,20 @@ function renderPage(options: {
     .button-group button {
       flex: 1;
     }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      border-top-color: transparent;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -185,11 +201,12 @@ function renderPage(options: {
     <h1>CAIA Credentials</h1>
     <p class="subtitle">Configure Treasury CAIA OAuth integration for PIV authentication</p>
 
-    ${error ? `<div class="alert error">${escapeHtml(error)}</div>` : ''}
-    ${success ? `<div class="alert success">${escapeHtml(success)}</div>` : ''}
+    <div id="alert-error" class="alert error"></div>
+    <div id="alert-success" class="alert success"></div>
+    <div id="alert-warning" class="alert warning"></div>
 
     <div class="card">
-      <div class="status ${isConfigured ? 'configured' : 'not-configured'}">
+      <div id="status-badge" class="status ${isConfigured ? 'configured' : 'not-configured'}">
         <span>${isConfigured ? '✓ Configured' : '○ Not Configured'}</span>
       </div>
 
@@ -201,58 +218,50 @@ function renderPage(options: {
         </p>
       </div>
 
-      <form action="/api/admin/credentials" method="POST">
-        <div class="field">
-          <label for="issuer_url">Issuer URL *</label>
-          <input
-            type="url"
-            id="issuer_url"
-            name="issuer_url"
-            value="${escapeHtml(currentConfig.issuerUrl)}"
-            placeholder="https://caia.treasury.gov"
-            required
-          />
-          <p class="hint">The CAIA OAuth issuer URL (OIDC discovery endpoint base)</p>
-        </div>
+      <div class="field">
+        <label for="issuer_url">Issuer URL *</label>
+        <input
+          type="url"
+          id="issuer_url"
+          value="${escapeHtml(currentConfig.issuerUrl)}"
+          placeholder="https://caia.treasury.gov"
+        />
+        <p class="hint">The CAIA OAuth issuer URL (OIDC discovery endpoint base)</p>
+      </div>
 
-        <div class="field">
-          <label for="client_id">Client ID *</label>
-          <input
-            type="text"
-            id="client_id"
-            name="client_id"
-            value="${escapeHtml(currentConfig.clientId)}"
-            placeholder="your-client-id"
-            required
-          />
-          <p class="hint">OAuth client identifier registered with CAIA</p>
-        </div>
+      <div class="field">
+        <label for="client_id">Client ID *</label>
+        <input
+          type="text"
+          id="client_id"
+          value="${escapeHtml(currentConfig.clientId)}"
+          placeholder="your-client-id"
+        />
+        <p class="hint">OAuth client identifier registered with CAIA</p>
+      </div>
 
-        <div class="field">
-          <label for="client_secret">Client Secret *</label>
-          <input
-            type="password"
-            id="client_secret"
-            name="client_secret"
-            placeholder="${currentConfig.hasClientSecret ? '••••••••••••••••' : 'Enter client secret'}"
-            ${currentConfig.hasClientSecret ? '' : 'required'}
-          />
-          <p class="hint">
-            OAuth client secret.
-            ${currentConfig.hasClientSecret ? 'Leave blank to keep existing secret.' : ''}
-          </p>
-        </div>
+      <div class="field">
+        <label for="client_secret">Client Secret *</label>
+        <input
+          type="password"
+          id="client_secret"
+          placeholder="${currentConfig.hasClientSecret ? '••••••••••••••••' : 'Enter client secret'}"
+        />
+        <p class="hint">
+          OAuth client secret.
+          ${currentConfig.hasClientSecret ? 'Leave blank to keep existing secret.' : ''}
+        </p>
+      </div>
 
-        <div class="field">
-          <label>Redirect URI (auto-derived)</label>
-          <input type="text" value="${escapeHtml(redirectUri)}" readonly />
-          <p class="hint">Register this URI with CAIA. Derived from APP_BASE_URL.</p>
-        </div>
+      <div class="field">
+        <label>Redirect URI (auto-derived)</label>
+        <input type="text" value="${escapeHtml(redirectUri)}" readonly />
+        <p class="hint">Register this URI with CAIA. Derived from APP_BASE_URL.</p>
+      </div>
 
-        <div class="button-group">
-          <button type="submit">Save Credentials</button>
-        </div>
-      </form>
+      <div class="button-group">
+        <button type="button" id="save-btn">Save Credentials</button>
+      </div>
     </div>
 
     <div class="card">
@@ -261,13 +270,156 @@ function renderPage(options: {
         Test that the issuer URL is reachable and returns valid OIDC metadata.
         Note: Client ID/Secret cannot be fully validated until a real login attempt.
       </p>
-      <form action="/api/admin/credentials/test" method="POST">
-        <button type="submit" class="btn-secondary" ${!isConfigured ? 'disabled' : ''}>
-          Test CAIA Connection
-        </button>
-      </form>
+      <button type="button" id="test-btn" class="btn-secondary">
+        Test CAIA Connection
+      </button>
     </div>
   </div>
+
+  <script>
+    function showError(msg) {
+      const el = document.getElementById('alert-error');
+      el.textContent = msg;
+      el.classList.add('show');
+      document.getElementById('alert-success').classList.remove('show');
+    }
+
+    function showSuccess(msg) {
+      const el = document.getElementById('alert-success');
+      el.textContent = msg;
+      el.classList.add('show');
+      document.getElementById('alert-error').classList.remove('show');
+    }
+
+    function clearAlerts() {
+      document.getElementById('alert-error').classList.remove('show');
+      document.getElementById('alert-success').classList.remove('show');
+      document.getElementById('alert-warning').classList.remove('show');
+    }
+
+    function showWarning(msg) {
+      const el = document.getElementById('alert-warning');
+      el.textContent = msg;
+      el.classList.add('show');
+    }
+
+    function updateStatus(configured) {
+      const badge = document.getElementById('status-badge');
+      if (configured) {
+        badge.className = 'status configured';
+        badge.innerHTML = '<span>✓ Configured</span>';
+      } else {
+        badge.className = 'status not-configured';
+        badge.innerHTML = '<span>○ Not Configured</span>';
+      }
+    }
+
+    function setButtonLoading(btnId, loading) {
+      const btn = document.getElementById(btnId);
+      if (loading) {
+        btn.disabled = true;
+        btn.dataset.originalText = btn.textContent;
+        btn.innerHTML = '<span class="spinner"></span>Saving...';
+      } else {
+        btn.disabled = false;
+        btn.textContent = btn.dataset.originalText || 'Save';
+      }
+    }
+
+    async function saveCredentials() {
+      clearAlerts();
+
+      const issuerUrl = document.getElementById('issuer_url').value.trim();
+      const clientId = document.getElementById('client_id').value.trim();
+      const clientSecret = document.getElementById('client_secret').value;
+
+      if (!issuerUrl || !clientId) {
+        showError('Issuer URL and Client ID are required');
+        return;
+      }
+
+      setButtonLoading('save-btn', true);
+
+      try {
+        // Fetch CSRF token first
+        const csrfRes = await fetch('/api/csrf-token', { credentials: 'include' });
+        const csrfData = await csrfRes.json();
+        const csrfToken = csrfData.token;
+
+        const res = await fetch('/api/admin/credentials/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': csrfToken,
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            issuer_url: issuerUrl,
+            client_id: clientId,
+            client_secret: clientSecret || undefined,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          showSuccess(data.message || 'Credentials saved successfully!');
+          updateStatus(true);
+          // Show warning if validation failed
+          if (data.warning) {
+            showWarning('Warning: ' + data.warning);
+          }
+          // Clear password field after successful save
+          document.getElementById('client_secret').placeholder = '••••••••••••••••';
+          document.getElementById('client_secret').value = '';
+        } else {
+          showError(data.error?.message || 'Failed to save credentials');
+        }
+      } catch (err) {
+        showError('Network error: ' + err.message);
+      } finally {
+        setButtonLoading('save-btn', false);
+      }
+    }
+
+    async function testConnection() {
+      clearAlerts();
+
+      const btn = document.getElementById('test-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Testing...';
+
+      try {
+        // Fetch CSRF token first
+        const csrfRes = await fetch('/api/csrf-token', { credentials: 'include' });
+        const csrfData = await csrfRes.json();
+        const csrfToken = csrfData.token;
+
+        const res = await fetch('/api/admin/credentials/test-api', {
+          method: 'POST',
+          headers: { 'x-csrf-token': csrfToken },
+          credentials: 'include',
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          showSuccess(data.message || 'Connection successful');
+        } else {
+          showError(data.error?.message || 'Connection test failed');
+        }
+      } catch (err) {
+        showError('Network error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test CAIA Connection';
+      }
+    }
+
+    // Attach event listeners (CSP blocks inline onclick handlers)
+    document.getElementById('save-btn').addEventListener('click', saveCredentials);
+    document.getElementById('test-btn').addEventListener('click', testConnection);
+  </script>
 </body>
 </html>
   `;
@@ -286,14 +438,12 @@ function escapeHtml(str: string): string {
 }
 
 /**
- * GET /api/admin/credentials - Show credential configuration form
+ * GET /api/admin/credentials - Show credential configuration page
  */
-router.get('/', authMiddleware, superAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const error = req.query.error as string | undefined;
-  const success = req.query.success as string | undefined;
-
+router.get('/', authMiddleware, superAdminMiddleware, async (_req: Request, res: Response): Promise<void> => {
   // Fetch current config from Secrets Manager
   const result = await getCAIACredentials();
+
   const currentConfig = {
     issuerUrl: result.credentials?.issuer_url || '',
     clientId: result.credentials?.client_id || '',
@@ -305,8 +455,6 @@ router.get('/', authMiddleware, superAdminMiddleware, async (req: Request, res: 
     isConfigured: result.configured,
     redirectUri: getRedirectUri(),
     secretPath: getCAIASecretPath(),
-    error,
-    success,
   });
 
   res.setHeader('Content-Type', 'text/html');
@@ -314,14 +462,19 @@ router.get('/', authMiddleware, superAdminMiddleware, async (req: Request, res: 
 });
 
 /**
- * POST /api/admin/credentials - Save credentials to Secrets Manager
+ * POST /api/admin/credentials/save - Save credentials via JSON API
  */
-router.post('/', authMiddleware, superAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.post('/save', authMiddleware, superAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
   const { issuer_url, client_id, client_secret } = req.body;
+  const submittedIssuerUrl = (issuer_url || '').trim();
+  const submittedClientId = (client_id || '').trim();
 
   // Validate required fields
-  if (!issuer_url || !client_id) {
-    res.redirect('/api/admin/credentials?error=' + encodeURIComponent('Issuer URL and Client ID are required'));
+  if (!submittedIssuerUrl || !submittedClientId) {
+    res.status(400).json({
+      success: false,
+      error: { message: 'Issuer URL and Client ID are required' },
+    });
     return;
   }
 
@@ -332,27 +485,47 @@ router.post('/', authMiddleware, superAdminMiddleware, async (req: Request, res:
   // Build new credentials (keep existing secret if not provided)
   const newSecret = client_secret || existingCreds?.client_secret;
   if (!newSecret) {
-    res.redirect('/api/admin/credentials?error=' + encodeURIComponent('Client Secret is required'));
+    res.status(400).json({
+      success: false,
+      error: { message: 'Client Secret is required' },
+    });
     return;
   }
 
   const newCredentials: CAIACredentials = {
-    issuer_url: issuer_url.trim(),
-    client_id: client_id.trim(),
+    issuer_url: submittedIssuerUrl,
+    client_id: submittedClientId,
     client_secret: newSecret,
   };
 
-  // Validate issuer discovery before saving
+  // Validate issuer discovery before saving (but save anyway with warning if it fails)
+  console.log('[AdminCredentials] Validating credentials before save...');
+  console.log(`[AdminCredentials]   Issuer URL: ${newCredentials.issuer_url}`);
+  console.log(`[AdminCredentials]   Client ID: ${newCredentials.client_id}`);
+
+  let validationWarning: string | null = null;
   try {
     await validateIssuerDiscovery(
       newCredentials.issuer_url,
       newCredentials.client_id,
       newCredentials.client_secret
     );
+    console.log('[AdminCredentials] Validation passed, proceeding to save...');
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-    res.redirect('/api/admin/credentials?error=' + encodeURIComponent(`Issuer discovery failed: ${errorMessage}`));
-    return;
+    const error = err as Error & { cause?: unknown; code?: string };
+    const errorMessage = error.message || 'Unknown error';
+    console.error('[AdminCredentials] Validation FAILED (will save anyway):');
+    console.error(`[AdminCredentials]   Message: ${errorMessage}`);
+    console.error(`[AdminCredentials]   Name: ${error.name}`);
+    if (error.code) {
+      console.error(`[AdminCredentials]   Code: ${error.code}`);
+    }
+    if (error.cause) {
+      console.error('[AdminCredentials]   Cause:', error.cause);
+    }
+    // Store warning but continue with save
+    validationWarning = `Issuer discovery failed: ${errorMessage}`;
+    console.log('[AdminCredentials] Proceeding to save despite validation failure...');
   }
 
   // Determine which fields changed for audit logging
@@ -376,7 +549,19 @@ router.post('/', authMiddleware, superAdminMiddleware, async (req: Request, res:
       req,
     });
 
-    res.redirect('/api/admin/credentials?success=' + encodeURIComponent('Credentials saved successfully. Issuer discovery validated.'));
+    // Build success message with optional warning
+    let message = 'Credentials saved successfully!';
+    if (validationWarning) {
+      message += ` Warning: ${validationWarning}`;
+    } else {
+      message += ' Issuer discovery validated.';
+    }
+
+    res.json({
+      success: true,
+      message,
+      warning: validationWarning || undefined,
+    });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
 
@@ -390,12 +575,69 @@ router.post('/', authMiddleware, superAdminMiddleware, async (req: Request, res:
       req,
     });
 
-    res.redirect('/api/admin/credentials?error=' + encodeURIComponent(`Failed to save credentials: ${errorMessage}`));
+    res.status(500).json({
+      success: false,
+      error: { message: `Failed to save credentials: ${errorMessage}` },
+    });
   }
 });
 
 /**
- * POST /api/admin/credentials/test - Test CAIA connection
+ * POST /api/admin/credentials/test-api - Test CAIA connection via JSON API
+ */
+router.post('/test-api', authMiddleware, superAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const configured = await isCAIAConfigured();
+  if (!configured) {
+    res.status(400).json({
+      success: false,
+      error: { message: 'CAIA is not configured. Save credentials first.' },
+    });
+    return;
+  }
+
+  try {
+    // Fetch credentials and test discovery
+    const result = await getCAIACredentials();
+    if (!result.credentials) {
+      throw new Error('Credentials not found');
+    }
+
+    const { issuer } = await validateIssuerDiscovery(
+      result.credentials.issuer_url,
+      result.credentials.client_id,
+      result.credentials.client_secret
+    );
+
+    await logAuditEvent({
+      actorUserId: req.userId!,
+      action: 'admin.test_caia_connection',
+      details: { success: true, issuer },
+      req,
+    });
+
+    res.json({
+      success: true,
+      message: `CAIA connection successful! Issuer: ${issuer}`,
+    });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+
+    await logAuditEvent({
+      actorUserId: req.userId!,
+      action: 'admin.test_caia_connection',
+      details: { success: false, error: errorMessage },
+      req,
+    });
+
+    res.status(500).json({
+      success: false,
+      error: { message: `CAIA connection failed: ${errorMessage}` },
+    });
+  }
+});
+
+/**
+ * POST /api/admin/credentials/test - Legacy redirect-based test (kept for compatibility)
  */
 router.post('/test', authMiddleware, superAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
   const configured = await isCAIAConfigured();
@@ -405,7 +647,6 @@ router.post('/test', authMiddleware, superAdminMiddleware, async (req: Request, 
   }
 
   try {
-    // Fetch credentials and test discovery
     const result = await getCAIACredentials();
     if (!result.credentials) {
       throw new Error('Credentials not found');

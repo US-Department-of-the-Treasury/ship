@@ -16,9 +16,17 @@ import {
   ResourceNotFoundException,
 } from '@aws-sdk/client-secrets-manager';
 
-const client = new SecretsManagerClient({
-  region: process.env.AWS_REGION || 'us-east-1',
-});
+// Lazy-initialized client to avoid keeping Node.js alive during import tests
+let _client: SecretsManagerClient | null = null;
+
+function getClient(): SecretsManagerClient {
+  if (!_client) {
+    _client = new SecretsManagerClient({
+      region: process.env.AWS_REGION || 'us-east-1',
+    });
+  }
+  return _client;
+}
 
 /**
  * Get the environment-specific base path for secrets
@@ -56,12 +64,14 @@ export interface CAIACredentialsResult {
  */
 export async function getCAIACredentials(): Promise<CAIACredentialsResult> {
   const secretName = `${getBasePath()}/caia-credentials`;
+  console.log(`[SecretsManager] Fetching CAIA credentials from: ${secretName}`);
 
   try {
     const command = new GetSecretValueCommand({ SecretId: secretName });
-    const response = await client.send(command);
+    const response = await getClient().send(command);
 
     if (!response.SecretString) {
+      console.log('[SecretsManager] Secret exists but has no value');
       return { credentials: null, configured: false };
     }
 
@@ -69,9 +79,19 @@ export async function getCAIACredentials(): Promise<CAIACredentialsResult> {
 
     // Check if all required fields are present and non-empty
     if (!parsed.issuer_url || !parsed.client_id || !parsed.client_secret) {
+      console.log('[SecretsManager] Secret exists but is incomplete:', {
+        hasIssuerUrl: !!parsed.issuer_url,
+        hasClientId: !!parsed.client_id,
+        hasClientSecret: !!parsed.client_secret,
+      });
       return { credentials: null, configured: false };
     }
 
+    console.log('[SecretsManager] Credentials loaded successfully:', {
+      issuerUrl: parsed.issuer_url,
+      clientId: parsed.client_id,
+      hasSecret: true,
+    });
     return {
       credentials: {
         issuer_url: parsed.issuer_url,
@@ -83,12 +103,13 @@ export async function getCAIACredentials(): Promise<CAIACredentialsResult> {
   } catch (err) {
     if (err instanceof ResourceNotFoundException) {
       // Secret doesn't exist - create empty placeholder
+      console.log(`[SecretsManager] Secret not found, creating placeholder: ${secretName}`);
       await ensureSecretExists(secretName);
       return { credentials: null, configured: false };
     }
 
     // Secrets Manager failure - fail closed
-    console.error('Failed to fetch CAIA credentials from Secrets Manager:', err);
+    console.error('[SecretsManager] Failed to fetch CAIA credentials:', err);
     return {
       credentials: null,
       configured: false,
@@ -106,23 +127,32 @@ export async function saveCAIACredentials(credentials: CAIACredentials): Promise
   const secretName = `${getBasePath()}/caia-credentials`;
   const secretValue = JSON.stringify(credentials);
 
+  console.log(`[SecretsManager] Saving CAIA credentials to: ${secretName}`);
+  console.log(`[SecretsManager]   Issuer URL: ${credentials.issuer_url}`);
+  console.log(`[SecretsManager]   Client ID: ${credentials.client_id}`);
+  console.log(`[SecretsManager]   Secret length: ${credentials.client_secret?.length || 0} chars`);
+
   try {
     const command = new PutSecretValueCommand({
       SecretId: secretName,
       SecretString: secretValue,
     });
-    await client.send(command);
+    await getClient().send(command);
+    console.log('[SecretsManager] Credentials saved successfully (updated existing secret)');
   } catch (err) {
     if (err instanceof ResourceNotFoundException) {
       // Secret doesn't exist yet - create it
+      console.log('[SecretsManager] Secret not found, creating new secret...');
       const createCommand = new CreateSecretCommand({
         Name: secretName,
         SecretString: secretValue,
         Description: 'CAIA OAuth credentials for PIV authentication',
       });
-      await client.send(createCommand);
+      await getClient().send(createCommand);
+      console.log('[SecretsManager] New secret created successfully');
       return;
     }
+    console.error('[SecretsManager] Failed to save credentials:', err);
     throw err;
   }
 }
@@ -138,7 +168,7 @@ async function ensureSecretExists(secretName: string): Promise<void> {
       SecretString: JSON.stringify({}),
       Description: 'CAIA OAuth credentials for PIV authentication',
     });
-    await client.send(createCommand);
+    await getClient().send(createCommand);
     console.log(`Created empty secret: ${secretName}`);
   } catch (err) {
     // Ignore if secret already exists (race condition)

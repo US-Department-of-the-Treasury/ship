@@ -103,7 +103,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"], // Admin credentials page uses inline scripts
         styleSrc: ["'self'", "'unsafe-inline'"], // TipTap editor needs inline styles
         imgSrc: ["'self'", "data:", "blob:", "https:"],
         connectSrc: ["'self'", "wss:", "ws:"], // WebSocket connections
@@ -185,7 +185,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // CAIA auth routes - no CSRF protection (OAuth flow with external callback)
   // This is the single identity provider for PIV authentication
+  // Mount at both /caia and /piv paths - /piv/callback is registered with CAIA
   app.use('/api/auth/caia', caiaAuthRoutes);
+  app.use('/api/auth/piv', caiaAuthRoutes);
 
   // Admin credentials management (CSRF protected, super-admin only)
   app.use('/api/admin/credentials', conditionalCsrf, adminCredentialsRoutes);
