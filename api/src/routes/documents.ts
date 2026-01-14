@@ -3,7 +3,7 @@ import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 import { handleVisibilityChange } from '../collaboration/index.js';
-import { extractHypothesisFromContent, extractSuccessCriteriaFromContent } from '../utils/extractHypothesis.js';
+import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, checkDocumentCompleteness } from '../utils/extractHypothesis.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -293,12 +293,39 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.properties !== undefined || contentUpdated) {
       const currentProps = existing.properties || {};
       const dataProps = data.properties || {};
-      const newProps = {
+      let newProps = {
         ...currentProps,
         ...dataProps,
         // Extracted values always win (content is source of truth)
         ...(contentUpdated ? { hypothesis: extractedHypothesis, success_criteria: extractedCriteria } : {}),
       };
+
+      // Compute document completeness for projects and sprints
+      if (existing.document_type === 'project' || existing.document_type === 'sprint') {
+        let linkedIssuesCount = 0;
+
+        // For sprints, count linked issues
+        if (existing.document_type === 'sprint') {
+          const issueCountResult = await pool.query(
+            'SELECT COUNT(*) as count FROM documents WHERE sprint_id = $1 AND document_type = $2',
+            [id, 'issue']
+          );
+          linkedIssuesCount = parseInt(issueCountResult.rows[0]?.count || '0', 10);
+        }
+
+        const completeness = checkDocumentCompleteness(
+          existing.document_type,
+          newProps,
+          linkedIssuesCount
+        );
+
+        newProps = {
+          ...newProps,
+          is_complete: completeness.isComplete,
+          missing_fields: completeness.missingFields,
+        };
+      }
+
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(newProps));
     }

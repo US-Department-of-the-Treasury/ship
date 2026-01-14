@@ -149,3 +149,54 @@ export function extractSuccessCriteriaFromContent(content: unknown): string | nu
   const text = extractText(contentNodes).trim();
   return text || null;
 }
+
+/**
+ * Check if a document is complete based on document type requirements.
+ *
+ * Requirements:
+ * - Projects: need hypothesis AND success_criteria
+ * - Sprints: need goal, start_date, end_date, AND at least 1 linked issue
+ *
+ * @param documentType - The document type (project, sprint, etc.)
+ * @param properties - The document's properties object
+ * @param linkedIssuesCount - Number of issues linked to this sprint (for sprint docs)
+ * @returns Object with is_complete boolean and array of missing fields
+ */
+export function checkDocumentCompleteness(
+  documentType: string,
+  properties: Record<string, unknown> | null,
+  linkedIssuesCount: number = 0
+): { isComplete: boolean; missingFields: string[] } {
+  const props = properties || {};
+  const missingFields: string[] = [];
+
+  if (documentType === 'project') {
+    // Projects need hypothesis + success_criteria
+    if (!props.hypothesis || (typeof props.hypothesis === 'string' && !props.hypothesis.trim())) {
+      missingFields.push('Hypothesis');
+    }
+    if (!props.success_criteria || (typeof props.success_criteria === 'string' && !props.success_criteria.trim())) {
+      missingFields.push('Success Criteria');
+    }
+  } else if (documentType === 'sprint') {
+    // Sprints need goal + date range + at least 1 linked issue
+    if (!props.goal || (typeof props.goal === 'string' && !props.goal.trim())) {
+      missingFields.push('Goal');
+    }
+    if (!props.start_date) {
+      missingFields.push('Start Date');
+    }
+    if (!props.end_date) {
+      missingFields.push('End Date');
+    }
+    if (linkedIssuesCount === 0) {
+      missingFields.push('Linked Issues');
+    }
+  }
+  // Other document types don't have completeness requirements
+
+  return {
+    isComplete: missingFields.length === 0,
+    missingFields,
+  };
+}
