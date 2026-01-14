@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, FormEvent } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useEditor, EditorContent, JSONContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
 import { Editor } from '@/components/Editor';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useAuth } from '@/hooks/useAuth';
@@ -1024,7 +1026,7 @@ interface SprintStandup {
   id: string;
   sprint_id: string;
   title: string;
-  content: unknown;
+  content: JSONContent;
   author_id: string;
   author_name: string | null;
   author_email: string | null;
@@ -1305,6 +1307,79 @@ function SprintIssuesList({
   );
 }
 
+// Individual standup card with rich text and hover-to-expand
+function StandupCard({ standup }: { standup: SprintStandup }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [needsExpansion, setNeedsExpansion] = useState(false);
+
+  // Create a read-only TipTap editor for rendering rich content
+  const displayEditor = useEditor({
+    extensions: [StarterKit],
+    content: standup.content,
+    editable: false,
+  }, [standup.content]);
+
+  // Check if content is taller than the collapsed height (approx 3 lines)
+  useEffect(() => {
+    if (contentRef.current) {
+      const scrollHeight = contentRef.current.scrollHeight;
+      const clientHeight = 60; // Approximate 3-line height
+      setNeedsExpansion(scrollHeight > clientHeight);
+    }
+  }, [standup.content, displayEditor]);
+
+  return (
+    <div
+      className={cn(
+        'rounded-md border border-border/50 bg-background p-3 transition-all duration-200',
+        isExpanded && 'ring-1 ring-accent/30 border-accent/30 shadow-sm'
+      )}
+      onMouseEnter={() => needsExpansion && setIsExpanded(true)}
+      onMouseLeave={() => setIsExpanded(false)}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <div className="h-6 w-6 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
+          <span className="text-xs font-medium text-accent">
+            {standup.author_name?.[0]?.toUpperCase() || standup.author_email?.[0]?.toUpperCase() || '?'}
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-foreground truncate">
+            {standup.author_name || standup.author_email || 'Unknown'}
+          </p>
+          <p className="text-xs text-muted">
+            {formatStandupTime(standup.created_at)}
+          </p>
+        </div>
+        {needsExpansion && !isExpanded && (
+          <div className="text-xs text-muted">
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        )}
+      </div>
+      <div
+        ref={contentRef}
+        className={cn(
+          'prose prose-sm max-w-none text-foreground/80 transition-all duration-200',
+          '[&_.ProseMirror]:outline-none',
+          '[&_.ProseMirror_p]:my-1 [&_.ProseMirror_p:first-child]:mt-0 [&_.ProseMirror_p:last-child]:mb-0',
+          '[&_.ProseMirror_ul]:my-1 [&_.ProseMirror_ol]:my-1',
+          '[&_.ProseMirror_li]:my-0',
+          !isExpanded && 'max-h-[60px] overflow-hidden'
+        )}
+      >
+        <EditorContent editor={displayEditor} />
+      </div>
+      {needsExpansion && !isExpanded && (
+        <div className="mt-1 text-xs text-muted/70 pointer-events-none bg-gradient-to-t from-background via-background to-transparent h-4 -mt-4 relative z-10" />
+      )}
+    </div>
+  );
+}
+
 // Sprint standups feed component (styled like SprintIssuesList)
 function SprintStandupsFeed({
   standups,
@@ -1350,29 +1425,7 @@ function SprintStandupsFeed({
                 </div>
                 <div className="space-y-2">
                   {dateStandups.map((standup) => (
-                    <div
-                      key={standup.id}
-                      className="rounded-md border border-border/50 bg-background p-3"
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="h-6 w-6 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-medium text-accent">
-                            {standup.author_name?.[0]?.toUpperCase() || standup.author_email?.[0]?.toUpperCase() || '?'}
-                          </span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-foreground truncate">
-                            {standup.author_name || standup.author_email || 'Unknown'}
-                          </p>
-                          <p className="text-xs text-muted">
-                            {formatStandupTime(standup.created_at)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-sm text-foreground/80 line-clamp-3">
-                        {extractStandupText(standup.content)}
-                      </div>
-                    </div>
+                    <StandupCard key={standup.id} standup={standup} />
                   ))}
                 </div>
               </div>
