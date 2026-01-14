@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo, FormEvent } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useAuth } from '@/hooks/useAuth';
@@ -131,16 +131,30 @@ interface SprintWindow {
 type Tab = 'overview' | 'issues' | 'sprints';
 
 export function ProgramEditorPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id, sprintId } = useParams<{ id: string; sprintId?: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
   const { user } = useAuth();
   const { programs, loading, updateProgram: contextUpdateProgram } = usePrograms();
   const { createIssue: contextCreateIssue } = useIssues();
 
-  // Initialize activeTab from URL param or default to 'overview'
-  const tabParam = searchParams.get('tab') as Tab | null;
-  const [activeTab, setActiveTab] = useState<Tab>(tabParam && ['overview', 'issues', 'sprints'].includes(tabParam) ? tabParam : 'overview');
+  // Derive active tab from URL path
+  const activeTab: Tab = useMemo(() => {
+    const path = location.pathname;
+    if (path.includes('/sprints')) return 'sprints';
+    if (path.includes('/issues')) return 'issues';
+    return 'overview';
+  }, [location.pathname]);
+
+  // Handle tab changes via navigation
+  const handleTabChange = useCallback((tabId: string) => {
+    const tab = tabId as Tab;
+    if (tab === 'overview') {
+      navigate(`/programs/${id}`);
+    } else {
+      navigate(`/programs/${id}/${tab}`);
+    }
+  }, [id, navigate]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
@@ -410,7 +424,7 @@ export function ProgramEditorPage() {
         <TabBar
         tabs={tabs}
         activeTab={activeTab}
-        onTabChange={(tabId) => setActiveTab(tabId as Tab)}
+        onTabChange={handleTabChange}
         rightContent={renderTabActions()}
       />
 
@@ -490,6 +504,8 @@ export function ProgramEditorPage() {
                 workspaceSprintStartDate={workspaceSprintStartDate}
                 programId={id!}
                 programName={program?.name}
+                selectedSprintId={sprintId}
+                onSprintSelect={(sid) => navigate(`/programs/${id}/sprints/${sid}`, { replace: true })}
                 onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
                 createSprint={createSprintMutation}
               />
@@ -1003,12 +1019,27 @@ interface SprintIssue {
   assignee_name: string | null;
 }
 
+// Standup for the standups feed
+interface SprintStandup {
+  id: string;
+  sprint_id: string;
+  title: string;
+  content: unknown;
+  author_id: string;
+  author_name: string | null;
+  author_email: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Main SprintsTab component with two-part layout
 function SprintsTab({
   sprints,
   workspaceSprintStartDate,
   programId,
   programName,
+  selectedSprintId,
+  onSprintSelect,
   onSprintClick,
   createSprint,
 }: {
@@ -1016,6 +1047,8 @@ function SprintsTab({
   workspaceSprintStartDate: Date;
   programId: string;
   programName?: string;
+  selectedSprintId?: string;
+  onSprintSelect: (sprintId: string) => void;
   onSprintClick: (id: string) => void;
   createSprint: (sprintNumber: number, ownerId: string, title?: string) => Promise<Sprint | null>;
 }) {
@@ -1024,6 +1057,8 @@ function SprintsTab({
   const [people, setPeople] = useState<Person[]>([]);
   const [sprintIssues, setSprintIssues] = useState<SprintIssue[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
+  const [sprintStandups, setSprintStandups] = useState<SprintStandup[]>([]);
+  const [standupsLoading, setStandupsLoading] = useState(false);
 
   // Fetch team members for owner selection (filter out pending users)
   useEffect(() => {
@@ -1038,12 +1073,35 @@ function SprintsTab({
   // Find active sprint - used for initial selection
   const activeSprint = sprints.find(s => computeSprintStatus(s.sprint_number, workspaceSprintStartDate) === 'active');
 
-  // Selected sprint number for the chart (defaults to active sprint, or first sprint if no active)
+  // Selected sprint number for the chart (defaults to active sprint, first sprint, or current window)
   const [selectedSprintNumber, setSelectedSprintNumber] = useState<number>(() => {
     if (activeSprint) return activeSprint.sprint_number;
     if (sprints.length > 0) return sprints[0].sprint_number;
     return currentSprintNumber;
   });
+
+  // Sync selection when URL sprint ID changes OR when sprints data loads
+  // Note: We always set the sprint number when URL has a sprint ID - React's setState
+  // is idempotent so this avoids stale closure issues with the comparison
+  useEffect(() => {
+    if (sprints.length === 0) return; // Wait for sprints to load
+
+    if (selectedSprintId) {
+      // URL has a sprint ID - select it
+      const sprintFromUrl = sprints.find(s => s.id === selectedSprintId);
+      if (sprintFromUrl) {
+        setSelectedSprintNumber(sprintFromUrl.sprint_number);
+      }
+    } else {
+      // No URL sprint ID - select active sprint or first available
+      const active = sprints.find(s => computeSprintStatus(s.sprint_number, workspaceSprintStartDate) === 'active');
+      if (active) {
+        setSelectedSprintNumber(active.sprint_number);
+      } else if (sprints.length > 0) {
+        setSelectedSprintNumber(sprints[0].sprint_number);
+      }
+    }
+  }, [selectedSprintId, sprints, workspaceSprintStartDate]);
 
   // Find selected sprint and its window
   const selectedSprint = sprints.find(s => s.sprint_number === selectedSprintNumber);
@@ -1069,6 +1127,20 @@ function SprintsTab({
     }
   }, [selectedSprint?.id]);
 
+  // Fetch standups when selected sprint changes
+  useEffect(() => {
+    if (selectedSprint) {
+      setStandupsLoading(true);
+      fetch(`${API_URL}/api/sprints/${selectedSprint.id}/standups`, { credentials: 'include' })
+        .then(res => res.ok ? res.json() : [])
+        .then(setSprintStandups)
+        .catch(console.error)
+        .finally(() => setStandupsLoading(false));
+    } else {
+      setSprintStandups([]);
+    }
+  }, [selectedSprint?.id]);
+
   // Generate windows for NoActiveSprintMessage (simplified range)
   const rangeStart = Math.max(1, currentSprintNumber - 3);
   const rangeEnd = currentSprintNumber + 6;
@@ -1077,6 +1149,11 @@ function SprintsTab({
   // Handle sprint selection from timeline
   const handleSelectSprint = (sprintNumber: number) => {
     setSelectedSprintNumber(sprintNumber);
+    // Update URL when a sprint is selected
+    const sprint = sprints.find(s => s.sprint_number === sprintNumber);
+    if (sprint) {
+      onSprintSelect(sprint.id);
+    }
   };
 
   // Handle sprint creation using TanStack Query mutation
@@ -1110,7 +1187,7 @@ function SprintsTab({
         />
       </div>
 
-      {/* Bottom Section: Two-column layout - chart left, issues right */}
+      {/* Bottom Section: Three-column layout - chart left, standups center, issues right */}
       <div className="flex-1 min-h-0 p-6 overflow-hidden">
         {selectedSprint && selectedWindow ? (
           <div className="flex gap-6 h-full">
@@ -1122,8 +1199,15 @@ function SprintsTab({
                 onClick={() => onSprintClick(selectedSprint.id)}
               />
             </div>
+            {/* Center: Sprint Standups Feed */}
+            <div className="w-80 flex-shrink-0 h-full">
+              <SprintStandupsFeed
+                standups={sprintStandups}
+                loading={standupsLoading}
+              />
+            </div>
             {/* Right: Sprint Issues List */}
-            <div className="w-80 flex-shrink-0">
+            <div className="w-80 flex-shrink-0 h-full">
               <SprintIssuesList
                 issues={sprintIssues}
                 loading={issuesLoading}
@@ -1219,6 +1303,147 @@ function SprintIssuesList({
       )}
     </div>
   );
+}
+
+// Sprint standups feed component (styled like SprintIssuesList)
+function SprintStandupsFeed({
+  standups,
+  loading,
+}: {
+  standups: SprintStandup[];
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="h-full rounded-lg border border-border bg-background/50 p-4">
+        <h3 className="text-sm font-medium text-muted mb-3">Standups</h3>
+        <div className="text-sm text-muted">Loading...</div>
+      </div>
+    );
+  }
+
+  // Group standups by date
+  const groupedStandups = groupStandupsByDate(standups);
+
+  return (
+    <div className="h-full rounded-lg border border-border bg-background/50 p-4 flex flex-col">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium text-muted">Standups</h3>
+        <span className="text-xs text-muted">{standups.length} total</span>
+      </div>
+      {standups.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-sm text-muted">
+          <svg className="h-8 w-8 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+          </svg>
+          No standup updates yet
+        </div>
+      ) : (
+        <div className="flex-1 overflow-auto -mx-4 px-4">
+          <div className="space-y-4">
+            {groupedStandups.map(({ label, standups: dateStandups }) => (
+              <div key={label}>
+                <div className="sticky top-0 bg-background/50 py-1 mb-2">
+                  <span className="text-xs font-medium text-muted uppercase tracking-wide">
+                    {label}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {dateStandups.map((standup) => (
+                    <div
+                      key={standup.id}
+                      className="rounded-md border border-border/50 bg-background p-3"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="h-6 w-6 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
+                          <span className="text-xs font-medium text-accent">
+                            {standup.author_name?.[0]?.toUpperCase() || standup.author_email?.[0]?.toUpperCase() || '?'}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-foreground truncate">
+                            {standup.author_name || standup.author_email || 'Unknown'}
+                          </p>
+                          <p className="text-xs text-muted">
+                            {formatStandupTime(standup.created_at)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-sm text-foreground/80 line-clamp-3">
+                        {extractStandupText(standup.content)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Group standups by date with friendly labels
+function groupStandupsByDate(standups: SprintStandup[]): { label: string; standups: SprintStandup[] }[] {
+  const groups: Record<string, SprintStandup[]> = {};
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  for (const standup of standups) {
+    const date = new Date(standup.created_at);
+    date.setHours(0, 0, 0, 0);
+
+    let label: string;
+    if (date.getTime() === today.getTime()) {
+      label = 'Today';
+    } else if (date.getTime() === yesterday.getTime()) {
+      label = 'Yesterday';
+    } else {
+      label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
+    if (!groups[label]) {
+      groups[label] = [];
+    }
+    groups[label].push(standup);
+  }
+
+  return Object.entries(groups).map(([label, standups]) => ({ label, standups }));
+}
+
+// Format time for standup display
+function formatStandupTime(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+// Extract plain text from TipTap JSON content
+function extractStandupText(content: unknown): string {
+  if (!content || typeof content !== 'object') return '';
+
+  const extractText = (node: unknown): string => {
+    if (!node || typeof node !== 'object') return '';
+    const n = node as { type?: string; text?: string; content?: unknown[] };
+
+    if (n.type === 'text' && n.text) {
+      return n.text;
+    }
+
+    if (Array.isArray(n.content)) {
+      return n.content.map(extractText).join(' ');
+    }
+
+    return '';
+  };
+
+  return extractText(content).trim() || 'No content';
 }
 
 // Active sprint progress section with Linear-style graph
