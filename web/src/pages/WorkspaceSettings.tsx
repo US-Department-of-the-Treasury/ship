@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
@@ -8,11 +9,21 @@ import { cn } from '@/lib/cn';
 
 type Tab = 'members' | 'invites' | 'tokens' | 'audit';
 
+const VALID_TABS: Tab[] = ['members', 'invites', 'tokens', 'audit'];
+
 export function WorkspaceSettingsPage() {
   const { currentWorkspace, isWorkspaceAdmin } = useWorkspace();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<Tab>('members');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Derive active tab from URL query params
+  const tabParam = searchParams.get('tab') as Tab | null;
+  const activeTab: Tab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
+
+  const handleTabChange = useCallback((tab: Tab) => {
+    setSearchParams({ tab }, { replace: true });
+  }, [setSearchParams]);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [invites, setInvites] = useState<WorkspaceInvite[]>([]);
   const [apiTokens, setApiTokens] = useState<ApiToken[]>([]);
@@ -154,16 +165,16 @@ export function WorkspaceSettingsPage() {
       {/* Tabs */}
       <div className="border-b border-border">
         <nav className="flex px-6">
-          <TabButton active={activeTab === 'members'} onClick={() => setActiveTab('members')}>
+          <TabButton active={activeTab === 'members'} onClick={() => handleTabChange('members')}>
             Members
           </TabButton>
-          <TabButton active={activeTab === 'invites'} onClick={() => setActiveTab('invites')}>
+          <TabButton active={activeTab === 'invites'} onClick={() => handleTabChange('invites')}>
             Pending Invites
           </TabButton>
-          <TabButton active={activeTab === 'tokens'} onClick={() => setActiveTab('tokens')}>
+          <TabButton active={activeTab === 'tokens'} onClick={() => handleTabChange('tokens')}>
             API Tokens
           </TabButton>
-          <TabButton active={activeTab === 'audit'} onClick={() => setActiveTab('audit')}>
+          <TabButton active={activeTab === 'audit'} onClick={() => handleTabChange('audit')}>
             Audit Logs
           </TabButton>
         </nav>
