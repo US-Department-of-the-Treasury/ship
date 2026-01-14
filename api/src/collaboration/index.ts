@@ -6,6 +6,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { pool } from '../db/client.js';
+import { extractHypothesisFromContent, extractSuccessCriteriaFromContent } from '../utils/extractHypothesis.js';
 import { SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS } from '@ship/shared';
 import cookie from 'cookie';
 
@@ -97,15 +98,124 @@ async function persistDocument(docName: string, doc: Y.Doc) {
   const docId = parseDocId(docName);
 
   try {
-    // Only persist yjs_state - content column is only used for seed data fallback
-    // XmlFragment.toJSON() returns XML-like strings, not TipTap JSON, so we don't update content
+    // Convert Yjs to TipTap JSON to extract hypothesis/criteria
+    const fragment = doc.getXmlFragment('default');
+    const content = yjsToJson(fragment);
+
+    // Extract hypothesis and success criteria from content
+    const hypothesis = extractHypothesisFromContent(content);
+    const successCriteria = extractSuccessCriteriaFromContent(content);
+
+    // Get existing properties to merge
+    const existingResult = await pool.query(
+      'SELECT properties FROM documents WHERE id = $1',
+      [docId]
+    );
+    const existingProps = existingResult.rows[0]?.properties || {};
+
+    // Update properties with extracted values (null clears the property)
+    const updatedProps = {
+      ...existingProps,
+      hypothesis: hypothesis,
+      success_criteria: successCriteria,
+    };
+
+    // Persist yjs_state and updated properties
     await pool.query(
-      `UPDATE documents SET yjs_state = $1, updated_at = now() WHERE id = $2`,
-      [Buffer.from(state), docId]
+      `UPDATE documents SET yjs_state = $1, properties = $2, updated_at = now() WHERE id = $3`,
+      [Buffer.from(state), JSON.stringify(updatedProps), docId]
     );
   } catch (err) {
     console.error('Failed to persist document:', err);
   }
+}
+
+// Convert Yjs XmlFragment to TipTap JSON
+// This is the reverse of jsonToYjs
+function yjsToJson(fragment: Y.XmlFragment): any {
+  const content: any[] = [];
+
+  for (let i = 0; i < fragment.length; i++) {
+    const item = fragment.get(i);
+    if (item instanceof Y.XmlText) {
+      // Handle text nodes with formatting
+      const text = item.toString();
+      if (text) {
+        content.push({ type: 'text', text });
+      }
+    } else if (item instanceof Y.XmlElement) {
+      // Handle element nodes
+      const node: any = { type: item.nodeName };
+
+      // Get attributes
+      const attrs = item.getAttributes();
+      if (Object.keys(attrs).length > 0) {
+        // Convert string attributes to proper types (e.g., level should be number)
+        const typedAttrs: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(attrs)) {
+          if (key === 'level' && typeof value === 'string') {
+            typedAttrs[key] = parseInt(value, 10);
+          } else {
+            typedAttrs[key] = value;
+          }
+        }
+        node.attrs = typedAttrs;
+      }
+
+      // Recursively convert children
+      if (item.length > 0) {
+        const childContent = yjsElementToJson(item);
+        if (childContent.length > 0) {
+          node.content = childContent;
+        }
+      }
+
+      content.push(node);
+    }
+  }
+
+  return { type: 'doc', content };
+}
+
+// Helper to convert element children
+function yjsElementToJson(element: Y.XmlElement): any[] {
+  const content: any[] = [];
+
+  for (let i = 0; i < element.length; i++) {
+    const item = element.get(i);
+    if (item instanceof Y.XmlText) {
+      const text = item.toString();
+      if (text) {
+        content.push({ type: 'text', text });
+      }
+    } else if (item instanceof Y.XmlElement) {
+      const node: any = { type: item.nodeName };
+
+      const attrs = item.getAttributes();
+      if (Object.keys(attrs).length > 0) {
+        const typedAttrs: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(attrs)) {
+          if (key === 'level' && typeof value === 'string') {
+            typedAttrs[key] = parseInt(value, 10);
+          } else {
+            typedAttrs[key] = value;
+          }
+        }
+        node.attrs = typedAttrs;
+      }
+
+      if (item.length > 0) {
+        const childContent = yjsElementToJson(item);
+        if (childContent.length > 0) {
+          node.content = childContent;
+        }
+      }
+
+      content.push(node);
+    }
+  }
+
+  return content;
 }
 
 // Convert TipTap JSON content to Yjs XmlFragment

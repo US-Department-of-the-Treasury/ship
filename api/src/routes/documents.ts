@@ -3,6 +3,7 @@ import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 import { handleVisibilityChange } from '../collaboration/index.js';
+import { extractHypothesisFromContent, extractSuccessCriteriaFromContent } from '../utils/extractHypothesis.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -257,6 +258,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     const values: any[] = [];
     let paramIndex = 1;
 
+    // Track extracted hypothesis/criteria from content (content is source of truth)
+    let extractedHypothesis: string | null = null;
+    let extractedCriteria: string | null = null;
+    let contentUpdated = false;
+
     if (data.title !== undefined) {
       updates.push(`title = $${paramIndex++}`);
       values.push(data.title);
@@ -267,6 +273,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Clear yjs_state when content is updated via API
       // This forces the collaboration server to regenerate Yjs state from new content
       updates.push(`yjs_state = NULL`);
+
+      // Extract hypothesis and success criteria from content (content is source of truth)
+      extractedHypothesis = extractHypothesisFromContent(data.content);
+      extractedCriteria = extractSuccessCriteriaFromContent(data.content);
+      contentUpdated = true;
     }
     if (data.parent_id !== undefined) {
       updates.push(`parent_id = $${paramIndex++}`);
@@ -276,10 +287,18 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       updates.push(`position = $${paramIndex++}`);
       values.push(data.position);
     }
-    if (data.properties !== undefined) {
-      // Merge with existing properties
+
+    // Handle properties update - merge existing, data.properties, and extracted values
+    // Content is source of truth: extracted values override any manually set hypothesis/success_criteria
+    if (data.properties !== undefined || contentUpdated) {
       const currentProps = existing.properties || {};
-      const newProps = { ...currentProps, ...data.properties };
+      const dataProps = data.properties || {};
+      const newProps = {
+        ...currentProps,
+        ...dataProps,
+        // Extracted values always win (content is source of truth)
+        ...(contentUpdated ? { hypothesis: extractedHypothesis, success_criteria: extractedCriteria } : {}),
+      };
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(newProps));
     }
