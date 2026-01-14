@@ -26,6 +26,7 @@ import pivAuthRoutes from './routes/piv-auth.js';
 import federationRoutes from './routes/federation.js';
 import apiTokensRoutes from './routes/api-tokens.js';
 import claudeRoutes from './routes/claude.js';
+import activityRoutes from './routes/activity.js';
 import { createJwksHandler } from '@fpki/auth-client';
 import { getPublicJwk } from './services/credential-store.js';
 import { initializeFPKI } from './services/fpki.js';
@@ -198,6 +199,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // Search routes are read-only GET endpoints - no CSRF needed
   app.use('/api/search', searchRouter);
+
+  // Activity routes are read-only GET endpoints - no CSRF needed
+  app.use('/api/activity', activityRoutes);
 
   // PIV auth routes - no CSRF protection (OAuth flow with external callback)
   app.use('/api/auth/piv', pivAuthRoutes);
