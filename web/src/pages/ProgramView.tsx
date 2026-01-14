@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { issueStatusColors, sprintStatusColors } from '@/lib/statusColors';
 import { KanbanBoard } from '@/components/KanbanBoard';
@@ -9,6 +9,7 @@ import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
 import { useToast } from '@/components/ui/Toast';
+import { StandupFeed } from '@/components/StandupFeed';
 
 interface Program {
   id: string;
@@ -54,15 +55,36 @@ const API_URL = import.meta.env.VITE_API_URL ?? '';
 type Tab = 'issues' | 'sprints' | 'settings';
 
 export function ProgramViewPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id, sprintId } = useParams<{ id: string; sprintId?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [program, setProgram] = useState<Program | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<Tab>('issues');
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [showCreateSprintModal, setShowCreateSprintModal] = useState(false);
+
+  // Derive active tab from URL path
+  const getActiveTabFromUrl = (): Tab => {
+    const path = location.pathname;
+    if (path.includes('/sprints')) return 'sprints';
+    if (path.includes('/settings')) return 'settings';
+    if (path.includes('/issues')) return 'issues';
+    // Default to issues for /programs/:id
+    return 'issues';
+  };
+
+  const activeTab = getActiveTabFromUrl();
+
+  // Get current sprint (from URL param or find the current active sprint)
+  const currentSprint = sprintId
+    ? sprints.find(s => s.id === sprintId)
+    : sprints.find(s => {
+        // Find a sprint that is "active" (has started, not ended)
+        // For now, just use the first sprint since we don't have date fields
+        return true;
+      }) || sprints[0];
 
   // Reset state and fetch data when program ID changes
   useEffect(() => {
@@ -323,7 +345,15 @@ export function ProgramViewPage() {
       <TabBar
         tabs={tabs}
         activeTab={activeTab}
-        onTabChange={(tabId) => setActiveTab(tabId as Tab)}
+        onTabChange={(tabId) => {
+          if (tabId === 'issues') {
+            navigate(`/programs/${id}/issues`);
+          } else if (tabId === 'sprints') {
+            navigate(`/programs/${id}/sprints`);
+          } else if (tabId === 'settings') {
+            navigate(`/programs/${id}/settings`);
+          }
+        }}
         rightContent={renderTabActions()}
       />
 
@@ -345,21 +375,41 @@ export function ProgramViewPage() {
         )}
 
         {activeTab === 'sprints' && (
-          <SprintsList
-            sprints={sprints}
-            onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
-            onDeleteSprint={deleteSprint}
-            onCreatePlan={async (sprintId) => {
-              const doc = await createSprintDocument(sprintId, 'sprint_plan');
-              if (doc) navigate(`/docs/${doc.id}`);
-            }}
-            onCreateRetro={async (sprintId) => {
-              const doc = await createSprintDocument(sprintId, 'sprint_retro');
-              if (doc) navigate(`/docs/${doc.id}`);
-            }}
-            onViewPlan={(sprintId) => navigate(`/sprints/${sprintId}/plan`)}
-            onViewRetro={(sprintId) => navigate(`/sprints/${sprintId}/retro`)}
-          />
+          <div className="flex h-full">
+            {/* Left side: Sprint list or Sprint detail with issues */}
+            <div className="flex-1 overflow-auto border-r border-border">
+              {sprintId && currentSprint ? (
+                <SprintDetailView
+                  sprint={currentSprint}
+                  issues={issues.filter(i => i.sprint_ref_id === sprintId)}
+                  onIssueClick={(issueId) => navigate(`/issues/${issueId}`, { state: { from: 'program', programId: id, programName: program?.name } })}
+                  onBack={() => navigate(`/programs/${id}/sprints`)}
+                />
+              ) : (
+                <SprintsList
+                  sprints={sprints}
+                  onSprintClick={(clickedSprintId) => navigate(`/programs/${id}/sprints/${clickedSprintId}`)}
+                  onDeleteSprint={deleteSprint}
+                  onCreatePlan={async (clickedSprintId) => {
+                    const doc = await createSprintDocument(clickedSprintId, 'sprint_plan');
+                    if (doc) navigate(`/docs/${doc.id}`);
+                  }}
+                  onCreateRetro={async (clickedSprintId) => {
+                    const doc = await createSprintDocument(clickedSprintId, 'sprint_retro');
+                    if (doc) navigate(`/docs/${doc.id}`);
+                  }}
+                  onViewPlan={(clickedSprintId) => navigate(`/sprints/${clickedSprintId}/plan`)}
+                  onViewRetro={(clickedSprintId) => navigate(`/sprints/${clickedSprintId}/retro`)}
+                />
+              )}
+            </div>
+            {/* Right side: Standup feed (only shown when viewing a specific sprint) */}
+            {sprintId && currentSprint && (
+              <div className="w-96 flex-shrink-0 overflow-hidden">
+                <StandupFeed sprintId={sprintId} />
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === 'settings' && (
@@ -614,6 +664,113 @@ function SprintsList({
           </ContextMenuItem>
         </ContextMenu>
       )}
+    </div>
+  );
+}
+
+function SprintDetailView({
+  sprint,
+  issues,
+  onIssueClick,
+  onBack,
+}: {
+  sprint: Sprint;
+  issues: Issue[];
+  onIssueClick: (id: string) => void;
+  onBack: () => void;
+}) {
+  const stateLabels: Record<string, string> = {
+    backlog: 'Backlog',
+    todo: 'Todo',
+    in_progress: 'In Progress',
+    done: 'Done',
+    cancelled: 'Cancelled',
+  };
+
+  const progress = sprint.issue_count > 0
+    ? Math.round((sprint.completed_count / sprint.issue_count) * 100)
+    : 0;
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Sprint header */}
+      <div className="border-b border-border p-4">
+        <div className="flex items-center gap-3 mb-3">
+          <button
+            onClick={onBack}
+            className="text-muted hover:text-foreground transition-colors"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div className="flex-1">
+            <h2 className="font-semibold text-foreground">{sprint.name}</h2>
+            {sprint.owner && (
+              <p className="text-sm text-muted">{sprint.owner.name}</p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-2 rounded-full bg-border overflow-hidden">
+            <div
+              className="h-full bg-accent transition-all"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <span className="text-xs text-muted">
+            {sprint.completed_count}/{sprint.issue_count} done
+          </span>
+        </div>
+      </div>
+
+      {/* Issues list */}
+      <div className="flex-1 overflow-auto">
+        {issues.length === 0 ? (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-muted">No issues in this sprint</p>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead className="sticky top-0 bg-background border-b border-border">
+              <tr>
+                <th className="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider w-24">ID</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider">Title</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider w-32">Status</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider w-40">Assignee</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {issues.map((issue) => (
+                <tr
+                  key={issue.id}
+                  className="hover:bg-border/30 cursor-pointer transition-colors"
+                  onClick={() => onIssueClick(issue.id)}
+                >
+                  <td className="px-4 py-3 text-sm font-mono text-muted">
+                    {issue.display_id}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-foreground">
+                    {issue.title}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
+                      {stateLabels[issue.state] || issue.state}
+                    </span>
+                  </td>
+                  <td className={cn("px-4 py-3 text-sm text-muted", issue.assignee_archived && "opacity-50")}>
+                    {issue.assignee_name ? (
+                      <>
+                        {issue.assignee_name}{issue.assignee_archived && ' (archived)'}
+                      </>
+                    ) : 'Unassigned'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
