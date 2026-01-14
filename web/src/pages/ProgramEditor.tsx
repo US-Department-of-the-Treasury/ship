@@ -130,7 +130,25 @@ interface SprintWindow {
   sprint: Sprint | null; // null if no sprint document exists for this window
 }
 
-type Tab = 'overview' | 'issues' | 'sprints';
+type Tab = 'overview' | 'issues' | 'projects' | 'sprints';
+
+interface Project {
+  id: string;
+  title: string;
+  impact: number;
+  confidence: number;
+  ease: number;
+  ice_score: number;
+  color: string;
+  emoji: string | null;
+  program_id: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+  owner: { id: string; name: string; email: string } | null;
+  sprint_count: number;
+  issue_count: number;
+}
 
 export function ProgramEditorPage() {
   const { id, sprintId } = useParams<{ id: string; sprintId?: string }>();
@@ -144,6 +162,7 @@ export function ProgramEditorPage() {
   const activeTab: Tab = useMemo(() => {
     const path = location.pathname;
     if (path.includes('/sprints')) return 'sprints';
+    if (path.includes('/projects')) return 'projects';
     if (path.includes('/issues')) return 'issues';
     return 'overview';
   }, [location.pathname]);
@@ -164,6 +183,9 @@ export function ProgramEditorPage() {
   const [selectedIssues, setSelectedIssues] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
   const [showQuickAddModal, setShowQuickAddModal] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectsViewMode, setProjectsViewMode] = useState<'list' | 'card'>('list');
 
   // Use TanStack Query for sprints
   const {
@@ -199,6 +221,18 @@ export function ProgramEditorPage() {
         .finally(() => setIssuesLoading(false));
     }
   }, [activeTab, id, issues.length]);
+
+  // Fetch projects when switching to projects tab
+  useEffect(() => {
+    if (activeTab === 'projects' && id && projects.length === 0) {
+      setProjectsLoading(true);
+      fetch(`${API_URL}/api/programs/${id}/projects`, { credentials: 'include' })
+        .then(res => res.ok ? res.json() : [])
+        .then(setProjects)
+        .catch(console.error)
+        .finally(() => setProjectsLoading(false));
+    }
+  }, [activeTab, id, projects.length]);
 
   // Sprints are now loaded via TanStack Query (useSprints hook)
 
@@ -305,6 +339,7 @@ export function ProgramEditorPage() {
   const tabs: TabItem[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'issues', label: 'Issues' },
+    { id: 'projects', label: 'Projects' },
     { id: 'sprints', label: 'Sprints' },
   ];
 
@@ -405,6 +440,34 @@ export function ProgramEditorPage() {
         </>
       );
     }
+    if (activeTab === 'projects') {
+      return (
+        <div className="flex rounded-md border border-border" role="group" aria-label="View mode">
+          <button
+            onClick={() => setProjectsViewMode('list')}
+            aria-label="List view"
+            aria-pressed={projectsViewMode === 'list'}
+            className={cn(
+              'px-3 py-1 text-sm transition-colors',
+              projectsViewMode === 'list' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
+            )}
+          >
+            <ListIcon aria-hidden="true" />
+          </button>
+          <button
+            onClick={() => setProjectsViewMode('card')}
+            aria-label="Card view"
+            aria-pressed={projectsViewMode === 'card'}
+            className={cn(
+              'px-3 py-1 text-sm transition-colors',
+              projectsViewMode === 'card' ? 'bg-border text-foreground' : 'text-muted hover:text-foreground'
+            )}
+          >
+            <CardIcon aria-hidden="true" />
+          </button>
+        </div>
+      );
+    }
     if (activeTab === 'sprints') {
       // Sprint creation happens via clicking empty windows in the timeline
       return null;
@@ -489,6 +552,26 @@ export function ProgramEditorPage() {
                   const res = await fetch(`${API_URL}/api/programs/${id}/issues`, { credentials: 'include' });
                   if (res.ok) setIssues(await res.json());
                 }}
+              />
+            )}
+          </div>
+        )}
+
+        {activeTab === 'projects' && (
+          <div className="h-full overflow-auto">
+            {projectsLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-muted">Loading projects...</div>
+              </div>
+            ) : projectsViewMode === 'card' ? (
+              <ProjectsCardView
+                projects={projects}
+                onProjectClick={(projectId) => navigate(`/projects/${projectId}`)}
+              />
+            ) : (
+              <ProjectsList
+                projects={projects}
+                onProjectClick={(projectId) => navigate(`/projects/${projectId}`)}
               />
             )}
           </div>
@@ -2358,5 +2441,138 @@ function KanbanIcon() {
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
     </svg>
+  );
+}
+
+function CardIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+    </svg>
+  );
+}
+
+function ProjectsList({ projects, onProjectClick }: { projects: Project[]; onProjectClick: (id: string) => void }) {
+  const columns = [
+    { key: 'name', label: 'Name', className: 'flex-1' },
+    { key: 'ice_score', label: 'ICE Score', className: 'w-24' },
+    { key: 'owner', label: 'Owner', className: 'w-40' },
+    { key: 'issues', label: 'Issues', className: 'w-20' },
+    { key: 'sprints', label: 'Sprints', className: 'w-20' },
+  ];
+
+  const renderRow = (project: Project, _props: RowRenderProps) => (
+    <>
+      <td className="px-4 py-3" role="gridcell">
+        <div className="flex items-center gap-2">
+          <div
+            className="flex h-6 w-6 items-center justify-center rounded text-xs font-medium"
+            style={{
+              backgroundColor: project.color || '#6366f1',
+              color: getContrastTextColor(project.color || '#6366f1'),
+            }}
+          >
+            {project.emoji || project.title?.[0]?.toUpperCase() || '?'}
+          </div>
+          <span className="text-sm font-medium text-foreground">{project.title}</span>
+        </div>
+      </td>
+      <td className="px-4 py-3" role="gridcell">
+        <span className="text-sm text-foreground">{project.ice_score?.toFixed(1) || '—'}</span>
+      </td>
+      <td className="px-4 py-3" role="gridcell">
+        {project.owner ? (
+          <div className="flex items-center gap-2">
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent">
+              {project.owner.name?.[0]?.toUpperCase() || '?'}
+            </div>
+            <span className="text-sm text-muted">{project.owner.name}</span>
+          </div>
+        ) : (
+          <span className="text-sm text-muted">—</span>
+        )}
+      </td>
+      <td className="px-4 py-3" role="gridcell">
+        <span className="text-sm text-muted">{project.issue_count || 0}</span>
+      </td>
+      <td className="px-4 py-3" role="gridcell">
+        <span className="text-sm text-muted">{project.sprint_count || 0}</span>
+      </td>
+    </>
+  );
+
+  const emptyState = (
+    <div className="text-center py-12">
+      <p className="text-muted">No projects yet</p>
+      <p className="mt-2 text-sm text-muted">Projects assigned to this program will appear here</p>
+    </div>
+  );
+
+  return (
+    <div className="p-4">
+      <SelectableList
+        items={projects}
+        columns={columns}
+        renderRow={renderRow}
+        getItemId={(project) => project.id}
+        selectable={false}
+        emptyState={emptyState}
+        onItemClick={(project) => onProjectClick(project.id)}
+      />
+    </div>
+  );
+}
+
+function ProjectsCardView({ projects, onProjectClick }: { projects: Project[]; onProjectClick: (id: string) => void }) {
+  if (projects.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center py-12 text-center">
+        <p className="text-muted">No projects yet</p>
+        <p className="mt-2 text-sm text-muted">Projects assigned to this program will appear here</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
+      {projects.map((project) => (
+        <div
+          key={project.id}
+          onClick={() => onProjectClick(project.id)}
+          className="cursor-pointer rounded-lg border border-border bg-card p-4 transition-colors hover:border-accent/50 hover:bg-card/80"
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-lg font-medium"
+              style={{
+                backgroundColor: project.color || '#6366f1',
+                color: getContrastTextColor(project.color || '#6366f1'),
+              }}
+            >
+              {project.emoji || project.title?.[0]?.toUpperCase() || '?'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-medium text-foreground truncate">{project.title}</h3>
+              {project.owner && (
+                <p className="text-sm text-muted mt-1">{project.owner.name}</p>
+              )}
+            </div>
+          </div>
+          <div className="mt-4 flex items-center justify-between text-sm text-muted">
+            <div className="flex items-center gap-4">
+              <span>{project.issue_count || 0} issues</span>
+              <span>{project.sprint_count || 0} sprints</span>
+            </div>
+            {project.ice_score > 0 && (
+              <span className="rounded bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                ICE: {project.ice_score.toFixed(1)}
+              </span>
+            )}
+          </div>
+          {/* Activity chart placeholder - will be implemented in Story 4 */}
+          <div className="mt-4 h-8 rounded bg-muted/30" />
+        </div>
+      ))}
+    </div>
   );
 }
