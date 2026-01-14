@@ -222,6 +222,11 @@ const icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
     </svg>
   ),
+  criteria: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
   taskList: (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -457,6 +462,32 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument 
               type: 'heading',
               attrs: { level: 2 },
               content: [{ type: 'text', text: 'Hypothesis' }],
+            },
+            {
+              type: 'paragraph',
+            },
+          ])
+          .run();
+        // Move cursor to the empty paragraph
+        editor.commands.focus('end');
+      },
+    },
+    // Success Criteria section (for Project and Sprint documents)
+    {
+      title: 'Success Criteria',
+      description: 'Add success criteria section',
+      aliases: ['criteria', 'success', 'success-criteria', 'acceptance'],
+      icon: icons.criteria,
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .insertContent([
+            {
+              type: 'heading',
+              attrs: { level: 2 },
+              content: [{ type: 'text', text: 'Success Criteria' }],
             },
             {
               type: 'paragraph',
