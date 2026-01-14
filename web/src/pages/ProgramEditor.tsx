@@ -14,6 +14,7 @@ import { issueStatusColors, sprintStatusColors } from '@/lib/statusColors';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { TabBar, Tab as TabItem } from '@/components/ui/TabBar';
 import { KanbanBoard } from '@/components/KanbanBoard';
+import { ActivityChartMini } from '@/components/ActivityChart';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
@@ -2569,8 +2570,9 @@ function ProjectsCardView({ projects, onProjectClick }: { projects: Project[]; o
               </span>
             )}
           </div>
-          {/* Activity chart placeholder - will be implemented in Story 4 */}
-          <div className="mt-4 h-8 rounded bg-muted/30" />
+          <div className="mt-4">
+            <ActivityChartMini entityType="project" entityId={project.id} />
+          </div>
         </div>
       ))}
     </div>

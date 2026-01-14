@@ -210,6 +210,60 @@ async function seed() {
       console.log('ℹ️  All programs already exist');
     }
 
+    // Create projects for each program
+    const projectTemplates = [
+      { name: 'Core Features', color: '#6366f1', emoji: '🚀' },
+      { name: 'Bug Fixes', color: '#ef4444', emoji: '🐛' },
+      { name: 'Performance', color: '#22c55e', emoji: '⚡' },
+    ];
+
+    const projects: Array<{ id: string; programId: string; title: string }> = [];
+    let projectsCreated = 0;
+
+    for (const program of programs) {
+      for (const template of projectTemplates) {
+        const projectTitle = `${program.name} - ${template.name}`;
+
+        // Check if project already exists
+        const existingProject = await pool.query(
+          `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'project'
+           AND title = $2 AND program_id = $3`,
+          [workspaceId, projectTitle, program.id]
+        );
+
+        if (existingProject.rows[0]) {
+          projects.push({
+            id: existingProject.rows[0].id,
+            programId: program.id,
+            title: projectTitle,
+          });
+        } else {
+          const projectProperties = {
+            color: template.color,
+            emoji: template.emoji,
+          };
+          const projectResult = await pool.query(
+            `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
+             VALUES ($1, 'project', $2, $3, $4)
+             RETURNING id`,
+            [workspaceId, projectTitle, program.id, JSON.stringify(projectProperties)]
+          );
+          projects.push({
+            id: projectResult.rows[0].id,
+            programId: program.id,
+            title: projectTitle,
+          });
+          projectsCreated++;
+        }
+      }
+    }
+
+    if (projectsCreated > 0) {
+      console.log(`✅ Created ${projectsCreated} projects`);
+    } else {
+      console.log('ℹ️  All projects already exist');
+    }
+
     // Get workspace sprint start date and calculate current sprint (1-week sprints)
     const wsResult = await pool.query(
       'SELECT sprint_start_date FROM workspaces WHERE id = $1',

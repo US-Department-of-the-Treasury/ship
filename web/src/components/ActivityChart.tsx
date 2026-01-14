@@ -200,15 +200,7 @@ export function ActivityChartMini({ entityType, entityId, className }: ActivityC
       .finally(() => setLoading(false));
   }, [entityType, entityId]);
 
-  const totalActivity = useMemo(() => {
-    return activityData.reduce((sum, d) => sum + d.count, 0);
-  }, [activityData]);
-
-  if (loading) {
-    return <div className={cn('h-2 w-full animate-pulse rounded bg-border/30', className)} />;
-  }
-
-  // Generate simple bar visualization
+  // Generate simple bar visualization (14 days)
   const days = useMemo(() => {
     const result: number[] = [];
     const today = new Date();
@@ -225,6 +217,14 @@ export function ActivityChartMini({ entityType, entityId, className }: ActivityC
   }, [activityData]);
 
   const maxCount = Math.max(...days, 1);
+
+  const totalActivity = useMemo(() => {
+    return activityData.reduce((sum, d) => sum + d.count, 0);
+  }, [activityData]);
+
+  if (loading) {
+    return <div className={cn('h-2 w-full animate-pulse rounded bg-border/30', className)} />;
+  }
 
   return (
     <div className={cn('flex items-end gap-px h-6', className)} title={`${totalActivity} activities in last 14 days`}>
