@@ -233,7 +233,29 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
       workspaceId = workspaces[0].id;
     }
 
-    // Super-admins can log in without workspace membership
+    // Super-admins with no memberships: pick any workspace in the system
+    if (!workspaceId && user.is_super_admin) {
+      const anyWorkspace = await pool.query(
+        'SELECT id FROM workspaces WHERE archived_at IS NULL LIMIT 1'
+      );
+      if (anyWorkspace.rows[0]) {
+        workspaceId = anyWorkspace.rows[0].id;
+        console.log(`[PIV DEBUG] Super-admin ${user.email} has no memberships, using workspace ${workspaceId}`);
+      } else {
+        // No workspaces exist at all - system not bootstrapped
+        console.log(`PIV super-admin ${user.email} login failed: no workspaces exist`);
+        await logAuditEvent({
+          actorUserId: user.id,
+          action: 'auth.piv_login_failed',
+          details: { reason: 'no_workspaces_exist', email },
+          req,
+        });
+        res.redirect('/login?error=' + encodeURIComponent('No workspaces exist. Create a workspace first.'));
+        return;
+      }
+    }
+
+    // Regular users must have workspace membership
     if (!workspaceId && !user.is_super_admin && workspaces.length === 0) {
       console.log(`PIV user ${email} has no workspace access`);
       await logAuditEvent({
