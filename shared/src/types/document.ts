@@ -12,7 +12,9 @@ export type DocumentType =
   | 'sprint'
   | 'person'
   | 'sprint_plan'
-  | 'sprint_retro';
+  | 'sprint_retro'
+  | 'standup'
+  | 'sprint_review';
 
 // Issue states
 export type IssueState = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
@@ -57,6 +59,12 @@ export interface ProjectProperties {
   // Visual identification
   color: string;
   emoji?: string | null;
+  // Project retro properties - track hypothesis validation and outcomes
+  hypothesis_validated?: boolean | null;  // null = not yet determined, true = validated, false = invalidated
+  monetary_impact_expected?: string | null;  // Expected monetary value (e.g., "$50K annual savings")
+  monetary_impact_actual?: string | null;    // Actual monetary impact after completion
+  success_criteria?: string[] | null;        // Array of measurable success criteria
+  next_steps?: string | null;                // Recommended follow-up actions
   [key: string]: unknown;
 }
 
@@ -94,6 +102,20 @@ export interface WikiProperties {
 export type SprintPlanProperties = Record<string, unknown>;
 export type SprintRetroProperties = Record<string, unknown>;
 
+// Standup properties - comment-like entries on sprints
+export interface StandupProperties {
+  author_id: string;  // REQUIRED - who posted this standup
+  [key: string]: unknown;
+}
+
+// Sprint review properties - one per sprint, tracks hypothesis validation
+export interface SprintReviewProperties {
+  sprint_id: string;          // REQUIRED - which sprint this reviews
+  owner_id: string;           // REQUIRED - who is accountable for this review
+  hypothesis_validated: boolean | null;  // null = not yet determined
+  [key: string]: unknown;
+}
+
 // Union of all properties types
 export type DocumentProperties =
   | IssueProperties
@@ -103,7 +125,9 @@ export type DocumentProperties =
   | PersonProperties
   | WikiProperties
   | SprintPlanProperties
-  | SprintRetroProperties;
+  | SprintRetroProperties
+  | StandupProperties
+  | SprintReviewProperties;
 
 // Base document interface
 export interface Document {
@@ -173,6 +197,16 @@ export interface SprintPlanDocument extends Document {
 export interface SprintRetroDocument extends Document {
   document_type: 'sprint_retro';
   properties: SprintRetroProperties;
+}
+
+export interface StandupDocument extends Document {
+  document_type: 'standup';
+  properties: StandupProperties;
+}
+
+export interface SprintReviewDocument extends Document {
+  document_type: 'sprint_review';
+  properties: SprintReviewProperties;
 }
 
 // Input types for creating/updating documents

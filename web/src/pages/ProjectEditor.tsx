@@ -11,6 +11,8 @@ import { useAutoSave } from '@/hooks/useAutoSave';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { TabBar } from '@/components/ui/TabBar';
+import { ProjectRetro } from '@/components/ProjectRetro';
 import { computeICEScore } from '@ship/shared';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -41,6 +43,7 @@ export function ProjectEditorPage() {
   const { createDocument } = useDocuments();
   const [people, setPeople] = useState<Person[]>([]);
   const [ownerError, setOwnerError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'details' | 'retro'>('details');
 
   // Get the current project from context
   const project = projects.find(p => p.id === id) || null;
@@ -130,17 +133,33 @@ export function ProjectEditorPage() {
   const iceScore = computeICEScore(displayProject.impact, displayProject.confidence, displayProject.ease);
 
   return (
-    <Editor
-      documentId={displayProject.id}
-      userName={user.name}
-      initialTitle={displayProject.title}
-      onTitleChange={throttledTitleSave}
-      onBack={() => navigate('/projects')}
-      roomPrefix="project"
-      placeholder="Describe this project..."
-      onCreateSubDocument={handleCreateSubDocument}
-      onNavigateToDocument={handleNavigateToDocument}
-      sidebar={
+    <div className="flex h-full flex-col">
+      {/* Tab bar for switching between Details and Retro */}
+      <div className="border-b border-border px-4">
+        <TabBar
+          tabs={[
+            { id: 'details', label: 'Details' },
+            { id: 'retro', label: 'Retro' },
+          ]}
+          activeTab={activeTab}
+          onTabChange={(tabId) => setActiveTab(tabId as 'details' | 'retro')}
+        />
+      </div>
+
+      {/* Content area */}
+      <div className="flex-1 overflow-hidden">
+        {activeTab === 'details' ? (
+          <Editor
+            documentId={displayProject.id}
+            userName={user.name}
+            initialTitle={displayProject.title}
+            onTitleChange={throttledTitleSave}
+            onBack={() => navigate('/projects')}
+            roomPrefix="project"
+            placeholder="Describe this project..."
+            onCreateSubDocument={handleCreateSubDocument}
+            onNavigateToDocument={handleNavigateToDocument}
+            sidebar={
         <div className="space-y-4 p-4">
           {/* ICE Score Display */}
           <div className="rounded-lg border border-border bg-accent/10 p-3">
@@ -271,8 +290,13 @@ export function ProjectEditorPage() {
             </div>
           </div>
         </div>
-      }
-    />
+            }
+          />
+        ) : (
+          <ProjectRetro projectId={displayProject.id} />
+        )}
+      </div>
+    </div>
   );
 }
 

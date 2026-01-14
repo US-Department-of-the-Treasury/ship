@@ -164,7 +164,7 @@ router.post('/workspaces', async (req: Request, res: Response): Promise<void> =>
 
 // PATCH /api/admin/workspaces/:id - Update workspace
 router.patch('/workspaces/:id', async (req: Request, res: Response): Promise<void> => {
-  const workspaceId = req.params.id!; // Always defined from route
+  const workspaceId = String(req.params.id); // Always defined from route
   const { name, sprintStartDate } = req.body;
 
   // At least one field must be provided
@@ -281,7 +281,7 @@ router.patch('/workspaces/:id', async (req: Request, res: Response): Promise<voi
 
 // POST /api/admin/workspaces/:id/archive - Archive workspace
 router.post('/workspaces/:id/archive', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
 
   try {
     const result = await pool.query(
@@ -444,7 +444,7 @@ router.get('/users/search', async (req: Request, res: Response): Promise<void> =
 
 // PATCH /api/admin/users/:id/super-admin - Toggle super-admin status
 router.patch('/users/:id/super-admin', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const { isSuperAdmin } = req.body;
 
   if (typeof isSuperAdmin !== 'boolean') {
@@ -666,7 +666,7 @@ router.get('/audit-logs/export', async (req: Request, res: Response): Promise<vo
 
 // POST /api/admin/impersonate/:userId - Start impersonation
 router.post('/impersonate/:userId', async (req: Request, res: Response): Promise<void> => {
-  const { userId } = req.params;
+  const userId = String(req.params.userId);
 
   try {
     // Get target user
@@ -747,7 +747,7 @@ router.delete('/impersonate', async (req: Request, res: Response): Promise<void>
 
 // GET /api/admin/workspaces/:id - Get workspace details
 router.get('/workspaces/:id', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
 
   try {
     const result = await pool.query(
@@ -796,7 +796,7 @@ router.get('/workspaces/:id', async (req: Request, res: Response): Promise<void>
 
 // GET /api/admin/workspaces/:id/members - List workspace members
 router.get('/workspaces/:id/members', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
 
   try {
     // Check workspace exists
@@ -846,7 +846,7 @@ router.get('/workspaces/:id/members', async (req: Request, res: Response): Promi
 
 // GET /api/admin/workspaces/:id/invites - List pending invites
 router.get('/workspaces/:id/invites', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
 
   try {
     // Check workspace exists
@@ -898,7 +898,7 @@ router.get('/workspaces/:id/invites', async (req: Request, res: Response): Promi
 // Email is always required (it's the login identifier)
 // x509SubjectDn is optional - for PIV certificate matching when cert doesn't contain email
 router.post('/workspaces/:id/invites', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const { email, x509SubjectDn, role = 'member' } = req.body;
 
   // Email is always required
@@ -1054,7 +1054,8 @@ router.post('/workspaces/:id/invites', async (req: Request, res: Response): Prom
 
 // DELETE /api/admin/workspaces/:workspaceId/invites/:inviteId - Revoke invite
 router.delete('/workspaces/:workspaceId/invites/:inviteId', async (req: Request, res: Response): Promise<void> => {
-  const { workspaceId, inviteId } = req.params;
+  const workspaceId = String(req.params.workspaceId);
+  const inviteId = String(req.params.inviteId);
 
   try {
     // Check workspace exists
@@ -1123,7 +1124,7 @@ router.delete('/workspaces/:workspaceId/invites/:inviteId', async (req: Request,
 
 // POST /api/admin/workspaces/:id/members - Add existing user directly to workspace
 router.post('/workspaces/:id/members', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const { userId, role = 'member' } = req.body;
 
   try {
@@ -1248,7 +1249,8 @@ router.post('/workspaces/:id/members', async (req: Request, res: Response): Prom
 
 // PATCH /api/admin/workspaces/:workspaceId/members/:userId - Update member role
 router.patch('/workspaces/:workspaceId/members/:userId', async (req: Request, res: Response): Promise<void> => {
-  const { workspaceId, userId } = req.params;
+  const workspaceId = String(req.params.workspaceId);
+  const userId = String(req.params.userId);
   const { role } = req.body;
 
   if (role !== 'admin' && role !== 'member') {
@@ -1351,7 +1353,8 @@ router.patch('/workspaces/:workspaceId/members/:userId', async (req: Request, re
 
 // DELETE /api/admin/workspaces/:workspaceId/members/:userId - Remove member
 router.delete('/workspaces/:workspaceId/members/:userId', async (req: Request, res: Response): Promise<void> => {
-  const { workspaceId, userId } = req.params;
+  const workspaceId = String(req.params.workspaceId);
+  const userId = String(req.params.userId);
 
   try {
     // Check workspace exists
@@ -1558,7 +1561,7 @@ router.get('/debug/users', async (req: Request, res: Response): Promise<void> =>
 
 // DELETE /api/admin/debug/users/:id - Delete a specific user (for cleanup)
 router.delete('/debug/users/:id', async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = req.params.id as string;
 
   try {
     // Get user info for audit log

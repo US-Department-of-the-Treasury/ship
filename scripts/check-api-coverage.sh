@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# check-api-coverage.sh
+#
+# Pre-commit hook to verify API coverage for UI routes.
+# Scans for new UI routes/components and verifies corresponding API endpoints exist.
+#
+# Usage:
+#   ./scripts/check-api-coverage.sh [--staged]
+#
+# Options:
+#   --staged  Only check staged files (default for pre-commit)
+#
+# Exit codes:
+#   0 - All UI routes have API coverage
+#   1 - Missing API coverage detected
+
+set -e
+
+STAGED_ONLY=false
+if [ "$1" = "--staged" ]; then
+  STAGED_ONLY=true
+fi
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo "Checking API coverage for UI routes..."
+
+# Get files to check
+if [ "$STAGED_ONLY" = true ]; then
+  FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(tsx?|jsx?)$' || true)
+else
+  FILES=$(git diff --name-only HEAD~1 | grep -E '\.(tsx?|jsx?)$' || true)
+fi
+
+if [ -z "$FILES" ]; then
+  echo -e "${GREEN}No UI files changed${NC}"
+  exit 0
+fi
+
+# Known API endpoints (extracted from routes with mount points)
+# First, extract mount points from app.ts: app.use('/api/xxx', xxxRoutes)
+# Then combine with routes from each route file
+API_ENDPOINTS=""
+
+# Get mount points from app.ts (simple list)
+# e.g., "sprints" from app.use('/api/sprints', sprintsRoutes)
+MOUNT_POINTS=$(grep "app\.use.*Routes" api/src/app.ts 2>/dev/null | \
+  sed -n "s/.*app\.use(['\"]\/api\/\([^'\"]*\)['\"].*/\1/p" | sort -u)
+
+# Now extract routes from each file and prepend mount point
+TEMP_FILE="/tmp/api_endpoints_$$"
+rm -f "$TEMP_FILE"
+touch "$TEMP_FILE"
+
+for route_file in api/src/routes/*.ts; do
+  [ -f "$route_file" ] || continue
+
+  # Skip test files
+  case "$route_file" in
+    *".test.ts") continue ;;
+  esac
+
+  # Get base name without .ts extension
+  basename_file=$(basename "$route_file" .ts)
+
+  # Find mount point for this file
+  # Check if this file's basename matches a mount point
+  mount_prefix=""
+  if echo "$MOUNT_POINTS" | grep -qx "$basename_file"; then
+    mount_prefix="$basename_file/"
+  fi
+
+  # Extract routes from this file and prepend mount prefix
+  # Use simpler sed patterns (macOS sed has issues with complex alternations)
+  # Note: Use sed to add prefix since while loop is in subshell
+  {
+    grep -h "router\.get" "$route_file" 2>/dev/null | sed -n "s/.*router\.get('\([^']*\)'.*/\1/p"
+    grep -h "router\.post" "$route_file" 2>/dev/null | sed -n "s/.*router\.post('\([^']*\)'.*/\1/p"
+    grep -h "router\.put" "$route_file" 2>/dev/null | sed -n "s/.*router\.put('\([^']*\)'.*/\1/p"
+    grep -h "router\.patch" "$route_file" 2>/dev/null | sed -n "s/.*router\.patch('\([^']*\)'.*/\1/p"
+    grep -h "router\.delete" "$route_file" 2>/dev/null | sed -n "s/.*router\.delete('\([^']*\)'.*/\1/p"
+  } | sed 's/^\///' | while read -r route; do
+    if [ -z "$route" ]; then
+      # Base route '/' becomes just the mount prefix (without trailing slash)
+      echo "${mount_prefix%/}"
+    else
+      echo "${mount_prefix}${route}"
+    fi
+  done | grep -v '^$' >> "$TEMP_FILE" || true
+done
+
+# Also add direct app routes (app.get, app.post, etc.)
+{
+  grep -h "app\.get" api/src/app.ts 2>/dev/null | sed -n "s/.*app\.get('\/api\/\([^']*\)'.*/\1/p"
+  grep -h "app\.post" api/src/app.ts 2>/dev/null | sed -n "s/.*app\.post('\/api\/\([^']*\)'.*/\1/p"
+  grep -h "app\.put" api/src/app.ts 2>/dev/null | sed -n "s/.*app\.put('\/api\/\([^']*\)'.*/\1/p"
+  grep -h "app\.patch" api/src/app.ts 2>/dev/null | sed -n "s/.*app\.patch('\/api\/\([^']*\)'.*/\1/p"
+  grep -h "app\.delete" api/src/app.ts 2>/dev/null | sed -n "s/.*app\.delete('\/api\/\([^']*\)'.*/\1/p"
+} | sed 's/^\///' | grep -v '^$' >> "$TEMP_FILE" || true
+
+API_ENDPOINTS=$(cat "$TEMP_FILE" 2>/dev/null | sort -u | grep -v '^$' || true)
+rm -f "$TEMP_FILE"
+
+# Track missing coverage
+MISSING=()
+
+# Check each changed file for API calls
+for file in $FILES; do
+  if [ ! -f "$file" ]; then
+    continue
+  fi
+
+  # Skip non-web files
+  if [[ ! "$file" =~ ^web/ ]]; then
+    continue
+  fi
+
+  # Extract API calls from the file
+  # Look for patterns like: fetch('/api/..., fetch(`${API_URL}/api/..., axios.get('/api/...
+  API_CALLS=$(grep -oE "(fetch|axios\.[a-z]+)\(['\"\`][^'\"]*\/api\/[^'\"]*" "$file" 2>/dev/null | \
+    sed -n 's/.*\/api\/\([^'\"'\`]*\).*/\1/p' | \
+    sort -u || true)
+
+  # Also check for API_URL + path patterns
+  API_CALLS2=$(grep -oE '\$\{API_URL\}\/api\/[^`"'\'']*' "$file" 2>/dev/null | \
+    sed 's/.*\/api\///' | \
+    sed 's/[`"'\''].*//' | \
+    sort -u || true)
+
+  ALL_CALLS=$(echo -e "$API_CALLS\n$API_CALLS2" | sort -u | grep -v '^$' || true)
+
+  if [ -z "$ALL_CALLS" ]; then
+    continue
+  fi
+
+  # Check each API call has a corresponding endpoint
+  while IFS= read -r call; do
+    # Normalize the call (remove dynamic segments like :id)
+    NORMALIZED=$(echo "$call" | sed 's/\${[^}]*}/[^\/]*/g' | sed 's/:[a-zA-Z_]*/[^\/]*/g')
+
+    # Check if any endpoint matches
+    FOUND=false
+    while IFS= read -r endpoint; do
+      if echo "$endpoint" | grep -qE "^${NORMALIZED}$" 2>/dev/null; then
+        FOUND=true
+        break
+      fi
+      # Also check with wildcards for dynamic routes
+      ENDPOINT_PATTERN=$(echo "$endpoint" | sed 's/:[a-zA-Z_]*/[^\/]*/g')
+      if echo "$call" | grep -qE "^${ENDPOINT_PATTERN}$" 2>/dev/null; then
+        FOUND=true
+        break
+      fi
+    done <<< "$API_ENDPOINTS"
+
+    if [ "$FOUND" = false ]; then
+      # Skip common false positives
+      if [[ "$call" =~ ^auth/ ]] || [[ "$call" =~ ^health$ ]]; then
+        continue
+      fi
+      MISSING+=("$file: /api/$call")
+    fi
+  done <<< "$ALL_CALLS"
+done
+
+# Report results
+if [ ${#MISSING[@]} -eq 0 ]; then
+  echo -e "${GREEN}✓ All UI routes have API coverage${NC}"
+  exit 0
+else
+  echo -e "${RED}✗ Missing API coverage detected:${NC}"
+  echo ""
+  for item in "${MISSING[@]}"; do
+    echo -e "  ${YELLOW}$item${NC}"
+  done
+  echo ""
+  echo -e "${RED}Please ensure API endpoints exist for these UI calls.${NC}"
+  echo "If this is a false positive, the endpoint may use a different URL pattern."
+  exit 1
+fi

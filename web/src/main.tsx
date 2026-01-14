@@ -22,7 +22,6 @@ import { IssuesPage } from '@/pages/Issues';
 import { IssueEditorPage } from '@/pages/IssueEditor';
 import { ProgramsPage } from '@/pages/Programs';
 import { ProgramEditorPage } from '@/pages/ProgramEditor';
-import { ProgramViewPage } from '@/pages/ProgramView';
 import { SprintEditorPage } from '@/pages/SprintEditor';
 import { SprintViewPage } from '@/pages/SprintView';
 import { SprintsPage } from '@/pages/Sprints';
@@ -33,6 +32,7 @@ import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
 import { ProjectEditorPage } from '@/pages/ProjectEditor';
 import { ProjectsPage } from '@/pages/Projects';
+import { DashboardPage } from '@/pages/Dashboard';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
@@ -186,6 +186,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<Navigate to="/docs" replace />} />
+        <Route path="dashboard" element={<DashboardPage />} />
         <Route path="docs" element={<DocumentsPage />} />
         <Route path="docs/:id" element={<DocumentEditorPage />} />
         <Route path="issues" element={<IssuesPage />} />
@@ -194,7 +195,9 @@ function AppRoutes() {
         <Route path="projects/:id" element={<ProjectEditorPage />} />
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />
-        <Route path="programs/:id/view" element={<ProgramViewPage />} />
+        <Route path="programs/:id/issues" element={<ProgramEditorPage />} />
+        <Route path="programs/:id/sprints" element={<ProgramEditorPage />} />
+        <Route path="programs/:id/sprints/:sprintId" element={<ProgramEditorPage />} />
         <Route path="programs/:programId/sprints/:id" element={<SprintEditorPage />} />
         <Route path="sprints" element={<SprintsPage />} />
         <Route path="sprints/:id" element={<SprintEditorPage />} />

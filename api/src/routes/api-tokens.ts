@@ -150,7 +150,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
 
 // DELETE /api/api-tokens/:id - Revoke an API token
 router.delete('/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
 
   try {
     // Verify the token belongs to this user and workspace

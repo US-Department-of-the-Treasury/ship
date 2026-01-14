@@ -17,7 +17,8 @@ const UPLOADS_DIR = join(__dirname, '../../uploads');
 // UUID validation regex - prevents path traversal by ensuring ID is valid UUID
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function isValidUUID(id: string): boolean {
+function isValidUUID(id: string | string[] | undefined): boolean {
+  if (!id || Array.isArray(id)) return false;
   return UUID_REGEX.test(id);
 }
 

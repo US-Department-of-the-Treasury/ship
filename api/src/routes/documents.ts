@@ -123,7 +123,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 // Get single document
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const id = req.params.id!;
+    const id = String(req.params.id);
     const userId = String(req.userId);
     const workspaceId = String(req.workspaceId);
 
@@ -205,7 +205,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 // Update document
 router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const id = req.params.id!;
+    const id = String(req.params.id);
     const userId = String(req.userId);
     const workspaceId = String(req.workspaceId);
 
@@ -264,6 +264,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.content !== undefined) {
       updates.push(`content = $${paramIndex++}`);
       values.push(JSON.stringify(data.content));
+      // Clear yjs_state when content is updated via API
+      // This forces the collaboration server to regenerate Yjs state from new content
+      updates.push(`yjs_state = NULL`);
     }
     if (data.parent_id !== undefined) {
       updates.push(`parent_id = $${paramIndex++}`);
@@ -327,7 +330,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 // Delete document
 router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const id = req.params.id!;
+    const id = String(req.params.id);
     const userId = String(req.userId);
     const workspaceId = String(req.workspaceId);
 

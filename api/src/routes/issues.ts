@@ -357,7 +357,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 // Update issue
 router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
@@ -603,7 +603,7 @@ const logHistorySchema = z.object({
 
 router.post('/:id/history', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     if (!id) {
       res.status(400).json({ error: 'Issue ID required' });
       return;
@@ -840,7 +840,7 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
 // Accept issue (move from triage to backlog)
 router.post('/:id/accept', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
@@ -892,7 +892,7 @@ router.post('/:id/accept', authMiddleware, async (req: Request, res: Response) =
 // Reject issue (move from triage to cancelled with reason)
 router.post('/:id/reject', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 

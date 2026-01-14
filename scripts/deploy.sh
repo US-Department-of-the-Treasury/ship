@@ -108,6 +108,7 @@ fi
 
 # Verify container can start and imports work
 # Provide minimal env vars for import test (actual values come from EB environment)
+# Note: app.js starts Express server so we explicitly exit(0) after import succeeds
 echo "Verifying container starts..."
 IMPORT_TEST=$(docker run --rm \
   -e SESSION_SECRET=test-secret-for-import-check \

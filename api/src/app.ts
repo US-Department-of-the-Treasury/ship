@@ -12,6 +12,7 @@ import feedbackRoutes, { publicFeedbackRouter } from './routes/feedback.js';
 import programsRoutes from './routes/programs.js';
 import projectsRoutes from './routes/projects.js';
 import sprintsRoutes from './routes/sprints.js';
+import standupsRoutes from './routes/standups.js';
 import iterationsRoutes from './routes/iterations.js';
 import teamRoutes from './routes/team.js';
 import workspacesRoutes from './routes/workspaces.js';
@@ -24,6 +25,8 @@ import { filesRouter } from './routes/files.js';
 import caiaAuthRoutes from './routes/caia-auth.js';
 import apiTokensRoutes from './routes/api-tokens.js';
 import adminCredentialsRoutes from './routes/admin-credentials.js';
+import claudeRoutes from './routes/claude.js';
+import { setupSwagger } from './swagger.js';
 import { initializeCAIA } from './services/caia.js';
 
 // Validate SESSION_SECRET in production
@@ -155,6 +158,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
     res.json({ status: 'ok' });
   });
 
+  // API documentation (no auth needed)
+  setupSwagger(app);
+
   // Setup routes (CSRF protected - first-time setup only)
   app.use('/api/setup', conditionalCsrf, setupRoutes);
 
@@ -174,11 +180,15 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/projects', conditionalCsrf, projectsRoutes);
   app.use('/api/sprints', conditionalCsrf, sprintsRoutes);
   app.use('/api/sprints', conditionalCsrf, iterationsRoutes);
+  app.use('/api/standups', conditionalCsrf, standupsRoutes);
   app.use('/api/team', conditionalCsrf, teamRoutes);
   app.use('/api/workspaces', conditionalCsrf, workspacesRoutes);
   app.use('/api/admin', conditionalCsrf, adminRoutes);
   app.use('/api/invites', conditionalCsrf, invitesRoutes);
   app.use('/api/api-tokens', conditionalCsrf, apiTokensRoutes);
+
+  // Claude context routes - read-only GET endpoints for Claude skills
+  app.use('/api/claude', claudeRoutes);
 
   // Search routes are read-only GET endpoints - no CSRF needed
   app.use('/api/search', searchRouter);
