@@ -112,6 +112,95 @@ function RejectionDialog({ isOpen, onClose, onReject }: RejectionDialogProps) {
   );
 }
 
+interface ConversionDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConvert: () => void;
+  sourceType: 'issue' | 'project';
+  title: string;
+  isConverting?: boolean;
+}
+
+function ConversionDialog({ isOpen, onClose, onConvert, sourceType, title, isConverting }: ConversionDialogProps) {
+  // Handle Escape key
+  useEffect(() => {
+    if (!isOpen || isConverting) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isConverting, onClose]);
+
+  if (!isOpen) return null;
+
+  const targetType = sourceType === 'issue' ? 'project' : 'issue';
+  const actionLabel = sourceType === 'issue' ? 'Promote to Project' : 'Convert to Issue';
+
+  // Handle click outside dialog
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && !isConverting) {
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" onClick={handleBackdropClick}>
+      <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-lg">
+        <h2 className="mb-4 text-lg font-semibold text-foreground">{actionLabel}</h2>
+        <p className="mb-4 text-sm text-foreground">
+          Convert <strong>"{title}"</strong> from {sourceType} to {targetType}?
+        </p>
+        <div className="mb-4 rounded bg-amber-500/10 border border-amber-500/30 p-3">
+          <p className="text-sm text-amber-300 font-medium mb-2">What will happen:</p>
+          <ul className="text-xs text-muted space-y-1">
+            <li>• A new {targetType} will be created with the same title and content</li>
+            <li>• The original {sourceType} will be archived</li>
+            <li>• Links to the old {sourceType} will redirect to the new {targetType}</li>
+            {sourceType === 'issue' && (
+              <li>• Issue properties (state, priority, assignee) will be reset</li>
+            )}
+            {sourceType === 'project' && (
+              <>
+                <li>• Project properties (ICE scores, owner) will be reset</li>
+                <li>• Child issues will be orphaned (unlinked from project)</li>
+              </>
+            )}
+          </ul>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={isConverting}
+            className="rounded px-3 py-1.5 text-sm text-muted hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConvert}
+            disabled={isConverting}
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50 transition-colors flex items-center gap-2"
+          >
+            {isConverting ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Converting...
+              </>
+            ) : (
+              actionLabel
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const STATES = [
   { value: 'triage', label: 'Needs Triage' },
   { value: 'backlog', label: 'Backlog' },
@@ -169,6 +258,8 @@ export function IssueEditorPage() {
   }, [navigate]);
   const [sprintError, setSprintError] = useState<string | null>(null);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [showConvertDialog, setShowConvertDialog] = useState(false);
+  const [isConverting, setIsConverting] = useState(false);
 
   // Use TanStack Query for programs and team members (supports offline via cache)
   const { data: programsData = [], isLoading: programsLoading } = useProgramsQuery();
@@ -319,6 +410,29 @@ export function IssueEditorPage() {
       console.error('Failed to reject issue:', err);
     }
   }, [id, refreshIssues]);
+
+  // Convert issue to project
+  const handleConvert = useCallback(async () => {
+    if (!id) return;
+    setIsConverting(true);
+    try {
+      const res = await apiPost(`/api/documents/${id}/convert`, { target_type: 'project' });
+      if (res.ok) {
+        const data = await res.json();
+        // Navigate to the new project
+        navigate(`/projects/${data.new_document.id}`, { replace: true });
+      } else {
+        const error = await res.json();
+        console.error('Failed to convert issue:', error);
+        setIsConverting(false);
+        setShowConvertDialog(false);
+      }
+    } catch (err) {
+      console.error('Failed to convert issue:', err);
+      setIsConverting(false);
+      setShowConvertDialog(false);
+    }
+  }, [id, navigate]);
 
   // Throttled title save with stale response handling
   const throttledTitleSave = useAutoSave({
@@ -571,6 +685,20 @@ export function IssueEditorPage() {
                 <span className="text-sm text-red-300">{displayIssue.rejection_reason}</span>
               </PropertyRow>
             )}
+
+            {/* Document Conversion */}
+            <div className="pt-4 mt-4 border-t border-border">
+              <button
+                onClick={() => setShowConvertDialog(true)}
+                className="w-full rounded bg-accent/20 px-3 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition-colors flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" clipRule="evenodd" />
+                </svg>
+                Promote to Project
+              </button>
+              <p className="mt-1 text-xs text-muted text-center">Convert this issue into a project</p>
+            </div>
         </div>
       }
     />
@@ -578,6 +706,14 @@ export function IssueEditorPage() {
       isOpen={showRejectDialog}
       onClose={() => setShowRejectDialog(false)}
       onReject={handleReject}
+    />
+    <ConversionDialog
+      isOpen={showConvertDialog}
+      onClose={() => setShowConvertDialog(false)}
+      onConvert={handleConvert}
+      sourceType="issue"
+      title={displayIssue.title}
+      isConverting={isConverting}
     />
     </>
   );
