@@ -113,6 +113,8 @@ interface Sprint {
   has_retro?: boolean;
   plan_created_at?: string | null;
   retro_created_at?: string | null;
+  is_complete?: boolean | null;
+  missing_fields?: string[];
   _pending?: boolean;
   _pendingId?: string;
 }
@@ -149,6 +151,8 @@ interface Project {
   owner: { id: string; name: string; email: string } | null;
   sprint_count: number;
   issue_count: number;
+  is_complete: boolean | null;
+  missing_fields: string[];
 }
 
 export function ProgramEditorPage() {
@@ -2250,9 +2254,14 @@ function SprintWindowCard({
       >
         <div className="flex items-center justify-between mb-1">
           <span className="font-medium text-foreground text-sm">{sprint.name}</span>
-          {status === 'active' && (
-            <span className="text-xs text-accent">●</span>
-          )}
+          <div className="flex items-center gap-1">
+            {sprint.is_complete === false && (
+              <span className="text-xs text-orange-500" title="Incomplete - missing required fields">●</span>
+            )}
+            {status === 'active' && (
+              <span className="text-xs text-accent">●</span>
+            )}
+          </div>
         </div>
         {sprint.owner && (
           <div className="text-xs text-muted mb-2 truncate">{sprint.owner.name}</div>
@@ -2476,6 +2485,11 @@ function ProjectsList({ projects, onProjectClick }: { projects: Project[]; onPro
             {project.emoji || project.title?.[0]?.toUpperCase() || '?'}
           </div>
           <span className="text-sm font-medium text-foreground">{project.title}</span>
+          {project.is_complete === false && (
+            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/10 text-orange-500 border border-orange-500/20">
+              Incomplete
+            </span>
+          )}
         </div>
       </td>
       <td className="px-4 py-3" role="gridcell">
@@ -2564,11 +2578,18 @@ function ProjectsCardView({ projects, onProjectClick }: { projects: Project[]; o
               <span>{project.issue_count || 0} issues</span>
               <span>{project.sprint_count || 0} sprints</span>
             </div>
-            {project.ice_score > 0 && (
-              <span className="rounded bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-                ICE: {project.ice_score.toFixed(1)}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {project.is_complete === false && (
+                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/10 text-orange-500 border border-orange-500/20">
+                  Incomplete
+                </span>
+              )}
+              {project.ice_score > 0 && (
+                <span className="rounded bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                  ICE: {project.ice_score.toFixed(1)}
+                </span>
+              )}
+            </div>
           </div>
           <div className="mt-4">
             <ActivityChartMini entityType="project" entityId={project.id} />

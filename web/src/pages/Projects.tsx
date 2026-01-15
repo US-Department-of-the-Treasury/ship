@@ -393,6 +393,11 @@ function ProjectRowContent({ project, visibleColumns, programNameById }: Project
             {project._pending && (
               <span className="text-xs text-muted">(saving...)</span>
             )}
+            {project.is_complete === false && (
+              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/10 text-orange-500 border border-orange-500/20 whitespace-nowrap">
+                Incomplete
+              </span>
+            )}
           </div>
         </td>
       )}
