@@ -397,7 +397,7 @@ export function Editor({
         class: 'prose prose-invert prose-sm max-w-none focus:outline-none min-h-[300px]',
       },
     },
-  }, [provider]);
+  }, [provider, documentType]);
 
   // Sync document links when editor content changes (for backlinks feature)
   const lastSyncedLinksRef = useRef<string>('');
