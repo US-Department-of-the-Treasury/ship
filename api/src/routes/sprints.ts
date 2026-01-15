@@ -67,6 +67,9 @@ function extractSprintFromRow(row: any) {
     success_criteria: props.success_criteria || null,
     confidence: typeof props.confidence === 'number' ? props.confidence : null,
     hypothesis_history: props.hypothesis_history || null,
+    // Completeness flags
+    is_complete: props.is_complete ?? null,
+    missing_fields: props.missing_fields ?? [],
   };
 }
 
