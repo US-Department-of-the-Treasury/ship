@@ -13,6 +13,7 @@ import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TabBar } from '@/components/ui/TabBar';
 import { ProjectRetro } from '@/components/ProjectRetro';
+import { IncompleteDocumentBanner } from '@/components/IncompleteDocumentBanner';
 import { computeICEScore } from '@ship/shared';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -113,6 +114,8 @@ export function ProjectEditorPage() {
     archived_at: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    is_complete: null,
+    missing_fields: [],
     _pending: true,
   } : null);
 
@@ -145,6 +148,13 @@ export function ProjectEditorPage() {
           onTabChange={(tabId) => setActiveTab(tabId as 'details' | 'retro')}
         />
       </div>
+
+      {/* Incomplete document warning banner */}
+      <IncompleteDocumentBanner
+        documentId={displayProject.id}
+        isComplete={displayProject.is_complete}
+        missingFields={displayProject.missing_fields}
+      />
 
       {/* Content area */}
       <div className="flex-1 overflow-hidden">

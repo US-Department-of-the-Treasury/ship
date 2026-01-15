@@ -6,6 +6,7 @@ import { useDocuments } from '@/contexts/DocumentsContext';
 import { cn } from '@/lib/cn';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
+import { IncompleteDocumentBanner } from '@/components/IncompleteDocumentBanner';
 
 interface Sprint {
   id: string;
@@ -18,6 +19,8 @@ interface Sprint {
   program_prefix?: string;
   issue_count: number;
   completed_count: number;
+  is_complete: boolean | null;
+  missing_fields: string[];
 }
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -122,8 +125,17 @@ export function SprintEditorPage() {
     : 0;
 
   return (
-    <Editor
-      documentId={sprint.id}
+    <div className="flex h-full flex-col">
+      {/* Incomplete document warning banner */}
+      <IncompleteDocumentBanner
+        documentId={sprint.id}
+        isComplete={sprint.is_complete}
+        missingFields={sprint.missing_fields}
+      />
+
+      <div className="flex-1 overflow-hidden">
+        <Editor
+          documentId={sprint.id}
       userName={user.name}
       initialTitle={sprint.name}
       onTitleChange={throttledTitleSave}
@@ -210,6 +222,8 @@ export function SprintEditorPage() {
         </div>
       }
     />
+      </div>
+    </div>
   );
 }
 

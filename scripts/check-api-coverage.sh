@@ -79,12 +79,13 @@ for route_file in api/src/routes/*.ts; do
   # Use simpler sed patterns (macOS sed has issues with complex alternations)
   # Note: Use sed to add prefix since while loop is in subshell
   # Support various router naming: router, searchRouter, xxxRouter, etc.
+  # Pattern [a-zA-Z]*[Rr]outer matches: router, Router, searchRouter, xxxRouter
   {
-    grep -hE "[a-zA-Z]+Router?\.get" "$route_file" 2>/dev/null | sed -n "s/.*\.get('\([^']*\)'.*/\1/p"
-    grep -hE "[a-zA-Z]+Router?\.post" "$route_file" 2>/dev/null | sed -n "s/.*\.post('\([^']*\)'.*/\1/p"
-    grep -hE "[a-zA-Z]+Router?\.put" "$route_file" 2>/dev/null | sed -n "s/.*\.put('\([^']*\)'.*/\1/p"
-    grep -hE "[a-zA-Z]+Router?\.patch" "$route_file" 2>/dev/null | sed -n "s/.*\.patch('\([^']*\)'.*/\1/p"
-    grep -hE "[a-zA-Z]+Router?\.delete" "$route_file" 2>/dev/null | sed -n "s/.*\.delete('\([^']*\)'.*/\1/p"
+    grep -hE "[a-zA-Z]*[Rr]outer\.get" "$route_file" 2>/dev/null | sed -n "s/.*\.get('\([^']*\)'.*/\1/p"
+    grep -hE "[a-zA-Z]*[Rr]outer\.post" "$route_file" 2>/dev/null | sed -n "s/.*\.post('\([^']*\)'.*/\1/p"
+    grep -hE "[a-zA-Z]*[Rr]outer\.put" "$route_file" 2>/dev/null | sed -n "s/.*\.put('\([^']*\)'.*/\1/p"
+    grep -hE "[a-zA-Z]*[Rr]outer\.patch" "$route_file" 2>/dev/null | sed -n "s/.*\.patch('\([^']*\)'.*/\1/p"
+    grep -hE "[a-zA-Z]*[Rr]outer\.delete" "$route_file" 2>/dev/null | sed -n "s/.*\.delete('\([^']*\)'.*/\1/p"
   } | sed 's/^\///' | while read -r route; do
     if [ -z "$route" ]; then
       # Base route '/' becomes just the mount prefix (without trailing slash)

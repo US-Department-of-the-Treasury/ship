@@ -29,6 +29,9 @@ export interface Project {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  // Completeness flags
+  is_complete: boolean | null;
+  missing_fields: string[];
   // Offline sync
   _pending?: boolean;
   _pendingId?: string;
@@ -152,6 +155,8 @@ export function useCreateProject() {
         archived_at: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        is_complete: null,
+        missing_fields: [],
         _pending: true,
         _pendingId: pendingId,
       };
@@ -310,6 +315,8 @@ export function useProjects() {
         archived_at: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        is_complete: null,
+        missing_fields: [],
         _pending: true,
       };
 

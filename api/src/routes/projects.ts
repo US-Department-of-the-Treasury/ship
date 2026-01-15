@@ -41,6 +41,9 @@ function extractProjectFromRow(row: any) {
     // Counts
     sprint_count: parseInt(row.sprint_count) || 0,
     issue_count: parseInt(row.issue_count) || 0,
+    // Completeness flags
+    is_complete: props.is_complete ?? null,
+    missing_fields: props.missing_fields ?? [],
   };
 }
 
