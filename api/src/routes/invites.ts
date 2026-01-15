@@ -275,6 +275,18 @@ router.post('/:token/accept', async (req: Request, res: Response): Promise<void>
       [invite.id]
     );
 
+    // Defensive cleanup: Archive any other orphaned pending person docs for this email
+    // This handles edge cases where previous invites were cancelled but cleanup failed
+    await pool.query(
+      `UPDATE documents SET archived_at = NOW()
+       WHERE workspace_id = $1
+         AND document_type = 'person'
+         AND properties->>'pending' = 'true'
+         AND archived_at IS NULL
+         AND LOWER(properties->>'email') = LOWER($2)`,
+      [invite.workspace_id, invite.email]
+    );
+
     // Create session
     const sessionId = uuidv4();
     const expiresAt = new Date(Date.now() + SESSION_TIMEOUT_MS);
