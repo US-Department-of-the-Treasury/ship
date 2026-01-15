@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ProgramCombobox, Program } from '@/components/ProgramCombobox';
+import { ProjectCombobox, Project } from '@/components/ProjectCombobox';
 import { cn } from '@/lib/cn';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -38,11 +38,12 @@ interface Sprint {
 }
 
 interface Assignment {
-  programId: string;
-  programName: string;
+  projectId: string | null;
+  projectName: string | null;
+  programId: string | null;
+  programName: string | null;
   emoji?: string | null;
-  color: string;
-  sprintDocId: string;
+  color: string | null;
 }
 
 interface TeamGridData {
@@ -54,6 +55,15 @@ interface TeamGridData {
 const SPRINTS_PER_LOAD = 5;
 const SCROLL_THRESHOLD = 200;
 
+// Program group info for grouping users
+interface ProgramGroup {
+  programId: string | null;
+  programName: string;
+  emoji: string | null;
+  color: string | null;
+  users: User[];
+}
+
 export function TeamModePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -61,15 +71,75 @@ export function TeamModePage() {
     (searchParams.get('tab') as TeamTab) || 'assignments'
   );
   const [data, setData] = useState<TeamGridData | null>(null);
-  const [programs, setPrograms] = useState<Program[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [assignments, setAssignments] = useState<Record<string, Record<number, Assignment>>>({});
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState<'left' | 'right' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [sprintRange, setSprintRange] = useState<{ min: number; max: number } | null>(null);
+  const [collapsedPrograms, setCollapsedPrograms] = useState<Set<string>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
+
+  // Find the current sprint number
+  const currentSprintNumber = data?.currentSprintNumber ?? null;
+
+  // Group users by their current sprint assignment's program
+  const programGroups = useMemo((): ProgramGroup[] => {
+    if (!data) return [];
+
+    const groups: Map<string, ProgramGroup> = new Map();
+    const UNASSIGNED_KEY = '__unassigned__';
+
+    for (const user of data.users) {
+      const currentAssignment = currentSprintNumber
+        ? assignments[user.personId]?.[currentSprintNumber]
+        : null;
+
+      const groupKey = currentAssignment?.programId || UNASSIGNED_KEY;
+
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          programId: currentAssignment?.programId || null,
+          programName: currentAssignment?.programName || 'Unassigned',
+          emoji: currentAssignment?.emoji || null,
+          color: currentAssignment?.color || null,
+          users: [],
+        });
+      }
+
+      groups.get(groupKey)!.users.push(user);
+    }
+
+    // Sort groups: alphabetically by name, with Unassigned last
+    const sortedGroups = Array.from(groups.values()).sort((a, b) => {
+      if (a.programId === null) return 1;
+      if (b.programId === null) return -1;
+      return a.programName.localeCompare(b.programName);
+    });
+
+    // Sort users within each group alphabetically
+    for (const group of sortedGroups) {
+      group.users.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    return sortedGroups;
+  }, [data, assignments, currentSprintNumber]);
+
+  // Toggle program group collapse
+  const toggleProgramCollapse = useCallback((programId: string | null) => {
+    const key = programId || '__unassigned__';
+    setCollapsedPrograms(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
 
   const handleTabChange = (tab: TeamTab) => {
     setActiveTab(tab);
@@ -83,9 +153,9 @@ export function TeamModePage() {
     userName: string;
     sprintNumber: number;
     sprintName: string;
-    currentProgram: Assignment | null;
-    newProgramId: string | null;
-    newProgram: Program | null;
+    currentAssignment: Assignment | null;
+    newProjectId: string | null;
+    newProject: Project | null;
   } | null>(null);
   const [lastPersonDialog, setLastPersonDialog] = useState<{
     open: boolean;
@@ -100,7 +170,7 @@ export function TeamModePage() {
   useEffect(() => {
     Promise.all([
       fetchTeamGrid(undefined, undefined, showArchived),
-      fetchPrograms(),
+      fetchProjects(),
       fetchAssignments(),
     ]).finally(() => setLoading(false));
   }, []);
@@ -154,15 +224,15 @@ export function TeamModePage() {
     }
   }
 
-  async function fetchPrograms() {
+  async function fetchProjects() {
     try {
-      const res = await fetch(`${API_URL}/api/team/programs`, { credentials: 'include' });
+      const res = await fetch(`${API_URL}/api/team/projects`, { credentials: 'include' });
       if (res.ok) {
         const json = await res.json();
-        setPrograms(json);
+        setProjects(json);
       }
     } catch (err) {
-      console.error('Failed to fetch programs:', err);
+      console.error('Failed to fetch projects:', err);
     }
   }
 
@@ -178,9 +248,9 @@ export function TeamModePage() {
     }
   }
 
-  const handleAssign = async (personId: string, programId: string, sprintNumber: number) => {
-    const program = programs.find(p => p.id === programId);
-    if (!program) return;
+  const handleAssign = async (personId: string, projectId: string, sprintNumber: number) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
 
     // Optimistic update - update UI immediately
     const previousAssignment = assignments[personId]?.[sprintNumber];
@@ -189,11 +259,12 @@ export function TeamModePage() {
       [personId]: {
         ...prev[personId],
         [sprintNumber]: {
-          programId,
-          programName: program.name,
-          emoji: program.emoji,
-          color: program.color,
-          sprintDocId: '', // Will be populated from response
+          projectId,
+          projectName: project.title,
+          programId: project.programId,
+          programName: project.programName,
+          emoji: project.programEmoji ?? null,
+          color: project.programColor ?? null,
         },
       },
     }));
@@ -204,7 +275,7 @@ export function TeamModePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
         credentials: 'include',
-        body: JSON.stringify({ personId, programId, sprintNumber }),
+        body: JSON.stringify({ personId, projectId, sprintNumber }),
       });
 
       const json = await res.json();
@@ -221,7 +292,7 @@ export function TeamModePage() {
           }
           return newAssignments;
         });
-        setError(`User already assigned to ${json.existingProgramName} for this sprint`);
+        setError(`User already assigned to ${json.existingProjectName || json.existingProgramName} for this sprint`);
         return;
       }
 
@@ -240,18 +311,6 @@ export function TeamModePage() {
         setError(json.error || 'Failed to assign');
         return;
       }
-
-      // Update with actual sprintDocId from server
-      setAssignments(prev => ({
-        ...prev,
-        [personId]: {
-          ...prev[personId],
-          [sprintNumber]: {
-            ...prev[personId]?.[sprintNumber],
-            sprintDocId: json.sprintId,
-          },
-        },
-      }));
     } catch (err) {
       // Rollback optimistic update
       setAssignments(prev => {
@@ -331,54 +390,54 @@ export function TeamModePage() {
     userName: string,
     sprintNumber: number,
     sprintName: string,
-    newProgramId: string | null,
+    newProjectId: string | null,
     currentAssignment: Assignment | null
   ) => {
-    // Same program - no change
-    if (newProgramId === currentAssignment?.programId) {
+    // Same project - no change
+    if (newProjectId === currentAssignment?.projectId) {
       return;
     }
 
     // Clear assignment
-    if (newProgramId === null && currentAssignment) {
+    if (newProjectId === null && currentAssignment) {
       handleUnassign(personId, sprintNumber);
       return;
     }
 
     // New assignment (no existing)
-    if (newProgramId && !currentAssignment) {
-      handleAssign(personId, newProgramId, sprintNumber);
+    if (newProjectId && !currentAssignment) {
+      handleAssign(personId, newProjectId, sprintNumber);
       return;
     }
 
     // Reassignment - show confirmation dialog
-    if (newProgramId && currentAssignment) {
-      const newProgram = programs.find(p => p.id === newProgramId) || null;
+    if (newProjectId && currentAssignment) {
+      const newProject = projects.find(p => p.id === newProjectId) || null;
       setConfirmDialog({
         open: true,
         personId,
         userName,
         sprintNumber,
         sprintName,
-        currentProgram: currentAssignment,
-        newProgramId,
-        newProgram,
+        currentAssignment,
+        newProjectId,
+        newProject,
       });
     }
-  }, [programs]);
+  }, [projects]);
 
   const handleConfirmReassign = async () => {
     if (!confirmDialog) return;
 
-    const { personId, sprintNumber, newProgramId } = confirmDialog;
+    const { personId, sprintNumber, newProjectId } = confirmDialog;
     setConfirmDialog(null);
 
-    if (!newProgramId) return;
+    if (!newProjectId) return;
 
-    // First unassign from current program
+    // First unassign from current project
     await handleUnassign(personId, sprintNumber, true);
-    // Then assign to new program
-    await handleAssign(personId, newProgramId, sprintNumber);
+    // Then assign to new project
+    await handleAssign(personId, newProjectId, sprintNumber);
   };
 
   // Fetch more sprints
@@ -537,7 +596,7 @@ export function TeamModePage() {
             <span className="text-xs text-muted">Show archived</span>
           </label>
           <span className="text-xs text-muted">
-            {data.users.length} team members &middot; {programs.length} programs
+            {data.users.length} team members &middot; {projects.length} projects
           </span>
         </div>
       </header>
@@ -548,106 +607,164 @@ export function TeamModePage() {
       ) : (
         /* Assignments Grid container */
         <div className="flex flex-1 overflow-hidden">
-          {/* Fixed user column */}
-          <div className="flex flex-col border-r border-border bg-background">
-          <div className="flex h-[41.5px] w-[180px] items-center justify-center border-b border-border px-3">
-            <span className="text-xs font-medium text-muted">Team Member</span>
-          </div>
-          {data.users.map((user, idx) => (
-            <div
-              key={user.id ?? `pending-${idx}`}
-              className={cn(
-                "flex h-12 w-[180px] items-center border-b border-border px-3",
-                user.isArchived && "opacity-50",
-                user.isPending && "opacity-70"
-              )}
-            >
-              <div className="flex items-center gap-2 overflow-hidden">
-                <div className={cn(
-                  "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white",
-                  user.isArchived ? "bg-gray-400" : user.isPending ? "bg-gray-400" : "bg-accent/80"
-                )}>
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
-                <span className={cn(
-                  "truncate text-sm",
-                  user.isArchived ? "text-muted" : user.isPending ? "text-muted italic" : "text-foreground"
-                )}>
-                  {user.name}
-                  {user.isArchived && <span className="ml-1 text-xs">(archived)</span>}
-                  {user.isPending && <span className="ml-1 text-xs font-normal not-italic">(pending)</span>}
-                </span>
-              </div>
+          {/* Fixed user column with program groups */}
+          <div className="flex flex-col border-r border-border bg-background overflow-y-auto">
+            <div className="flex h-[41.5px] w-[180px] items-center justify-center border-b border-border px-3 sticky top-0 bg-background z-10">
+              <span className="text-xs font-medium text-muted">Team Member</span>
             </div>
-          ))}
-        </div>
+            {programGroups.map((group) => {
+              const groupKey = group.programId || '__unassigned__';
+              const isCollapsed = collapsedPrograms.has(groupKey);
 
-        {/* Scrollable sprint columns */}
-        <div
-          ref={scrollContainerRef}
-          className="flex-1 overflow-x-auto overflow-y-hidden"
-        >
-          <div className="inline-flex items-start">
-            {loadingMore === 'left' && (
-              <div className="flex h-full w-[60px] flex-col items-center justify-center">
-                <div className="h-10 flex items-center justify-center border-b border-border">
-                  <span className="text-xs text-muted animate-pulse">...</span>
-                </div>
-              </div>
-            )}
-
-            {data.sprints.map((sprint) => (
-              <div key={sprint.number} className="flex flex-col">
-                {/* Sprint header */}
-                <div
-                  className={cn(
-                    'flex h-10 w-[140px] flex-col items-center justify-center border-b border-r border-border px-2',
-                    sprint.isCurrent && 'bg-accent/10'
-                  )}
-                >
-                  <span className={cn(
-                    'text-xs font-medium',
-                    sprint.isCurrent ? 'text-accent' : 'text-foreground'
-                  )}>
-                    {sprint.name}
-                  </span>
-                  <span className="text-[10px] text-muted">
-                    {formatDateRange(sprint.startDate, sprint.endDate)}
-                  </span>
-                </div>
-
-                {/* Sprint cells for each user */}
-                {data.users.map((user) => {
-                  // isPending is only for visual styling (shows dashed border)
-                  const isPending = user.isPending || !user.id;
-                  // Use personId for assignments - works for both pending and active users
-                  const assignment = assignments[user.personId]?.[sprint.number];
-                  const cellKey = `${user.personId}-${sprint.number}`;
-                  const isLoading = operationLoading === cellKey;
-
-                  return (
-                    <SprintCell
-                      key={cellKey}
-                      assignment={assignment}
-                      programs={programs}
-                      isCurrent={sprint.isCurrent}
-                      loading={isLoading}
-                      isPending={isPending}
-                      onChange={(programId) => {
-                        // Both pending and active users can be assigned using personId
-                        handleCellChange(
-                          user.personId,
-                          user.name,
-                          sprint.number,
-                          sprint.name,
-                          programId,
-                          assignment || null
-                        );
-                      }}
-                      onNavigate={(programId) => navigate(`/programs/${programId}`)}
+              return (
+                <div key={groupKey}>
+                  {/* Program group header */}
+                  <button
+                    onClick={() => toggleProgramCollapse(group.programId)}
+                    className="flex h-8 w-[180px] items-center gap-2 border-b border-border bg-border/30 px-3 hover:bg-border/50 transition-colors sticky top-[41.5px] z-10 cursor-pointer"
+                  >
+                    <ChevronIcon
+                      className={cn(
+                        "h-3 w-3 text-muted transition-transform",
+                        isCollapsed && "-rotate-90"
+                      )}
                     />
-                  );
-                })}
+                    {group.programId ? (
+                      <span
+                        className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-white"
+                        style={{ backgroundColor: group.color || '#6b7280' }}
+                      >
+                        {group.emoji || group.programName[0]}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-white bg-gray-500">
+                        ?
+                      </span>
+                    )}
+                    <span className="truncate text-xs font-medium text-foreground">
+                      {isCollapsed ? `${group.programName} (${group.users.length})` : group.programName}
+                    </span>
+                    {!isCollapsed && (
+                      <span className="ml-auto text-[10px] text-muted">
+                        {group.users.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Users in this group */}
+                  {!isCollapsed && group.users.map((user, idx) => (
+                    <div
+                      key={user.id ?? `pending-${idx}`}
+                      className={cn(
+                        "flex h-12 w-[180px] items-center border-b border-border px-3",
+                        user.isArchived && "opacity-50",
+                        user.isPending && "opacity-70"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <div className={cn(
+                          "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white",
+                          user.isArchived ? "bg-gray-400" : user.isPending ? "bg-gray-400" : "bg-accent/80"
+                        )}>
+                          {user.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className={cn(
+                          "truncate text-sm",
+                          user.isArchived ? "text-muted" : user.isPending ? "text-muted italic" : "text-foreground"
+                        )}>
+                          {user.name}
+                          {user.isArchived && <span className="ml-1 text-xs">(archived)</span>}
+                          {user.isPending && <span className="ml-1 text-xs font-normal not-italic">(pending)</span>}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Scrollable sprint columns with program groups */}
+          <div
+            ref={scrollContainerRef}
+            className="flex-1 overflow-auto"
+          >
+            <div className="inline-flex items-start">
+              {loadingMore === 'left' && (
+                <div className="flex h-full w-[60px] flex-col items-center justify-center">
+                  <div className="h-10 flex items-center justify-center border-b border-border">
+                    <span className="text-xs text-muted animate-pulse">...</span>
+                  </div>
+                </div>
+              )}
+
+              {data.sprints.map((sprint) => (
+                <div key={sprint.number} className="flex flex-col">
+                  {/* Sprint header */}
+                  <div
+                    className={cn(
+                      'flex h-10 w-[140px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 bg-background z-10',
+                      sprint.isCurrent && 'bg-accent/10'
+                    )}
+                  >
+                    <span className={cn(
+                      'text-xs font-medium',
+                      sprint.isCurrent ? 'text-accent' : 'text-foreground'
+                    )}>
+                      {sprint.name}
+                    </span>
+                    <span className="text-[10px] text-muted">
+                      {formatDateRange(sprint.startDate, sprint.endDate)}
+                    </span>
+                  </div>
+
+                  {/* Sprint cells grouped by program */}
+                  {programGroups.map((group) => {
+                    const groupKey = group.programId || '__unassigned__';
+                    const isCollapsed = collapsedPrograms.has(groupKey);
+
+                    return (
+                      <div key={groupKey}>
+                        {/* Program header spacer row for this sprint column */}
+                        <div
+                          className={cn(
+                            "h-8 w-[140px] border-b border-r border-border bg-border/30",
+                            sprint.isCurrent && "bg-accent/5"
+                          )}
+                        />
+
+                        {/* Cells for users in this group */}
+                        {!isCollapsed && group.users.map((user) => {
+                          const isPending = user.isPending || !user.id;
+                          const assignment = assignments[user.personId]?.[sprint.number];
+                          const cellKey = `${user.personId}-${sprint.number}`;
+                          const isLoading = operationLoading === cellKey;
+
+                          return (
+                            <SprintCell
+                              key={cellKey}
+                              assignment={assignment}
+                              projects={projects}
+                              isCurrent={sprint.isCurrent}
+                              loading={isLoading}
+                              isPending={isPending}
+                              onChange={(projectId) => {
+                                handleCellChange(
+                                  user.personId,
+                                  user.name,
+                                  sprint.number,
+                                  sprint.name,
+                                  projectId,
+                                  assignment || null
+                                );
+                              }}
+                              onNavigate={(projectId) => navigate(`/projects/${projectId}`)}
+                            />
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
               </div>
             ))}
 
@@ -673,7 +790,7 @@ export function TeamModePage() {
             </Dialog.Title>
             <Dialog.Description className="mt-2 text-sm text-muted">
               {confirmDialog?.userName} is currently assigned to{' '}
-              <span className="font-medium text-foreground">{confirmDialog?.currentProgram?.programName}</span>
+              <span className="font-medium text-foreground">{confirmDialog?.currentAssignment?.projectName}</span>
               {' '}for {confirmDialog?.sprintName}.
             </Dialog.Description>
 
@@ -681,11 +798,11 @@ export function TeamModePage() {
               <span className="text-sm text-muted">Change to:</span>
               <span
                 className="rounded px-1.5 py-0.5 text-xs font-bold text-white whitespace-nowrap"
-                style={{ backgroundColor: confirmDialog?.newProgram?.color || '#666' }}
+                style={{ backgroundColor: confirmDialog?.newProject?.programColor || '#666' }}
               >
-                {confirmDialog?.newProgram?.emoji || confirmDialog?.newProgram?.name?.[0]}
+                {confirmDialog?.newProject?.programEmoji || confirmDialog?.newProject?.title?.[0]}
               </span>
-              <span className="text-sm text-foreground">{confirmDialog?.newProgram?.name}</span>
+              <span className="text-sm text-foreground">{confirmDialog?.newProject?.title}</span>
             </div>
 
             <div className="mt-6 flex justify-end gap-3">
@@ -757,7 +874,7 @@ export function TeamModePage() {
 
 function SprintCell({
   assignment,
-  programs,
+  projects,
   isCurrent,
   loading,
   isPending,
@@ -765,12 +882,12 @@ function SprintCell({
   onNavigate,
 }: {
   assignment?: Assignment;
-  programs: Program[];
+  projects: Project[];
   isCurrent: boolean;
   loading: boolean;
   isPending?: boolean;
-  onChange: (programId: string | null) => void;
-  onNavigate: (programId: string) => void;
+  onChange: (projectId: string | null) => void;
+  onNavigate: (projectId: string) => void;
 }) {
   // isPending is only used for visual styling (dashed border), not for blocking assignment
   return (
@@ -782,9 +899,9 @@ function SprintCell({
         isPending && 'border-dashed'
       )}
     >
-      <ProgramCombobox
-        programs={programs}
-        value={assignment?.programId || null}
+      <ProjectCombobox
+        projects={projects}
+        value={assignment?.projectId || null}
         onChange={onChange}
         onNavigate={onNavigate}
         disabled={loading}
@@ -812,6 +929,14 @@ function formatDateRange(startDate: string, endDate: string): string {
     return `${startMonth} ${startDay}-${endDay}`;
   }
   return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
+}
+
+function ChevronIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  );
 }
 
 // Accountability Table Component - shows sprint completion metrics per person

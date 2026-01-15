@@ -241,7 +241,7 @@ test.describe('Existing User Invite Flow', () => {
       await emptyCellButton.click()
 
       // Wait for the popover to open (cmdk command menu)
-      await expect(page.getByPlaceholder('Search programs...')).toBeVisible({ timeout: 10000 })
+      await expect(page.getByPlaceholder('Search projects...')).toBeVisible({ timeout: 10000 })
 
       // Verify the command menu is shown
       const commandMenu = page.locator('[cmdk-root]')

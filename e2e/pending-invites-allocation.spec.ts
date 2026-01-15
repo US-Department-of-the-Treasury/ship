@@ -146,7 +146,7 @@ test.describe('Pending Invites in Allocation Grid', () => {
     await plusButton.click()
 
     // The program selector popover SHOULD now open for pending users
-    const searchInput = page.getByPlaceholder('Search programs...')
+    const searchInput = page.getByPlaceholder('Search projects...')
     await expect(searchInput).toBeVisible({ timeout: 5000 })
 
     // Close it
@@ -180,7 +180,7 @@ test.describe('Pending Invites in Allocation Grid', () => {
       await emptyCellButton.click()
 
       // Wait for the popover to open (cmdk command menu)
-      await expect(page.getByPlaceholder('Search programs...')).toBeVisible({ timeout: 10000 })
+      await expect(page.getByPlaceholder('Search projects...')).toBeVisible({ timeout: 10000 })
 
       // Verify the command menu is shown
       const commandMenu = page.locator('[cmdk-root]')
@@ -519,7 +519,7 @@ test.describe('Full Pending User Allocation Flow (Story 7)', () => {
     await plusButton.click()
 
     // Wait for program selector and pick first program
-    await expect(page.getByPlaceholder('Search programs...')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByPlaceholder('Search projects...')).toBeVisible({ timeout: 5000 })
     const firstProgram = page.locator('[cmdk-item]').first()
     await expect(firstProgram).toBeVisible()
     await firstProgram.click()

@@ -189,6 +189,43 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/team/projects - Get all projects with their parent program info
+// Returns projects that can be assigned to team members in the assignments grid
+router.get('/projects', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Get all projects with their parent program info
+    // Projects without a program will have null programId
+    const result = await pool.query(
+      `SELECT
+         proj.id,
+         proj.title,
+         proj.program_id as "programId",
+         prog.title as "programName",
+         prog.properties->>'emoji' as "programEmoji",
+         prog.properties->>'color' as "programColor"
+       FROM documents proj
+       LEFT JOIN documents prog ON proj.program_id = prog.id AND prog.document_type = 'program'
+       WHERE proj.workspace_id = $1
+         AND proj.document_type = 'project'
+         AND proj.archived_at IS NULL
+         AND ${VISIBILITY_FILTER_SQL('proj', '$2', '$3')}
+       ORDER BY prog.title NULLS LAST, proj.title`,
+      [workspaceId, userId, isAdmin]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get projects error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/team/programs - Get all programs
 router.get('/programs', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -214,57 +251,182 @@ router.get('/programs', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/team/assignments - Get user->sprint->program assignments based on sprint owner_id
+// GET /api/team/assignments - Get user->sprint->project assignments
+// Combines: 1) Explicit sprint document assignments (properties.project_id)
+//           2) Inferred assignments from issue assignees (fallback)
 router.get('/assignments', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
-// Get visibility context for filtering
+    // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
-    // Get all sprints with their owners (only visible sprints)
-    // Sprint assignment is based on owner_id (explicit assignment), not issue assignees
-    const sprintsResult = await pool.query(
-      `SELECT s.id as sprint_id, s.properties->>'sprint_number' as sprint_number,
-              s.properties->>'owner_id' as owner_id,
-              p.id as program_id, p.title as program_name,
-              p.properties->>'emoji' as emoji, p.properties->>'color' as color
+    // First, get explicit sprint document assignments (owner_id + project_id in properties)
+    const explicitResult = await pool.query(
+      `SELECT
+         s.properties->>'owner_id' as person_id,
+         (s.properties->>'sprint_number')::int as sprint_number,
+         s.properties->>'project_id' as project_id,
+         proj.title as project_name,
+         proj.program_id,
+         prog.title as program_name,
+         prog.properties->>'emoji' as program_emoji,
+         prog.properties->>'color' as program_color
        FROM documents s
-       JOIN documents p ON s.program_id = p.id
-       WHERE s.workspace_id = $1 AND s.document_type = 'sprint'
+       LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
+       LEFT JOIN documents prog ON proj.program_id = prog.id
+       WHERE s.workspace_id = $1
+         AND s.document_type = 'sprint'
          AND s.properties->>'owner_id' IS NOT NULL
          AND ${VISIBILITY_FILTER_SQL('s', '$2', '$3')}`,
       [workspaceId, userId, isAdmin]
     );
 
-    // Build assignments map: userId -> sprintNumber -> assignment
+    // Build assignments map starting with explicit assignments
     const assignments: Record<string, Record<number, {
-      programId: string;
-      programName: string;
-      emoji?: string | null;
-      color: string;
-      sprintDocId: string;
+      projectId: string | null;
+      projectName: string | null;
+      programId: string | null;
+      programName: string | null;
+      emoji: string | null;
+      color: string | null;
     }>> = {};
 
-    for (const sprint of sprintsResult.rows) {
-      const userId = sprint.owner_id;
-      const sprintNumber = parseInt(sprint.sprint_number, 10);
+    for (const row of explicitResult.rows) {
+      const personId = row.person_id;
+      const sprintNumber = row.sprint_number;
+      if (!personId || !sprintNumber) continue;
 
-      if (!userId || isNaN(sprintNumber)) continue;
-
-      if (!assignments[userId]) {
-        assignments[userId] = {};
+      if (!assignments[personId]) {
+        assignments[personId] = {};
       }
-
-      // One owner per sprint window - this should be enforced at write time
-      assignments[userId][sprintNumber] = {
-        programId: sprint.program_id,
-        programName: sprint.program_name,
-        emoji: sprint.emoji,
-        color: sprint.color,
-        sprintDocId: sprint.sprint_id,
+      assignments[personId][sprintNumber] = {
+        projectId: row.project_id,
+        projectName: row.project_name,
+        programId: row.program_id,
+        programName: row.program_name,
+        emoji: row.program_emoji,
+        color: row.program_color,
       };
+    }
+
+    // Get workspace sprint configuration for issue-based inference
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
+    const sprintDurationDays = 7;
+    const today = new Date();
+
+    let startDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      startDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      startDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      startDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
+
+    // Get all issues with assignees, projects, and sprint info for inferred assignments
+    const issuesResult = await pool.query(
+      `SELECT
+         i.properties->>'assignee_id' as assignee_id,
+         i.project_id,
+         proj.title as project_name,
+         proj.program_id,
+         prog.title as program_name,
+         prog.properties->>'emoji' as program_emoji,
+         prog.properties->>'color' as program_color,
+         s.properties->>'start_date' as sprint_start
+       FROM documents i
+       JOIN documents s ON i.sprint_id = s.id
+       JOIN documents proj ON i.project_id = proj.id
+       LEFT JOIN documents prog ON proj.program_id = prog.id
+       WHERE i.workspace_id = $1
+         AND i.document_type = 'issue'
+         AND i.sprint_id IS NOT NULL
+         AND i.project_id IS NOT NULL
+         AND i.properties->>'assignee_id' IS NOT NULL
+         AND ${VISIBILITY_FILTER_SQL('i', '$2', '$3')}`,
+      [workspaceId, userId, isAdmin]
+    );
+
+    // Build inferred assignments: pick project with most issues per person+sprint
+    const projectCounts: Record<string, Record<number, Record<string, {
+      count: number;
+      projectId: string;
+      projectName: string;
+      programId: string | null;
+      programName: string | null;
+      programEmoji: string | null;
+      programColor: string | null;
+    }>>> = {};
+
+    for (const issue of issuesResult.rows) {
+      const personId = issue.assignee_id;
+      const sprintStart = new Date(issue.sprint_start + 'T00:00:00Z');
+      const daysSinceStart = Math.floor((sprintStart.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const sprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
+      const projectId = issue.project_id;
+
+      if (!personId || !projectId) continue;
+
+      // Skip if we already have an explicit assignment for this person+sprint
+      if (assignments[personId]?.[sprintNumber]) continue;
+
+      if (!projectCounts[personId]) {
+        projectCounts[personId] = {};
+      }
+      if (!projectCounts[personId][sprintNumber]) {
+        projectCounts[personId][sprintNumber] = {};
+      }
+      if (!projectCounts[personId][sprintNumber][projectId]) {
+        projectCounts[personId][sprintNumber][projectId] = {
+          count: 0,
+          projectId,
+          projectName: issue.project_name,
+          programId: issue.program_id,
+          programName: issue.program_name,
+          programEmoji: issue.program_emoji,
+          programColor: issue.program_color,
+        };
+      }
+      projectCounts[personId][sprintNumber][projectId].count++;
+    }
+
+    // Add inferred assignments (only for person+sprint combos without explicit assignments)
+    for (const [personId, sprints] of Object.entries(projectCounts)) {
+      if (!assignments[personId]) {
+        assignments[personId] = {};
+      }
+      for (const [sprintNumStr, projects] of Object.entries(sprints)) {
+        const sprintNum = parseInt(sprintNumStr, 10);
+        // Skip if explicit assignment exists
+        if (assignments[personId][sprintNum]) continue;
+
+        // Find project with most issues
+        let maxCount = 0;
+        let primaryProject: typeof projects[string] | null = null;
+        for (const proj of Object.values(projects)) {
+          if (proj.count > maxCount) {
+            maxCount = proj.count;
+            primaryProject = proj;
+          }
+        }
+        if (primaryProject) {
+          assignments[personId][sprintNum] = {
+            projectId: primaryProject.projectId,
+            projectName: primaryProject.projectName,
+            programId: primaryProject.programId,
+            programName: primaryProject.programName,
+            emoji: primaryProject.programEmoji,
+            color: primaryProject.programColor,
+          };
+        }
+      }
     }
 
     res.json(assignments);
@@ -280,13 +442,17 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
 router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
   try {
     const workspaceId = req.workspaceId!;
-    const { personId, userId, programId, sprintNumber } = req.body;
+    // Support both projectId (new) and programId (legacy)
+    const { personId, userId, projectId, programId, sprintNumber } = req.body;
 
     // personId is preferred (works for both pending and active users)
     // userId is for backward compatibility
     const ownerId = personId || userId;
+    // Support projectId (new) or programId (legacy)
+    const assignmentId = projectId || programId;
+    const isProjectAssignment = !!projectId;
 
-    if (!ownerId || !programId || !sprintNumber) {
+    if (!ownerId || !assignmentId || !sprintNumber) {
       res.status(400).json({ error: 'Missing required fields' });
       return;
     }
@@ -319,35 +485,64 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
-    // Validate programId belongs to current workspace (SECURITY: prevent cross-workspace injection)
-    const programCheck = await pool.query(
-      `SELECT id FROM documents
-       WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
-      [programId, workspaceId]
-    );
-    if (!programCheck.rows[0]) {
-      res.status(400).json({ error: 'Invalid programId for this workspace' });
-      return;
+    let resolvedProgramId: string;
+    let resolvedProjectId: string | null = null;
+
+    if (isProjectAssignment) {
+      // Validate projectId and get its parent program
+      const projectCheck = await pool.query(
+        `SELECT id, program_id FROM documents
+         WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+        [projectId, workspaceId]
+      );
+      if (!projectCheck.rows[0]) {
+        res.status(400).json({ error: 'Invalid projectId for this workspace' });
+        return;
+      }
+      resolvedProjectId = projectId;
+      resolvedProgramId = projectCheck.rows[0].program_id;
+
+      // If project has no program, create a dummy program reference or handle gracefully
+      if (!resolvedProgramId) {
+        res.status(400).json({ error: 'Project must belong to a program' });
+        return;
+      }
+    } else {
+      // Legacy: Validate programId belongs to current workspace
+      const programCheck = await pool.query(
+        `SELECT id FROM documents
+         WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'`,
+        [programId, workspaceId]
+      );
+      if (!programCheck.rows[0]) {
+        res.status(400).json({ error: 'Invalid programId for this workspace' });
+        return;
+      }
+      resolvedProgramId = programId;
     }
 
-    // Check if person is already assigned to another program for this sprint window
-    // owner_id now stores person document ID (works for both pending and active users)
+    // Check if person is already assigned to another project/program for this sprint window
     const existingAssignment = await pool.query(
-      `SELECT s.id, p.id as program_id, p.title as program_name
+      `SELECT s.id, s.properties->>'project_id' as project_id, p.id as program_id, p.title as program_name,
+              proj.title as project_name
        FROM documents s
        JOIN documents p ON s.program_id = p.id
+       LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
        WHERE s.workspace_id = $1 AND s.document_type = 'sprint'
          AND s.properties->>'owner_id' = $2
          AND (s.properties->>'sprint_number')::int = $3
-         AND p.id != $4`,
-      [workspaceId, personDocId, sprintNumber, programId]
+         AND (s.properties->>'project_id' IS DISTINCT FROM $4 OR p.id != $5)`,
+      [workspaceId, personDocId, sprintNumber, resolvedProjectId, resolvedProgramId]
     );
 
     if (existingAssignment.rows[0]) {
+      const existing = existingAssignment.rows[0];
       res.status(409).json({
-        error: 'User already assigned to another program',
-        existingProgramId: existingAssignment.rows[0].program_id,
-        existingProgramName: existingAssignment.rows[0].program_name,
+        error: 'User already assigned to another project',
+        existingProjectId: existing.project_id,
+        existingProjectName: existing.project_name,
+        existingProgramId: existing.program_id,
+        existingProgramName: existing.program_name,
       });
       return;
     }
@@ -357,27 +552,39 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
       `SELECT id, properties FROM documents
        WHERE workspace_id = $1 AND document_type = 'sprint'
          AND program_id = $2 AND (properties->>'sprint_number')::int = $3`,
-      [workspaceId, programId, sprintNumber]
+      [workspaceId, resolvedProgramId, sprintNumber]
     );
 
     let sprintId: string;
     if (sprintResult.rows[0]) {
-      // Update existing sprint's owner_id (now stores person doc ID)
+      // Update existing sprint's owner_id and project_id
       sprintId = sprintResult.rows[0].id;
       const currentProps = sprintResult.rows[0].properties || {};
-      const updatedProps = { ...currentProps, owner_id: personDocId };
+      const updatedProps = {
+        ...currentProps,
+        owner_id: personDocId,
+        ...(resolvedProjectId && { project_id: resolvedProjectId }),
+      };
 
       await pool.query(
         `UPDATE documents SET properties = $1, updated_at = now() WHERE id = $2`,
         [JSON.stringify(updatedProps), sprintId]
       );
     } else {
-      // Create new sprint with owner_id (person doc ID)
+      // Create new sprint with owner_id and project_id
+      const props: Record<string, unknown> = {
+        sprint_number: sprintNumber,
+        owner_id: personDocId,
+      };
+      if (resolvedProjectId) {
+        props.project_id = resolvedProjectId;
+      }
+
       const newSprintResult = await pool.query(
         `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
          VALUES ($1, 'sprint', $2, $3, $4)
          RETURNING id`,
-        [workspaceId, `Sprint ${sprintNumber}`, programId, JSON.stringify({ sprint_number: sprintNumber, owner_id: personDocId })]
+        [workspaceId, `Sprint ${sprintNumber}`, resolvedProgramId, JSON.stringify(props)]
       );
       sprintId = newSprintResult.rows[0].id;
     }
