@@ -170,7 +170,10 @@ resource "aws_iam_role_policy" "eb_secrets_manager_access" {
           "secretsmanager:UpdateSecret",
           "secretsmanager:TagResource"
         ]
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/*"
+        Resource = [
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/*",
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:/${var.project_name}/*"
+        ]
       },
       {
         Effect = "Allow"
