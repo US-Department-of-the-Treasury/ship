@@ -399,7 +399,7 @@ function StandupCard({
           </div>
         </div>
       ) : (
-        <div className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none">
+        <div className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror_h1]:text-lg [&_.ProseMirror_h1]:font-semibold [&_.ProseMirror_h2]:text-base [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h3]:text-sm [&_.ProseMirror_h3]:font-medium [&_.ProseMirror_h4]:text-sm [&_.ProseMirror_h4]:font-medium [&_.ProseMirror_h1]:mt-3 [&_.ProseMirror_h1]:mb-1 [&_.ProseMirror_h2]:mt-2 [&_.ProseMirror_h2]:mb-1 [&_.ProseMirror_h3]:mt-2 [&_.ProseMirror_h3]:mb-1">
           <EditorContent editor={displayEditor} />
         </div>
       )}
