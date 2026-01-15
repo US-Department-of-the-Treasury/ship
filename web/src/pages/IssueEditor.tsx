@@ -436,15 +436,17 @@ export function IssueEditorPage() {
       } else {
         const error = await res.json();
         console.error('Failed to convert issue:', error);
+        showToast(error.error || 'Failed to convert issue to project', 'error');
         setIsConverting(false);
         setShowConvertDialog(false);
       }
     } catch (err) {
       console.error('Failed to convert issue:', err);
+      showToast('Failed to convert issue to project', 'error');
       setIsConverting(false);
       setShowConvertDialog(false);
     }
-  }, [id, navigate]);
+  }, [id, navigate, showToast]);
 
   // Undo conversion (restore original document)
   const handleUndoConversion = useCallback(async () => {
