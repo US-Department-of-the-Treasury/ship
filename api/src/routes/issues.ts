@@ -229,6 +229,88 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// Get issue by ticket number
+router.get('/by-ticket/:number', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const numberParam = req.params.number;
+    if (!numberParam || typeof numberParam !== 'string') {
+      res.status(400).json({ error: 'Ticket number required' });
+      return;
+    }
+    const ticketNumber = parseInt(numberParam, 10);
+    if (isNaN(ticketNumber)) {
+      res.status(400).json({ error: 'Invalid ticket number' });
+      return;
+    }
+
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.ticket_number,
+              d.program_id, d.sprint_id, d.content,
+              d.created_at, d.updated_at, d.created_by,
+              d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
+              d.converted_to_id, d.converted_from_id,
+              u.name as assignee_name,
+              CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
+              p.title as program_name,
+              p.properties->>'prefix' as program_prefix,
+              p.properties->>'color' as program_color,
+              s.title as sprint_name,
+              creator.name as created_by_name
+       FROM documents d
+       LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+       LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
+         AND person_doc.document_type = 'person'
+         AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
+       LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
+       LEFT JOIN documents s ON d.sprint_id = s.id AND s.document_type = 'sprint'
+       LEFT JOIN users creator ON d.created_by = creator.id
+       WHERE d.ticket_number = $1 AND d.workspace_id = $2 AND d.document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [ticketNumber, workspaceId, userId, isAdmin]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    const row = result.rows[0];
+
+    // Check if issue was converted - redirect to new document
+    if (row.converted_to_id) {
+      // Fetch the new document to determine its type for proper routing
+      const newDocResult = await pool.query(
+        'SELECT id, document_type FROM documents WHERE id = $1 AND workspace_id = $2',
+        [row.converted_to_id, workspaceId]
+      );
+
+      if (newDocResult.rows.length > 0) {
+        const newDoc = newDocResult.rows[0];
+        // Return 301 with Location header to the new document's API endpoint
+        res.set('X-Converted-Type', newDoc.document_type);
+        res.set('X-Converted-To', newDoc.id);
+        res.redirect(301, `/api/${newDoc.document_type}s/${newDoc.id}`);
+        return;
+      }
+    }
+
+    const issue = extractIssueFromRow(row);
+    res.json({
+      ...issue,
+      display_id: `#${issue.ticket_number}`
+    });
+  } catch (err) {
+    console.error('Get issue by ticket error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get single issue
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
