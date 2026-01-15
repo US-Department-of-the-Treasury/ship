@@ -179,8 +179,24 @@ export function TeamModePage() {
   }
 
   const handleAssign = async (personId: string, programId: string, sprintNumber: number) => {
-    const cellKey = `${personId}-${sprintNumber}`;
-    setOperationLoading(cellKey);
+    const program = programs.find(p => p.id === programId);
+    if (!program) return;
+
+    // Optimistic update - update UI immediately
+    const previousAssignment = assignments[personId]?.[sprintNumber];
+    setAssignments(prev => ({
+      ...prev,
+      [personId]: {
+        ...prev[personId],
+        [sprintNumber]: {
+          programId,
+          programName: program.name,
+          emoji: program.emoji,
+          color: program.color,
+          sprintDocId: '', // Will be populated from response
+        },
+      },
+    }));
 
     try {
       const token = await getCsrfToken();
@@ -194,43 +210,75 @@ export function TeamModePage() {
       const json = await res.json();
 
       if (res.status === 409) {
-        // User already assigned to another program - show confirmation
+        // Rollback optimistic update
+        setAssignments(prev => {
+          const newAssignments = { ...prev };
+          if (previousAssignment) {
+            newAssignments[personId] = { ...newAssignments[personId], [sprintNumber]: previousAssignment };
+          } else {
+            const { [sprintNumber]: _, ...rest } = newAssignments[personId] || {};
+            newAssignments[personId] = rest;
+          }
+          return newAssignments;
+        });
         setError(`User already assigned to ${json.existingProgramName} for this sprint`);
         return;
       }
 
       if (!res.ok) {
+        // Rollback optimistic update
+        setAssignments(prev => {
+          const newAssignments = { ...prev };
+          if (previousAssignment) {
+            newAssignments[personId] = { ...newAssignments[personId], [sprintNumber]: previousAssignment };
+          } else {
+            const { [sprintNumber]: _, ...rest } = newAssignments[personId] || {};
+            newAssignments[personId] = rest;
+          }
+          return newAssignments;
+        });
         setError(json.error || 'Failed to assign');
         return;
       }
 
-      // Update local state optimistically
-      const program = programs.find(p => p.id === programId);
-      if (program) {
-        setAssignments(prev => ({
-          ...prev,
-          [personId]: {
-            ...prev[personId],
-            [sprintNumber]: {
-              programId,
-              programName: program.name,
-              emoji: program.emoji,
-              color: program.color,
-              sprintDocId: json.sprintId,
-            },
+      // Update with actual sprintDocId from server
+      setAssignments(prev => ({
+        ...prev,
+        [personId]: {
+          ...prev[personId],
+          [sprintNumber]: {
+            ...prev[personId]?.[sprintNumber],
+            sprintDocId: json.sprintId,
           },
-        }));
-      }
+        },
+      }));
     } catch (err) {
+      // Rollback optimistic update
+      setAssignments(prev => {
+        const newAssignments = { ...prev };
+        if (previousAssignment) {
+          newAssignments[personId] = { ...newAssignments[personId], [sprintNumber]: previousAssignment };
+        } else {
+          const { [sprintNumber]: _, ...rest } = newAssignments[personId] || {};
+          newAssignments[personId] = rest;
+        }
+        return newAssignments;
+      });
       setError('Failed to assign user');
-    } finally {
-      setOperationLoading(null);
     }
   };
 
   const handleUnassign = async (personId: string, sprintNumber: number, skipConfirmation = false) => {
-    const cellKey = `${personId}-${sprintNumber}`;
-    setOperationLoading(cellKey);
+    // Optimistic update - remove from UI immediately
+    const previousAssignment = assignments[personId]?.[sprintNumber];
+    setAssignments(prev => {
+      const newAssignments = { ...prev };
+      if (newAssignments[personId]) {
+        const { [sprintNumber]: _, ...rest } = newAssignments[personId];
+        newAssignments[personId] = rest;
+      }
+      return newAssignments;
+    });
 
     try {
       const token = await getCsrfToken();
@@ -244,6 +292,16 @@ export function TeamModePage() {
       const json = await res.json();
 
       if (!res.ok) {
+        // Rollback optimistic update
+        if (previousAssignment) {
+          setAssignments(prev => ({
+            ...prev,
+            [personId]: {
+              ...prev[personId],
+              [sprintNumber]: previousAssignment,
+            },
+          }));
+        }
         setError(json.error || 'Failed to unassign');
         return;
       }
@@ -253,20 +311,18 @@ export function TeamModePage() {
         // Issues were already moved to backlog, just inform the user
         console.log(`${json.issuesOrphaned.length} issues moved to backlog`);
       }
-
-      // Update local state
-      setAssignments(prev => {
-        const newAssignments = { ...prev };
-        if (newAssignments[personId]) {
-          const { [sprintNumber]: _, ...rest } = newAssignments[personId];
-          newAssignments[personId] = rest;
-        }
-        return newAssignments;
-      });
     } catch (err) {
+      // Rollback optimistic update
+      if (previousAssignment) {
+        setAssignments(prev => ({
+          ...prev,
+          [personId]: {
+            ...prev[personId],
+            [sprintNumber]: previousAssignment,
+          },
+        }));
+      }
       setError('Failed to unassign user');
-    } finally {
-      setOperationLoading(null);
     }
   };
 
