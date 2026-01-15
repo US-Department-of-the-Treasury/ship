@@ -141,6 +141,25 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
+    // Check if document was converted - redirect to new document
+    if (doc.converted_to_id) {
+      // Fetch the new document to determine its type for proper routing
+      const newDocResult = await pool.query(
+        'SELECT id, document_type FROM documents WHERE id = $1 AND workspace_id = $2',
+        [doc.converted_to_id, workspaceId]
+      );
+
+      if (newDocResult.rows.length > 0) {
+        const newDoc = newDocResult.rows[0];
+        // Return 301 with Location header to the new document's API endpoint
+        // Include X-Converted-Type header so frontend knows the target type for routing
+        res.set('X-Converted-Type', newDoc.document_type);
+        res.set('X-Converted-To', newDoc.id);
+        res.redirect(301, `/api/documents/${newDoc.id}`);
+        return;
+      }
+    }
+
     const props = doc.properties || {};
 
     // Return with flattened properties for backwards compatibility

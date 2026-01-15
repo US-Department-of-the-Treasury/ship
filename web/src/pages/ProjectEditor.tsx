@@ -46,8 +46,14 @@ export function ProjectEditorPage() {
   const [ownerError, setOwnerError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'retro'>('details');
 
-  // Get the current project from context
-  const project = projects.find(p => p.id === id) || null;
+  // Direct-fetched project (when not found in context cache)
+  const [directFetchedProject, setDirectFetchedProject] = useState<Project | null>(null);
+  const [directFetchLoading, setDirectFetchLoading] = useState(false);
+  const [directFetchFailed, setDirectFetchFailed] = useState(false);
+
+  // Get the current project from context, or use direct-fetched project
+  const contextProject = projects.find(p => p.id === id) || null;
+  const project = contextProject || directFetchedProject;
 
   // Fetch team members for owner selection (filter out pending users)
   useEffect(() => {
@@ -57,13 +63,66 @@ export function ProjectEditorPage() {
       .catch(console.error);
   }, []);
 
-  // Redirect if project not found after loading
+  // Fetch project directly by ID if not in context (handles converted documents)
+  useEffect(() => {
+    // Skip if we already have the project from context
+    if (contextProject) {
+      setDirectFetchedProject(null);
+      setDirectFetchFailed(false);
+      return;
+    }
+
+    // Skip if no ID or temp ID (offline creation)
+    if (!id || id.startsWith('temp-')) return;
+
+    // Skip if still loading from context
+    if (loading) return;
+
+    // Skip if already fetching or already failed
+    if (directFetchLoading || directFetchFailed) return;
+
+    setDirectFetchLoading(true);
+
+    fetch(`${API_URL}/api/projects/${id}`, { credentials: 'include' })
+      .then(res => {
+        // Check if redirected (document was converted)
+        // res.url contains the final URL after any redirects
+        const requestedUrl = `${API_URL}/api/projects/${id}`;
+        if (res.url && res.url !== requestedUrl) {
+          // Parse the final URL to extract doc type and ID
+          const match = res.url.match(/\/api\/(projects|issues|documents)\/([a-f0-9-]+)/);
+          if (match) {
+            const [, docType, newId] = match;
+            if (docType === 'issues') {
+              // Project was converted to issue - redirect to issue editor
+              navigate(`/issues/${newId}`, { replace: true });
+              return null;
+            }
+          }
+        }
+        if (!res.ok) {
+          throw new Error('Project not found');
+        }
+        return res.json();
+      })
+      .then(data => {
+        if (data === null) return; // Handled by redirect
+        setDirectFetchedProject(data);
+        setDirectFetchLoading(false);
+      })
+      .catch(() => {
+        setDirectFetchFailed(true);
+        setDirectFetchLoading(false);
+      });
+  }, [id, contextProject, loading, directFetchLoading, directFetchFailed, navigate]);
+
+  // Redirect only if direct fetch failed (project truly doesn't exist)
   // Skip redirect for temp IDs (pending offline creation)
   useEffect(() => {
-    if (!loading && id && !project && !id.startsWith('temp-')) {
+    if (directFetchFailed && !id?.startsWith('temp-')) {
       navigate('/projects');
     }
-  }, [loading, id, project, navigate]);
+  }, [directFetchFailed, id, navigate]);
 
   // Update handler using shared context
   const handleUpdateProject = useCallback(async (updates: Partial<Project>) => {
@@ -93,7 +152,11 @@ export function ProjectEditorPage() {
     },
   });
 
-  if (loading) {
+  // Loading if: context loading, OR direct fetch loading, OR (not in context AND not fetched AND not failed)
+  const needsDirectFetch = !contextProject && !directFetchedProject && !directFetchFailed && !id?.startsWith('temp-');
+  const isLoading = loading || directFetchLoading || (!loading && needsDirectFetch);
+
+  if (isLoading) {
     return <EditorSkeleton />;
   }
 

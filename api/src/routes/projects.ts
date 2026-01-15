@@ -420,6 +420,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+              d.converted_to_id,
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
@@ -437,7 +438,28 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    res.json(extractProjectFromRow(result.rows[0]));
+    const row = result.rows[0];
+
+    // Check if project was converted - redirect to new document
+    if (row.converted_to_id) {
+      // Fetch the new document to determine its type for proper routing
+      const newDocResult = await pool.query(
+        'SELECT id, document_type FROM documents WHERE id = $1 AND workspace_id = $2',
+        [row.converted_to_id, workspaceId]
+      );
+
+      if (newDocResult.rows.length > 0) {
+        const newDoc = newDocResult.rows[0];
+        // Return 301 with Location header to the new document's API endpoint
+        // Include X-Converted-Type header so frontend knows the target type for routing
+        res.set('X-Converted-Type', newDoc.document_type);
+        res.set('X-Converted-To', newDoc.id);
+        res.redirect(301, `/api/${newDoc.document_type}s/${newDoc.id}`);
+        return;
+      }
+    }
+
+    res.json(extractProjectFromRow(row));
   } catch (err) {
     console.error('Get project error:', err);
     res.status(500).json({ error: 'Internal server error' });

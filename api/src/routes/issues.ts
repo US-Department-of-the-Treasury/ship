@@ -243,6 +243,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               d.program_id, d.sprint_id, d.content,
               d.created_at, d.updated_at, d.created_by,
               d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
+              d.converted_to_id,
               u.name as assignee_name,
               CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
               p.title as program_name,
@@ -268,7 +269,28 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const issue = extractIssueFromRow(result.rows[0]);
+    const row = result.rows[0];
+
+    // Check if issue was converted - redirect to new document
+    if (row.converted_to_id) {
+      // Fetch the new document to determine its type for proper routing
+      const newDocResult = await pool.query(
+        'SELECT id, document_type FROM documents WHERE id = $1 AND workspace_id = $2',
+        [row.converted_to_id, workspaceId]
+      );
+
+      if (newDocResult.rows.length > 0) {
+        const newDoc = newDocResult.rows[0];
+        // Return 301 with Location header to the new document's API endpoint
+        // Include X-Converted-Type header so frontend knows the target type for routing
+        res.set('X-Converted-Type', newDoc.document_type);
+        res.set('X-Converted-To', newDoc.id);
+        res.redirect(301, `/api/${newDoc.document_type}s/${newDoc.id}`);
+        return;
+      }
+    }
+
+    const issue = extractIssueFromRow(row);
     res.json({
       ...issue,
       display_id: `#${issue.ticket_number}`

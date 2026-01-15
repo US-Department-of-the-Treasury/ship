@@ -216,12 +216,28 @@ export function IssueEditorPage() {
 
     fetch(`${API_URL}/api/issues/${id}`, { credentials: 'include' })
       .then(res => {
+        // Check if redirected (document was converted)
+        // res.url contains the final URL after any redirects
+        const requestedUrl = `${API_URL}/api/issues/${id}`;
+        if (res.url && res.url !== requestedUrl) {
+          // Parse the final URL to extract doc type and ID
+          const match = res.url.match(/\/api\/(projects|issues|documents)\/([a-f0-9-]+)/);
+          if (match) {
+            const [, docType, newId] = match;
+            if (docType === 'projects') {
+              // Issue was converted to project - redirect to project editor
+              navigate(`/projects/${newId}`, { replace: true });
+              return null;
+            }
+          }
+        }
         if (!res.ok) {
           throw new Error('Issue not found');
         }
         return res.json();
       })
       .then(data => {
+        if (data === null) return; // Handled by redirect
         setDirectFetchedIssue(data);
         setDirectFetchLoading(false);
       })
