@@ -19,6 +19,7 @@ import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { issueStatusColors, priorityColors } from '@/lib/statusColors';
 import { FilterTabs, FilterTab } from '@/components/FilterTabs';
+import { apiPost } from '@/lib/api';
 
 // All available columns with metadata
 const ALL_COLUMNS: ColumnDefinition[] = [
@@ -89,6 +90,10 @@ export function IssuesPage() {
 
   const [programFilter, setProgramFilter] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
+
+  // Conversion state
+  const [convertingIssue, setConvertingIssue] = useState<Issue | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
 
   // Track selection state for BulkActionBar and global keyboard navigation
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -275,6 +280,36 @@ export function IssuesPage() {
     });
     clearSelection();
   }, [selectedIds, teamMembers, bulkUpdate, showToast, clearSelection]);
+
+  // Handle promote to project - opens confirmation dialog
+  const handlePromoteToProject = useCallback((issue: Issue) => {
+    setConvertingIssue(issue);
+    setContextMenu(null);
+  }, []);
+
+  // Execute the conversion to project
+  const executeConversion = useCallback(async () => {
+    if (!convertingIssue) return;
+    setIsConverting(true);
+    try {
+      const res = await apiPost(`/api/documents/${convertingIssue.id}/convert`, { target_type: 'project' });
+      if (res.ok) {
+        const data = await res.json();
+        showToast(`Issue promoted to project: ${convertingIssue.title}`, 'success');
+        navigate(`/projects/${data.new_document.id}`, { replace: true });
+      } else {
+        const error = await res.json();
+        showToast(error.error || 'Failed to convert issue to project', 'error');
+        setIsConverting(false);
+        setConvertingIssue(null);
+      }
+    } catch (err) {
+      console.error('Failed to convert issue:', err);
+      showToast('Failed to convert issue to project', 'error');
+      setIsConverting(false);
+      setConvertingIssue(null);
+    }
+  }, [convertingIssue, navigate, showToast]);
 
   // Selection change handler - keeps parent state in sync with SelectableList
   const handleSelectionChange = useCallback((newSelectedIds: Set<string>, newSelection: UseSelectionReturn) => {
@@ -515,6 +550,19 @@ export function IssuesPage() {
           <ContextMenuSubmenu label="Move to Sprint">
             <ContextMenuItem onClick={() => handleBulkMoveToSprint(null)}>No Sprint</ContextMenuItem>
           </ContextMenuSubmenu>
+          {contextMenu.selection.selectedCount === 1 && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => {
+                const selectedId = Array.from(contextMenu.selection.selectedIds)[0];
+                const issue = issues.find(i => i.id === selectedId);
+                if (issue) handlePromoteToProject(issue);
+              }}>
+                <ArrowUpRightIcon className="h-4 w-4" />
+                Promote to Project
+              </ContextMenuItem>
+            </>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={handleBulkDelete} destructive>
             <TrashIcon className="h-4 w-4" />
@@ -522,6 +570,108 @@ export function IssuesPage() {
           </ContextMenuItem>
         </ContextMenu>
       )}
+
+      {/* Conversion confirmation dialog */}
+      {convertingIssue && (
+        <ConversionDialog
+          isOpen={!!convertingIssue}
+          onClose={() => setConvertingIssue(null)}
+          onConvert={executeConversion}
+          sourceType="issue"
+          title={convertingIssue.title}
+          isConverting={isConverting}
+        />
+      )}
+    </div>
+  );
+}
+
+// Conversion dialog for promoting issues to projects
+interface ConversionDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConvert: () => void;
+  sourceType: 'issue' | 'project';
+  title: string;
+  isConverting?: boolean;
+}
+
+function ConversionDialog({ isOpen, onClose, onConvert, sourceType, title, isConverting }: ConversionDialogProps) {
+  // Handle Escape key
+  useEffect(() => {
+    if (!isOpen || isConverting) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isConverting, onClose]);
+
+  if (!isOpen) return null;
+
+  const targetType = sourceType === 'issue' ? 'project' : 'issue';
+  const actionLabel = sourceType === 'issue' ? 'Promote to Project' : 'Convert to Issue';
+
+  // Handle click outside dialog
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && !isConverting) {
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" onClick={handleBackdropClick}>
+      <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-lg">
+        <h2 className="mb-4 text-lg font-semibold text-foreground">{actionLabel}</h2>
+        <p className="mb-4 text-sm text-foreground">
+          Convert <strong>"{title}"</strong> from {sourceType} to {targetType}?
+        </p>
+        <div className="mb-4 rounded bg-amber-500/10 border border-amber-500/30 p-3">
+          <p className="text-sm text-amber-300 font-medium mb-2">What will happen:</p>
+          <ul className="text-xs text-muted space-y-1">
+            <li>• A new {targetType} will be created with the same title and content</li>
+            <li>• The original {sourceType} will be archived</li>
+            <li>• Links to the old {sourceType} will redirect to the new {targetType}</li>
+            {sourceType === 'issue' && (
+              <li>• Issue properties (state, priority, assignee) will be reset</li>
+            )}
+            {sourceType === 'project' && (
+              <>
+                <li>• Project properties (ICE scores, owner) will be reset</li>
+                <li>• Child issues will be orphaned (unlinked from project)</li>
+              </>
+            )}
+          </ul>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={isConverting}
+            className="rounded px-3 py-1.5 text-sm text-muted hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConvert}
+            disabled={isConverting}
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50 transition-colors flex items-center gap-2"
+          >
+            {isConverting ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Converting...
+              </>
+            ) : (
+              actionLabel
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -722,6 +872,14 @@ function TrashIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+    </svg>
+  );
+}
+
+function ArrowUpRightIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 17L17 7M17 7H7M17 7V17" />
     </svg>
   );
 }
