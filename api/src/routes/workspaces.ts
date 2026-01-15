@@ -797,7 +797,9 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
          WHERE workspace_id = $1
            AND document_type = 'person'
            AND properties->>'pending' = 'true'
-           AND LOWER(properties->>'email') = LOWER($2)`,
+           AND archived_at IS NULL
+           AND LOWER(properties->>'email') = LOWER($2)
+         LIMIT 1`,
         [workspaceId, existingUser.email]
       );
 
@@ -810,6 +812,18 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
            WHERE id = $4`,
           [existingUser.name, existingUser.id, existingUser.email, existingPendingPerson.rows[0].id]
         );
+
+        // Archive any OTHER pending person docs for same email (defensive cleanup)
+        await pool.query(
+          `UPDATE documents SET archived_at = NOW()
+           WHERE workspace_id = $1
+             AND document_type = 'person'
+             AND properties->>'pending' = 'true'
+             AND archived_at IS NULL
+             AND LOWER(properties->>'email') = LOWER($2)
+             AND id != $3`,
+          [workspaceId, existingUser.email, existingPendingPerson.rows[0].id]
+        );
       } else {
         // Create person document with user_id (not pending)
         await pool.query(
@@ -820,7 +834,27 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
             email: existingUser.email
           })]
         );
+
+        // Archive any orphaned pending person docs for this email (defensive cleanup)
+        await pool.query(
+          `UPDATE documents SET archived_at = NOW()
+           WHERE workspace_id = $1
+             AND document_type = 'person'
+             AND properties->>'pending' = 'true'
+             AND archived_at IS NULL
+             AND LOWER(properties->>'email') = LOWER($2)`,
+          [workspaceId, existingUser.email]
+        );
       }
+
+      // Cancel any active invites for this email since user is being added directly
+      await pool.query(
+        `UPDATE workspace_invites SET used_at = NOW()
+         WHERE workspace_id = $1
+           AND LOWER(email) = LOWER($2)
+           AND used_at IS NULL`,
+        [workspaceId, existingUser.email]
+      );
 
       await logAuditEvent({
         workspaceId,
