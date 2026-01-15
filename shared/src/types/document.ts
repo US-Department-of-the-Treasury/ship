@@ -155,6 +155,11 @@ export interface Document {
   completed_at?: Date | null;
   cancelled_at?: Date | null;
   reopened_at?: Date | null;
+  // Document conversion tracking (issue <-> project)
+  converted_to_id?: string | null;    // Points to new doc (set on archived original)
+  converted_from_id?: string | null;  // Points to original (set on new doc)
+  converted_at?: Date | null;         // When conversion occurred
+  converted_by?: string | null;       // User who performed conversion
 }
 
 // Typed document variants for type safety in application code

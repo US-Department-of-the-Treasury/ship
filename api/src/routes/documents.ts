@@ -419,6 +419,185 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// Convert document type (issue <-> project)
+// Uses create-and-reference pattern: creates new doc, archives original with pointer
+const convertDocumentSchema = z.object({
+  target_type: z.enum(['issue', 'project']),
+});
+
+router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    const id = String(req.params.id);
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+
+    const parsed = convertDocumentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    const { target_type } = parsed.data;
+
+    // Check if user can access the document
+    const { canAccess, doc } = await canAccessDocument(id, userId, workspaceId);
+
+    if (!doc) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    if (!canAccess) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    // Validate conversion is between issue and project only
+    if (doc.document_type !== 'issue' && doc.document_type !== 'project') {
+      res.status(400).json({ error: 'Only issues and projects can be converted' });
+      return;
+    }
+
+    // Validate not converting to same type
+    if (doc.document_type === target_type) {
+      res.status(400).json({ error: `Document is already a ${target_type}` });
+      return;
+    }
+
+    // Check if document is already archived/converted
+    if (doc.archived_at || doc.converted_to_id) {
+      res.status(400).json({ error: 'Document has already been archived or converted' });
+      return;
+    }
+
+    await client.query('BEGIN');
+
+    let newDocId: string;
+    let newDoc: any;
+
+    if (target_type === 'project') {
+      // Issue -> Project conversion
+      // Preserve title and content, set default project properties
+      const projectProperties = {
+        impact: 3,
+        confidence: 3,
+        ease: 3,
+        color: '#6366f1',
+        owner_id: userId,
+        // Track original ticket number for reference
+        promoted_from_ticket: doc.ticket_number,
+      };
+
+      const result = await client.query(
+        `INSERT INTO documents (
+          workspace_id, document_type, title, content, properties,
+          created_by, visibility, converted_from_id
+        )
+        VALUES ($1, 'project', $2, $3, $4, $5, $6, $7)
+        RETURNING *`,
+        [
+          workspaceId,
+          doc.title,
+          JSON.stringify(doc.content || {}),
+          JSON.stringify(projectProperties),
+          userId,
+          doc.visibility,
+          id, // converted_from_id points to original
+        ]
+      );
+      newDoc = result.rows[0];
+      newDocId = newDoc.id;
+
+    } else {
+      // Project -> Issue conversion
+      // Needs fresh ticket number with advisory lock
+
+      // Use advisory lock to serialize ticket number generation per workspace
+      const workspaceIdHex = workspaceId.replace(/-/g, '').substring(0, 15);
+      const lockKey = parseInt(workspaceIdHex, 16);
+      await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
+
+      // Get next ticket number
+      const ticketResult = await client.query(
+        `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
+         FROM documents
+         WHERE workspace_id = $1 AND document_type = 'issue'`,
+        [workspaceId]
+      );
+      const ticketNumber = ticketResult.rows[0].next_number;
+
+      const issueProperties = {
+        state: 'backlog',
+        priority: 'medium',
+        source: 'internal',
+        assignee_id: null,
+        rejection_reason: null,
+      };
+
+      const result = await client.query(
+        `INSERT INTO documents (
+          workspace_id, document_type, title, content, properties,
+          ticket_number, created_by, visibility, converted_from_id
+        )
+        VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *`,
+        [
+          workspaceId,
+          doc.title,
+          JSON.stringify(doc.content || {}),
+          JSON.stringify(issueProperties),
+          ticketNumber,
+          userId,
+          doc.visibility,
+          id, // converted_from_id points to original
+        ]
+      );
+      newDoc = result.rows[0];
+      newDocId = newDoc.id;
+
+      // Orphan any child issues that were linked to this project
+      await client.query(
+        `UPDATE documents
+         SET project_id = NULL, updated_at = NOW()
+         WHERE project_id = $1 AND workspace_id = $2`,
+        [id, workspaceId]
+      );
+    }
+
+    // Archive original document with converted_to_id pointer
+    await client.query(
+      `UPDATE documents
+       SET archived_at = NOW(),
+           converted_to_id = $1,
+           converted_at = NOW(),
+           converted_by = $2,
+           updated_at = NOW()
+       WHERE id = $3 AND workspace_id = $4`,
+      [newDocId, userId, id, workspaceId]
+    );
+
+    await client.query('COMMIT');
+
+    // Return the new document with conversion metadata
+    res.status(201).json({
+      ...newDoc,
+      converted_from: {
+        id: id,
+        document_type: doc.document_type,
+        ticket_number: doc.ticket_number,
+      },
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Convert document error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;
 
 // Type augmentation for Express Request
