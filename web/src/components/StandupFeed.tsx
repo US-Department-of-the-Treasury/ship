@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useEditor, EditorContent, JSONContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import Link from '@tiptap/extension-link';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -71,6 +72,12 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
       Placeholder.configure({
         placeholder: 'What did you work on? Any blockers? What\'s next?',
       }),
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'text-accent hover:underline cursor-pointer',
+        },
+      }),
     ],
     content: '',
   });
@@ -81,6 +88,12 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
       StarterKit,
       Placeholder.configure({
         placeholder: 'Edit your standup update...',
+      }),
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'text-accent hover:underline cursor-pointer',
+        },
       }),
     ],
     content: '',
@@ -307,7 +320,15 @@ function StandupCard({
 }: StandupCardProps) {
   // Create a read-only editor for displaying content
   const displayEditor = useEditor({
-    extensions: [StarterKit],
+    extensions: [
+      StarterKit,
+      Link.configure({
+        openOnClick: true,
+        HTMLAttributes: {
+          class: 'text-accent hover:underline cursor-pointer',
+        },
+      }),
+    ],
     content: standup.content,
     editable: false,
   }, [standup.content]);

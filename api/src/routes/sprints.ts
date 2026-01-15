@@ -3,6 +3,7 @@ import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { transformIssueLinks } from '../utils/transformIssueLinks.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -935,7 +936,16 @@ router.get('/:id/standups', authMiddleware, async (req: Request, res: Response) 
       [id, userId, isAdmin]
     );
 
-    res.json(result.rows.map(formatStandupResponse));
+    // Transform issue links in standup content (e.g., #123 -> clickable links)
+    const standups = await Promise.all(
+      result.rows.map(async (row) => {
+        const formatted = formatStandupResponse(row);
+        formatted.content = await transformIssueLinks(formatted.content, workspaceId);
+        return formatted;
+      })
+    );
+
+    res.json(standups);
   } catch (err) {
     console.error('Get sprint standups error:', err);
     res.status(500).json({ error: 'Internal server error' });
