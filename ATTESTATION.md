@@ -12,7 +12,7 @@ scan_result: PASS
 
 ## Summary
 
-I, **Kneuman0**, as **Security Reviewer**, have conducted a security review of this code and confirm that:
+I, **Sam Corcos**, as **Security Reviewer**, have conducted a security review of this code and confirm that:
 
 - It contains no sensitive information
 - It contains no embedded credentials or secrets
@@ -48,9 +48,8 @@ This attestation satisfies the security review requirements for open-source rele
 
 I attest that the above statements are accurate as of the date of this review.
 
-**Reviewer:** Kneuman0
+**Reviewer:** Sam Corcos
 **Title:** Security Reviewer
-**Email:** kylepneuman@gmail.com
 **Date:** 2026-01-15
 
 ---
