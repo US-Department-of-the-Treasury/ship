@@ -202,6 +202,9 @@ function AppRoutes() {
         <Route path="sprints" element={<SprintsPage />} />
         <Route path="sprints/:id" element={<SprintEditorPage />} />
         <Route path="sprints/:id/view" element={<SprintViewPage />} />
+        <Route path="sprints/:id/planning" element={<SprintViewPage />} />
+        <Route path="sprints/:id/standups" element={<SprintViewPage />} />
+        <Route path="sprints/:id/review" element={<SprintViewPage />} />
         <Route path="team" element={<Navigate to="/team/allocation" replace />} />
         <Route path="team/allocation" element={<TeamModePage />} />
         <Route path="team/directory" element={<TeamDirectoryPage />} />

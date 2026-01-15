@@ -13,6 +13,12 @@ set -euo pipefail
 # Prerequisites:
 #   - AWS CLI configured with appropriate credentials
 #   - jq installed
+#
+# Secrets Manager path: /ship/{env}/caia-credentials
+#
+# This script is the ONLY way to set CAIA credentials outside the admin UI.
+# NEVER set these credentials directly via AWS CLI - use this script to ensure
+# proper JSON structure and audit trail (updated_by, updated_at fields).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -75,26 +81,41 @@ if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" &>/dev/null; th
   fi
 fi
 
-# Prompt for CAIA environment
-echo "Select CAIA environment:"
-echo "  1) Development (caia-dev.treasury.gov)"
-echo "  2) Acceptance  (caia-acc.treasury.gov)"
-echo "  3) Production  (caia.treasury.gov)"
-echo ""
-read -p "Enter choice [1-3]: " CAIA_ENV_CHOICE
-
-case "$CAIA_ENV_CHOICE" in
-  1) ISSUER_URL="https://caia-dev.treasury.gov" ;;
-  2) ISSUER_URL="https://caia-acc.treasury.gov" ;;
-  3) ISSUER_URL="https://caia.treasury.gov" ;;
-  *)
-    echo "ERROR: Invalid choice. Enter 1, 2, or 3."
-    exit 1
-    ;;
+# Map ship environment to CAIA environment
+# ship dev  → CAIA Development
+# ship prod → CAIA Acceptance (not CAIA Production - that's for actual gov production)
+case "$ENV" in
+  dev)  ISSUER_URL="https://caia-dev.treasury.gov" ;;
+  prod) ISSUER_URL="https://caia-acc.treasury.gov" ;;
 esac
 
+echo "CAIA environment: $ISSUER_URL"
 echo ""
-echo "Selected: $ISSUER_URL"
+echo "  (ship dev → CAIA Development)"
+echo "  (ship prod → CAIA Acceptance)"
+echo ""
+read -p "Use this CAIA environment? (Y/n): " CONFIRM_CAIA
+if [[ "$CONFIRM_CAIA" =~ ^[Nn]$ ]]; then
+  echo ""
+  echo "Select CAIA environment manually:"
+  echo "  1) Development (caia-dev.treasury.gov)"
+  echo "  2) Acceptance  (caia-acc.treasury.gov)"
+  echo "  3) Production  (caia.treasury.gov)"
+  echo ""
+  read -p "Enter choice [1-3]: " CAIA_ENV_CHOICE
+
+  case "$CAIA_ENV_CHOICE" in
+    1) ISSUER_URL="https://caia-dev.treasury.gov" ;;
+    2) ISSUER_URL="https://caia-acc.treasury.gov" ;;
+    3) ISSUER_URL="https://caia.treasury.gov" ;;
+    *)
+      echo "ERROR: Invalid choice. Enter 1, 2, or 3."
+      exit 1
+      ;;
+  esac
+  echo ""
+  echo "Selected: $ISSUER_URL"
+fi
 echo ""
 
 # Prompt for credentials

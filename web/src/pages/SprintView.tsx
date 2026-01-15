@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -153,16 +153,33 @@ async function postWithCsrf(url: string, body: object): Promise<Response> {
   return res;
 }
 
+type SprintTab = 'planning' | 'standups' | 'review';
+
 export function SprintViewPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [sprint, setSprint] = useState<Sprint | null>(null);
   const [sprintIssues, setSprintIssues] = useState<Issue[]>([]);
   const [backlogIssues, setBacklogIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalText, setGoalText] = useState('');
-  const [activeTab, setActiveTab] = useState<'planning' | 'standups' | 'review'>('planning');
+
+  // Derive active tab from URL pathname
+  const activeTab: SprintTab = useMemo(() => {
+    const path = location.pathname;
+    if (path.includes('/planning')) return 'planning';
+    if (path.includes('/standups')) return 'standups';
+    if (path.includes('/review')) return 'review';
+    // Default: /view or base path defaults to standups (per user decision)
+    return 'standups';
+  }, [location.pathname]);
+
+  // Tab change navigates to new URL (with replace to avoid history bloat)
+  const handleTabChange = useCallback((tabId: string) => {
+    navigate(`/sprints/${id}/${tabId}`, { replace: true });
+  }, [id, navigate]);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Estimate modal state
   const [pendingIssue, setPendingIssue] = useState<Issue | null>(null);
@@ -610,7 +627,7 @@ export function SprintViewPage() {
           { id: 'review', label: 'Review' },
         ]}
         activeTab={activeTab}
-        onTabChange={(tabId) => setActiveTab(tabId as 'planning' | 'standups' | 'review')}
+        onTabChange={handleTabChange}
       />
 
       {/* Tab content */}

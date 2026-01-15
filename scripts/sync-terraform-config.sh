@@ -9,6 +9,18 @@ set -euo pipefail
 # The values stored in SSM are the source of truth for Terraform configuration.
 # This prevents the "missing tfvars" problem where developers accidentally
 # apply Terraform with default values against the wrong environment.
+#
+# SSM Parameters (per environment):
+#   /ship/terraform-config/{env}/environment        - Required: "dev" or "prod"
+#   /ship/terraform-config/{env}/app_domain_name    - Optional: custom domain
+#   /ship/terraform-config/{env}/route53_zone_id    - Optional: for DNS records
+#   /ship/terraform-config/{env}/eb_environment_cname - Optional: EB CNAME
+#
+# To set up a new environment, create the SSM parameters first:
+#   aws ssm put-parameter --name /ship/terraform-config/dev/environment --value dev --type String
+#
+# IMPORTANT: Do not hardcode values in terraform.tfvars files. They are
+# auto-generated from SSM and will be overwritten on next sync.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"

@@ -104,7 +104,7 @@ Local dev uses `.env.local` for DB connection.
 
 ## Deployment
 
-**"Deploy" means deploy BOTH API and frontend.** Never deploy just one - they must stay in sync. See `/ship-deploy` skill for full sequence and monitoring steps.
+**"Deploy" means deploy BOTH API and frontend.** Never deploy just one - they must stay in sync. See `/workflows:deploy` for full sequence and monitoring steps.
 
 ## Philosophy Enforcement
 

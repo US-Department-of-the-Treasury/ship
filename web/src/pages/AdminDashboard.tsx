@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { api, Workspace, AuditLog, UserInfo } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
 type Tab = 'workspaces' | 'users' | 'audit';
+
+const VALID_TABS: Tab[] = ['workspaces', 'users', 'audit'];
 
 interface WorkspaceWithCount extends Workspace {
   memberCount: number;
@@ -17,7 +19,15 @@ interface UserWithWorkspaces extends UserInfo {
 export function AdminDashboardPage() {
   const navigate = useNavigate();
   const { user, isSuperAdmin, impersonating, endImpersonation } = useAuth();
-  const [activeTab, setActiveTab] = useState<Tab>('workspaces');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Derive active tab from URL query params
+  const tabParam = searchParams.get('tab') as Tab | null;
+  const activeTab: Tab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'workspaces';
+
+  const handleTabChange = useCallback((tab: Tab) => {
+    setSearchParams({ tab }, { replace: true });
+  }, [setSearchParams]);
   const [workspaces, setWorkspaces] = useState<WorkspaceWithCount[]>([]);
   const [users, setUsers] = useState<UserWithWorkspaces[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -124,13 +134,13 @@ export function AdminDashboardPage() {
       {/* Tabs */}
       <div className="border-b border-border">
         <nav className="flex px-6">
-          <TabButton active={activeTab === 'workspaces'} onClick={() => setActiveTab('workspaces')}>
+          <TabButton active={activeTab === 'workspaces'} onClick={() => handleTabChange('workspaces')}>
             Workspaces
           </TabButton>
-          <TabButton active={activeTab === 'users'} onClick={() => setActiveTab('users')}>
+          <TabButton active={activeTab === 'users'} onClick={() => handleTabChange('users')}>
             Users
           </TabButton>
-          <TabButton active={activeTab === 'audit'} onClick={() => setActiveTab('audit')}>
+          <TabButton active={activeTab === 'audit'} onClick={() => handleTabChange('audit')}>
             Audit Logs
           </TabButton>
         </nav>

@@ -9,6 +9,32 @@ set -euo pipefail
 # Prerequisites:
 #   - AWS CLI configured with appropriate credentials
 #   - Terraform infrastructure deployed for the target environment
+#
+# New Developer Setup:
+#   All configuration is stored in AWS SSM Parameter Store. After configuring
+#   AWS CLI credentials, this script pulls everything it needs from SSM:
+#
+#   Terraform Config (auto-pulled by sync-terraform-config.sh):
+#     /ship/terraform-config/{env}/environment
+#     /ship/terraform-config/{env}/app_domain_name
+#     /ship/terraform-config/{env}/route53_zone_id
+#     /ship/terraform-config/{env}/eb_environment_cname
+#
+#   App Runtime (loaded by api/src/config/ssm.ts in production):
+#     /ship/{env}/DATABASE_URL        - PostgreSQL connection string
+#     /ship/{env}/SESSION_SECRET      - Express session secret
+#     /ship/{env}/CORS_ORIGIN         - Allowed CORS origin
+#     /ship/{env}/CDN_DOMAIN          - CloudFront domain for assets
+#     /ship/{env}/APP_BASE_URL        - Frontend app URL
+#
+#   Secrets Manager (for OAuth - configured via configure-caia.sh):
+#     /ship/{env}/caia-credentials    - JSON with issuer_url, client_id, client_secret
+#
+#   To bootstrap a new environment, see terraform/README.md
+#
+# IMPORTANT: Do not make infrastructure changes directly with AWS CLI.
+# All changes must go through Terraform or this script to ensure they're
+# captured for the next developer. See /workflows:deploy for details.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
