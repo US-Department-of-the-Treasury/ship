@@ -501,6 +501,53 @@ async function canAccessDocumentForCollab(
  * @param newVisibility - The new visibility value ('private' or 'workspace')
  * @param creatorId - The user ID of the document creator
  */
+
+/**
+ * Handle document conversion.
+ * When a document is converted to a different type (issue→project or project→issue),
+ * notify all collaborators and redirect them to the new document.
+ *
+ * @param oldDocId - The original document ID that was converted
+ * @param newDocId - The new document ID
+ * @param oldDocType - The original document type ('issue' or 'project')
+ * @param newDocType - The new document type ('issue' or 'project')
+ */
+export function handleDocumentConversion(
+  oldDocId: string,
+  newDocId: string,
+  oldDocType: 'issue' | 'project',
+  newDocType: 'issue' | 'project'
+): void {
+  // Find all connections to this document (across all doc types)
+  const connectionsToNotify: Array<{ ws: WebSocket; conn: { docName: string; awarenessClientId: number; userId: string; workspaceId: string } }> = [];
+
+  conns.forEach((conn, ws) => {
+    const connDocId = parseDocId(conn.docName);
+    if (connDocId === oldDocId) {
+      connectionsToNotify.push({ ws, conn });
+    }
+  });
+
+  if (connectionsToNotify.length === 0) {
+    return; // No active connections to this document
+  }
+
+  console.log(`[Collaboration] Document ${oldDocId} converted to ${newDocType} (${newDocId}), notifying ${connectionsToNotify.length} collaborators`);
+
+  // Put conversion info in close reason (JSON fits within 123-byte limit)
+  const closeReason = JSON.stringify({
+    newDocId,
+    newDocType,
+  });
+
+  for (const { ws } of connectionsToNotify) {
+    if (ws.readyState === WebSocket.OPEN) {
+      // Close with custom code 4100 (document converted) and JSON reason
+      ws.close(4100, closeReason);
+    }
+  }
+}
+
 export async function handleVisibilityChange(
   docId: string,
   newVisibility: 'private' | 'workspace',

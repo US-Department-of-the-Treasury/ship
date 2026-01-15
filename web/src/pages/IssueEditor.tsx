@@ -10,6 +10,7 @@ import { useAutoSave } from '@/hooks/useAutoSave';
 import { useProgramsQuery } from '@/hooks/useProgramsQuery';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { apiPost } from '@/lib/api';
+import { useToast } from '@/components/ui/Toast';
 
 interface TeamMember {
   id: string;
@@ -232,6 +233,7 @@ export function IssueEditorPage() {
   const location = useLocation();
   const navContext = (location.state as NavigationContext) || {};
   const { user } = useAuth();
+  const { showToast } = useToast();
   const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
   const { createDocument } = useDocuments();
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -256,6 +258,15 @@ export function IssueEditorPage() {
   const handleNavigateToDocument = useCallback((docId: string) => {
     navigate(`/docs/${docId}`);
   }, [navigate]);
+
+  // Handle document conversion by another user (via WebSocket notification)
+  const handleDocumentConverted = useCallback((newDocId: string, newDocType: 'issue' | 'project') => {
+    const docTypeLabel = newDocType === 'project' ? 'project' : 'issue';
+    showToast(`This issue was converted to a ${docTypeLabel}. Redirecting...`, 'info');
+    // Navigate to the new document
+    const route = newDocType === 'project' ? `/projects/${newDocId}` : `/issues/${newDocId}`;
+    navigate(route, { replace: true });
+  }, [navigate, showToast]);
   const [sprintError, setSprintError] = useState<string | null>(null);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showConvertDialog, setShowConvertDialog] = useState(false);
@@ -526,6 +537,7 @@ export function IssueEditorPage() {
       placeholder="Add a description..."
       onCreateSubDocument={handleCreateSubDocument}
       onNavigateToDocument={handleNavigateToDocument}
+      onDocumentConverted={handleDocumentConverted}
       headerBadge={
         <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted whitespace-nowrap" data-testid="ticket-number">
           {displayIssue.display_id}

@@ -15,6 +15,7 @@ import { TabBar } from '@/components/ui/TabBar';
 import { ProjectRetro } from '@/components/ProjectRetro';
 import { IncompleteDocumentBanner } from '@/components/IncompleteDocumentBanner';
 import { computeICEScore } from '@ship/shared';
+import { useToast } from '@/components/ui/Toast';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -39,6 +40,7 @@ export function ProjectEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { showToast } = useToast();
   const { projects, loading, updateProject: contextUpdateProject } = useProjects();
   const { programs } = usePrograms();
   const { createDocument } = useDocuments();
@@ -146,6 +148,15 @@ export function ProjectEditorPage() {
   const handleNavigateToDocument = useCallback((docId: string) => {
     navigate(`/docs/${docId}`);
   }, [navigate]);
+
+  // Handle document conversion by another user (via WebSocket notification)
+  const handleDocumentConverted = useCallback((newDocId: string, newDocType: 'issue' | 'project') => {
+    const docTypeLabel = newDocType === 'project' ? 'project' : 'issue';
+    showToast(`This project was converted to a ${docTypeLabel}. Redirecting...`, 'info');
+    // Navigate to the new document
+    const route = newDocType === 'project' ? `/projects/${newDocId}` : `/issues/${newDocId}`;
+    navigate(route, { replace: true });
+  }, [navigate, showToast]);
 
   // Convert project to issue
   const handleConvert = useCallback(async () => {
@@ -262,6 +273,7 @@ export function ProjectEditorPage() {
             placeholder="Describe this project..."
             onCreateSubDocument={handleCreateSubDocument}
             onNavigateToDocument={handleNavigateToDocument}
+            onDocumentConverted={handleDocumentConverted}
             sidebar={
         <div className="space-y-4 p-4">
           {/* ICE Score Display */}

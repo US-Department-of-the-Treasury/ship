@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
-import { handleVisibilityChange } from '../collaboration/index.js';
+import { handleVisibilityChange, handleDocumentConversion } from '../collaboration/index.js';
 import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, extractVisionFromContent, extractGoalsFromContent, checkDocumentCompleteness } from '../utils/extractHypothesis.js';
 
 type RouterType = ReturnType<typeof Router>;
@@ -597,6 +597,14 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
     );
 
     await client.query('COMMIT');
+
+    // Notify collaborators about the conversion
+    handleDocumentConversion(
+      id,
+      newDocId,
+      doc.document_type as 'issue' | 'project',
+      target_type
+    );
 
     // Return the new document with conversion metadata
     res.status(201).json({

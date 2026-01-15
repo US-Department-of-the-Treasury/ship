@@ -64,6 +64,8 @@ interface EditorProps {
   secondaryHeader?: React.ReactNode;
   /** Document type for filtering document-specific slash commands (e.g., 'program', 'project') */
   documentType?: string;
+  /** Callback when the document is converted to a different type by another user */
+  onDocumentConverted?: (newDocId: string, newDocType: 'issue' | 'project') => void;
 }
 
 type SyncStatus = 'connecting' | 'cached' | 'synced' | 'disconnected';
@@ -114,6 +116,7 @@ export function Editor({
   onDelete,
   secondaryHeader,
   documentType,
+  onDocumentConverted,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -244,7 +247,7 @@ export function Editor({
         }
       });
 
-      // Handle WebSocket close events to detect access revoked
+      // Handle WebSocket close events to detect access revoked or document converted
       wsProvider.on('connection-close', (event: CloseEvent | null) => {
         if (event?.code === 4403) {
           console.log(`[Editor] Access revoked for document ${documentId}`);
@@ -254,6 +257,25 @@ export function Editor({
           alert('Access to this document has been revoked. The document is now private.');
           // Navigate back if possible
           onBack?.();
+        } else if (event?.code === 4100) {
+          console.log(`[Editor] Document ${documentId} was converted`);
+          // Disable auto-reconnect since document was converted
+          wsProvider!.shouldConnect = false;
+          // Parse conversion info from close reason
+          try {
+            const conversionInfo = JSON.parse(event.reason || '{}');
+            if (conversionInfo.newDocId && conversionInfo.newDocType && onDocumentConverted) {
+              onDocumentConverted(conversionInfo.newDocId, conversionInfo.newDocType);
+            } else {
+              // Fallback if callback not provided or info missing
+              alert('This document was converted. Please refresh to view the new document.');
+              onBack?.();
+            }
+          } catch {
+            console.error('[Editor] Failed to parse conversion info:', event.reason);
+            alert('This document was converted. Please refresh to view the new document.');
+            onBack?.();
+          }
         }
       });
 
@@ -295,7 +317,7 @@ export function Editor({
       }
       indexeddbProvider.destroy();
     };
-  }, [documentId, userName, color, ydoc, roomPrefix]);
+  }, [documentId, userName, color, ydoc, roomPrefix, onBack, onDocumentConverted]);
 
   // Create slash commands extension (memoized to avoid recreation)
   const slashCommandsExtension = useMemo(() => {
