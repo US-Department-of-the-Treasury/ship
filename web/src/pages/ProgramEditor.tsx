@@ -791,6 +791,7 @@ function OverviewTab({
       initialTitle={program.name}
       onTitleChange={onTitleChange}
       roomPrefix="program"
+      documentType="program"
       placeholder="Describe this program..."
       onCreateSubDocument={handleCreateSubDocument}
       onNavigateToDocument={handleNavigateToDocument}

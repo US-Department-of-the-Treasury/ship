@@ -52,6 +52,8 @@ export interface SlashCommandItem {
   aliases: string[];
   icon: React.ReactNode;
   command: (props: { editor: any; range: any }) => void;
+  /** If set, command only shows for these document types (e.g., ['program']) */
+  documentTypes?: string[];
 }
 
 interface CommandListProps {
@@ -137,6 +139,8 @@ CommandList.displayName = 'CommandList';
 interface CreateSlashCommandsOptions {
   onCreateSubDocument: () => Promise<{ id: string; title: string } | null>;
   onNavigateToDocument?: (id: string) => void;
+  /** Document type for filtering document-specific commands */
+  documentType?: string;
 }
 
 // Icons for slash commands
@@ -233,9 +237,21 @@ const icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4" />
     </svg>
   ),
+  vision: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+  ),
+  goals: (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
+    </svg>
+  ),
 };
 
-export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument }: CreateSlashCommandsOptions) {
+export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument, documentType }: CreateSlashCommandsOptions) {
   const slashCommands: SlashCommandItem[] = [
     // Sub-document (requires async callback)
     {
@@ -498,6 +514,60 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument 
         editor.commands.focus('end');
       },
     },
+    // Vision section (Program documents only)
+    {
+      title: 'Vision',
+      description: 'Add a vision statement section',
+      aliases: ['vision', 'direction', 'strategy'],
+      icon: icons.vision,
+      documentTypes: ['program'],
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .insertContent([
+            {
+              type: 'heading',
+              attrs: { level: 2 },
+              content: [{ type: 'text', text: 'Vision' }],
+            },
+            {
+              type: 'paragraph',
+            },
+          ])
+          .run();
+        // Move cursor to the empty paragraph
+        editor.commands.focus('end');
+      },
+    },
+    // Goals section (Program documents only)
+    {
+      title: 'Goals',
+      description: 'Add program goals section',
+      aliases: ['goals', 'objectives', 'targets'],
+      icon: icons.goals,
+      documentTypes: ['program'],
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .insertContent([
+            {
+              type: 'heading',
+              attrs: { level: 2 },
+              content: [{ type: 'text', text: 'Goals' }],
+            },
+            {
+              type: 'paragraph',
+            },
+          ])
+          .run();
+        // Move cursor to the empty paragraph
+        editor.commands.focus('end');
+      },
+    },
   ];
 
   return Extension.create({
@@ -522,9 +592,17 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument 
           items: async ({ query }: { query: string }): Promise<SlashCommandItem[]> => {
             const search = query.toLowerCase();
             const filteredCommands = slashCommands.filter(
-              (item) =>
-                item.title.toLowerCase().includes(search) ||
-                item.aliases.some((alias) => alias.toLowerCase().includes(search))
+              (item) => {
+                // Filter by document type if command has restrictions
+                if (item.documentTypes && item.documentTypes.length > 0) {
+                  if (!documentType || !item.documentTypes.includes(documentType)) {
+                    return false;
+                  }
+                }
+                // Filter by search query
+                return item.title.toLowerCase().includes(search) ||
+                  item.aliases.some((alias) => alias.toLowerCase().includes(search));
+              }
             );
 
             // If query matches document-related terms, also fetch existing documents

@@ -62,6 +62,8 @@ interface EditorProps {
   onDelete?: () => void;
   /** Secondary header content (e.g., action buttons) - displayed below breadcrumb header */
   secondaryHeader?: React.ReactNode;
+  /** Document type for filtering document-specific slash commands (e.g., 'program', 'project') */
+  documentType?: string;
 }
 
 type SyncStatus = 'connecting' | 'cached' | 'synced' | 'disconnected';
@@ -111,6 +113,7 @@ export function Editor({
   onNavigateToDocument,
   onDelete,
   secondaryHeader,
+  documentType,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -297,8 +300,8 @@ export function Editor({
   // Create slash commands extension (memoized to avoid recreation)
   const slashCommandsExtension = useMemo(() => {
     if (!onCreateSubDocument) return null;
-    return createSlashCommands({ onCreateSubDocument, onNavigateToDocument });
-  }, [onCreateSubDocument, onNavigateToDocument]);
+    return createSlashCommands({ onCreateSubDocument, onNavigateToDocument, documentType });
+  }, [onCreateSubDocument, onNavigateToDocument, documentType]);
 
   // Create mention extension (memoized to avoid recreation)
   const mentionExtension = useMemo(() => {

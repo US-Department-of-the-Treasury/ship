@@ -151,6 +151,106 @@ export function extractSuccessCriteriaFromContent(content: unknown): string | nu
 }
 
 /**
+ * Extract vision content from TipTap document JSON.
+ *
+ * Finds the first H2 "Vision" heading and extracts all content
+ * until the next H2 heading (or end of document).
+ * This is used for Program documents.
+ *
+ * @param content - TipTap JSON document
+ * @returns Extracted vision text, or null if no section found
+ */
+export function extractVisionFromContent(content: unknown): string | null {
+  if (!content || typeof content !== 'object') return null;
+
+  const doc = content as TipTapDoc;
+  if (doc.type !== 'doc' || !Array.isArray(doc.content)) return null;
+
+  const nodes = doc.content;
+  let startIndex = -1;
+
+  // Find the Vision H2 heading (case-insensitive)
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]!;
+    if (node.type === 'heading' && node.attrs?.level === 2) {
+      const text = extractText(node.content || []).trim().toLowerCase();
+      if (text === 'vision') {
+        startIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (startIndex === -1) return null;
+
+  // Find the end (next H2 or end of document)
+  let endIndex = nodes.length;
+  for (let i = startIndex + 1; i < nodes.length; i++) {
+    if (isH2Heading(nodes[i]!)) {
+      endIndex = i;
+      break;
+    }
+  }
+
+  // Extract content between heading and end
+  const contentNodes = nodes.slice(startIndex + 1, endIndex);
+  if (contentNodes.length === 0) return null;
+
+  const text = extractText(contentNodes).trim();
+  return text || null;
+}
+
+/**
+ * Extract goals content from TipTap document JSON.
+ *
+ * Finds the first H2 "Goals" heading and extracts all content
+ * until the next H2 heading (or end of document).
+ * This is used for Program documents.
+ *
+ * @param content - TipTap JSON document
+ * @returns Extracted goals text, or null if no section found
+ */
+export function extractGoalsFromContent(content: unknown): string | null {
+  if (!content || typeof content !== 'object') return null;
+
+  const doc = content as TipTapDoc;
+  if (doc.type !== 'doc' || !Array.isArray(doc.content)) return null;
+
+  const nodes = doc.content;
+  let startIndex = -1;
+
+  // Find the Goals H2 heading (case-insensitive)
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]!;
+    if (node.type === 'heading' && node.attrs?.level === 2) {
+      const text = extractText(node.content || []).trim().toLowerCase();
+      if (text === 'goals') {
+        startIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (startIndex === -1) return null;
+
+  // Find the end (next H2 or end of document)
+  let endIndex = nodes.length;
+  for (let i = startIndex + 1; i < nodes.length; i++) {
+    if (isH2Heading(nodes[i]!)) {
+      endIndex = i;
+      break;
+    }
+  }
+
+  // Extract content between heading and end
+  const contentNodes = nodes.slice(startIndex + 1, endIndex);
+  if (contentNodes.length === 0) return null;
+
+  const text = extractText(contentNodes).trim();
+  return text || null;
+}
+
+/**
  * Check if a document is complete based on document type requirements.
  *
  * Requirements:

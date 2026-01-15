@@ -6,7 +6,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { pool } from '../db/client.js';
-import { extractHypothesisFromContent, extractSuccessCriteriaFromContent } from '../utils/extractHypothesis.js';
+import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, extractVisionFromContent, extractGoalsFromContent } from '../utils/extractHypothesis.js';
 import { SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS } from '@ship/shared';
 import cookie from 'cookie';
 
@@ -102,9 +102,11 @@ async function persistDocument(docName: string, doc: Y.Doc) {
     const fragment = doc.getXmlFragment('default');
     const content = yjsToJson(fragment);
 
-    // Extract hypothesis and success criteria from content
+    // Extract hypothesis, success criteria, vision, and goals from content
     const hypothesis = extractHypothesisFromContent(content);
     const successCriteria = extractSuccessCriteriaFromContent(content);
+    const vision = extractVisionFromContent(content);
+    const goals = extractGoalsFromContent(content);
 
     // Get existing properties to merge
     const existingResult = await pool.query(
@@ -118,6 +120,8 @@ async function persistDocument(docName: string, doc: Y.Doc) {
       ...existingProps,
       hypothesis: hypothesis,
       success_criteria: successCriteria,
+      vision: vision,
+      goals: goals,
     };
 
     // Persist yjs_state and updated properties
