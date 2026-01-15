@@ -738,7 +738,7 @@ export function SprintViewPage() {
 
 function StatusBadge({ status }: { status: Sprint['status'] }) {
   return (
-    <span className={cn('rounded px-2 py-0.5 text-xs font-medium capitalize', sprintStatusColors[status])}>
+    <span className={cn('rounded px-2 py-0.5 text-xs font-medium capitalize whitespace-nowrap', sprintStatusColors[status])}>
       {status}
     </span>
   );
@@ -972,7 +972,7 @@ function IssueCard({
           <span className={cn('h-2 w-2 rounded-full flex-shrink-0', STATE_COLORS[issue.state])} />
           <span className="text-xs font-mono text-muted">{issue.display_id}</span>
           {isCarryover && (
-            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/20 text-orange-500" title={`Carried over from ${issue.carryover_from_sprint_name || 'previous sprint'}`}>
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/20 text-orange-500 whitespace-nowrap" title={`Carried over from ${issue.carryover_from_sprint_name || 'previous sprint'}`}>
               Carryover
             </span>
           )}

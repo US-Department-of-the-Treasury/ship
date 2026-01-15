@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useEditor, EditorContent, JSONContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import Link from '@tiptap/extension-link';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -71,6 +72,12 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
       Placeholder.configure({
         placeholder: 'What did you work on? Any blockers? What\'s next?',
       }),
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'text-accent hover:underline cursor-pointer',
+        },
+      }),
     ],
     content: '',
   });
@@ -81,6 +88,12 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
       StarterKit,
       Placeholder.configure({
         placeholder: 'Edit your standup update...',
+      }),
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'text-accent hover:underline cursor-pointer',
+        },
       }),
     ],
     content: '',
@@ -307,7 +320,15 @@ function StandupCard({
 }: StandupCardProps) {
   // Create a read-only editor for displaying content
   const displayEditor = useEditor({
-    extensions: [StarterKit],
+    extensions: [
+      StarterKit,
+      Link.configure({
+        openOnClick: true,
+        HTMLAttributes: {
+          class: 'text-accent hover:underline cursor-pointer',
+        },
+      }),
+    ],
     content: standup.content,
     editable: false,
   }, [standup.content]);
@@ -378,7 +399,7 @@ function StandupCard({
           </div>
         </div>
       ) : (
-        <div className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none">
+        <div className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror_h1]:text-lg [&_.ProseMirror_h1]:font-semibold [&_.ProseMirror_h2]:text-base [&_.ProseMirror_h2]:font-semibold [&_.ProseMirror_h3]:text-sm [&_.ProseMirror_h3]:font-medium [&_.ProseMirror_h4]:text-sm [&_.ProseMirror_h4]:font-medium [&_.ProseMirror_h1]:mt-3 [&_.ProseMirror_h1]:mb-1 [&_.ProseMirror_h2]:mt-2 [&_.ProseMirror_h2]:mb-1 [&_.ProseMirror_h3]:mt-2 [&_.ProseMirror_h3]:mb-1">
           <EditorContent editor={displayEditor} />
         </div>
       )}

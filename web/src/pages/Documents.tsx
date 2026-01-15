@@ -419,7 +419,7 @@ function DocumentRowContent({ document, visibleColumns }: { document: WikiDocume
       {visibleColumns.has('visibility') && (
         <td className="px-4 py-3" role="gridcell">
           <span className={cn(
-            'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs',
+            'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs whitespace-nowrap',
             document.visibility === 'private'
               ? 'bg-amber-500/10 text-amber-600'
               : 'bg-blue-500/10 text-blue-600'

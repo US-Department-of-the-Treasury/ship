@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { DEFAULT_PROJECT_PROPERTIES, computeICEScore } from '@ship/shared';
+import { checkDocumentCompleteness } from '../utils/extractHypothesis.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -41,6 +42,9 @@ function extractProjectFromRow(row: any) {
     // Counts
     sprint_count: parseInt(row.sprint_count) || 0,
     issue_count: parseInt(row.issue_count) || 0,
+    // Completeness flags
+    is_complete: props.is_complete ?? null,
+    missing_fields: props.missing_fields ?? [],
   };
 }
 
@@ -380,6 +384,11 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       properties.emoji = emoji;
     }
 
+    // Calculate completeness for new project (no linked issues yet)
+    const completeness = checkDocumentCompleteness('project', properties, 0);
+    properties.is_complete = completeness.isComplete;
+    properties.missing_fields = completeness.missingFields;
+
     const result = await pool.query(
       `INSERT INTO documents (workspace_id, document_type, title, properties, program_id, created_by)
        VALUES ($1, 'project', $2, $3, $4, $5)
@@ -493,6 +502,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     if (propsChanged) {
+      // Recalculate completeness when properties change
+      const completeness = checkDocumentCompleteness('project', newProps, 0);
+      newProps.is_complete = completeness.isComplete;
+      newProps.missing_fields = completeness.missingFields;
+
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(newProps));
     }

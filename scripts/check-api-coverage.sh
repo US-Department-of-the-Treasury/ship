@@ -48,7 +48,8 @@ API_ENDPOINTS=""
 
 # Get mount points from app.ts (simple list)
 # e.g., "sprints" from app.use('/api/sprints', sprintsRoutes)
-MOUNT_POINTS=$(grep "app\.use.*Routes" api/src/app.ts 2>/dev/null | \
+# Also handle xxxRouter naming convention (e.g., searchRouter)
+MOUNT_POINTS=$(grep -E "app\.use.*Route[rs]" api/src/app.ts 2>/dev/null | \
   sed -n "s/.*app\.use(['\"]\/api\/\([^'\"]*\)['\"].*/\1/p" | sort -u)
 
 # Now extract routes from each file and prepend mount point
@@ -77,12 +78,14 @@ for route_file in api/src/routes/*.ts; do
   # Extract routes from this file and prepend mount prefix
   # Use simpler sed patterns (macOS sed has issues with complex alternations)
   # Note: Use sed to add prefix since while loop is in subshell
+  # Support various router naming: router, searchRouter, xxxRouter, etc.
+  # Pattern [a-zA-Z]*[Rr]outer matches: router, Router, searchRouter, xxxRouter
   {
-    grep -h "router\.get" "$route_file" 2>/dev/null | sed -n "s/.*router\.get('\([^']*\)'.*/\1/p"
-    grep -h "router\.post" "$route_file" 2>/dev/null | sed -n "s/.*router\.post('\([^']*\)'.*/\1/p"
-    grep -h "router\.put" "$route_file" 2>/dev/null | sed -n "s/.*router\.put('\([^']*\)'.*/\1/p"
-    grep -h "router\.patch" "$route_file" 2>/dev/null | sed -n "s/.*router\.patch('\([^']*\)'.*/\1/p"
-    grep -h "router\.delete" "$route_file" 2>/dev/null | sed -n "s/.*router\.delete('\([^']*\)'.*/\1/p"
+    grep -hE "[a-zA-Z]*[Rr]outer\.get" "$route_file" 2>/dev/null | sed -n "s/.*\.get('\([^']*\)'.*/\1/p"
+    grep -hE "[a-zA-Z]*[Rr]outer\.post" "$route_file" 2>/dev/null | sed -n "s/.*\.post('\([^']*\)'.*/\1/p"
+    grep -hE "[a-zA-Z]*[Rr]outer\.put" "$route_file" 2>/dev/null | sed -n "s/.*\.put('\([^']*\)'.*/\1/p"
+    grep -hE "[a-zA-Z]*[Rr]outer\.patch" "$route_file" 2>/dev/null | sed -n "s/.*\.patch('\([^']*\)'.*/\1/p"
+    grep -hE "[a-zA-Z]*[Rr]outer\.delete" "$route_file" 2>/dev/null | sed -n "s/.*\.delete('\([^']*\)'.*/\1/p"
   } | sed 's/^\///' | while read -r route; do
     if [ -z "$route" ]; then
       # Base route '/' becomes just the mount prefix (without trailing slash)
@@ -121,14 +124,18 @@ for file in $FILES; do
 
   # Extract API calls from the file
   # Look for patterns like: fetch('/api/..., fetch(`${API_URL}/api/..., axios.get('/api/...
+  # Strip query strings (?...) from the extracted paths
   API_CALLS=$(grep -oE "(fetch|axios\.[a-z]+)\(['\"\`][^'\"]*\/api\/[^'\"]*" "$file" 2>/dev/null | \
     sed -n 's/.*\/api\/\([^'\"'\`]*\).*/\1/p' | \
+    sed 's/\?.*$//' | \
     sort -u || true)
 
   # Also check for API_URL + path patterns
+  # Strip query strings (?...) and template expressions after the path
   API_CALLS2=$(grep -oE '\$\{API_URL\}\/api\/[^`"'\'']*' "$file" 2>/dev/null | \
     sed 's/.*\/api\///' | \
     sed 's/[`"'\''].*//' | \
+    sed 's/\?.*$//' | \
     sort -u || true)
 
   ALL_CALLS=$(echo -e "$API_CALLS\n$API_CALLS2" | sort -u | grep -v '^$' || true)
@@ -159,7 +166,11 @@ for file in $FILES; do
 
     if [ "$FOUND" = false ]; then
       # Skip common false positives
-      if [[ "$call" =~ ^auth/ ]] || [[ "$call" =~ ^health$ ]]; then
+      # - auth/ and health are common utility endpoints
+      # - documents/.*/backlinks: backlinks.ts is mounted under /api/documents (not /api/backlinks)
+      # - team/grid.*: template literal with params causes false positive (endpoint exists in team.ts)
+      if [[ "$call" =~ ^auth/ ]] || [[ "$call" =~ ^health$ ]] || \
+         [[ "$call" =~ ^documents/.*backlinks ]] || [[ "$call" =~ ^team/grid ]]; then
         continue
       fi
       MISSING+=("$file: /api/$call")

@@ -603,7 +603,7 @@ function StatusBadge({ state }: { state: string }) {
       data-status-indicator
       data-status={state}
       aria-label={`Status: ${label}`}
-      className={cn('inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[state] || issueStatusColors.backlog)}
+      className={cn('inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap', issueStatusColors[state] || issueStatusColors.backlog)}
     >
       <StatusIcon state={state} />
       {label}
@@ -685,7 +685,7 @@ function SourceBadge({ source }: { source: 'internal' | 'external' }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded px-2 py-0.5 text-xs font-medium',
+        'inline-flex items-center rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap',
         SOURCE_STYLES[source] || SOURCE_STYLES.internal
       )}
     >

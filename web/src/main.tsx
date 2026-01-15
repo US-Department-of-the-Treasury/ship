@@ -196,6 +196,7 @@ function AppRoutes() {
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />
         <Route path="programs/:id/issues" element={<ProgramEditorPage />} />
+        <Route path="programs/:id/projects" element={<ProgramEditorPage />} />
         <Route path="programs/:id/sprints" element={<ProgramEditorPage />} />
         <Route path="programs/:id/sprints/:sprintId" element={<ProgramEditorPage />} />
         <Route path="programs/:programId/sprints/:id" element={<SprintEditorPage />} />

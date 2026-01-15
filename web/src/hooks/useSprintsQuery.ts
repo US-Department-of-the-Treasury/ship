@@ -21,6 +21,9 @@ export interface Sprint {
   has_retro?: boolean;
   plan_created_at?: string | null;
   retro_created_at?: string | null;
+  // Completeness flags
+  is_complete?: boolean | null;
+  missing_fields?: string[];
   _pending?: boolean;
   _pendingId?: string;
 }

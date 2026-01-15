@@ -74,7 +74,7 @@ export function ProgramCombobox({
               )}
             >
               <span
-                className="shrink-0 rounded px-1.5 py-0.5 text-xs font-bold text-white"
+                className="shrink-0 rounded px-1.5 py-0.5 text-xs font-bold text-white whitespace-nowrap"
                 style={{ backgroundColor: selectedProgram.color }}
               >
                 {selectedProgram.emoji || selectedProgram.name[0]}
@@ -174,7 +174,7 @@ export function ProgramCombobox({
                   )}
                 >
                   <span
-                    className="rounded px-1.5 py-0.5 text-xs font-bold text-white"
+                    className="rounded px-1.5 py-0.5 text-xs font-bold text-white whitespace-nowrap"
                     style={{ backgroundColor: program.color }}
                   >
                     {program.emoji || program.name[0]}

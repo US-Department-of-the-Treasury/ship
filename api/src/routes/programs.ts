@@ -388,6 +388,83 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
   }
 });
 
+// Get program projects (documents with document_type = 'project' that belong to this program)
+router.get('/:id/projects', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify program exists and user can access it
+    const programExists = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'program'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (programExists.rows.length === 0) {
+      res.status(404).json({ error: 'Program not found' });
+      return;
+    }
+
+    // Fetch projects belonging to this program
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+              (d.properties->>'owner_id')::uuid as owner_id,
+              u.name as owner_name, u.email as owner_email,
+              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count
+       FROM documents d
+       LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
+       WHERE d.program_id = $1 AND d.document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
+         AND d.archived_at IS NULL
+       ORDER BY
+         ((COALESCE((d.properties->>'impact')::int, 3) * COALESCE((d.properties->>'confidence')::int, 3) * COALESCE((d.properties->>'ease')::int, 3))) DESC`,
+      [id, userId, isAdmin]
+    );
+
+    // Transform rows to project format
+    const projects = result.rows.map(row => {
+      const props = row.properties || {};
+      const impact = props.impact ?? 3;
+      const confidence = props.confidence ?? 3;
+      const ease = props.ease ?? 3;
+
+      return {
+        id: row.id,
+        title: row.title,
+        impact,
+        confidence,
+        ease,
+        ice_score: impact * confidence * ease,
+        color: props.color || '#6366f1',
+        emoji: props.emoji || null,
+        program_id: row.program_id,
+        archived_at: row.archived_at,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        owner: row.owner_name ? {
+          id: row.owner_id,
+          name: row.owner_name,
+          email: row.owner_email,
+        } : null,
+        sprint_count: parseInt(row.sprint_count) || 0,
+        issue_count: parseInt(row.issue_count) || 0,
+      };
+    });
+
+    res.json(projects);
+  } catch (err) {
+    console.error('Get program projects error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get program sprints (documents with document_type = 'sprint' that belong to this program)
 // Returns sprints with sprint_number and owner_id - dates/status computed on frontend
 router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) => {

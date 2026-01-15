@@ -3,6 +3,7 @@ import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 import { handleVisibilityChange } from '../collaboration/index.js';
+import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, extractVisionFromContent, extractGoalsFromContent, checkDocumentCompleteness } from '../utils/extractHypothesis.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -257,6 +258,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     const values: any[] = [];
     let paramIndex = 1;
 
+    // Track extracted values from content (content is source of truth)
+    let extractedHypothesis: string | null = null;
+    let extractedCriteria: string | null = null;
+    let extractedVision: string | null = null;
+    let extractedGoals: string | null = null;
+    let contentUpdated = false;
+
     if (data.title !== undefined) {
       updates.push(`title = $${paramIndex++}`);
       values.push(data.title);
@@ -267,6 +275,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Clear yjs_state when content is updated via API
       // This forces the collaboration server to regenerate Yjs state from new content
       updates.push(`yjs_state = NULL`);
+
+      // Extract hypothesis, success criteria, vision, and goals from content (content is source of truth)
+      extractedHypothesis = extractHypothesisFromContent(data.content);
+      extractedCriteria = extractSuccessCriteriaFromContent(data.content);
+      extractedVision = extractVisionFromContent(data.content);
+      extractedGoals = extractGoalsFromContent(data.content);
+      contentUpdated = true;
     }
     if (data.parent_id !== undefined) {
       updates.push(`parent_id = $${paramIndex++}`);
@@ -276,10 +291,50 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       updates.push(`position = $${paramIndex++}`);
       values.push(data.position);
     }
-    if (data.properties !== undefined) {
-      // Merge with existing properties
+
+    // Handle properties update - merge existing, data.properties, and extracted values
+    // Content is source of truth: extracted values override any manually set hypothesis/success_criteria/vision/goals
+    if (data.properties !== undefined || contentUpdated) {
       const currentProps = existing.properties || {};
-      const newProps = { ...currentProps, ...data.properties };
+      const dataProps = data.properties || {};
+      let newProps = {
+        ...currentProps,
+        ...dataProps,
+        // Extracted values always win (content is source of truth)
+        ...(contentUpdated ? {
+          hypothesis: extractedHypothesis,
+          success_criteria: extractedCriteria,
+          vision: extractedVision,
+          goals: extractedGoals,
+        } : {}),
+      };
+
+      // Compute document completeness for projects and sprints
+      if (existing.document_type === 'project' || existing.document_type === 'sprint') {
+        let linkedIssuesCount = 0;
+
+        // For sprints, count linked issues
+        if (existing.document_type === 'sprint') {
+          const issueCountResult = await pool.query(
+            'SELECT COUNT(*) as count FROM documents WHERE sprint_id = $1 AND document_type = $2',
+            [id, 'issue']
+          );
+          linkedIssuesCount = parseInt(issueCountResult.rows[0]?.count || '0', 10);
+        }
+
+        const completeness = checkDocumentCompleteness(
+          existing.document_type,
+          newProps,
+          linkedIssuesCount
+        );
+
+        newProps = {
+          ...newProps,
+          is_complete: completeness.isComplete,
+          missing_fields: completeness.missingFields,
+        };
+      }
+
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(newProps));
     }

@@ -26,6 +26,7 @@ import caiaAuthRoutes from './routes/caia-auth.js';
 import apiTokensRoutes from './routes/api-tokens.js';
 import adminCredentialsRoutes from './routes/admin-credentials.js';
 import claudeRoutes from './routes/claude.js';
+import activityRoutes from './routes/activity.js';
 import { setupSwagger } from './swagger.js';
 import { initializeCAIA } from './services/caia.js';
 
@@ -192,6 +193,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // Search routes are read-only GET endpoints - no CSRF needed
   app.use('/api/search', searchRouter);
+
+  // Activity routes are read-only GET endpoints - no CSRF needed
+  app.use('/api/activity', activityRoutes);
 
   // CAIA auth routes - no CSRF protection (OAuth flow with external callback)
   // This is the single identity provider for PIV authentication
