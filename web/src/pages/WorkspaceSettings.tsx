@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
@@ -177,6 +177,15 @@ export function WorkspaceSettingsPage() {
           <TabButton active={activeTab === 'audit'} onClick={() => handleTabChange('audit')}>
             Audit Logs
           </TabButton>
+          <Link
+            to="/settings/conversions"
+            className={cn(
+              'px-4 py-3 text-sm font-medium border-b-2 border-transparent',
+              'text-muted hover:text-foreground hover:border-border/50 transition-colors'
+            )}
+          >
+            Conversions
+          </Link>
         </nav>
       </div>
 

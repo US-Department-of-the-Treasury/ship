@@ -36,6 +36,7 @@ import { DashboardPage } from '@/pages/Dashboard';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
+import { ConvertedDocumentsPage } from '@/pages/ConvertedDocuments';
 import { InviteAcceptPage } from '@/pages/InviteAccept';
 import { SetupPage } from '@/pages/Setup';
 import { ToastProvider } from '@/components/ui/Toast';
@@ -212,6 +213,7 @@ function AppRoutes() {
         <Route path="team/:id" element={<PersonEditorPage />} />
         <Route path="feedback/:id" element={<FeedbackEditorPage />} />
         <Route path="settings" element={<WorkspaceSettingsPage />} />
+        <Route path="settings/conversions" element={<ConvertedDocumentsPage />} />
       </Route>
     </Routes>
   );

@@ -121,6 +121,67 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// List converted documents (archived originals that were converted to another type)
+router.get('/converted/list', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+    const { original_type, converted_type } = req.query;
+
+    let query = `
+      SELECT d.id, d.title, d.document_type as original_type, d.ticket_number,
+             d.converted_to_id, d.converted_at, d.converted_by,
+             d.created_at, d.updated_at,
+             converted_doc.document_type as converted_type,
+             converted_doc.title as converted_title,
+             converted_doc.ticket_number as converted_ticket_number,
+             converter.name as converted_by_name
+      FROM documents d
+      INNER JOIN documents converted_doc ON d.converted_to_id = converted_doc.id
+      LEFT JOIN users converter ON d.converted_by = converter.id
+      WHERE d.workspace_id = $1
+        AND d.converted_to_id IS NOT NULL
+        AND d.archived_at IS NOT NULL
+    `;
+    const params: (string | null)[] = [workspaceId];
+
+    // Filter by original document type
+    if (original_type && typeof original_type === 'string') {
+      params.push(original_type);
+      query += ` AND d.document_type = $${params.length}`;
+    }
+
+    // Filter by converted document type
+    if (converted_type && typeof converted_type === 'string') {
+      params.push(converted_type);
+      query += ` AND converted_doc.document_type = $${params.length}`;
+    }
+
+    query += ` ORDER BY d.converted_at DESC NULLS LAST, d.updated_at DESC`;
+
+    const result = await pool.query(query, params);
+
+    const conversions = result.rows.map(row => ({
+      original_id: row.id,
+      original_title: row.title,
+      original_type: row.original_type,
+      original_ticket_number: row.ticket_number,
+      converted_id: row.converted_to_id,
+      converted_title: row.converted_title,
+      converted_type: row.converted_type,
+      converted_ticket_number: row.converted_ticket_number,
+      converted_at: row.converted_at,
+      converted_by: row.converted_by,
+      converted_by_name: row.converted_by_name,
+    }));
+
+    res.json(conversions);
+  } catch (err) {
+    console.error('List converted documents error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get single document
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
