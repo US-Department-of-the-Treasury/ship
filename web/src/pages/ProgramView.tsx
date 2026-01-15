@@ -451,7 +451,7 @@ function IssuesList({ issues, onIssueClick }: { issues: Issue[]; onIssueClick: (
         {issue.title}
       </td>
       <td className="px-4 py-3">
-        <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
+        <span className={cn('rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap', issueStatusColors[issue.state])}>
           {stateLabels[issue.state] || issue.state}
         </span>
       </td>
@@ -852,7 +852,7 @@ function SprintDetailView({
                       {issue.title}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
+                      <span className={cn('rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap', issueStatusColors[issue.state])}>
                         {stateLabels[issue.state] || issue.state}
                       </span>
                     </td>

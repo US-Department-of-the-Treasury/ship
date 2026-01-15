@@ -166,7 +166,11 @@ for file in $FILES; do
 
     if [ "$FOUND" = false ]; then
       # Skip common false positives
-      if [[ "$call" =~ ^auth/ ]] || [[ "$call" =~ ^health$ ]]; then
+      # - auth/ and health are common utility endpoints
+      # - documents/.*/backlinks: backlinks.ts is mounted under /api/documents (not /api/backlinks)
+      # - team/grid.*: template literal with params causes false positive (endpoint exists in team.ts)
+      if [[ "$call" =~ ^auth/ ]] || [[ "$call" =~ ^health$ ]] || \
+         [[ "$call" =~ ^documents/.*backlinks ]] || [[ "$call" =~ ^team/grid ]]; then
         continue
       fi
       MISSING+=("$file: /api/$call")

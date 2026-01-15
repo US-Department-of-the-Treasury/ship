@@ -624,7 +624,7 @@ export function TeamModePage() {
             <div className="mt-4 flex items-center gap-2">
               <span className="text-sm text-muted">Change to:</span>
               <span
-                className="rounded px-1.5 py-0.5 text-xs font-bold text-white"
+                className="rounded px-1.5 py-0.5 text-xs font-bold text-white whitespace-nowrap"
                 style={{ backgroundColor: confirmDialog?.newProgram?.color || '#666' }}
               >
                 {confirmDialog?.newProgram?.emoji || confirmDialog?.newProgram?.name?.[0]}

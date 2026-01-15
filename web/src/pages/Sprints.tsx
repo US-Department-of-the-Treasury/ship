@@ -136,7 +136,7 @@ function SprintRow({ sprint, onClick }: SprintRowProps) {
       <td className="px-4 py-3" role="gridcell">
         <div className="flex items-center gap-2">
           {sprint.program_prefix && (
-            <span className="rounded bg-border px-1.5 py-0.5 text-xs font-medium text-muted">
+            <span className="rounded bg-border px-1.5 py-0.5 text-xs font-medium text-muted whitespace-nowrap">
               {sprint.program_prefix}
             </span>
           )}

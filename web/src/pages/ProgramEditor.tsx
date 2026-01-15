@@ -944,7 +944,7 @@ function ProgramIssuesList({
           {issue.title}
         </td>
         <td className="px-4 py-3" role="gridcell">
-          <span className={cn('rounded px-2 py-0.5 text-xs font-medium', issueStatusColors[issue.state])}>
+          <span className={cn('rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap', issueStatusColors[issue.state])}>
             {STATE_LABELS[issue.state] || issue.state}
           </span>
         </td>
@@ -1739,7 +1739,7 @@ function ActiveSprintProgress({
       {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <span className={cn('rounded px-2 py-0.5 text-xs font-medium', statusClass)}>{statusLabel}</span>
+          <span className={cn('rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap', statusClass)}>{statusLabel}</span>
           <h2 className="text-lg font-semibold text-foreground">{sprint.name}</h2>
           <span className="text-sm text-muted">·</span>
           <span className="text-sm text-muted">
@@ -2291,7 +2291,7 @@ function SprintWindowCard({
         )}
         <div className="mt-2 flex items-center justify-between text-xs">
           <span className={cn(
-            'rounded px-1.5 py-0.5',
+            'rounded px-1.5 py-0.5 whitespace-nowrap',
             status === 'active' ? 'bg-accent/20 text-accent' : sprintStatusColors[status]
           )}>
             {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -2331,7 +2331,7 @@ function SprintWindowCard({
       )}
       <div className="mt-2 text-xs">
         <span className={cn(
-          'rounded px-1.5 py-0.5',
+          'rounded px-1.5 py-0.5 whitespace-nowrap',
           sprintStatusColors[status]
         )}>
           {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -2487,7 +2487,7 @@ function ProjectsList({ projects, onProjectClick }: { projects: Project[]; onPro
           </div>
           <span className="text-sm font-medium text-foreground">{project.title}</span>
           {project.is_complete === false && (
-            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/10 text-orange-500 border border-orange-500/20">
+            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/10 text-orange-500 border border-orange-500/20 whitespace-nowrap">
               Incomplete
             </span>
           )}
@@ -2581,12 +2581,12 @@ function ProjectsCardView({ projects, onProjectClick }: { projects: Project[]; o
             </div>
             <div className="flex items-center gap-2">
               {project.is_complete === false && (
-                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/10 text-orange-500 border border-orange-500/20">
+                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/10 text-orange-500 border border-orange-500/20 whitespace-nowrap">
                   Incomplete
                 </span>
               )}
               {project.ice_score > 0 && (
-                <span className="rounded bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                <span className="rounded bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent whitespace-nowrap">
                   ICE: {project.ice_score.toFixed(1)}
                 </span>
               )}

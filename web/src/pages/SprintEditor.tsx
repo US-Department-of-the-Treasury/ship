@@ -146,7 +146,7 @@ export function SprintEditorPage() {
       onNavigateToDocument={handleNavigateToDocument}
       headerBadge={
         <span className={cn(
-          'rounded px-1.5 py-0.5 text-[10px] font-medium uppercase text-white',
+          'rounded px-1.5 py-0.5 text-[10px] font-medium uppercase text-white whitespace-nowrap',
           STATUS_OPTIONS.find(s => s.value === sprint.status)?.color || 'bg-gray-500'
         )}>
           {sprint.status}

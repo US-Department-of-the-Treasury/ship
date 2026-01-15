@@ -397,7 +397,7 @@ export function IssueEditorPage() {
       onCreateSubDocument={handleCreateSubDocument}
       onNavigateToDocument={handleNavigateToDocument}
       headerBadge={
-        <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted" data-testid="ticket-number">
+        <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted whitespace-nowrap" data-testid="ticket-number">
           {displayIssue.display_id}
         </span>
       }
@@ -543,7 +543,7 @@ export function IssueEditorPage() {
             )}
 
             <PropertyRow label="Source">
-              <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${
+              <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap ${
                 displayIssue.source === 'external' ? 'bg-purple-500/20 text-purple-300' : 'bg-blue-500/20 text-blue-300'
               }`}>
                 {displayIssue.source === 'external' ? 'External' : 'Internal'}
