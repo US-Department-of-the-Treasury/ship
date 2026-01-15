@@ -1,9 +1,9 @@
 ---
 title: Open Source Security Review Attestation
 date: 2026-01-15
-timestamp: 2026-01-15T13:50:02Z
-reviewer: Sam Corcos
-reviewer_email: samuel.corcos@treasury.gov
+timestamp: 2026-01-15T02:56:05Z
+reviewer: Kneuman0
+reviewer_email: kylepneuman@gmail.com
 reviewer_title: Security Reviewer
 scan_result: PASS
 ---
@@ -50,7 +50,6 @@ I attest that the above statements are accurate as of the date of this review.
 
 **Reviewer:** Sam Corcos
 **Title:** Security Reviewer
-**Email:** samuel.corcos@treasury.gov
 **Date:** 2026-01-15
 
 ---

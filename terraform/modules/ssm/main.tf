@@ -1,19 +1,21 @@
+data "aws_caller_identity" "current" {}
+
 # SSM Parameter Store - Database Connection String
 resource "aws_ssm_parameter" "database_url" {
   name        = "/${var.project_name}/${var.environment}/DATABASE_URL"
-  description = "PostgreSQL connection string for Ship application"
+  description = "PostgreSQL connection string for ${var.project_name} application"
   type        = "SecureString"
   value = format(
     "postgresql://%s:%s@%s:%s/%s",
-    aws_rds_cluster.aurora.master_username,
-    random_password.db_password.result,
-    aws_rds_cluster.aurora.endpoint,
-    aws_rds_cluster.aurora.port,
-    aws_rds_cluster.aurora.database_name
+    var.db_username,
+    var.db_password,
+    var.db_endpoint,
+    var.db_port,
+    var.db_name
   )
 
   tags = {
-    Name = "${var.project_name}-database-url"
+    Name = "${var.project_name}-${var.environment}-database-url"
   }
 }
 
@@ -22,10 +24,10 @@ resource "aws_ssm_parameter" "db_host" {
   name        = "/${var.project_name}/${var.environment}/DB_HOST"
   description = "Aurora cluster endpoint"
   type        = "String"
-  value       = aws_rds_cluster.aurora.endpoint
+  value       = var.db_endpoint
 
   tags = {
-    Name = "${var.project_name}-db-host"
+    Name = "${var.project_name}-${var.environment}-db-host"
   }
 }
 
@@ -34,10 +36,10 @@ resource "aws_ssm_parameter" "db_name" {
   name        = "/${var.project_name}/${var.environment}/DB_NAME"
   description = "Database name"
   type        = "String"
-  value       = aws_rds_cluster.aurora.database_name
+  value       = var.db_name
 
   tags = {
-    Name = "${var.project_name}-db-name"
+    Name = "${var.project_name}-${var.environment}-db-name"
   }
 }
 
@@ -46,10 +48,10 @@ resource "aws_ssm_parameter" "db_username" {
   name        = "/${var.project_name}/${var.environment}/DB_USERNAME"
   description = "Database username"
   type        = "String"
-  value       = aws_rds_cluster.aurora.master_username
+  value       = var.db_username
 
   tags = {
-    Name = "${var.project_name}-db-username"
+    Name = "${var.project_name}-${var.environment}-db-username"
   }
 }
 
@@ -58,11 +60,16 @@ resource "aws_ssm_parameter" "db_password" {
   name        = "/${var.project_name}/${var.environment}/DB_PASSWORD"
   description = "Database password"
   type        = "SecureString"
-  value       = random_password.db_password.result
+  value       = var.db_password
 
   tags = {
-    Name = "${var.project_name}-db-password"
+    Name = "${var.project_name}-${var.environment}-db-password"
   }
+}
+
+locals {
+  frontend_url = var.app_domain_name != "" ? "https://${var.app_domain_name}" : "https://${var.cloudfront_domain_name}"
+  cdn_domain   = var.app_domain_name != "" ? var.app_domain_name : var.cloudfront_domain_name
 }
 
 # SSM Parameter - CORS Origin (for frontend URL)
@@ -70,10 +77,10 @@ resource "aws_ssm_parameter" "cors_origin" {
   name        = "/${var.project_name}/${var.environment}/CORS_ORIGIN"
   description = "CORS origin for API (frontend URL)"
   type        = "String"
-  value       = var.app_domain_name != "" ? "https://${var.app_domain_name}" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  value       = local.frontend_url
 
   tags = {
-    Name = "${var.project_name}-cors-origin"
+    Name = "${var.project_name}-${var.environment}-cors-origin"
   }
 }
 
@@ -82,10 +89,10 @@ resource "aws_ssm_parameter" "cdn_domain" {
   name        = "/${var.project_name}/${var.environment}/CDN_DOMAIN"
   description = "CDN domain for serving uploaded files"
   type        = "String"
-  value       = var.app_domain_name != "" ? var.app_domain_name : aws_cloudfront_distribution.frontend.domain_name
+  value       = local.cdn_domain
 
   tags = {
-    Name = "${var.project_name}-cdn-domain"
+    Name = "${var.project_name}-${var.environment}-cdn-domain"
   }
 }
 
@@ -94,10 +101,10 @@ resource "aws_ssm_parameter" "app_base_url" {
   name        = "/${var.project_name}/${var.environment}/APP_BASE_URL"
   description = "Base URL for the application (used in OAuth callbacks)"
   type        = "String"
-  value       = var.app_domain_name != "" ? "https://${var.app_domain_name}" : "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  value       = local.frontend_url
 
   tags = {
-    Name = "${var.project_name}-app-base-url"
+    Name = "${var.project_name}-${var.environment}-app-base-url"
   }
 }
 
@@ -115,14 +122,14 @@ resource "aws_ssm_parameter" "session_secret" {
   value       = random_password.session_secret.result
 
   tags = {
-    Name = "${var.project_name}-session-secret"
+    Name = "${var.project_name}-${var.environment}-session-secret"
   }
 }
 
-# IAM Role for EB instances to read SSM parameters
+# IAM Role policy for EB instances to read SSM parameters
 resource "aws_iam_role_policy" "eb_ssm_access" {
-  name = "${var.project_name}-eb-ssm-access"
-  role = aws_iam_role.eb_instance.id
+  name = "${var.project_name}-${var.environment}-eb-ssm-access"
+  role = var.eb_instance_role_name
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -152,12 +159,10 @@ resource "aws_iam_role_policy" "eb_ssm_access" {
   })
 }
 
-data "aws_caller_identity" "current" {}
-
-# IAM Role for EB instances to access Secrets Manager (FPKI OAuth credentials)
+# IAM Role policy for EB instances to access Secrets Manager (CAIA OAuth credentials)
 resource "aws_iam_role_policy" "eb_secrets_manager_access" {
-  name = "${var.project_name}-eb-secrets-manager-access"
-  role = aws_iam_role.eb_instance.id
+  name = "${var.project_name}-${var.environment}-eb-secrets-manager-access"
+  role = var.eb_instance_role_name
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -166,14 +171,13 @@ resource "aws_iam_role_policy" "eb_secrets_manager_access" {
         Effect = "Allow"
         Action = [
           "secretsmanager:GetSecretValue",
+          "secretsmanager:PutSecretValue",
           "secretsmanager:CreateSecret",
           "secretsmanager:UpdateSecret",
           "secretsmanager:TagResource"
         ]
-        Resource = [
-          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}/*",
-          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:/${var.project_name}/*"
-        ]
+        # Secret path: /{project_name}/{environment}/caia-credentials
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:/${var.project_name}/${var.environment}/*"
       },
       {
         Effect = "Allow"

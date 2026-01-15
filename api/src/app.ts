@@ -22,15 +22,13 @@ import setupRoutes from './routes/setup.js';
 import backlinksRoutes from './routes/backlinks.js';
 import { searchRouter } from './routes/search.js';
 import { filesRouter } from './routes/files.js';
-import pivAuthRoutes from './routes/piv-auth.js';
-import federationRoutes from './routes/federation.js';
+import caiaAuthRoutes from './routes/caia-auth.js';
 import apiTokensRoutes from './routes/api-tokens.js';
+import adminCredentialsRoutes from './routes/admin-credentials.js';
 import claudeRoutes from './routes/claude.js';
 import activityRoutes from './routes/activity.js';
-import { createJwksHandler } from '@fpki/auth-client';
-import { getPublicJwk } from './services/credential-store.js';
-import { initializeFPKI } from './services/fpki.js';
 import { setupSwagger } from './swagger.js';
+import { initializeCAIA } from './services/caia.js';
 
 // Validate SESSION_SECRET in production
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -81,11 +79,6 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests. Please slow down.' },
 });
 
-// JWKS handler with built-in rate limiting from SDK (30 req/min)
-const jwksHandler = createJwksHandler({
-  getPublicJwk,
-  rateLimit: isTestEnv ? false : { windowMs: 60000, maxRequests: 30 },
-});
 
 export function createApp(corsOrigin: string = 'http://localhost:5173'): express.Express {
   const app = express();
@@ -114,7 +107,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"], // Admin credentials page uses inline scripts
         styleSrc: ["'self'", "'unsafe-inline'"], // TipTap editor needs inline styles
         imgSrc: ["'self'", "data:", "blob:", "https:"],
         connectSrc: ["'self'", "wss:", "ws:"], // WebSocket connections
@@ -140,6 +133,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
     credentials: true,
   }));
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true })); // For HTML form submissions
   app.use(cookieParser(sessionSecret));
 
   // Session middleware for CSRF token storage
@@ -203,24 +197,21 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   // Activity routes are read-only GET endpoints - no CSRF needed
   app.use('/api/activity', activityRoutes);
 
-  // PIV auth routes - no CSRF protection (OAuth flow with external callback)
-  app.use('/api/auth/piv', pivAuthRoutes);
+  // CAIA auth routes - no CSRF protection (OAuth flow with external callback)
+  // This is the single identity provider for PIV authentication
+  // Mount at both /caia and /piv paths - /piv/callback is registered with CAIA
+  app.use('/api/auth/caia', caiaAuthRoutes);
+  app.use('/api/auth/piv', caiaAuthRoutes);
 
-  // Federation routes - CSRF protected (admin credential management)
-  // Note: mTLS happens between browser and FPKI Validator, not browser and this API.
-  // These endpoints are standard POSTs from our frontend and need CSRF protection.
-  app.use('/api/federation', conditionalCsrf, federationRoutes);
-
-  // JWKS endpoint for private_key_jwt - public, no auth needed
-  // Rate limiting is built into the SDK handler
-  app.get('/.well-known/jwks.json', jwksHandler);
+  // Admin credentials management (CSRF protected, super-admin only)
+  app.use('/api/admin/credentials', conditionalCsrf, adminCredentialsRoutes);
 
   // File upload routes (CSRF protected for POST endpoints)
   app.use('/api/files', conditionalCsrf, filesRouter);
 
-  // Initialize FPKI credentials from Secrets Manager at startup
-  initializeFPKI().catch((err) => {
-    console.warn('FPKI initialization failed:', err);
+  // Initialize CAIA OAuth client at startup
+  initializeCAIA().catch((err) => {
+    console.warn('CAIA initialization failed:', err);
   });
 
   return app;

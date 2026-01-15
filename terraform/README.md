@@ -2,7 +2,116 @@
 
 This directory contains all infrastructure as code for deploying Ship to AWS.
 
+## Directory Structure
+
+```
+terraform/
+├── *.tf                    # Root config (legacy flat structure, prod-only)
+├── environments/
+│   ├── dev/                # Dev environment - uses shared VPC
+│   └── prod/               # Prod environment - creates dedicated VPC
+├── modules/                # Reusable Terraform modules
+│   ├── vpc/
+│   ├── aurora/
+│   ├── elastic-beanstalk/
+│   ├── cloudfront-s3/
+│   ├── security-groups/
+│   └── ssm/
+└── bootstrap/              # One-time setup (S3 state bucket)
+```
+
+## Multi-Environment Architecture
+
+### Why Separate Directories Instead of .tfvars?
+
+We use separate `environments/dev/` and `environments/prod/` directories instead of a single configuration with different `.tfvars` files because **the infrastructure code paths differ**, not just the values.
+
+| Aspect | Dev | Prod |
+|--------|-----|------|
+| **VPC** | Reads from SSM (shared VPC) | Creates its own VPC |
+| **State** | `environments/dev/.terraform/` | `environments/prod/.terraform/` |
+| **Dependencies** | Depends on treasury-shared-infra | Self-contained |
+
+**Dev environment** reads VPC configuration from SSM parameters set by `treasury-shared-infra`:
+```hcl
+# environments/dev/main.tf
+data "aws_ssm_parameter" "vpc_id" {
+  name = "/infra/dev/vpc_id"
+}
+```
+
+**Prod environment** creates its own isolated VPC:
+```hcl
+# environments/prod/main.tf
+module "vpc" {
+  source = "../../modules/vpc"
+  ...
+}
+```
+
+This isn't a "same code, different values" situation—it's fundamentally different infrastructure patterns. Using `.tfvars` alone would require complex conditional logic that's harder to understand and maintain.
+
+### When to Use Each Approach
+
+| Scenario | Use .tfvars | Use Separate Directories |
+|----------|-------------|--------------------------|
+| Same code, different instance sizes | ✓ | |
+| Same code, different domains | ✓ | |
+| Different VPC strategies | | ✓ |
+| Different provider configurations | | ✓ |
+| Shared vs dedicated infrastructure | | ✓ |
+
+### Trade-offs
+
+**Separate directories (our choice):**
+- ✓ Clear separation of concerns
+- ✓ Each env can evolve independently
+- ✓ Easier to understand what each env does
+- ✓ Separate state files (no accidental cross-env changes)
+- ✗ Some code duplication in variables.tf, versions.tf, outputs.tf
+
+**Single config with .tfvars:**
+- ✓ DRY - no code duplication
+- ✓ Guaranteed consistency
+- ✗ Complex conditionals for structural differences
+- ✗ Shared state risk (unless using workspaces)
+- ✗ Changes affect all environments at once
+
+### Shared VPC Rationale (Dev)
+
+Dev uses a shared VPC from `treasury-shared-infra` because:
+1. **Cost savings** - Single NAT Gateway (~$33/mo) shared across dev services
+2. **Network consistency** - All dev services can communicate within same VPC
+3. **Simpler peering** - One VPC to connect to on-prem resources
+
+Prod creates its own VPC because:
+1. **Isolation** - Production shouldn't share network with dev services
+2. **Independent scaling** - Prod VPC can be sized for production traffic
+3. **Blast radius** - Issues in shared infrastructure don't affect prod
+
 ## Quick Start
+
+### Using Environment Directories (Recommended)
+
+```bash
+# 1. Verify AWS credentials
+aws sts get-caller-identity
+
+# 2. Navigate to environment
+cd terraform/environments/dev   # or prod
+
+# 3. Sync config from SSM (creates terraform.tfvars)
+../../scripts/sync-terraform-config.sh dev
+
+# 4. Initialize Terraform
+terraform init
+
+# 5. Plan and apply
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
+### Using Root Directory (Legacy - Prod Only)
 
 ```bash
 # 1. Verify AWS credentials (must have access to the team's AWS account)
@@ -21,6 +130,8 @@ terraform plan -out=tfplan
 # 5. Apply changes
 terraform apply tfplan
 ```
+
+> **Note:** The root-level `*.tf` files are the original flat structure. New environments should use the `environments/` directories which leverage shared modules.
 
 ## Infrastructure Components
 
@@ -297,6 +408,60 @@ aws ssm put-parameter \
 import { SSM } from '@aws-sdk/client-ssm';
 const ssm = new SSM();
 const param = await ssm.getParameter({ Name: '/ship/dev/API_KEY', WithDecryption: true });
+```
+
+### SSM Parameter Inventory
+
+All environment configuration lives in SSM. A new developer only needs AWS credentials - everything else is pulled from SSM automatically by `scripts/deploy.sh`.
+
+**Terraform Config** (pulled by `sync-terraform-config.sh`):
+```
+/ship/terraform-config/{env}/environment          # "dev" or "prod"
+/ship/terraform-config/{env}/app_domain_name      # Custom domain (optional)
+/ship/terraform-config/{env}/route53_zone_id      # Route53 zone (optional)
+/ship/terraform-config/{env}/eb_environment_cname # EB CNAME (optional)
+```
+
+**App Runtime** (loaded by `api/src/config/ssm.ts` in production):
+```
+/ship/{env}/DATABASE_URL     # PostgreSQL connection string (SecureString)
+/ship/{env}/SESSION_SECRET   # Express session secret (SecureString)
+/ship/{env}/CORS_ORIGIN      # Allowed CORS origin
+/ship/{env}/CDN_DOMAIN       # CloudFront domain for assets
+/ship/{env}/APP_BASE_URL     # Frontend app URL
+```
+
+**OAuth Credentials** (Secrets Manager, configured via `scripts/configure-caia.sh`):
+```
+/ship/{env}/caia-credentials  # JSON: issuer_url, client_id, client_secret
+```
+
+### Bootstrapping a New Environment
+
+To set up a new environment from scratch:
+
+```bash
+# 1. Create terraform config parameters
+ENV=dev
+aws ssm put-parameter --name /ship/terraform-config/$ENV/environment --value $ENV --type String
+
+# 2. Create app runtime parameters
+aws ssm put-parameter --name /ship/$ENV/SESSION_SECRET --value "$(openssl rand -hex 32)" --type SecureString
+aws ssm put-parameter --name /ship/$ENV/CORS_ORIGIN --value "https://app.$ENV.example.gov" --type String
+aws ssm put-parameter --name /ship/$ENV/CDN_DOMAIN --value "cdn.$ENV.example.gov" --type String
+aws ssm put-parameter --name /ship/$ENV/APP_BASE_URL --value "https://app.$ENV.example.gov" --type String
+# DATABASE_URL is created by Terraform and populated after Aurora is deployed
+
+# 3. Deploy infrastructure
+cd terraform/environments/$ENV
+terraform init
+terraform apply
+
+# 4. Configure CAIA OAuth (get credentials from CAIA Shield first)
+./scripts/configure-caia.sh $ENV
+
+# 5. Deploy application
+./scripts/deploy.sh $ENV
 ```
 
 ## Disaster Recovery

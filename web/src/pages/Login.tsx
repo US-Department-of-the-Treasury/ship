@@ -32,8 +32,8 @@ export function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingSetup, setIsCheckingSetup] = useState(true);
   const [isOnline, setIsOnline] = useState(getIsOnline());
-  const [pivAvailable, setPivAvailable] = useState(false);
-  const [isPivLoading, setIsPivLoading] = useState(false);
+  const [caiaAvailable, setCaiaAvailable] = useState(false);
+  const [isCaiaLoading, setIsCaiaLoading] = useState(false);
 
   // Subscribe to online/offline status changes
   useEffect(() => {
@@ -86,49 +86,49 @@ export function LoginPage() {
       setIsCheckingSetup(false);
     }
 
-    async function checkPivStatus() {
+    async function checkCaiaStatus() {
       try {
-        const res = await fetch(`${API_URL}/api/auth/piv/status`, {
+        const res = await fetch(`${API_URL}/api/auth/caia/status`, {
           credentials: 'include',
         });
         const data = await res.json();
         if (data.success && data.data.available) {
-          setPivAvailable(true);
+          setCaiaAvailable(true);
         }
       } catch (err) {
-        // PIV not available, that's fine
-        console.debug('PIV auth not available:', err);
+        // CAIA not available, that's fine
+        console.debug('CAIA auth not available:', err);
       }
     }
 
     checkSetup();
-    checkPivStatus();
+    checkCaiaStatus();
   }, [navigate]);
 
-  async function handlePivLogin() {
+  async function handleCaiaLogin() {
     setError('');
     setErrorField(null);
-    setIsPivLoading(true);
+    setIsCaiaLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/piv/login`, {
+      const res = await fetch(`${API_URL}/api/auth/caia/login`, {
         credentials: 'include',
       });
       const data = await res.json();
 
       if (data.success && data.data.authorizationUrl) {
-        // Redirect to FPKI Validator for PIV authentication
+        // Redirect to CAIA for PIV authentication
         window.location.href = data.data.authorizationUrl;
       } else {
-        setError(data.error?.message || 'Failed to initiate PIV login');
+        setError(data.error?.message || 'Failed to initiate CAIA login');
         setErrorField('general');
-        setIsPivLoading(false);
+        setIsCaiaLoading(false);
       }
     } catch (err) {
-      console.error('PIV login error:', err);
-      setError('Failed to connect to PIV authentication service');
+      console.error('CAIA login error:', err);
+      setError('Failed to connect to CAIA authentication service');
       setErrorField('general');
-      setIsPivLoading(false);
+      setIsCaiaLoading(false);
     }
   }
 
@@ -289,22 +289,22 @@ export function LoginPage() {
           </button>
         </form>
 
-        {/* PIV Authentication - shown when FPKI is configured */}
-        {pivAvailable && (
+        {/* PIV Authentication via CAIA */}
+        {caiaAvailable && (
           <>
             <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center text-xs">
-                <span className="bg-background px-2 text-muted">or</span>
+                <span className="bg-background px-2 text-muted">or sign in with PIV</span>
               </div>
             </div>
 
             <button
               type="button"
-              onClick={handlePivLogin}
-              disabled={isPivLoading || !isOnline}
+              onClick={handleCaiaLogin}
+              disabled={isCaiaLoading || !isOnline}
               className={cn(
                 'w-full rounded-md border border-border bg-background px-4 py-2.5',
                 'text-sm font-medium text-foreground',
@@ -329,7 +329,7 @@ export function LoginPage() {
                 <line x1="7" y1="14" x2="17" y2="14" />
                 <line x1="7" y1="17" x2="13" y2="17" />
               </svg>
-              {isPivLoading ? 'Connecting...' : 'Sign in with PIV Card'}
+              {isCaiaLoading ? 'Connecting...' : 'Sign in with PIV Card'}
             </button>
           </>
         )}

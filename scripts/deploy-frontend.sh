@@ -2,22 +2,41 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Parse environment argument
+ENV="${1:-}"
+if [[ ! "$ENV" =~ ^(dev|prod)$ ]]; then
+  echo "Usage: $0 <dev|prod>"
+  echo ""
+  echo "Examples:"
+  echo "  $0 dev     # Deploy frontend to dev environment"
+  echo "  $0 prod    # Deploy frontend to prod environment"
+  exit 1
+fi
 
 # Sync terraform config from SSM (source of truth)
-"$SCRIPT_DIR/sync-terraform-config.sh"
+"$SCRIPT_DIR/sync-terraform-config.sh" "$ENV"
 
 echo "=========================================="
-echo "Ship - Frontend Deployment"
+echo "Ship - Frontend Deployment ($ENV)"
 echo "=========================================="
 echo ""
 
 # Navigate to project root
-cd "$(dirname "$0")/.."
+cd "$PROJECT_ROOT"
+
+# Environment-specific terraform directory
+if [ "$ENV" = "prod" ]; then
+  TF_DIR="$PROJECT_ROOT/terraform"
+else
+  TF_DIR="$PROJECT_ROOT/terraform/environments/$ENV"
+fi
 
 # Get S3 bucket name and CloudFront distribution ID from Terraform
-BUCKET_NAME=$(cd terraform && terraform output -raw s3_bucket_name)
-DISTRIBUTION_ID=$(cd terraform && terraform output -raw cloudfront_distribution_id)
-FRONTEND_URL=$(cd terraform && terraform output -raw frontend_url)
+BUCKET_NAME=$(cd "$TF_DIR" && terraform output -raw s3_bucket_name)
+DISTRIBUTION_ID=$(cd "$TF_DIR" && terraform output -raw cloudfront_distribution_id)
+FRONTEND_URL=$(cd "$TF_DIR" && terraform output -raw frontend_url)
 
 if [ -z "$BUCKET_NAME" ] || [ -z "$DISTRIBUTION_ID" ]; then
     echo "Error: Could not get infrastructure details from Terraform"
