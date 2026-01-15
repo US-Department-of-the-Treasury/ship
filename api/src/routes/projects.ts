@@ -50,6 +50,8 @@ function extractProjectFromRow(row: any) {
     missing_fields: props.missing_fields ?? [],
     // Inferred status (computed from sprint relationships)
     inferred_status: row.inferred_status as InferredProjectStatus || 'backlog',
+    // Conversion tracking
+    converted_from_id: row.converted_from_id || null,
   };
 }
 
@@ -347,6 +349,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
     let query = `
       SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+             d.converted_from_id,
              (d.properties->>'owner_id')::uuid as owner_id,
              u.name as owner_name, u.email as owner_email,
              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
@@ -420,7 +423,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
-              d.converted_to_id,
+              d.converted_to_id, d.converted_from_id,
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
@@ -672,6 +675,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+              d.converted_from_id,
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,

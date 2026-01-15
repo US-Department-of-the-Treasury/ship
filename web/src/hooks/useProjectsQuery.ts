@@ -37,6 +37,8 @@ export interface Project {
   // Completeness flags
   is_complete: boolean | null;
   missing_fields: string[];
+  // Conversion tracking
+  converted_from_id?: string | null;
   // Offline sync
   _pending?: boolean;
   _pendingId?: string;

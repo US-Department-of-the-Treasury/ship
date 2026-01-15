@@ -27,6 +27,7 @@ export interface Issue {
   completed_at?: string | null;
   cancelled_at?: string | null;
   reopened_at?: string | null;
+  converted_from_id?: string | null;
   _pending?: boolean;
   _pendingId?: string;
 }

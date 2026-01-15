@@ -271,6 +271,7 @@ export function IssueEditorPage() {
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
+  const [isUndoing, setIsUndoing] = useState(false);
 
   // Use TanStack Query for programs and team members (supports offline via cache)
   const { data: programsData = [], isLoading: programsLoading } = useProgramsQuery();
@@ -445,6 +446,32 @@ export function IssueEditorPage() {
     }
   }, [id, navigate]);
 
+  // Undo conversion (restore original document)
+  const handleUndoConversion = useCallback(async () => {
+    if (!id) return;
+    setIsUndoing(true);
+    try {
+      const res = await apiPost(`/api/documents/${id}/undo-conversion`, {});
+      if (res.ok) {
+        const data = await res.json();
+        showToast('Conversion undone. Original document restored.', 'success');
+        // Navigate to the restored document
+        const restoredDocType = data.restored_document.document_type;
+        const route = restoredDocType === 'project' ? `/projects/${data.restored_document.id}` : `/issues/${data.restored_document.id}`;
+        navigate(route, { replace: true });
+      } else {
+        const error = await res.json();
+        console.error('Failed to undo conversion:', error);
+        showToast(error.error || 'Failed to undo conversion', 'error');
+        setIsUndoing(false);
+      }
+    } catch (err) {
+      console.error('Failed to undo conversion:', err);
+      showToast('Failed to undo conversion', 'error');
+      setIsUndoing(false);
+    }
+  }, [id, navigate, showToast]);
+
   // Throttled title save with stale response handling
   const throttledTitleSave = useAutoSave({
     onSave: async (title: string) => {
@@ -545,6 +572,36 @@ export function IssueEditorPage() {
       }
       sidebar={
         <div className="space-y-4 p-4">
+          {/* Undo Conversion Banner - show when this issue was converted from another document */}
+          {displayIssue.converted_from_id && (
+            <div className="mb-4 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+              <p className="mb-2 text-sm text-blue-300">This issue was converted from a project.</p>
+              <button
+                onClick={handleUndoConversion}
+                disabled={isUndoing}
+                className="w-full rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {isUndoing ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Undoing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M7.707 3.293a1 1 0 010 1.414L5.414 7H11a7 7 0 017 7v2a1 1 0 11-2 0v-2a5 5 0 00-5-5H5.414l2.293 2.293a1 1 0 11-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    Undo Conversion
+                  </>
+                )}
+              </button>
+              <p className="mt-1 text-xs text-blue-300/70 text-center">Restore the original project</p>
+            </div>
+          )}
+
           {/* Triage Actions - only show for issues in triage state */}
           {displayIssue.state === 'triage' && (
             <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">

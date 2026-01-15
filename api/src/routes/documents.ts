@@ -625,6 +625,108 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
   }
 });
 
+// POST /documents/:id/undo-conversion - Undo a document conversion
+router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const userId = req.userId!;
+  const workspaceId = req.workspaceId!;
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Get the current document (must have been converted from another)
+    const docResult = await client.query(
+      `SELECT * FROM documents WHERE id = $1 AND workspace_id = $2`,
+      [id, workspaceId]
+    );
+
+    if (docResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    const currentDoc = docResult.rows[0];
+
+    // Check if this document was converted from another
+    if (!currentDoc.converted_from_id) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: 'This document was not converted from another document' });
+      return;
+    }
+
+    // Get the original document
+    const originalResult = await client.query(
+      `SELECT * FROM documents WHERE id = $1 AND workspace_id = $2`,
+      [currentDoc.converted_from_id, workspaceId]
+    );
+
+    if (originalResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      res.status(404).json({ error: 'Original document not found' });
+      return;
+    }
+
+    const originalDoc = originalResult.rows[0];
+
+    // Verify the original document points to this one
+    if (originalDoc.converted_to_id !== id) {
+      await client.query('ROLLBACK');
+      res.status(400).json({ error: 'Document conversion chain is inconsistent' });
+      return;
+    }
+
+    // Restore the original document:
+    // - Clear converted_to_id so it's no longer archived
+    // - Set converted_from_id to point to the current doc (for history)
+    await client.query(
+      `UPDATE documents
+       SET converted_to_id = NULL,
+           converted_from_id = $1,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [id, originalDoc.id]
+    );
+
+    // Archive the current document:
+    // - Set converted_to_id to point back to original (making it the archived one now)
+    // - Clear converted_from_id
+    await client.query(
+      `UPDATE documents
+       SET converted_to_id = $1,
+           converted_from_id = NULL,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [originalDoc.id, id]
+    );
+
+    await client.query('COMMIT');
+
+    // Get the restored original document for response
+    const restoredResult = await client.query(
+      `SELECT * FROM documents WHERE id = $1`,
+      [originalDoc.id]
+    );
+
+    const restoredDoc = restoredResult.rows[0];
+
+    res.status(200).json({
+      restored_document: restoredDoc,
+      archived_document_id: id,
+      message: `Conversion undone. Original ${originalDoc.document_type} has been restored.`,
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Undo conversion error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;
 
 // Type augmentation for Express Request
