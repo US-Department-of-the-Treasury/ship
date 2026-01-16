@@ -12,11 +12,12 @@ const router: RouterType = Router();
 // Sprint properties: sprint_number, assignee_ids (array), and hypothesis fields
 // API accepts owner_id for backwards compatibility, stored internally as assignee_ids[0]
 // Dates and status are computed from sprint_number + workspace.sprint_start_date
+// program_id is optional - sprints can be projectless (ad-hoc work)
 const createSprintSchema = z.object({
-  program_id: z.string().uuid(),
+  program_id: z.string().uuid().optional().nullable(),
   title: z.string().min(1).max(200).optional().default('Untitled'),
   sprint_number: z.number().int().positive(),
-  owner_id: z.string().uuid(),
+  owner_id: z.string().uuid().optional(),
   // Sprint goal (concise objective, separate from hypothesis)
   goal: z.string().max(500).optional(),
   // Hypothesis tracking (optional at creation)
@@ -365,7 +366,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // Create sprint (creates a document with document_type = 'sprint')
-// Only stores sprint_number and assignee_ids - dates/status computed from sprint_number
+// Only stores sprint_number and owner_id - dates/status computed from sprint_number
+// program_id is optional - allows creating projectless sprints for ad-hoc work
 router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId!;
@@ -382,44 +384,74 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
-    // Verify program belongs to workspace, user can access it, and get workspace info
-    const programCheck = await pool.query(
-      `SELECT d.id, w.sprint_start_date
-       FROM documents d
-       JOIN workspaces w ON d.workspace_id = w.id
-       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'
-         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
-      [program_id, workspaceId, userId, isAdmin]
+    // Get workspace info (always needed for sprint_start_date)
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
     );
 
-    if (programCheck.rows.length === 0) {
-      res.status(404).json({ error: 'Program not found' });
+    if (workspaceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Workspace not found' });
       return;
     }
 
-    // Verify owner exists in workspace
-    const ownerCheck = await pool.query(
-      `SELECT u.id, u.name, u.email FROM users u
-       JOIN workspace_memberships wm ON wm.user_id = u.id
-       WHERE u.id = $1 AND wm.workspace_id = $2`,
-      [owner_id, req.workspaceId]
-    );
+    const sprintStartDate = workspaceResult.rows[0].sprint_start_date;
 
-    if (ownerCheck.rows.length === 0) {
-      res.status(400).json({ error: 'Owner not found in workspace' });
-      return;
+    // If program_id provided, verify it belongs to workspace and user can access it
+    if (program_id) {
+      const programCheck = await pool.query(
+        `SELECT d.id
+         FROM documents d
+         WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'
+           AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+        [program_id, workspaceId, userId, isAdmin]
+      );
+
+      if (programCheck.rows.length === 0) {
+        res.status(404).json({ error: 'Program not found' });
+        return;
+      }
+
+      // Check if sprint already exists for this program + sprint_number
+      const existingCheck = await pool.query(
+        `SELECT id FROM documents
+         WHERE program_id = $1 AND document_type = 'sprint' AND (properties->>'sprint_number')::int = $2`,
+        [program_id, sprint_number]
+      );
+
+      if (existingCheck.rows.length > 0) {
+        res.status(400).json({ error: `Sprint ${sprint_number} already exists for this program` });
+        return;
+      }
+    } else {
+      // For projectless sprints, check workspace-wide uniqueness
+      const existingCheck = await pool.query(
+        `SELECT id FROM documents
+         WHERE workspace_id = $1 AND program_id IS NULL AND document_type = 'sprint' AND (properties->>'sprint_number')::int = $2`,
+        [workspaceId, sprint_number]
+      );
+
+      if (existingCheck.rows.length > 0) {
+        res.status(400).json({ error: `Projectless sprint ${sprint_number} already exists` });
+        return;
+      }
     }
 
-    // Check if sprint already exists for this program + sprint_number
-    const existingCheck = await pool.query(
-      `SELECT id FROM documents
-       WHERE program_id = $1 AND document_type = 'sprint' AND (properties->>'sprint_number')::int = $2`,
-      [program_id, sprint_number]
-    );
+    // Verify owner exists in workspace (if provided)
+    let ownerData = null;
+    if (owner_id) {
+      const ownerCheck = await pool.query(
+        `SELECT u.id, u.name, u.email FROM users u
+         JOIN workspace_memberships wm ON wm.user_id = u.id
+         WHERE u.id = $1 AND wm.workspace_id = $2`,
+        [owner_id, workspaceId]
+      );
 
-    if (existingCheck.rows.length > 0) {
-      res.status(400).json({ error: `Sprint ${sprint_number} already exists for this program` });
-      return;
+      if (ownerCheck.rows.length === 0) {
+        res.status(400).json({ error: 'Owner not found in workspace' });
+        return;
+      }
+      ownerData = ownerCheck.rows[0];
     }
 
     // Build properties JSONB - sprint_number, assignee_ids, goal, and hypothesis fields
@@ -427,6 +459,10 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       sprint_number,
       assignee_ids: owner_id ? [owner_id] : [],
     };
+
+    if (owner_id) {
+      properties.owner_id = owner_id;
+    }
 
     // Add goal if provided (concise objective, separate from hypothesis)
     if (goal !== undefined) {
@@ -454,22 +490,19 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by)
        VALUES ($1, 'sprint', $2, $3, $4, $5)
        RETURNING id, title, properties, program_id`,
-      [req.workspaceId, title, program_id, JSON.stringify(properties), req.userId]
+      [workspaceId, title, program_id || null, JSON.stringify(properties), userId]
     );
-
-    const owner = ownerCheck.rows[0];
-    const sprintStartDate = programCheck.rows[0].sprint_start_date;
 
     res.status(201).json({
       id: result.rows[0].id,
       name: result.rows[0].title,
       sprint_number,
-      owner: {
-        id: owner.id,
-        name: owner.name,
-        email: owner.email,
-      },
-      program_id,
+      owner: ownerData ? {
+        id: ownerData.id,
+        name: ownerData.name,
+        email: ownerData.email,
+      } : null,
+      program_id: program_id || null,
       workspace_sprint_start_date: sprintStartDate,
       issue_count: 0,
       completed_count: 0,
