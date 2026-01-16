@@ -792,7 +792,8 @@ export function IssueEditorPage() {
                       return;
                     }
                     setSprintError(null);
-                    handleUpdateIssue({ sprint_id: value });
+                    // Include program_id to preserve program association when updating sprint
+                    handleUpdateIssue({ sprint_id: value, program_id: displayIssue.program_id });
                   }}
                   placeholder="No Sprint"
                   clearLabel="No Sprint"

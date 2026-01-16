@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
-import type { CascadeWarning, IncompleteChild } from '@ship/shared';
+import type { CascadeWarning, IncompleteChild, BelongsTo, BelongsToType } from '@ship/shared';
 
 // Custom error type for cascade warning (409 response)
 export class CascadeWarningError extends Error {
@@ -20,7 +20,7 @@ export function isCascadeWarningError(error: unknown): error is CascadeWarningEr
 }
 
 // Re-export for convenience
-export type { CascadeWarning, IncompleteChild };
+export type { CascadeWarning, IncompleteChild, BelongsTo, BelongsToType };
 
 export interface Issue {
   id: string;
@@ -33,6 +33,9 @@ export interface Issue {
   assignee_name: string | null;
   assignee_archived?: boolean;
   estimate: number | null;
+  // belongs_to array contains all associations (program, sprint, project, parent)
+  belongs_to: BelongsTo[];
+  // Legacy fields - derived from belongs_to for backward compatibility
   program_id: string | null;
   sprint_id: string | null;
   program_name: string | null;
@@ -50,6 +53,22 @@ export interface Issue {
   converted_from_id?: string | null;
 }
 
+// Helper to extract association ID by type
+export function getAssociationId(issue: Issue, type: BelongsToType): string | null {
+  const association = issue.belongs_to?.find(a => a.type === type);
+  return association?.id ?? null;
+}
+
+// Helper to get program ID from belongs_to
+export function getProgramId(issue: Issue): string | null {
+  return getAssociationId(issue, 'program');
+}
+
+// Helper to get sprint ID from belongs_to
+export function getSprintId(issue: Issue): string | null {
+  return getAssociationId(issue, 'sprint');
+}
+
 // Query keys
 export const issueKeys = {
   all: ['issues'] as const,
@@ -59,6 +78,26 @@ export const issueKeys = {
   detail: (id: string) => [...issueKeys.details(), id] as const,
 };
 
+// Transform API issue response to include derived legacy fields
+function transformIssue(apiIssue: Record<string, unknown>): Issue {
+  const belongs_to = (apiIssue.belongs_to as BelongsTo[]) || [];
+
+  // Derive legacy fields from belongs_to for backward compatibility
+  const programAssoc = belongs_to.find(a => a.type === 'program');
+  const sprintAssoc = belongs_to.find(a => a.type === 'sprint');
+
+  return {
+    ...apiIssue,
+    belongs_to,
+    // Derive legacy fields
+    program_id: programAssoc?.id ?? null,
+    sprint_id: sprintAssoc?.id ?? null,
+    program_name: programAssoc?.title ?? null,
+    program_prefix: null, // Not available in new format
+    sprint_name: sprintAssoc?.title ?? null,
+  } as Issue;
+}
+
 // Fetch issues
 async function fetchIssues(): Promise<Issue[]> {
   const res = await apiGet('/api/issues');
@@ -67,7 +106,8 @@ async function fetchIssues(): Promise<Issue[]> {
     error.status = res.status;
     throw error;
   }
-  return res.json();
+  const data = await res.json();
+  return (data as Record<string, unknown>[]).map(transformIssue);
 }
 
 // Create issue
@@ -77,18 +117,51 @@ interface CreateIssueData {
 }
 
 async function createIssueApi(data: CreateIssueData): Promise<Issue> {
-  const res = await apiPost('/api/issues', { title: 'Untitled', ...data });
+  // Convert program_id to belongs_to format
+  const apiData: Record<string, unknown> = { title: 'Untitled' };
+  if (data.title) apiData.title = data.title;
+  if (data.program_id) {
+    apiData.belongs_to = [{ id: data.program_id, type: 'program' }];
+  }
+
+  const res = await apiPost('/api/issues', apiData);
   if (!res.ok) {
     const error = new Error('Failed to create issue') as Error & { status: number };
     error.status = res.status;
     throw error;
   }
-  return res.json();
+  const apiIssue = await res.json();
+  return transformIssue(apiIssue);
 }
 
 // Update issue
 async function updateIssueApi(id: string, updates: Partial<Issue>): Promise<Issue> {
-  const res = await apiPatch(`/api/issues/${id}`, updates);
+  // Convert program_id/sprint_id to belongs_to format for API compatibility
+  const apiUpdates: Record<string, unknown> = { ...updates };
+
+  // Build belongs_to array from program_id and sprint_id if either is present
+  if ('program_id' in updates || 'sprint_id' in updates) {
+    const belongs_to: Array<{ id: string; type: string }> = [];
+
+    // Handle program association
+    if ('program_id' in updates && updates.program_id) {
+      belongs_to.push({ id: updates.program_id, type: 'program' });
+    }
+
+    // Handle sprint association
+    if ('sprint_id' in updates && updates.sprint_id) {
+      belongs_to.push({ id: updates.sprint_id, type: 'sprint' });
+    }
+
+    // Set belongs_to (empty array removes all associations of these types)
+    apiUpdates.belongs_to = belongs_to;
+
+    // Remove old fields from API payload
+    delete apiUpdates.program_id;
+    delete apiUpdates.sprint_id;
+  }
+
+  const res = await apiPatch(`/api/issues/${id}`, apiUpdates);
   if (!res.ok) {
     // Check for cascade warning (409 with incomplete_children)
     if (res.status === 409) {
@@ -101,7 +174,8 @@ async function updateIssueApi(id: string, updates: Partial<Issue>): Promise<Issu
     error.status = res.status;
     throw error;
   }
-  return res.json();
+  const apiIssue = await res.json();
+  return transformIssue(apiIssue);
 }
 
 // Hook to get issues
@@ -123,6 +197,11 @@ export function useCreateIssue() {
       await queryClient.cancelQueries({ queryKey: issueKeys.lists() });
       const previousIssues = queryClient.getQueryData<Issue[]>(issueKeys.lists());
 
+      // Build belongs_to for optimistic issue
+      const belongs_to: BelongsTo[] = newIssue?.program_id
+        ? [{ id: newIssue.program_id, type: 'program' }]
+        : [];
+
       const optimisticIssue: Issue = {
         id: `temp-${crypto.randomUUID()}`,
         title: newIssue?.title ?? 'Untitled',
@@ -133,6 +212,7 @@ export function useCreateIssue() {
         assignee_id: null,
         assignee_name: null,
         estimate: null,
+        belongs_to,
         program_id: newIssue?.program_id ?? null,
         sprint_id: null,
         program_name: null,
@@ -183,7 +263,26 @@ export function useUpdateIssue() {
 
       queryClient.setQueryData<Issue[]>(
         issueKeys.lists(),
-        (old) => old?.map(i => i.id === id ? { ...i, ...updates } : i) || []
+        (old) => old?.map(i => {
+          if (i.id !== id) return i;
+
+          // Build updated belongs_to array
+          let newBelongsTo = [...(i.belongs_to || [])];
+          if ('program_id' in updates) {
+            newBelongsTo = newBelongsTo.filter(a => a.type !== 'program');
+            if (updates.program_id) {
+              newBelongsTo.push({ id: updates.program_id, type: 'program' });
+            }
+          }
+          if ('sprint_id' in updates) {
+            newBelongsTo = newBelongsTo.filter(a => a.type !== 'sprint');
+            if (updates.sprint_id) {
+              newBelongsTo.push({ id: updates.sprint_id, type: 'sprint' });
+            }
+          }
+
+          return { ...i, ...updates, belongs_to: newBelongsTo };
+        }) || []
       );
 
       return { previousIssues };

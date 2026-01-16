@@ -164,15 +164,24 @@ describe('Sprint Reviews API', () => {
 
     it('pre-fill content includes issues information', async () => {
       // Create some issues for the sprint
-      await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, sprint_id, created_by, visibility, properties)
-         VALUES ($1, 'issue', 'Done Issue', $2, $3, 'workspace', $4)`,
-        [testWorkspaceId, testSprintId, testUserId, JSON.stringify({ state: 'done' })]
+      const doneIssueResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility, properties)
+         VALUES ($1, 'issue', 'Done Issue', $2, 'workspace', $3)
+         RETURNING id`,
+        [testWorkspaceId, testUserId, JSON.stringify({ state: 'done' })]
       )
+      const inProgressIssueResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility, properties)
+         VALUES ($1, 'issue', 'In Progress Issue', $2, 'workspace', $3)
+         RETURNING id`,
+        [testWorkspaceId, testUserId, JSON.stringify({ state: 'in_progress' })]
+      )
+
+      // Create document_associations for sprint relationship
       await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, sprint_id, created_by, visibility, properties)
-         VALUES ($1, 'issue', 'In Progress Issue', $2, $3, 'workspace', $4)`,
-        [testWorkspaceId, testSprintId, testUserId, JSON.stringify({ state: 'in_progress' })]
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'sprint'), ($3, $2, 'sprint')`,
+        [doneIssueResult.rows[0].id, testSprintId, inProgressIssueResult.rows[0].id]
       )
 
       const response = await request(app)

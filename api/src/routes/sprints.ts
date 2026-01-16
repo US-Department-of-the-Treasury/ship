@@ -365,6 +365,181 @@ router.get('/my-action-items', authMiddleware, async (req: Request, res: Respons
   }
 });
 
+// Get aggregated "My Week" view - all issues from active sprints across programs
+// Returns issues grouped by sprint/program with filtering options
+router.get('/my-week', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+    const { state, assignee, show_mine } = req.query;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Get workspace sprint_start_date to calculate current sprint number
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    if (workspaceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Workspace not found' });
+      return;
+    }
+
+    const rawStartDate = workspaceResult.rows[0].sprint_start_date;
+    const sprintDuration = 7;
+
+    // Calculate current sprint number
+    let workspaceStartDate: Date;
+    if (rawStartDate instanceof Date) {
+      workspaceStartDate = new Date(Date.UTC(rawStartDate.getFullYear(), rawStartDate.getMonth(), rawStartDate.getDate()));
+    } else if (typeof rawStartDate === 'string') {
+      workspaceStartDate = new Date(rawStartDate + 'T00:00:00Z');
+    } else {
+      workspaceStartDate = new Date();
+    }
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
+
+    // Calculate sprint dates
+    const currentSprintStart = new Date(workspaceStartDate);
+    currentSprintStart.setUTCDate(currentSprintStart.getUTCDate() + (currentSprintNumber - 1) * sprintDuration);
+    const currentSprintEnd = new Date(currentSprintStart);
+    currentSprintEnd.setUTCDate(currentSprintEnd.getUTCDate() + sprintDuration - 1);
+    const daysRemaining = Math.max(0, Math.ceil((currentSprintEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+
+    // Build dynamic WHERE clause for issue filters
+    const params: any[] = [workspaceId, currentSprintNumber, userId, isAdmin];
+    let filterConditions = '';
+
+    if (state && typeof state === 'string') {
+      params.push(state);
+      filterConditions += ` AND i.properties->>'state' = $${params.length}`;
+    }
+
+    if (show_mine === 'true') {
+      params.push(userId);
+      filterConditions += ` AND (i.properties->>'assignee_id')::uuid = $${params.length}`;
+    } else if (assignee && typeof assignee === 'string') {
+      params.push(assignee);
+      filterConditions += ` AND (i.properties->>'assignee_id')::uuid = $${params.length}`;
+    }
+
+    // Get all issues from all active sprints, grouped by sprint
+    const result = await pool.query(
+      `SELECT
+        i.id as issue_id, i.title as issue_title, i.properties as issue_properties,
+        i.ticket_number, i.created_at as issue_created_at, i.updated_at as issue_updated_at,
+        s.id as sprint_id, s.title as sprint_name, s.properties as sprint_properties,
+        p.id as program_id, p.title as program_name, p.properties->>'prefix' as program_prefix,
+        u.name as assignee_name,
+        CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived
+       FROM documents i
+       JOIN document_associations da ON da.document_id = i.id AND da.relationship_type = 'sprint'
+       JOIN documents s ON s.id = da.related_id AND s.document_type = 'sprint'
+       LEFT JOIN documents p ON s.program_id = p.id
+       LEFT JOIN users u ON (i.properties->>'assignee_id')::uuid = u.id
+       LEFT JOIN documents person_doc ON person_doc.workspace_id = i.workspace_id
+         AND person_doc.document_type = 'person'
+         AND person_doc.properties->>'user_id' = i.properties->>'assignee_id'
+       WHERE i.workspace_id = $1
+         AND i.document_type = 'issue'
+         AND (s.properties->>'sprint_number')::int = $2
+         AND ${VISIBILITY_FILTER_SQL('i', '$3', '$4')}
+         AND ${VISIBILITY_FILTER_SQL('s', '$3', '$4')}
+         ${filterConditions}
+       ORDER BY
+         p.title,
+         s.title,
+         CASE i.properties->>'priority'
+           WHEN 'urgent' THEN 1
+           WHEN 'high' THEN 2
+           WHEN 'medium' THEN 3
+           WHEN 'low' THEN 4
+           ELSE 5
+         END,
+         i.updated_at DESC`,
+      params
+    );
+
+    // Group issues by sprint/program
+    const groupedData: Record<string, {
+      sprint: { id: string; name: string; sprint_number: number };
+      program: { id: string; name: string; prefix: string } | null;
+      issues: any[];
+    }> = {};
+
+    for (const row of result.rows) {
+      const sprintKey = row.sprint_id;
+      if (!groupedData[sprintKey]) {
+        const sprintProps = row.sprint_properties || {};
+        groupedData[sprintKey] = {
+          sprint: {
+            id: row.sprint_id,
+            name: row.sprint_name,
+            sprint_number: sprintProps.sprint_number || currentSprintNumber,
+          },
+          program: row.program_id ? {
+            id: row.program_id,
+            name: row.program_name,
+            prefix: row.program_prefix,
+          } : null,
+          issues: [],
+        };
+      }
+
+      const issueProps = row.issue_properties || {};
+      groupedData[sprintKey].issues.push({
+        id: row.issue_id,
+        title: row.issue_title,
+        state: issueProps.state || 'backlog',
+        priority: issueProps.priority || 'medium',
+        assignee_id: issueProps.assignee_id || null,
+        assignee_name: row.assignee_name,
+        assignee_archived: row.assignee_archived || false,
+        estimate: issueProps.estimate ?? null,
+        ticket_number: row.ticket_number,
+        display_id: `#${row.ticket_number}`,
+        created_at: row.issue_created_at,
+        updated_at: row.issue_updated_at,
+      });
+    }
+
+    // Convert to array
+    const groups = Object.values(groupedData);
+
+    // Calculate totals
+    const totalIssues = groups.reduce((sum, g) => sum + g.issues.length, 0);
+    const completedIssues = groups.reduce((sum, g) =>
+      sum + g.issues.filter((i: any) => i.state === 'done').length, 0);
+    const inProgressIssues = groups.reduce((sum, g) =>
+      sum + g.issues.filter((i: any) => i.state === 'in_progress' || i.state === 'in_review').length, 0);
+
+    res.json({
+      groups,
+      summary: {
+        total_issues: totalIssues,
+        completed_issues: completedIssues,
+        in_progress_issues: inProgressIssues,
+        remaining_issues: totalIssues - completedIssues,
+      },
+      week: {
+        current_sprint_number: currentSprintNumber,
+        start_date: currentSprintStart.toISOString().split('T')[0],
+        end_date: currentSprintEnd.toISOString().split('T')[0],
+        days_remaining: daysRemaining,
+      },
+    });
+  } catch (err) {
+    console.error('Get my-week error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get single sprint
 // Automatically takes a plan snapshot when sprint becomes active (start_date reached)
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
