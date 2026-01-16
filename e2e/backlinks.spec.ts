@@ -457,18 +457,23 @@ test.describe('Backlinks', () => {
       const editor = page.locator('.ProseMirror')
       await editor.click()
 
-      // Mention Popular Doc
+      // Mention Popular Doc - wait for popup and select
       await page.keyboard.type('@Popular Doc')
-      await page.waitForTimeout(500)
 
+      // Wait for mention popup to appear
       const mentionPopup = page.locator('[role="listbox"]')
-      if (await mentionPopup.isVisible({ timeout: 3000 })) {
-        const docOption = page.locator('[role="option"]').filter({ hasText: 'Popular Doc' })
-        if (await docOption.isVisible()) {
-          await docOption.click()
-          await page.waitForTimeout(1000)
-        }
-      }
+      await expect(mentionPopup).toBeVisible({ timeout: 5000 })
+
+      // Click the option
+      const docOption = page.locator('[role="option"]').filter({ hasText: 'Popular Doc' })
+      await expect(docOption).toBeVisible({ timeout: 3000 })
+      await docOption.click()
+
+      // Wait for mention to be inserted (check for mention element in editor)
+      await expect(editor.locator('[data-type="mention"], .mention')).toBeVisible({ timeout: 3000 })
+
+      // Wait for link sync to complete
+      await page.waitForTimeout(1000)
     }
 
     // Navigate to Popular Doc
@@ -489,10 +494,11 @@ test.describe('Backlinks', () => {
 
     await expect(backlinksPanel).toBeVisible({ timeout: 3000 })
 
-    // Check for both referrers (within properties sidebar)
-    const hasReferrer1 = await propertiesSidebar.locator('text="Referrer 1"').isVisible({ timeout: 3000 })
-    const hasReferrer2 = await propertiesSidebar.locator('text="Referrer 2"').isVisible({ timeout: 3000 })
-
-    expect(hasReferrer1 && hasReferrer2).toBeTruthy()
+    // Check for both referrers (within properties sidebar) using retry pattern
+    await expect(async () => {
+      const hasReferrer1 = await propertiesSidebar.locator('text="Referrer 1"').isVisible()
+      const hasReferrer2 = await propertiesSidebar.locator('text="Referrer 2"').isVisible()
+      expect(hasReferrer1 && hasReferrer2).toBeTruthy()
+    }).toPass({ timeout: 10000 })
   })
 })

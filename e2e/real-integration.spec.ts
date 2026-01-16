@@ -182,16 +182,15 @@ test.describe('Real Integration - Document Editor', () => {
     // Press Enter to move focus to editor
     await page.keyboard.press('Enter');
 
-    // Wait for focus to propagate
-    await page.waitForTimeout(300);
-
-    // Verify editor body is now focused (or contains active element)
-    const editorFocused = await page.evaluate(() => {
-      const editor = document.querySelector('.tiptap');
-      const prosemirror = document.querySelector('.ProseMirror');
-      return editor?.contains(document.activeElement) || prosemirror?.contains(document.activeElement);
-    });
-    expect(editorFocused).toBe(true);
+    // Wait for focus to propagate using retry pattern (more reliable than fixed timeout)
+    await expect(async () => {
+      const editorFocused = await page.evaluate(() => {
+        const editor = document.querySelector('.tiptap');
+        const prosemirror = document.querySelector('.ProseMirror');
+        return editor?.contains(document.activeElement) || prosemirror?.contains(document.activeElement);
+      });
+      expect(editorFocused).toBe(true);
+    }).toPass({ timeout: 5000 });
   });
 
   test('new document title is selected for immediate typing', async ({ page }) => {
