@@ -259,6 +259,8 @@ export function ProjectEditorPage() {
     updated_at: new Date().toISOString(),
     is_complete: null,
     missing_fields: [],
+    inferred_status: 'backlog' as const,
+    converted_from_id: null,
     _pending: true,
   } : null);
 
