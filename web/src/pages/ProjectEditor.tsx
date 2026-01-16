@@ -269,10 +269,6 @@ export function ProjectEditorPage() {
   }
 
   const handleOwnerChange = (ownerId: string | null) => {
-    if (!ownerId) {
-      setOwnerError('Owner is required');
-      return;
-    }
     setOwnerError(null);
     handleUpdateProject({ owner_id: ownerId } as Partial<Project>);
   };
