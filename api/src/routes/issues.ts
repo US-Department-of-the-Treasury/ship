@@ -133,7 +133,7 @@ function extractIssueFromRow(row: any) {
 // List issues with filters
 router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { state, priority, assignee_id, program_id, sprint_id, source } = req.query;
+    const { state, priority, assignee_id, program_id, sprint_id, source, parent_filter } = req.query;
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
@@ -200,6 +200,29 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     if (sprint_id) {
       query += ` AND d.sprint_id = $${params.length + 1}`;
       params.push(sprint_id as string);
+    }
+
+    // Filter by parent/sub-issue status
+    if (parent_filter) {
+      if (parent_filter === 'top_level') {
+        // Issues that have NO parent (not a sub-issue)
+        query += ` AND NOT EXISTS (
+          SELECT 1 FROM document_associations da
+          WHERE da.document_id = d.id AND da.relationship_type = 'parent'
+        )`;
+      } else if (parent_filter === 'has_children') {
+        // Issues that HAVE at least one child (sub-issue)
+        query += ` AND EXISTS (
+          SELECT 1 FROM document_associations da
+          WHERE da.related_id = d.id AND da.relationship_type = 'parent'
+        )`;
+      } else if (parent_filter === 'is_sub_issue') {
+        // Issues that ARE sub-issues (have a parent)
+        query += ` AND EXISTS (
+          SELECT 1 FROM document_associations da
+          WHERE da.document_id = d.id AND da.relationship_type = 'parent'
+        )`;
+      }
     }
 
     query += ` ORDER BY
@@ -308,6 +331,83 @@ router.get('/by-ticket/:number', authMiddleware, async (req: Request, res: Respo
     });
   } catch (err) {
     console.error('Get issue by ticket error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get sub-issues (children) of an issue
+router.get('/:id/children', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify parent issue exists and user can access it
+    const parentCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (parentCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    // Query junction table for sub-issues
+    // Sub-issues have document_id pointing to this issue's id via relationship_type='parent'
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.ticket_number,
+              d.program_id, d.sprint_id, d.content,
+              d.created_at, d.updated_at, d.created_by,
+              d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
+              d.converted_from_id,
+              u.name as assignee_name,
+              CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
+              p.title as program_name,
+              p.properties->>'prefix' as program_prefix,
+              p.properties->>'color' as program_color
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
+       LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+       LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
+         AND person_doc.document_type = 'person'
+         AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
+       LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
+       WHERE da.related_id = $1
+         AND da.relationship_type = 'parent'
+         AND d.workspace_id = $2
+         AND d.document_type = 'issue'
+         AND d.archived_at IS NULL
+         AND d.deleted_at IS NULL
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
+       ORDER BY
+         CASE d.properties->>'priority'
+           WHEN 'urgent' THEN 1
+           WHEN 'high' THEN 2
+           WHEN 'medium' THEN 3
+           WHEN 'low' THEN 4
+           ELSE 5
+         END,
+         d.updated_at DESC`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    const children = result.rows.map(row => {
+      const issue = extractIssueFromRow(row);
+      return {
+        ...issue,
+        display_id: `#${issue.ticket_number}`
+      };
+    });
+
+    res.json(children);
+  } catch (err) {
+    console.error('Get issue children error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
