@@ -29,6 +29,7 @@ const createSprintSchema = z.object({
 const updateSprintSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   owner_id: z.string().uuid().optional(),
+  sprint_number: z.number().int().positive().optional(),
 });
 
 // Separate schema for hypothesis updates (append mode)
@@ -73,7 +74,49 @@ function extractSprintFromRow(row: any) {
     // Completeness flags
     is_complete: props.is_complete ?? null,
     missing_fields: props.missing_fields ?? [],
+    // Plan snapshot (populated when sprint becomes active)
+    planned_issue_ids: props.planned_issue_ids || null,
+    snapshot_taken_at: props.snapshot_taken_at || null,
   };
+}
+
+// Calculate sprint dates from sprint_number and workspace start date
+function calculateSprintDates(sprintNumber: number, workspaceStartDate: Date | string): { startDate: Date; endDate: Date } {
+  const sprintDuration = 7; // 7-day sprints
+
+  let baseDate: Date;
+  if (workspaceStartDate instanceof Date) {
+    baseDate = new Date(Date.UTC(workspaceStartDate.getFullYear(), workspaceStartDate.getMonth(), workspaceStartDate.getDate()));
+  } else if (typeof workspaceStartDate === 'string') {
+    baseDate = new Date(workspaceStartDate + 'T00:00:00Z');
+  } else {
+    baseDate = new Date();
+  }
+
+  const startDate = new Date(baseDate);
+  startDate.setUTCDate(startDate.getUTCDate() + (sprintNumber - 1) * sprintDuration);
+
+  const endDate = new Date(startDate);
+  endDate.setUTCDate(endDate.getUTCDate() + sprintDuration - 1);
+
+  return { startDate, endDate };
+}
+
+// Check if sprint is active (start_date has passed)
+function isSprintActive(sprintNumber: number, workspaceStartDate: Date | string): boolean {
+  const { startDate } = calculateSprintDates(sprintNumber, workspaceStartDate);
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  return today >= startDate;
+}
+
+// Take a snapshot of current issues in the sprint
+async function takeSprintSnapshot(sprintId: string): Promise<string[]> {
+  const result = await pool.query(
+    `SELECT id FROM documents WHERE sprint_id = $1 AND document_type = 'issue'`,
+    [sprintId]
+  );
+  return result.rows.map(row => row.id);
 }
 
 // Get all active sprints across the workspace
@@ -323,6 +366,7 @@ router.get('/my-action-items', authMiddleware, async (req: Request, res: Respons
 });
 
 // Get single sprint
+// Automatically takes a plan snapshot when sprint becomes active (start_date reached)
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -345,7 +389,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
               (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
-       JOIN documents p ON d.program_id = p.id
+       LEFT JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
        LEFT JOIN users u ON (d.properties->'assignee_ids'->>0)::uuid = u.id
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
@@ -358,7 +402,36 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    res.json(extractSprintFromRow(result.rows[0]));
+    const row = result.rows[0];
+    const props = row.properties || {};
+    const sprintNumber = props.sprint_number || 1;
+    const workspaceStartDate = row.workspace_sprint_start_date;
+
+    // Check if sprint is active and needs a snapshot
+    // Take snapshot when: sprint is active (start_date reached) AND no snapshot exists yet
+    if (workspaceStartDate && isSprintActive(sprintNumber, workspaceStartDate) && !props.planned_issue_ids) {
+      // Take the snapshot
+      const sprintId = id as string; // Safe: Express route param is always a string
+      const plannedIssueIds = await takeSprintSnapshot(sprintId);
+      const snapshotTakenAt = new Date().toISOString();
+
+      // Update the sprint properties with the snapshot
+      const newProps = {
+        ...props,
+        planned_issue_ids: plannedIssueIds,
+        snapshot_taken_at: snapshotTakenAt,
+      };
+
+      await pool.query(
+        `UPDATE documents SET properties = $1, updated_at = now() WHERE id = $2`,
+        [JSON.stringify(newProps), id]
+      );
+
+      // Update row properties for response
+      row.properties = newProps;
+    }
+
+    res.json(extractSprintFromRow(row));
   } catch (err) {
     console.error('Get sprint error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -521,8 +594,8 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// Update sprint - only title and owner (via assignee_ids) can be updated
-// sprint_number cannot be changed (determines window), dates/status are computed
+// Update sprint - title, owner_id, and sprint_number can be updated
+// When sprint_number changes, the plan snapshot is cleared and will be retaken when the new date arrives
 router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -538,11 +611,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
-    // Verify sprint exists and user can access it
+    // Verify sprint exists and user can access it, also get workspace start date
     const existing = await pool.query(
-      `SELECT id, properties FROM documents
-       WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint'
-         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      `SELECT d.id, d.properties, d.program_id, w.sprint_start_date
+       FROM documents d
+       JOIN workspaces w ON d.workspace_id = w.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
     );
 
@@ -552,6 +627,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     const currentProps = existing.rows[0].properties || {};
+    const programId = existing.rows[0].program_id;
     const updates: string[] = [];
     const values: any[] = [];
     let paramIndex = 1;
@@ -564,7 +640,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       values.push(data.title);
     }
 
-    // Handle owner_id update (stored as first element of assignee_ids array)
+    // Handle owner_id and sprint_number updates (in properties)
     const newProps = { ...currentProps };
     let propsChanged = false;
 
@@ -584,6 +660,43 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
       // Store as assignee_ids array (migration converted owner_id to assignee_ids)
       newProps.assignee_ids = data.owner_id ? [data.owner_id] : [];
+      propsChanged = true;
+    }
+
+    // Handle sprint_number update - this changes the effective dates
+    if (data.sprint_number !== undefined && data.sprint_number !== currentProps.sprint_number) {
+      // Check if new sprint_number already exists for this program
+      if (programId) {
+        const existingCheck = await pool.query(
+          `SELECT id FROM documents
+           WHERE program_id = $1 AND document_type = 'sprint' AND id != $2 AND (properties->>'sprint_number')::int = $3`,
+          [programId, id, data.sprint_number]
+        );
+
+        if (existingCheck.rows.length > 0) {
+          res.status(400).json({ error: `Sprint ${data.sprint_number} already exists for this program` });
+          return;
+        }
+      } else {
+        // For projectless sprints, check workspace-wide uniqueness
+        const existingCheck = await pool.query(
+          `SELECT id FROM documents
+           WHERE workspace_id = $1 AND program_id IS NULL AND document_type = 'sprint' AND id != $2 AND (properties->>'sprint_number')::int = $3`,
+          [workspaceId, id, data.sprint_number]
+        );
+
+        if (existingCheck.rows.length > 0) {
+          res.status(400).json({ error: `Projectless sprint ${data.sprint_number} already exists` });
+          return;
+        }
+      }
+
+      newProps.sprint_number = data.sprint_number;
+
+      // Clear the plan snapshot - it will be retaken when the new date arrives
+      delete newProps.planned_issue_ids;
+      delete newProps.snapshot_taken_at;
+
       propsChanged = true;
     }
 
@@ -796,8 +909,6 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
       res.status(404).json({ error: 'Sprint not found' });
       return;
     }
-
-    const prefix = sprintResult.rows[0].prefix;
 
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.ticket_number,
