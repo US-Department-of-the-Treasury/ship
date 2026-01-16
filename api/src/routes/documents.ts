@@ -684,14 +684,30 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
       newDoc = result.rows[0];
       newDocId = newDoc.id;
 
-      // Orphan any child issues that were linked to this project
+      // Remove 'project' associations from child issues pointing to this project
+      // (They become orphaned - their parent project is being converted to an issue)
       await client.query(
-        `UPDATE documents
-         SET project_id = NULL, updated_at = NOW()
-         WHERE project_id = $1 AND workspace_id = $2`,
-        [id, workspaceId]
+        `DELETE FROM document_associations
+         WHERE related_id = $1 AND relationship_type = 'project'`,
+        [id]
       );
     }
+
+    // Copy associations from original to new document (filtered by target type validity)
+    // According to the association validity matrix:
+    // - issue: ["parent", "project", "sprint", "program"]
+    // - project: ["program"]
+    // When converting issue->project, only 'program' associations are valid for projects
+    // When converting project->issue, only 'program' associations are carried over
+    const validTypesForTarget = target_type === 'project' ? ['program'] : ['program'];
+
+    await client.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata, created_at)
+       SELECT $1, related_id, relationship_type, metadata, NOW()
+       FROM document_associations
+       WHERE document_id = $2 AND relationship_type = ANY($3)`,
+      [newDocId, id, validTypesForTarget]
+    );
 
     // Archive original document with converted_to_id pointer
     await client.query(
@@ -820,6 +836,23 @@ router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Re
            archived_at = NOW(),
            updated_at = NOW()
        WHERE id = $2`,
+      [originalDoc.id, id]
+    );
+
+    // Copy associations from current document back to original document
+    // (restoring the associations as they were before conversion)
+    // First, clear any existing associations on the original (shouldn't be many since it was archived)
+    await client.query(
+      `DELETE FROM document_associations WHERE document_id = $1`,
+      [originalDoc.id]
+    );
+
+    // Copy all associations from the current (being archived) document to the restored original
+    await client.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata, created_at)
+       SELECT $1, related_id, relationship_type, metadata, NOW()
+       FROM document_associations
+       WHERE document_id = $2`,
       [originalDoc.id, id]
     );
 
