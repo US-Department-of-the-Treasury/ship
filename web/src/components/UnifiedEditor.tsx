@@ -10,6 +10,7 @@ import type { DocumentType as SelectableDocumentType } from '@/components/sideba
 import { useAuth } from '@/hooks/useAuth';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import type { Person } from '@/components/PersonCombobox';
+import type { BelongsTo } from '@ship/shared';
 
 export type DocumentType = 'wiki' | 'issue' | 'project' | 'sprint' | 'program' | 'person';
 
@@ -46,6 +47,7 @@ interface IssueDocument extends BaseDocument {
   rejection_reason?: string | null;
   converted_from_id?: string | null;
   display_id?: string;
+  belongs_to?: BelongsTo[];
 }
 
 // Project document
@@ -89,12 +91,14 @@ interface WikiSidebarData {
 interface IssueSidebarData {
   teamMembers: Array<{ id: string; user_id: string; name: string }>;
   programs: Array<{ id: string; name: string; color?: string }>;
+  projects?: Array<{ id: string; title: string; color?: string }>;
   onConvert?: () => void;
   onUndoConversion?: () => void;
   onAccept?: () => Promise<void>;
   onReject?: (reason: string) => Promise<void>;
   isConverting?: boolean;
   isUndoing?: boolean;
+  onAssociationChange?: () => void;
 }
 
 interface ProjectSidebarData {
@@ -263,6 +267,7 @@ export function UnifiedEditor({
             issue={document as IssueDocument}
             teamMembers={issueData.teamMembers || []}
             programs={issueData.programs || []}
+            projects={issueData.projects || []}
             onUpdate={onUpdate as (updates: Partial<IssueDocument>) => Promise<void>}
             onConvert={issueData.onConvert}
             onUndoConversion={issueData.onUndoConversion}
@@ -271,6 +276,7 @@ export function UnifiedEditor({
             isConverting={issueData.isConverting}
             isUndoing={issueData.isUndoing}
             highlightedFields={missingFields}
+            onAssociationChange={issueData.onAssociationChange}
           />
         );
       }

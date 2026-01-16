@@ -6,6 +6,7 @@ import type { UnifiedDocument, SidebarData } from '@/components/UnifiedEditor';
 import { useAuth } from '@/hooks/useAuth';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { useProgramsQuery } from '@/hooks/useProgramsQuery';
+import { useProjectsQuery } from '@/hooks/useProjectsQuery';
 import { apiGet, apiPatch, apiDelete } from '@/lib/api';
 
 interface DocumentResponse extends Record<string, unknown> {
@@ -38,6 +39,13 @@ interface DocumentResponse extends Record<string, unknown> {
   visibility?: 'private' | 'workspace';
   parent_id?: string | null;
   ticket_number?: number;
+  // Multi-parent associations (junction table)
+  belongs_to?: Array<{
+    id: string;
+    type: 'program' | 'project' | 'sprint' | 'parent';
+    title?: string;
+    color?: string;
+  }>;
 }
 
 /**
@@ -86,6 +94,19 @@ export function UnifiedDocumentPage() {
     color: p.color,
     emoji: p.emoji,
   })), [programsData]);
+
+  // Fetch projects for issue sidebar (multi-association)
+  const { data: projectsData = [] } = useProjectsQuery();
+  const projects = useMemo(() => projectsData.map(p => ({
+    id: p.id,
+    title: p.title,
+    color: p.color,
+  })), [projectsData]);
+
+  // Handler for when associations change (invalidate document query to refetch)
+  const handleAssociationChange = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['document', id] });
+  }, [queryClient, id]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -161,6 +182,8 @@ export function UnifiedDocumentPage() {
         return {
           teamMembers,
           programs,
+          projects,
+          onAssociationChange: handleAssociationChange,
         };
       case 'project':
         return {
@@ -172,7 +195,7 @@ export function UnifiedDocumentPage() {
       default:
         return {};
     }
-  }, [document, teamMembers, programs]);
+  }, [document, teamMembers, programs, projects, handleAssociationChange]);
 
   // Transform API response to UnifiedDocument format
   const unifiedDocument: UnifiedDocument | null = useMemo(() => {
@@ -198,6 +221,7 @@ export function UnifiedDocumentPage() {
         source: document.source,
         converted_from_id: document.converted_from_id,
         display_id: document.ticket_number ? `#${document.ticket_number}` : undefined,
+        belongs_to: document.belongs_to,
       }),
       ...(document.document_type === 'project' && {
         impact: document.impact ?? 5,

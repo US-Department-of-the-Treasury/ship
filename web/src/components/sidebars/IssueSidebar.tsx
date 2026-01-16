@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Combobox } from '@/components/ui/Combobox';
+import { MultiAssociationChips } from '@/components/ui/MultiAssociationChips';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { isCascadeWarningError, type IncompleteChild } from '@/hooks/useIssuesQuery';
+import { apiPost, apiDelete } from '@/lib/api';
+import type { BelongsTo, BelongsToType } from '@ship/shared';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -18,6 +21,8 @@ interface Issue {
   source?: 'internal' | 'external';
   rejection_reason?: string | null;
   converted_from_id?: string | null;
+  /** Multi-parent associations via junction table */
+  belongs_to?: BelongsTo[];
 }
 
 interface TeamMember {
@@ -32,6 +37,12 @@ interface Program {
   color?: string;
 }
 
+interface Project {
+  id: string;
+  title: string;
+  color?: string;
+}
+
 interface Sprint {
   id: string;
   name: string;
@@ -43,7 +54,11 @@ interface IssueSidebarProps {
   issue: Issue;
   teamMembers: TeamMember[];
   programs: Program[];
+  /** Available projects for multi-association */
+  projects?: Project[];
   onUpdate: (updates: Partial<Issue>) => Promise<void>;
+  /** Called after an association is added/removed via API */
+  onAssociationChange?: () => void;
   onConvert?: () => void;
   onUndoConversion?: () => void;
   onAccept?: () => Promise<void>;
@@ -99,7 +114,9 @@ export function IssueSidebar({
   issue,
   teamMembers,
   programs,
+  projects = [],
   onUpdate,
+  onAssociationChange,
   onConvert,
   onUndoConversion,
   onAccept,
@@ -121,6 +138,9 @@ export function IssueSidebar({
     pendingState: string | null;
     incompleteChildren: IncompleteChild[];
   }>({ open: false, pendingState: null, incompleteChildren: [] });
+
+  // Get current associations from issue - memoize to prevent infinite re-renders
+  const belongsTo = useMemo(() => issue.belongs_to || [], [issue.belongs_to]);
 
   // Handle state change with cascade warning detection
   const handleStateChange = async (newState: string) => {
@@ -157,7 +177,11 @@ export function IssueSidebar({
 
   // Fetch sprints when issue's program changes
   useEffect(() => {
-    if (!issue.program_id) {
+    // Get program from belongs_to or legacy program_id
+    const programAssoc = belongsTo.find(bt => bt.type === 'program');
+    const programId = programAssoc?.id || issue.program_id;
+
+    if (!programId) {
       setSprints([]);
       setWorkspaceSprintStartDate(null);
       return;
@@ -165,7 +189,7 @@ export function IssueSidebar({
 
     let cancelled = false;
 
-    fetch(`${API_URL}/api/programs/${issue.program_id}/sprints`, { credentials: 'include' })
+    fetch(`${API_URL}/api/programs/${programId}/sprints`, { credentials: 'include' })
       .then(res => res.ok ? res.json() : { sprints: [], workspace_sprint_start_date: null })
       .then(data => {
         if (!cancelled) {
@@ -183,10 +207,54 @@ export function IssueSidebar({
       });
 
     return () => { cancelled = true; };
-  }, [issue.program_id]);
+  }, [belongsTo, issue.program_id]);
 
+  // Add association via junction table API
+  const handleAddAssociation = useCallback(async (relatedId: string, type: BelongsToType) => {
+    const response = await apiPost(`/api/documents/${issue.id}/associations`, {
+      related_id: relatedId,
+      relationship_type: type,
+    });
+    if (!response.ok) {
+      throw new Error('Failed to add association');
+    }
+    // Trigger refetch of issue data
+    onAssociationChange?.();
+  }, [issue.id, onAssociationChange]);
+
+  // Remove association via junction table API
+  const handleRemoveAssociation = useCallback(async (relatedId: string, type: BelongsToType) => {
+    const response = await apiDelete(`/api/documents/${issue.id}/associations/${relatedId}?type=${type}`);
+    if (!response.ok) {
+      throw new Error('Failed to remove association');
+    }
+    // Trigger refetch of issue data
+    onAssociationChange?.();
+  }, [issue.id, onAssociationChange]);
+
+  // Legacy program change handler (updates belongs_to via onUpdate)
   const handleProgramChange = async (programId: string | null) => {
-    await onUpdate({ program_id: programId, sprint_id: null } as Partial<Issue>);
+    // Build new belongs_to array with updated program
+    const newBelongsTo = belongsTo.filter(bt => bt.type !== 'program' && bt.type !== 'sprint');
+    if (programId) {
+      newBelongsTo.push({ id: programId, type: 'program' });
+    }
+    await onUpdate({ belongs_to: newBelongsTo } as Partial<Issue>);
+  };
+
+  // Legacy sprint change handler
+  const handleSprintChange = async (sprintId: string | null) => {
+    if (sprintId && !issue.estimate) {
+      setSprintError('Please add an estimate before assigning to a sprint');
+      return;
+    }
+    setSprintError(null);
+    // Build new belongs_to array with updated sprint
+    const newBelongsTo = belongsTo.filter(bt => bt.type !== 'sprint');
+    if (sprintId) {
+      newBelongsTo.push({ id: sprintId, type: 'sprint' });
+    }
+    await onUpdate({ belongs_to: newBelongsTo } as Partial<Issue>);
   };
 
   const handleReject = () => {
@@ -196,6 +264,10 @@ export function IssueSidebar({
       setShowRejectDialog(false);
     }
   };
+
+  // Get current program/sprint from belongs_to for legacy display
+  const currentProgramId = belongsTo.find(bt => bt.type === 'program')?.id || issue.program_id;
+  const currentSprintId = belongsTo.find(bt => bt.type === 'sprint')?.id || issue.sprint_id;
 
   return (
     <div className="space-y-4 p-4">
@@ -354,20 +426,36 @@ export function IssueSidebar({
         />
       </PropertyRow>
 
-      <PropertyRow label="Program">
-        <Combobox
-          options={programs.map((p) => ({ value: p.id, label: p.name, description: '' }))}
-          value={issue.program_id}
-          onChange={handleProgramChange}
-          placeholder="No Program"
-          clearLabel="No Program"
-          searchPlaceholder="Search programs..."
-          emptyText="No programs found"
-          aria-label="Program"
+      {/* Projects - Multi-association chips */}
+      {projects.length > 0 && (
+        <PropertyRow label="Projects">
+          <MultiAssociationChips
+            associations={belongsTo}
+            options={projects.map(p => ({ id: p.id, name: p.title, color: p.color }))}
+            type="project"
+            onAdd={handleAddAssociation}
+            onRemove={handleRemoveAssociation}
+            placeholder="Add project..."
+            aria-label="Projects"
+          />
+        </PropertyRow>
+      )}
+
+      {/* Programs - Multi-association chips */}
+      <PropertyRow label="Programs">
+        <MultiAssociationChips
+          associations={belongsTo}
+          options={programs.map(p => ({ id: p.id, name: p.name, color: p.color }))}
+          type="program"
+          onAdd={handleAddAssociation}
+          onRemove={handleRemoveAssociation}
+          placeholder="Add program..."
+          aria-label="Programs"
         />
       </PropertyRow>
 
-      {issue.program_id && (
+      {/* Sprint - still uses single-select since sprints depend on program selection */}
+      {currentProgramId && (
         <PropertyRow label="Sprint">
           <Combobox
             options={sprints.map((s) => {
@@ -378,15 +466,8 @@ export function IssueSidebar({
               }
               return { value: s.id, label: s.name, description: dateRange };
             })}
-            value={issue.sprint_id}
-            onChange={(value) => {
-              if (value && !issue.estimate) {
-                setSprintError('Please add an estimate before assigning to a sprint');
-                return;
-              }
-              setSprintError(null);
-              onUpdate({ sprint_id: value });
-            }}
+            value={currentSprintId}
+            onChange={(value) => handleSprintChange(value)}
             placeholder="No Sprint"
             clearLabel="No Sprint"
             searchPlaceholder="Search sprints..."
