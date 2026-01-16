@@ -128,6 +128,7 @@ router.get('/converted/list', authMiddleware, async (req: Request, res: Response
     const workspaceId = String(req.workspaceId);
     const { original_type, converted_type } = req.query;
 
+    // Only show documents the user can access (workspace-visible or owned by user)
     let query = `
       SELECT d.id, d.title, d.document_type as original_type, d.ticket_number,
              d.converted_to_id, d.converted_at, d.converted_by,
@@ -142,8 +143,10 @@ router.get('/converted/list', authMiddleware, async (req: Request, res: Response
       WHERE d.workspace_id = $1
         AND d.converted_to_id IS NOT NULL
         AND d.archived_at IS NOT NULL
+        AND (d.visibility = 'workspace' OR d.created_by = $2)
+        AND (converted_doc.visibility = 'workspace' OR converted_doc.created_by = $2)
     `;
-    const params: (string | null)[] = [workspaceId];
+    const params: (string | null)[] = [workspaceId, userId];
 
     // Filter by original document type
     if (original_type && typeof original_type === 'string') {
@@ -533,6 +536,12 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
       return;
     }
 
+    // Only the document creator can convert it (significant structural change)
+    if (doc.created_by !== userId) {
+      res.status(403).json({ error: 'Only the document creator can convert it' });
+      return;
+    }
+
     // Validate conversion is between issue and project only
     if (doc.document_type !== 'issue' && doc.document_type !== 'project') {
       res.status(400).json({ error: 'Only issues and projects can be converted' });
@@ -690,30 +699,38 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
 
 // POST /documents/:id/undo-conversion - Undo a document conversion
 router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const userId = req.userId!;
-  const workspaceId = req.workspaceId!;
+  const id = String(req.params.id);
+  const userId = String(req.userId);
+  const workspaceId = String(req.workspaceId);
+
+  // First check access using canAccessDocument (outside transaction for read)
+  const { canAccess, doc: currentDoc } = await canAccessDocument(id, userId, workspaceId);
+
+  if (!currentDoc) {
+    res.status(404).json({ error: 'Document not found' });
+    return;
+  }
+
+  if (!canAccess) {
+    res.status(404).json({ error: 'Document not found' });
+    return;
+  }
+
+  // Only the creator, the person who converted it, or workspace admin can undo
+  const isCreator = currentDoc.created_by === userId;
+  const isConverter = currentDoc.converted_by === userId;
+  // For simplicity, we allow creator or converter (admin check would require additional query)
+  if (!isCreator && !isConverter) {
+    res.status(403).json({ error: 'Only the document creator or converter can undo conversion' });
+    return;
+  }
 
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
 
-    // Get the current document (must have been converted from another)
-    const docResult = await client.query(
-      `SELECT * FROM documents WHERE id = $1 AND workspace_id = $2`,
-      [id, workspaceId]
-    );
-
-    if (docResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      res.status(404).json({ error: 'Document not found' });
-      return;
-    }
-
-    const currentDoc = docResult.rows[0];
-
-    // Check if this document was converted from another
+    // Check if this document was converted from another (already checked above but need in transaction)
     if (!currentDoc.converted_from_id) {
       await client.query('ROLLBACK');
       res.status(400).json({ error: 'This document was not converted from another document' });
@@ -743,11 +760,13 @@ router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Re
 
     // Restore the original document:
     // - Clear converted_to_id so it's no longer archived
+    // - Clear archived_at so it appears in lists again
     // - Set converted_from_id to point to the current doc (for history)
     await client.query(
       `UPDATE documents
        SET converted_to_id = NULL,
            converted_from_id = $1,
+           archived_at = NULL,
            updated_at = NOW()
        WHERE id = $2`,
       [id, originalDoc.id]
@@ -755,11 +774,13 @@ router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Re
 
     // Archive the current document:
     // - Set converted_to_id to point back to original (making it the archived one now)
+    // - Set archived_at since this is now the archived conversion
     // - Clear converted_from_id
     await client.query(
       `UPDATE documents
        SET converted_to_id = $1,
            converted_from_id = NULL,
+           archived_at = NOW(),
            updated_at = NOW()
        WHERE id = $2`,
       [originalDoc.id, id]
