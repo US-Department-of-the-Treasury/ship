@@ -534,7 +534,7 @@ export function IssueEditorPage() {
     return <EditorSkeleton />;
   }
 
-  // For temp IDs (offline-created issues), create a placeholder issue while waiting for cache sync
+  // For temp IDs (optimistic issues), create a placeholder issue while waiting for server response
   const displayIssue = issue || (id?.startsWith('temp-') ? {
     id: id,
     title: 'Untitled',
@@ -552,7 +552,7 @@ export function IssueEditorPage() {
     sprint_name: null,
     source: 'internal' as const,
     rejection_reason: null,
-    _pending: true,
+    converted_from_id: null,
   } : null);
 
   if (!displayIssue || !user) {
