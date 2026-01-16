@@ -4,6 +4,7 @@ export interface FilterTab {
   id: string;
   label: string;
   icon?: React.ReactNode;
+  count?: number;
 }
 
 export interface FilterTabsProps {
@@ -36,6 +37,16 @@ export function FilterTabs({ tabs, activeId, onChange, ariaLabel }: FilterTabsPr
         >
           {tab.icon}
           {tab.label}
+          {tab.count !== undefined && (
+            <span className={cn(
+              'ml-1 rounded-full px-1.5 py-0.5 text-xs font-medium',
+              activeId === tab.id
+                ? 'bg-foreground/10 text-foreground'
+                : 'bg-muted/30 text-muted'
+            )}>
+              {tab.count}
+            </span>
+          )}
         </button>
       ))}
     </div>

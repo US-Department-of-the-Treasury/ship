@@ -3,6 +3,9 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { addPendingMutation, removePendingMutation, getIsOnline } from '@/lib/queryClient';
 import { computeICEScore } from '@ship/shared';
 
+// Inferred project status based on sprint relationships
+export type InferredProjectStatus = 'active' | 'planned' | 'completed' | 'backlog' | 'archived';
+
 export interface Project {
   id: string;
   title: string;
@@ -25,6 +28,8 @@ export interface Project {
   // Counts
   sprint_count: number;
   issue_count: number;
+  // Inferred status from sprint relationships
+  inferred_status: InferredProjectStatus;
   // Timestamps
   archived_at: string | null;
   created_at: string;
@@ -152,6 +157,7 @@ export function useCreateProject() {
         owner: null,
         sprint_count: 0,
         issue_count: 0,
+        inferred_status: 'backlog',
         archived_at: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -312,6 +318,7 @@ export function useProjects() {
         owner: null,
         sprint_count: 0,
         issue_count: 0,
+        inferred_status: 'backlog',
         archived_at: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
