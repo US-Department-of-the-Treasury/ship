@@ -1,0 +1,62 @@
+# =============================================================================
+# Shadow Environment - terraform.tfvars.example
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in the values.
+# DO NOT commit terraform.tfvars (it contains sensitive values).
+#
+# PURPOSE: UDM v2 Migration Testing
+# =============================================================================
+
+# AWS region (must match dev for VPC sharing)
+aws_region = "us-east-1"
+
+# Project name (keep same as dev for consistent naming)
+project_name = "ship"
+
+# Environment name - always "shadow" for this environment
+environment = "shadow"
+
+# Database name (ignored when restoring from snapshot)
+db_name = "ship_main"
+
+# Aurora capacity - can be smaller than dev for cost savings during testing
+aurora_min_capacity = 0.5
+aurora_max_capacity = 2
+
+# =============================================================================
+# DNS Configuration (Optional)
+# =============================================================================
+# If you want custom domains for the shadow environment, configure these.
+# Leave empty to use CloudFront/EB default domains.
+
+# Route53 zone ID (same as dev if using same zone)
+# route53_zone_id = "Z1234567890ABC"
+
+# Custom domains for shadow environment
+# api_domain_name = "api-shadow.example.gov"
+# app_domain_name = "app-shadow.example.gov"
+
+# EB environment CNAME (set after EB environment is created)
+# eb_environment_cname = "ship-shadow-api.us-east-1.elasticbeanstalk.com"
+
+# =============================================================================
+# Migration Testing Configuration
+# =============================================================================
+# To create the shadow database from a dev snapshot:
+#
+# 1. Create a manual snapshot of dev Aurora cluster:
+#    aws rds create-db-cluster-snapshot \
+#      --db-cluster-identifier ship-dev-aurora \
+#      --db-cluster-snapshot-identifier ship-dev-aurora-udm-v2-migration-test
+#
+# 2. Wait for snapshot to be available:
+#    aws rds wait db-cluster-snapshot-available \
+#      --db-cluster-snapshot-identifier ship-dev-aurora-udm-v2-migration-test
+#
+# 3. Set the snapshot identifier below:
+#    snapshot_identifier = "ship-dev-aurora-udm-v2-migration-test"
+#
+# 4. Run terraform apply to create shadow environment from snapshot
+
+# Snapshot identifier (leave empty for fresh database)
+snapshot_identifier = ""
