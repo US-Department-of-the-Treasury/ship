@@ -1,4 +1,13 @@
-import { test, expect } from './fixtures/isolated-env';
+import { test, expect, Page } from './fixtures/isolated-env';
+
+// Helper to login before each test
+async function login(page: Page) {
+  await page.goto('/login');
+  await page.locator('#email').fill('dev@ship.local');
+  await page.locator('#password').fill('admin123');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).not.toHaveURL('/login', { timeout: 5000 });
+}
 
 /**
  * Session Timeout UX Tests
@@ -17,11 +26,11 @@ const ABSOLUTE_SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000;
 const ABSOLUTE_WARNING_THRESHOLD_MS = 5 * 60 * 1000;
 
 test.describe('Session Timeout Warning', () => {
-  test('shows warning modal when 60 seconds remain before timeout', async ({ page, login }) => {
+  test('shows warning modal when 60 seconds remain before timeout', async ({ page }) => {
     // Install fake timers BEFORE login/navigation
     await page.clock.install();
 
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -33,9 +42,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(modal).toBeVisible({ timeout: 5000 });
   });
 
-  test('warning modal displays correct title text', async ({ page, login }) => {
+  test('warning modal displays correct title text', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -46,9 +55,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(modal.getByText('Your session is about to expire')).toBeVisible();
   });
 
-  test('warning modal displays explanatory message about inactivity', async ({ page, login }) => {
+  test('warning modal displays explanatory message about inactivity', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -59,9 +68,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(modal.getByText(/due to inactivity/i)).toBeVisible();
   });
 
-  test('displays countdown timer in warning modal', async ({ page, login }) => {
+  test('displays countdown timer in warning modal', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -74,9 +83,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(timer).toBeVisible();
   });
 
-  test('countdown timer format is MM:SS or M:SS', async ({ page, login }) => {
+  test('countdown timer format is MM:SS or M:SS', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -89,9 +98,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(timer).toHaveText(/^\d:\d{2}$/);
   });
 
-  test('countdown timer updates every second', async ({ page, login }) => {
+  test('countdown timer updates every second', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -110,9 +119,9 @@ test.describe('Session Timeout Warning', () => {
     expect(updatedText).not.toBe(initialText);
   });
 
-  test('modal has "Stay Logged In" button', async ({ page, login }) => {
+  test('modal has "Stay Logged In" button', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -124,9 +133,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(modal.getByRole('button', { name: 'Stay Logged In' })).toBeFocused();
   });
 
-  test('clicking "Stay Logged In" dismisses modal and resets timer', async ({ page, login }) => {
+  test('clicking "Stay Logged In" dismisses modal and resets timer', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -143,9 +152,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(page.getByRole('alertdialog')).not.toBeVisible();
   });
 
-  test('any user activity (mouse move) dismisses modal and resets timer', async ({ page, login }) => {
+  test('any user activity (mouse move) dismisses modal and resets timer', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -159,9 +168,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(modal).not.toBeVisible();
   });
 
-  test('any user activity (keypress) dismisses modal and resets timer', async ({ page, login }) => {
+  test('any user activity (keypress) dismisses modal and resets timer', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -175,9 +184,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(modal).not.toBeVisible();
   });
 
-  test('any user activity (scroll) dismisses modal and resets timer', async ({ page, login }) => {
+  test('any user activity (scroll) dismisses modal and resets timer', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -193,9 +202,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(modal).not.toBeVisible();
   });
 
-  test('logs user out when countdown reaches zero', async ({ page, login }) => {
+  test('logs user out when countdown reaches zero', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -213,9 +222,9 @@ test.describe('Session Timeout Warning', () => {
     await expect(page).toHaveURL(/\/login/, { timeout: 10000 });
   });
 
-  test('shows session expired message after forced logout', async ({ page, login }) => {
+  test('shows session expired message after forced logout', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -241,9 +250,9 @@ test.describe('Session Timeout Warning', () => {
 });
 
 test.describe('Timer Reset Behavior', () => {
-  test('rapid clicks on Stay Logged In do not cause duplicate API calls', async ({ page, login }) => {
+  test('rapid clicks on Stay Logged In do not cause duplicate API calls', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -281,9 +290,9 @@ test.describe('Timer Reset Behavior', () => {
     expect(extendCalls.length).toBe(1);
   });
 
-  test('timer survives page navigation within app', async ({ page, login }) => {
+  test('timer survives page navigation within app', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -301,9 +310,9 @@ test.describe('Timer Reset Behavior', () => {
     await expect(modal).toBeVisible({ timeout: 5000 });
   });
 
-  test('timer resets on page refresh', async ({ page, login }) => {
+  test('timer resets on page refresh', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -327,9 +336,9 @@ test.describe('Timer Reset Behavior', () => {
 });
 
 test.describe('12-Hour Absolute Timeout', () => {
-  test('shows 5-minute warning before absolute session timeout', async ({ page, login }) => {
+  test('shows 5-minute warning before absolute session timeout', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -341,9 +350,9 @@ test.describe('12-Hour Absolute Timeout', () => {
     await expect(modal).toBeVisible({ timeout: 5000 });
   });
 
-  test('absolute timeout warning has different message than inactivity warning', async ({ page, login }) => {
+  test('absolute timeout warning has different message than inactivity warning', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -359,9 +368,9 @@ test.describe('12-Hour Absolute Timeout', () => {
     await expect(modal.getByRole('heading', { name: /session will end soon/i })).toBeVisible();
   });
 
-  test('absolute timeout warning says session WILL end, not can be extended', async ({ page, login }) => {
+  test('absolute timeout warning says session WILL end, not can be extended', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -377,9 +386,9 @@ test.describe('12-Hour Absolute Timeout', () => {
     await expect(modal.getByText(/This timeout cannot be extended/i)).toBeVisible();
   });
 
-  test('clicking I Understand on absolute warning does NOT extend session', async ({ page, login }) => {
+  test('clicking I Understand on absolute warning does NOT extend session', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -401,9 +410,9 @@ test.describe('12-Hour Absolute Timeout', () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test('logs user out at 12-hour mark regardless of activity', async ({ page, login }) => {
+  test('logs user out at 12-hour mark regardless of activity', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -430,9 +439,9 @@ test.describe('12-Hour Absolute Timeout', () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test('absolute timeout takes precedence if it occurs before inactivity timeout', async ({ page, login }) => {
+  test('absolute timeout takes precedence if it occurs before inactivity timeout', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -499,9 +508,9 @@ test.describe('401 Error Handling', () => {
 });
 
 test.describe('Activity Tracking', () => {
-  test('mouse activity resets inactivity timer', async ({ page, login }) => {
+  test('mouse activity resets inactivity timer', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -519,9 +528,9 @@ test.describe('Activity Tracking', () => {
     await expect(modal).not.toBeVisible();
   });
 
-  test('keyboard activity resets inactivity timer', async ({ page, login }) => {
+  test('keyboard activity resets inactivity timer', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -539,9 +548,9 @@ test.describe('Activity Tracking', () => {
     await expect(modal).not.toBeVisible();
   });
 
-  test('editor typing resets inactivity timer', async ({ page, login }) => {
+  test('editor typing resets inactivity timer', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
 
     // Navigate to a document
     await page.goto('/docs');
@@ -566,9 +575,9 @@ test.describe('Activity Tracking', () => {
     await expect(modal).not.toBeVisible();
   });
 
-  test('scroll activity resets inactivity timer', async ({ page, login }) => {
+  test('scroll activity resets inactivity timer', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -588,9 +597,9 @@ test.describe('Activity Tracking', () => {
     await expect(modal).not.toBeVisible();
   });
 
-  test('throttled activity still resets timer (activity within throttle window is ignored but initial activity counts)', async ({ page, login }) => {
+  test('throttled activity still resets timer (activity within throttle window is ignored but initial activity counts)', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -613,9 +622,9 @@ test.describe('Activity Tracking', () => {
 });
 
 test.describe('Extend Session API', () => {
-  test('Stay Logged In calls extend session endpoint', async ({ page, login }) => {
+  test('Stay Logged In calls extend session endpoint', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -657,9 +666,9 @@ test.describe('Extend Session API', () => {
 });
 
 test.describe('Accessibility', () => {
-  test('warning modal has role="alertdialog"', async ({ page, login }) => {
+  test('warning modal has role="alertdialog"', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -671,9 +680,9 @@ test.describe('Accessibility', () => {
     await expect(modal).toBeVisible({ timeout: 5000 });
   });
 
-  test('warning modal has aria-modal="true"', async ({ page, login }) => {
+  test('warning modal has aria-modal="true"', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -684,9 +693,9 @@ test.describe('Accessibility', () => {
     await expect(modal).toHaveAttribute('aria-modal', 'true');
   });
 
-  test('warning modal has descriptive aria-labelledby', async ({ page, login }) => {
+  test('warning modal has descriptive aria-labelledby', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -702,9 +711,9 @@ test.describe('Accessibility', () => {
     await expect(titleElement).toContainText('session');
   });
 
-  test('warning modal has aria-describedby for description', async ({ page, login }) => {
+  test('warning modal has aria-describedby for description', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -720,9 +729,9 @@ test.describe('Accessibility', () => {
     await expect(descElement).toBeVisible();
   });
 
-  test('focus moves to modal when it appears', async ({ page, login }) => {
+  test('focus moves to modal when it appears', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -743,9 +752,9 @@ test.describe('Accessibility', () => {
     expect(isFocusedInModal).toBe(true);
   });
 
-  test('focus moves to Stay Logged In button specifically', async ({ page, login }) => {
+  test('focus moves to Stay Logged In button specifically', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -762,12 +771,12 @@ test.describe('Accessibility', () => {
     await expect(button).toBeFocused();
   });
 
-  test('focus is trapped within modal', async ({ page, login }) => {
+  test('focus is trapped within modal', async ({ page }) => {
     // Use absolute timeout warning for this test because:
     // - Inactivity modal dismisses on any keyboard activity (Tab counts as activity)
     // - Absolute modal doesn't dismiss on keyboard activity, so we can test focus trap
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -794,9 +803,9 @@ test.describe('Accessibility', () => {
     expect(isFocusedInModal).toBe(true);
   });
 
-  test('focus returns to previous element after modal closes', async ({ page, login }) => {
+  test('focus returns to previous element after modal closes', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -827,9 +836,9 @@ test.describe('Accessibility', () => {
     // The modal may or may not return focus based on how it was opened
   });
 
-  test('countdown is announced to screen readers at key intervals', async ({ page, login }) => {
+  test('countdown is announced to screen readers at key intervals', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -849,9 +858,9 @@ test.describe('Accessibility', () => {
     // Note: actual announcement content depends on timeRemaining state
   });
 
-  test('modal backdrop blocks interaction with page behind', async ({ page, login }) => {
+  test('modal backdrop blocks interaction with page behind', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -866,9 +875,9 @@ test.describe('Accessibility', () => {
     await expect(modal).toHaveAttribute('aria-modal', 'true');
   });
 
-  test('Escape key triggers Stay Logged In behavior', async ({ page, login }) => {
+  test('Escape key triggers Stay Logged In behavior', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -893,9 +902,9 @@ test.describe('Accessibility', () => {
     await expect(modal).not.toBeVisible();
   });
 
-  test('Enter key on Stay Logged In button works', async ({ page, login }) => {
+  test('Enter key on Stay Logged In button works', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -925,10 +934,10 @@ test.describe('Accessibility', () => {
 });
 
 test.describe('Edge Cases', () => {
-  test('handles computer sleep/wake gracefully', async ({ page, login }) => {
+  test('handles computer sleep/wake gracefully', async ({ page }) => {
     // Advance clock past timeout (simulating sleep), verify immediate logout on wake
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -972,10 +981,10 @@ test.describe('Edge Cases', () => {
     await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible();
   });
 
-  test('race condition: user clicks Stay Logged In as timer expires', async ({ page, login }) => {
+  test('race condition: user clicks Stay Logged In as timer expires', async ({ page }) => {
     // Click button at exact moment countdown hits 0, verify no error/crash
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -1012,10 +1021,10 @@ test.describe('Edge Cases', () => {
     await expect(modal).not.toBeVisible({ timeout: 5000 });
   });
 
-  test('modal renders on top of other UI elements (z-index)', async ({ page, login }) => {
+  test('modal renders on top of other UI elements (z-index)', async ({ page }) => {
     // Verify modal is visible and not hidden behind other elements
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -1038,10 +1047,10 @@ test.describe('Edge Cases', () => {
     expect(boundingBox!.height).toBeGreaterThan(0);
   });
 
-  test('modal does not conflict with command palette', async ({ page, login }) => {
+  test('modal does not conflict with command palette', async ({ page }) => {
     // Open command palette, then verify session timeout modal can appear on top of it
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -1062,9 +1071,9 @@ test.describe('Edge Cases', () => {
 });
 
 test.describe('Session Info API', () => {
-  test('GET /api/auth/session returns session metadata', async ({ page, login }) => {
+  test('GET /api/auth/session returns session metadata', async ({ page }) => {
     // Login to establish a session
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -1091,9 +1100,9 @@ test.describe('Session Info API', () => {
     expect(response.status()).toBe(401);
   });
 
-  test('session info expiresAt is accurate', async ({ page, login }) => {
+  test('session info expiresAt is accurate', async ({ page }) => {
     // Login to establish a session
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -1117,9 +1126,9 @@ test.describe('Session Info API', () => {
 });
 
 test.describe('Visual Verification', () => {
-  test('warning modal is visually centered on screen', async ({ page, login }) => {
+  test('warning modal is visually centered on screen', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -1141,9 +1150,9 @@ test.describe('Visual Verification', () => {
     expect(Math.abs(modalBox!.y - verticalCenter)).toBeLessThan(50);
   });
 
-  test('warning modal has visible backdrop', async ({ page, login }) => {
+  test('warning modal has visible backdrop', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -1158,9 +1167,9 @@ test.describe('Visual Verification', () => {
     await expect(backdrop).toBeVisible();
   });
 
-  test('countdown timer is prominently displayed', async ({ page, login }) => {
+  test('countdown timer is prominently displayed', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
@@ -1180,9 +1189,9 @@ test.describe('Visual Verification', () => {
     expect(fontSize).toBeGreaterThanOrEqual(16);
   });
 
-  test('Stay Logged In button has clear visual affordance', async ({ page, login }) => {
+  test('Stay Logged In button has clear visual affordance', async ({ page }) => {
     await page.clock.install();
-    await login();
+    await login(page);
     await page.goto('/docs');
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
