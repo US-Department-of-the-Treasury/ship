@@ -258,7 +258,7 @@ export function ProjectsPage() {
       if (res.ok) {
         const data = await res.json();
         showToast(`Project converted to issue: ${convertingProject.title}`, 'success');
-        navigate(`/issues/${data.new_document.id}`, { replace: true });
+        navigate(`/issues/${data.id}`, { replace: true });
       } else {
         const error = await res.json();
         showToast(error.error || 'Failed to convert project to issue', 'error');

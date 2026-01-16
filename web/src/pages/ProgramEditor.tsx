@@ -952,7 +952,7 @@ function ProgramIssuesList({
       if (res.ok) {
         const data = await res.json();
         showToast(`Issue promoted to project: ${convertingIssue.title}`, 'success');
-        navigate(`/projects/${data.new_document.id}`, { replace: true });
+        navigate(`/projects/${data.id}`, { replace: true });
       } else {
         const errorData = await res.json().catch(() => ({}));
         showToast(errorData.error || 'Failed to promote issue', 'error');

@@ -571,15 +571,16 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
 
       const result = await client.query(
         `INSERT INTO documents (
-          workspace_id, document_type, title, content, properties,
+          workspace_id, document_type, title, content, yjs_state, properties,
           created_by, visibility, converted_from_id
         )
-        VALUES ($1, 'project', $2, $3, $4, $5, $6, $7)
+        VALUES ($1, 'project', $2, $3, $4, $5, $6, $7, $8)
         RETURNING *`,
         [
           workspaceId,
           doc.title,
           JSON.stringify(doc.content || {}),
+          doc.yjs_state, // Copy collaborative content
           JSON.stringify(projectProperties),
           userId,
           doc.visibility,
@@ -617,15 +618,16 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
 
       const result = await client.query(
         `INSERT INTO documents (
-          workspace_id, document_type, title, content, properties,
+          workspace_id, document_type, title, content, yjs_state, properties,
           ticket_number, created_by, visibility, converted_from_id
         )
-        VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *`,
         [
           workspaceId,
           doc.title,
           JSON.stringify(doc.content || {}),
+          doc.yjs_state, // Copy collaborative content
           JSON.stringify(issueProperties),
           ticketNumber,
           userId,
