@@ -431,8 +431,8 @@ export function IssueEditorPage() {
       const res = await apiPost(`/api/documents/${id}/convert`, { target_type: 'project' });
       if (res.ok) {
         const data = await res.json();
-        // Navigate to the new project
-        navigate(`/projects/${data.new_document.id}`, { replace: true });
+        // Navigate to the new project (API returns document at root level)
+        navigate(`/projects/${data.id}`, { replace: true });
       } else {
         const error = await res.json();
         console.error('Failed to convert issue:', error);
@@ -481,6 +481,34 @@ export function IssueEditorPage() {
     },
   });
 
+  // Handle back navigation - return to context if available, otherwise issues list
+  // NOTE: This hook must be defined BEFORE early returns to avoid "Rendered more hooks" error
+  const handleBack = useCallback(() => {
+    if (navContext.from === 'program' && navContext.programId) {
+      navigate(`/programs/${navContext.programId}`);
+    } else {
+      navigate('/issues');
+    }
+  }, [navigate, navContext]);
+
+  // Escape key handler - return to previous context
+  // NOTE: This hook must be defined BEFORE early returns to avoid "Rendered more hooks" error
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle Escape when not in an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+      if (e.key === 'Escape') {
+        handleBack();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleBack]);
+
   // Only wait for issues to load - programs/team can load in background
   // This allows the page to render with cached data when offline
   // Also wait for direct fetch if we're fetching an issue not in context
@@ -521,32 +549,6 @@ export function IssueEditorPage() {
     await handleUpdateIssue({ program_id: programId, sprint_id: null } as Partial<Issue>);
     // Sprints will be fetched automatically via the useEffect when issue.program_id changes
   };
-
-  // Handle back navigation - return to context if available, otherwise issues list
-  const handleBack = useCallback(() => {
-    if (navContext.from === 'program' && navContext.programId) {
-      navigate(`/programs/${navContext.programId}`);
-    } else {
-      navigate('/issues');
-    }
-  }, [navigate, navContext]);
-
-  // Escape key handler - return to previous context
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle Escape when not in an input field
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        return;
-      }
-      if (e.key === 'Escape') {
-        handleBack();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [handleBack]);
 
   // Breadcrumb label based on navigation context
   const backLabel = navContext.from === 'program' && navContext.programName

@@ -119,6 +119,7 @@ function extractIssueFromRow(row: any) {
     completed_at: row.completed_at || null,
     cancelled_at: row.cancelled_at || null,
     reopened_at: row.reopened_at || null,
+    converted_from_id: row.converted_from_id || null,
     assignee_name: row.assignee_name,
     assignee_archived: row.assignee_archived || false,
     program_name: row.program_name,

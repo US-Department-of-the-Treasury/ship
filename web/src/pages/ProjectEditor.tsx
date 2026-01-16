@@ -16,6 +16,7 @@ import { ProjectRetro } from '@/components/ProjectRetro';
 import { IncompleteDocumentBanner } from '@/components/IncompleteDocumentBanner';
 import { computeICEScore } from '@ship/shared';
 import { useToast } from '@/components/ui/Toast';
+import { apiPost } from '@/lib/api';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -164,16 +165,11 @@ export function ProjectEditorPage() {
     if (!id) return;
     setIsConverting(true);
     try {
-      const res = await fetch(`${API_URL}/api/documents/${id}/convert`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_type: 'issue' }),
-      });
+      const res = await apiPost(`/api/documents/${id}/convert`, { target_type: 'issue' });
       if (res.ok) {
         const data = await res.json();
-        // Navigate to the new issue
-        navigate(`/issues/${data.new_document.id}`, { replace: true });
+        // Navigate to the new issue (API returns document at root level)
+        navigate(`/issues/${data.id}`, { replace: true });
       } else {
         const error = await res.json();
         console.error('Failed to convert project:', error);
@@ -194,12 +190,7 @@ export function ProjectEditorPage() {
     if (!id) return;
     setIsUndoing(true);
     try {
-      const res = await fetch(`${API_URL}/api/documents/${id}/undo-conversion`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
+      const res = await apiPost(`/api/documents/${id}/undo-conversion`, {});
       if (res.ok) {
         const data = await res.json();
         showToast('Conversion undone. Original document restored.', 'success');
