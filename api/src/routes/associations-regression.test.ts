@@ -445,4 +445,90 @@ describe('Associations Regression Tests', () => {
       expect(response.body.issues).toBeDefined()
     })
   })
+
+  describe('Status cascade warning for parent issues', () => {
+    let parentIssueId: string
+    let childIssueId: string
+
+    beforeEach(async () => {
+      // Create parent issue
+      const parentResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, ticket_number, created_by, properties)
+         VALUES ($1, 'issue', 'Parent Issue', 9010, $2, '{"state": "in_progress", "priority": "medium"}')
+         RETURNING id`,
+        [testWorkspaceId, testUserId]
+      )
+      parentIssueId = parentResult.rows[0].id
+
+      // Create child issue
+      const childResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, ticket_number, created_by, properties)
+         VALUES ($1, 'issue', 'Child Issue', 9011, $2, '{"state": "todo", "priority": "medium"}')
+         RETURNING id`,
+        [testWorkspaceId, testUserId]
+      )
+      childIssueId = childResult.rows[0].id
+
+      // Create parent-child association
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'parent')`,
+        [childIssueId, parentIssueId]
+      )
+    })
+
+    afterEach(async () => {
+      await pool.query('DELETE FROM document_associations WHERE document_id IN ($1, $2)', [parentIssueId, childIssueId])
+      await pool.query('DELETE FROM documents WHERE id IN ($1, $2)', [parentIssueId, childIssueId])
+    })
+
+    it('returns 409 warning when closing parent with incomplete children', async () => {
+      const response = await request(app)
+        .patch(`/api/issues/${parentIssueId}`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+        .send({ state: 'done' })
+
+      expect(response.status).toBe(409)
+      expect(response.body.error).toBe('incomplete_children')
+      expect(response.body.incomplete_children).toBeDefined()
+      expect(response.body.incomplete_children.length).toBe(1)
+      expect(response.body.incomplete_children[0].id).toBe(childIssueId)
+    })
+
+    it('allows closing parent with confirm_orphan_children flag', async () => {
+      const response = await request(app)
+        .patch(`/api/issues/${parentIssueId}`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+        .send({ state: 'done', confirm_orphan_children: true })
+
+      expect(response.status).toBe(200)
+      expect(response.body.state).toBe('done')
+
+      // Verify child is orphaned (parent association removed)
+      const assocResult = await pool.query(
+        `SELECT * FROM document_associations WHERE document_id = $1 AND relationship_type = 'parent'`,
+        [childIssueId]
+      )
+      expect(assocResult.rows.length).toBe(0)
+    })
+
+    it('closes parent without warning if all children are done', async () => {
+      // Mark child as done first
+      await pool.query(
+        `UPDATE documents SET properties = properties || '{"state": "done"}' WHERE id = $1`,
+        [childIssueId]
+      )
+
+      const response = await request(app)
+        .patch(`/api/issues/${parentIssueId}`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+        .send({ state: 'done' })
+
+      expect(response.status).toBe(200)
+      expect(response.body.state).toBe('done')
+    })
+  })
 })

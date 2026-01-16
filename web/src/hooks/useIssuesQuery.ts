@@ -1,5 +1,26 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
+import type { CascadeWarning, IncompleteChild } from '@ship/shared';
+
+// Custom error type for cascade warning (409 response)
+export class CascadeWarningError extends Error {
+  status = 409;
+  warning: CascadeWarning;
+
+  constructor(warning: CascadeWarning) {
+    super(warning.message);
+    this.name = 'CascadeWarningError';
+    this.warning = warning;
+  }
+}
+
+// Type guard for CascadeWarningError
+export function isCascadeWarningError(error: unknown): error is CascadeWarningError {
+  return error instanceof CascadeWarningError;
+}
+
+// Re-export for convenience
+export type { CascadeWarning, IncompleteChild };
 
 export interface Issue {
   id: string;
@@ -69,6 +90,13 @@ async function createIssueApi(data: CreateIssueData): Promise<Issue> {
 async function updateIssueApi(id: string, updates: Partial<Issue>): Promise<Issue> {
   const res = await apiPatch(`/api/issues/${id}`, updates);
   if (!res.ok) {
+    // Check for cascade warning (409 with incomplete_children)
+    if (res.status === 409) {
+      const body = await res.json();
+      if (body.error === 'incomplete_children') {
+        throw new CascadeWarningError(body as CascadeWarning);
+      }
+    }
     const error = new Error('Failed to update issue') as Error & { status: number };
     error.status = res.status;
     throw error;
@@ -262,7 +290,11 @@ export function useIssues() {
   const updateIssue = async (id: string, updates: Partial<Issue>): Promise<Issue | null> => {
     try {
       return await updateMutation.mutateAsync({ id, updates });
-    } catch {
+    } catch (error) {
+      // Re-throw CascadeWarningError so UI can handle it (show confirmation dialog)
+      if (isCascadeWarningError(error)) {
+        throw error;
+      }
       return null;
     }
   };

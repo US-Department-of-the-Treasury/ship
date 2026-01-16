@@ -29,6 +29,8 @@ const updateIssueSchema = z.object({
   assignee_id: z.string().uuid().optional().nullable(),
   belongs_to: z.array(belongsToEntrySchema).optional(),
   estimate: z.number().positive().nullable().optional(),
+  // Confirm closing parent with incomplete children (removes their parent association)
+  confirm_orphan_children: z.boolean().optional(),
   // Claude Code integration metadata
   claude_metadata: z.object({
     updated_by: z.literal('claude'),
@@ -635,6 +637,55 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
+    // Check for incomplete children when closing parent
+    const isClosingIssue = data.state && (data.state === 'done' || data.state === 'cancelled');
+    const wasNotClosed = currentProps.state !== 'done' && currentProps.state !== 'cancelled';
+
+    if (isClosingIssue && wasNotClosed) {
+      // Check if this issue has any children via junction table
+      const childrenResult = await pool.query(
+        `SELECT d.id, d.title, d.ticket_number, d.properties->>'state' as state
+         FROM documents d
+         JOIN document_associations da ON da.document_id = d.id
+         WHERE da.related_id = $1
+           AND da.relationship_type = 'parent'
+           AND d.workspace_id = $2
+           AND d.document_type = 'issue'`,
+        [id, workspaceId]
+      );
+
+      // Filter to incomplete children
+      const incompleteChildren = childrenResult.rows.filter(
+        child => child.state !== 'done' && child.state !== 'cancelled'
+      );
+
+      if (incompleteChildren.length > 0 && !data.confirm_orphan_children) {
+        // Return warning with incomplete children details
+        res.status(409).json({
+          error: 'incomplete_children',
+          message: `This issue has ${incompleteChildren.length} incomplete sub-issue(s). Closing it will remove their parent association.`,
+          incomplete_children: incompleteChildren.map(child => ({
+            id: child.id,
+            title: child.title,
+            ticket_number: child.ticket_number,
+            state: child.state,
+          })),
+          confirm_action: 'Set confirm_orphan_children: true to proceed',
+        });
+        return;
+      }
+
+      // If confirmed, orphan the children by removing their parent associations
+      if (incompleteChildren.length > 0 && data.confirm_orphan_children) {
+        await pool.query(
+          `DELETE FROM document_associations
+           WHERE related_id = $1
+             AND relationship_type = 'parent'`,
+          [id]
+        );
+      }
+    }
+
     // Track changes for history
     const changes: Array<{ field: string; oldValue: string | null; newValue: string | null }> = [];
 
@@ -685,8 +736,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    // Track the index in values array for properties (for later updates after carryover)
+    let propsValueIndex = -1;
     if (propsChanged) {
       updates.push(`properties = $${paramIndex++}`);
+      propsValueIndex = values.length;
       values.push(JSON.stringify(newProps));
     }
 
@@ -761,15 +815,14 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     // Re-check if properties changed (carryover may have been updated)
-    if (propsChanged && !updates.some(u => u.startsWith('properties ='))) {
+    if (propsChanged && propsValueIndex === -1) {
+      // Properties weren't added yet, add now
       updates.push(`properties = $${paramIndex++}`);
+      propsValueIndex = values.length;
       values.push(JSON.stringify(newProps));
-    } else if (propsChanged) {
-      // Update the existing properties value
-      const propsIndex = updates.findIndex(u => u.startsWith('properties ='));
-      if (propsIndex >= 0) {
-        values[propsIndex] = JSON.stringify(newProps);
-      }
+    } else if (propsChanged && propsValueIndex >= 0) {
+      // Update the existing properties value at the tracked index
+      values[propsValueIndex] = JSON.stringify(newProps);
     }
 
     if (updates.length === 0 && !belongsToChanged) {
