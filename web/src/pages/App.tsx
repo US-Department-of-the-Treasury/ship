@@ -22,6 +22,7 @@ import { useToast } from '@/components/ui/Toast';
 import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
 import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
+import { ContextTreeNav } from '@/components/ContextTreeNav';
 
 type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard';
 
@@ -376,7 +377,7 @@ export function AppLayout() {
                 />
               )}
               {activeMode === 'issues' && (
-                <IssuesList
+                <IssuesSidebar
                   issues={issues}
                   activeId={location.pathname.split('/issues/')[1]}
                   onUpdateIssue={updateIssue}
@@ -808,6 +809,47 @@ function ChevronIcon({ isOpen }: { isOpen: boolean }) {
         d="M9 5l7 7-7 7"
       />
     </svg>
+  );
+}
+
+// Wrapper that shows ContextTreeNav when viewing a specific issue
+function IssuesSidebar({
+  issues,
+  activeId,
+  onUpdateIssue,
+}: {
+  issues: Issue[];
+  activeId?: string;
+  onUpdateIssue: (id: string, updates: Partial<Issue>) => Promise<Issue | null>;
+}) {
+  // Show context tree when viewing a specific issue
+  const showContext = !!activeId;
+
+  return (
+    <div className="space-y-2">
+      {showContext && (
+        <ContextTreeNav documentId={activeId} documentType="issue" />
+      )}
+
+      {/* Separator between context and list */}
+      {showContext && (
+        <div className="border-t border-border mx-2" />
+      )}
+
+      {/* All Issues header */}
+      <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-muted uppercase tracking-wider">
+        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        </svg>
+        All Issues
+      </div>
+
+      <IssuesList
+        issues={issues}
+        activeId={activeId}
+        onUpdateIssue={onUpdateIssue}
+      />
+    </div>
   );
 }
 

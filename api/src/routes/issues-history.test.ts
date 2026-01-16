@@ -235,6 +235,8 @@ describe('Issues History API', () => {
       vi.mocked(pool.query)
         // Get existing issue
         .mockResolvedValueOnce({ rows: [existingIssue] } as any)
+        // Check for children (cascade warning check)
+        .mockResolvedValueOnce({ rows: [] } as any)
         // Log state change
         .mockResolvedValueOnce({ rows: [] } as any)
         // Update issue

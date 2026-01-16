@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Combobox } from '@/components/ui/Combobox';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { isCascadeWarningError, type IncompleteChild } from '@/hooks/useIssuesQuery';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -113,6 +115,45 @@ export function IssueSidebar({
   const [sprintError, setSprintError] = useState<string | null>(null);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  // Cascade warning state for closing parent with incomplete children
+  const [cascadeWarning, setCascadeWarning] = useState<{
+    open: boolean;
+    pendingState: string | null;
+    incompleteChildren: IncompleteChild[];
+  }>({ open: false, pendingState: null, incompleteChildren: [] });
+
+  // Handle state change with cascade warning detection
+  const handleStateChange = async (newState: string) => {
+    try {
+      await onUpdate({ state: newState });
+    } catch (error) {
+      if (isCascadeWarningError(error)) {
+        setCascadeWarning({
+          open: true,
+          pendingState: newState,
+          incompleteChildren: error.warning.incomplete_children,
+        });
+      } else {
+        throw error;
+      }
+    }
+  };
+
+  // Confirm closing parent with incomplete children
+  const handleCascadeConfirm = async () => {
+    if (cascadeWarning.pendingState) {
+      await onUpdate({
+        state: cascadeWarning.pendingState,
+        confirm_orphan_children: true,
+      } as Partial<Issue> & { confirm_orphan_children: boolean });
+    }
+    setCascadeWarning({ open: false, pendingState: null, incompleteChildren: [] });
+  };
+
+  // Cancel cascade warning
+  const handleCascadeCancel = () => {
+    setCascadeWarning({ open: false, pendingState: null, incompleteChildren: [] });
+  };
 
   // Fetch sprints when issue's program changes
   useEffect(() => {
@@ -239,7 +280,7 @@ export function IssueSidebar({
       <PropertyRow label="Status" highlighted={isHighlighted('state')}>
         <select
           value={issue.state}
-          onChange={(e) => onUpdate({ state: e.target.value })}
+          onChange={(e) => handleStateChange(e.target.value)}
           aria-label="Status"
           className={`w-full rounded px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent ${
             isHighlighted('state') ? 'bg-amber-500/20 border border-amber-500' : 'bg-border'
@@ -400,6 +441,32 @@ export function IssueSidebar({
           <p className="mt-1 text-xs text-muted text-center">Convert this issue into a project</p>
         </div>
       )}
+
+      {/* Cascade Warning Dialog */}
+      <ConfirmDialog
+        open={cascadeWarning.open}
+        title="Incomplete Sub-Issues"
+        description={`This issue has ${cascadeWarning.incompleteChildren.length} incomplete sub-issue(s). Closing it will remove their parent relationship, making them top-level issues.`}
+        confirmLabel="Close Anyway"
+        cancelLabel="Keep Open"
+        variant="destructive"
+        onConfirm={handleCascadeConfirm}
+        onCancel={handleCascadeCancel}
+      >
+        <div className="max-h-32 overflow-y-auto">
+          <ul className="space-y-1 text-sm">
+            {cascadeWarning.incompleteChildren.map((child) => (
+              <li key={child.id} className="flex items-center gap-2 text-muted">
+                <span className="font-mono text-xs text-accent">#{child.ticket_number}</span>
+                <span className="truncate">{child.title}</span>
+                <span className="ml-auto rounded bg-border px-1.5 py-0.5 text-xs">
+                  {child.state}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </ConfirmDialog>
     </div>
   );
 }

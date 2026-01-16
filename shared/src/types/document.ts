@@ -15,6 +15,21 @@ export interface BelongsTo {
   color?: string;
 }
 
+// Cascade warning for incomplete children when closing parent issue
+export interface IncompleteChild {
+  id: string;
+  title: string;
+  ticket_number: number;
+  state: string;
+}
+
+export interface CascadeWarning {
+  error: 'incomplete_children';
+  message: string;
+  incomplete_children: IncompleteChild[];
+  confirm_action: string;
+}
+
 // Document type enum matching PostgreSQL enum
 export type DocumentType =
   | 'wiki'
