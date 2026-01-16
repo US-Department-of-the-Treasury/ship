@@ -37,6 +37,7 @@ import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
 import { ConvertedDocumentsPage } from '@/pages/ConvertedDocuments';
 import { UnifiedDocumentPage } from '@/pages/UnifiedDocumentPage';
+import { MyWeekPage } from '@/pages/MyWeekPage';
 import { InviteAcceptPage } from '@/pages/InviteAccept';
 import { SetupPage } from '@/pages/Setup';
 import { ToastProvider } from '@/components/ui/Toast';
@@ -170,6 +171,7 @@ function AppRoutes() {
       >
         <Route index element={<Navigate to="/docs" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="my-week" element={<MyWeekPage />} />
         <Route path="docs" element={<DocumentsPage />} />
         <Route path="docs/:id" element={<DocumentEditorPage />} />
         <Route path="documents/:id" element={<UnifiedDocumentPage />} />

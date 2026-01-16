@@ -514,6 +514,26 @@ async function seed() {
       console.log('ℹ️  All issues already exist');
     }
 
+    // Sync sprint_id column to junction table (document_associations)
+    // The junction table is the canonical source for associations; this ensures
+    // newly seeded issues have their sprint relationships in both places
+    const sprintAssocResult = await pool.query(`
+      INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
+      SELECT
+        id AS document_id,
+        sprint_id AS related_id,
+        'sprint'::relationship_type AS relationship_type,
+        jsonb_build_object('migrated_from', 'seed_sprint_id', 'migrated_at', NOW())
+      FROM documents
+      WHERE sprint_id IS NOT NULL
+        AND workspace_id = $1
+        AND document_type = 'issue'
+      ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING
+    `, [workspaceId]);
+    if (sprintAssocResult.rowCount && sprintAssocResult.rowCount > 0) {
+      console.log(`✅ Created ${sprintAssocResult.rowCount} sprint associations in junction table`);
+    }
+
     // Create welcome/tutorial wiki document
     const existingTutorial = await pool.query(
       'SELECT id FROM documents WHERE workspace_id = $1 AND document_type = $2 AND title = $3',
