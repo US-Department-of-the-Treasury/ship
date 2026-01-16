@@ -3,6 +3,18 @@
 // Document visibility for private/workspace documents
 export type DocumentVisibility = 'private' | 'workspace';
 
+// Association relationship types for belongs_to array
+export type BelongsToType = 'program' | 'project' | 'sprint' | 'parent';
+
+// BelongsTo association entry - unified format for all document relationships
+export interface BelongsTo {
+  id: string;
+  type: BelongsToType;
+  // Optional display fields populated by API
+  title?: string;
+  color?: string;
+}
+
 // Document type enum matching PostgreSQL enum
 export type DocumentType =
   | 'wiki'
