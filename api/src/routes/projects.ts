@@ -9,6 +9,9 @@ import { checkDocumentCompleteness } from '../utils/extractHypothesis.js';
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
+// Inferred project status type
+type InferredProjectStatus = 'active' | 'planned' | 'completed' | 'backlog' | 'archived';
+
 // Helper to extract project from row with computed ice_score
 function extractProjectFromRow(row: any) {
   const props = row.properties || {};
@@ -45,6 +48,8 @@ function extractProjectFromRow(row: any) {
     // Completeness flags
     is_complete: props.is_complete ?? null,
     missing_fields: props.missing_fields ?? [],
+    // Inferred status (computed from sprint relationships)
+    inferred_status: row.inferred_status as InferredProjectStatus || 'backlog',
   };
 }
 
@@ -299,12 +304,54 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       orderByClause = `d.${sortField} ${sortDir}`;
     }
 
+    // Subquery to compute inferred status based on sprint relationships
+    // Priority: archived (if archived_at set) > active (issues in active sprint) > planned (upcoming) > completed > backlog
+    // Sprint status is computed from sprint_number + workspace.sprint_start_date:
+    //   - active: today is within the sprint's 7-day window
+    //   - upcoming: sprint hasn't started yet
+    //   - completed: sprint window has passed
+    const inferredStatusSubquery = `
+      CASE
+        WHEN d.archived_at IS NOT NULL THEN 'archived'
+        ELSE COALESCE(
+          (
+            SELECT
+              CASE MAX(
+                CASE
+                  -- Compute sprint status: active=3, upcoming=2, completed=1
+                  WHEN CURRENT_DATE BETWEEN
+                    (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
+                    AND (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7 + 6)
+                  THEN 3  -- active
+                  WHEN CURRENT_DATE < (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
+                  THEN 2  -- upcoming
+                  ELSE 1  -- completed
+                END
+              )
+              WHEN 3 THEN 'active'
+              WHEN 2 THEN 'planned'
+              WHEN 1 THEN 'completed'
+              ELSE NULL
+              END
+            FROM documents issue
+            JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+            JOIN workspaces w ON w.id = d.workspace_id
+            WHERE issue.project_id = d.id
+              AND issue.document_type = 'issue'
+              AND issue.sprint_id IS NOT NULL
+          ),
+          'backlog'
+        )
+      END
+    `;
+
     let query = `
       SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
              (d.properties->>'owner_id')::uuid as owner_id,
              u.name as owner_name, u.email as owner_email,
              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
-             (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count
+             (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
+             (${inferredStatusSubquery}) as inferred_status
       FROM documents d
       LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
       WHERE d.workspace_id = $1 AND d.document_type = 'project'
@@ -336,12 +383,48 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
+    // Same inferred status subquery as list endpoint
+    const inferredStatusSubquery = `
+      CASE
+        WHEN d.archived_at IS NOT NULL THEN 'archived'
+        ELSE COALESCE(
+          (
+            SELECT
+              CASE MAX(
+                CASE
+                  WHEN CURRENT_DATE BETWEEN
+                    (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
+                    AND (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7 + 6)
+                  THEN 3
+                  WHEN CURRENT_DATE < (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
+                  THEN 2
+                  ELSE 1
+                END
+              )
+              WHEN 3 THEN 'active'
+              WHEN 2 THEN 'planned'
+              WHEN 1 THEN 'completed'
+              ELSE NULL
+              END
+            FROM documents issue
+            JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+            JOIN workspaces w ON w.id = d.workspace_id
+            WHERE issue.project_id = d.id
+              AND issue.document_type = 'issue'
+              AND issue.sprint_id IS NOT NULL
+          ),
+          'backlog'
+        )
+      END
+    `;
+
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count
+              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
+              (${inferredStatusSubquery}) as inferred_status
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'project'
@@ -404,7 +487,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     const user = userResult.rows[0];
 
     res.status(201).json({
-      ...extractProjectFromRow(result.rows[0]),
+      ...extractProjectFromRow({ ...result.rows[0], inferred_status: 'backlog' }),
       sprint_count: 0,
       issue_count: 0,
       owner: user ? {
@@ -530,13 +613,48 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       [...values, id, req.workspaceId]
     );
 
-    // Re-query to get full project with owner info
+    // Re-query to get full project with owner info and inferred status
+    const updateInferredStatusSubquery = `
+      CASE
+        WHEN d.archived_at IS NOT NULL THEN 'archived'
+        ELSE COALESCE(
+          (
+            SELECT
+              CASE MAX(
+                CASE
+                  WHEN CURRENT_DATE BETWEEN
+                    (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
+                    AND (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7 + 6)
+                  THEN 3
+                  WHEN CURRENT_DATE < (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
+                  THEN 2
+                  ELSE 1
+                END
+              )
+              WHEN 3 THEN 'active'
+              WHEN 2 THEN 'planned'
+              WHEN 1 THEN 'completed'
+              ELSE NULL
+              END
+            FROM documents issue
+            JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+            JOIN workspaces w ON w.id = d.workspace_id
+            WHERE issue.project_id = d.id
+              AND issue.document_type = 'issue'
+              AND issue.sprint_id IS NOT NULL
+          ),
+          'backlog'
+        )
+      END
+    `;
+
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count
+              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
+              (${updateInferredStatusSubquery}) as inferred_status
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
        WHERE d.id = $1 AND d.document_type = 'project'`,

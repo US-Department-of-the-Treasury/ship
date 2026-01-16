@@ -63,7 +63,10 @@ export function ProjectsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const selectionRef = useRef<UseSelectionReturn | null>(null);
 
-  const statusFilter = searchParams.get('status') || '';
+  // Normalize status filter - invalid values default to 'all' (empty string)
+  const validStatuses = ['', 'active', 'planned', 'completed', 'archived'];
+  const rawStatusFilter = searchParams.get('status') || '';
+  const statusFilter = validStatuses.includes(rawStatusFilter) ? rawStatusFilter : '';
 
   // Compute unique programs from projects for the filter dropdown
   const programOptions = useMemo(() => {
@@ -78,6 +81,22 @@ export function ProjectsPage() {
     return map;
   }, [programs]);
 
+  // Compute counts for each status filter tab
+  const statusCounts = useMemo(() => {
+    // Apply program filter first to get the relevant projects
+    const programFiltered = programFilter
+      ? allProjects.filter(project => project.program_id === programFilter)
+      : allProjects;
+
+    return {
+      all: programFiltered.filter(p => p.inferred_status !== 'archived').length,
+      active: programFiltered.filter(p => p.inferred_status === 'active').length,
+      planned: programFiltered.filter(p => p.inferred_status === 'planned').length,
+      completed: programFiltered.filter(p => p.inferred_status === 'completed').length,
+      archived: programFiltered.filter(p => p.inferred_status === 'archived').length,
+    };
+  }, [allProjects, programFilter]);
+
   // Filter projects client-side based on status filter AND program filter
   const filteredProjects = useMemo(() => {
     let filtered = allProjects;
@@ -87,13 +106,24 @@ export function ProjectsPage() {
       filtered = filtered.filter(project => project.program_id === programFilter);
     }
 
-    // Apply status filter
-    if (statusFilter === 'active') {
-      filtered = filtered.filter(project => !project.archived_at);
-    } else if (statusFilter === 'archived') {
-      filtered = filtered.filter(project => project.archived_at);
+    // Apply status filter based on inferred_status
+    switch (statusFilter) {
+      case 'active':
+        filtered = filtered.filter(project => project.inferred_status === 'active');
+        break;
+      case 'planned':
+        filtered = filtered.filter(project => project.inferred_status === 'planned');
+        break;
+      case 'completed':
+        filtered = filtered.filter(project => project.inferred_status === 'completed');
+        break;
+      case 'archived':
+        filtered = filtered.filter(project => project.inferred_status === 'archived');
+        break;
+      default:
+        // 'all' or empty = show all non-archived projects (active, planned, completed, backlog)
+        filtered = filtered.filter(project => project.inferred_status !== 'archived');
     }
-    // 'all' or empty = no status filter
 
     return filtered;
   }, [allProjects, statusFilter, programFilter]);
@@ -319,9 +349,11 @@ export function ProjectsPage() {
       ) : (
         <FilterTabs
           tabs={[
-            { id: '', label: 'All' },
-            { id: 'active', label: 'Active' },
-            { id: 'archived', label: 'Archived' },
+            { id: '', label: 'All', count: statusCounts.all },
+            { id: 'active', label: 'Active', count: statusCounts.active },
+            { id: 'planned', label: 'Planned', count: statusCounts.planned },
+            { id: 'completed', label: 'Completed', count: statusCounts.completed },
+            { id: 'archived', label: 'Archived', count: statusCounts.archived },
           ]}
           activeId={statusFilter}
           onChange={setFilter}
