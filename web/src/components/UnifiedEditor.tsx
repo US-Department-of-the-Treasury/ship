@@ -1,10 +1,12 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
 import { SprintSidebar } from '@/components/sidebars/SprintSidebar';
+import { DocumentTypeSelector, getMissingRequiredFields } from '@/components/sidebars/DocumentTypeSelector';
+import type { DocumentType as SelectableDocumentType } from '@/components/sidebars/DocumentTypeSelector';
 import { useAuth } from '@/hooks/useAuth';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import type { Person } from '@/components/PersonCombobox';
@@ -135,6 +137,10 @@ interface UnifiedEditorProps {
   onDocumentConverted?: (newDocId: string, newDocType: 'issue' | 'project') => void;
   /** Badge to show in header */
   headerBadge?: React.ReactNode;
+  /** Whether to show the document type selector */
+  showTypeSelector?: boolean;
+  /** Handler for document type changes (if different from onUpdate) */
+  onTypeChange?: (newType: DocumentType) => Promise<void>;
 }
 
 /**
@@ -167,9 +173,34 @@ export function UnifiedEditor({
   onNavigateToDocument,
   onDocumentConverted,
   headerBadge,
+  showTypeSelector = false,
+  onTypeChange,
 }: UnifiedEditorProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [isChangingType, setIsChangingType] = useState(false);
+
+  // Track missing required fields after type changes
+  const missingFields = useMemo(() => {
+    const selectableType = document.document_type as SelectableDocumentType;
+    if (['wiki', 'issue', 'project', 'sprint'].includes(selectableType)) {
+      // Build properties object from document
+      const props: Record<string, unknown> = {
+        ...document.properties,
+        // Include top-level fields that might be required
+        state: (document as IssueDocument).state,
+        priority: (document as IssueDocument).priority,
+        impact: (document as ProjectDocument).impact,
+        confidence: (document as ProjectDocument).confidence,
+        ease: (document as ProjectDocument).ease,
+        start_date: (document as SprintDocument).start_date,
+        end_date: (document as SprintDocument).end_date,
+        status: (document as SprintDocument).status,
+      };
+      return getMissingRequiredFields(selectableType, props);
+    }
+    return [];
+  }, [document]);
 
   // Auto-save title changes
   const throttledTitleSave = useAutoSave({
@@ -177,6 +208,22 @@ export function UnifiedEditor({
       if (title) await onUpdate({ title });
     },
   });
+
+  // Handle document type change
+  const handleTypeChange = useCallback(async (newType: SelectableDocumentType) => {
+    if (newType === document.document_type) return;
+
+    setIsChangingType(true);
+    try {
+      if (onTypeChange) {
+        await onTypeChange(newType as DocumentType);
+      } else {
+        await onUpdate({ document_type: newType as DocumentType } as Partial<UnifiedDocument>);
+      }
+    } finally {
+      setIsChangingType(false);
+    }
+  }, [document.document_type, onTypeChange, onUpdate]);
 
   // Navigate to document handler
   const handleNavigateToDocument = useCallback((docId: string) => {
@@ -193,8 +240,11 @@ export function UnifiedEditor({
   // Determine placeholder based on document type if not provided
   const effectivePlaceholder = placeholder || getDefaultPlaceholder(document.document_type);
 
-  // Render the appropriate sidebar based on document type
-  const sidebar = useMemo(() => {
+  // Check if this document type can have its type changed
+  const canChangeType = ['wiki', 'issue', 'project', 'sprint'].includes(document.document_type);
+
+  // Render the type-specific sidebar content
+  const typeSpecificSidebar = useMemo(() => {
     switch (document.document_type) {
       case 'wiki':
         return (
@@ -220,6 +270,7 @@ export function UnifiedEditor({
             onReject={issueData.onReject}
             isConverting={issueData.isConverting}
             isUndoing={issueData.isUndoing}
+            highlightedFields={missingFields}
           />
         );
       }
@@ -236,6 +287,7 @@ export function UnifiedEditor({
             onUndoConversion={projectData.onUndoConversion}
             isConverting={projectData.isConverting}
             isUndoing={projectData.isUndoing}
+            highlightedFields={missingFields}
           />
         );
       }
@@ -245,6 +297,7 @@ export function UnifiedEditor({
           <SprintSidebar
             sprint={document as SprintDocument}
             onUpdate={onUpdate as (updates: Partial<SprintDocument>) => Promise<void>}
+            highlightedFields={missingFields}
           />
         );
 
@@ -258,7 +311,38 @@ export function UnifiedEditor({
           </div>
         );
     }
-  }, [document, sidebarData, user?.id, onUpdate]);
+  }, [document, sidebarData, user?.id, onUpdate, missingFields]);
+
+  // Compose full sidebar with type selector
+  const sidebar = useMemo(() => {
+    // If we're not showing the type selector, just return the type-specific sidebar
+    if (!showTypeSelector || !canChangeType) {
+      return typeSpecificSidebar;
+    }
+
+    // Add type selector at the top
+    return (
+      <div className="flex flex-col h-full">
+        {/* Type Selector */}
+        <div className="p-4 border-b border-border">
+          <DocumentTypeSelector
+            value={document.document_type as SelectableDocumentType}
+            onChange={handleTypeChange}
+            disabled={isChangingType}
+          />
+          {missingFields.length > 0 && (
+            <p className="mt-2 text-xs text-amber-500">
+              Please fill in required fields: {missingFields.join(', ')}
+            </p>
+          )}
+        </div>
+        {/* Type-specific sidebar */}
+        <div className="flex-1 overflow-auto">
+          {typeSpecificSidebar}
+        </div>
+      </div>
+    );
+  }, [showTypeSelector, canChangeType, typeSpecificSidebar, document.document_type, handleTypeChange, isChangingType, missingFields]);
 
   if (!user) {
     return null;

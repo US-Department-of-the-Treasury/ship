@@ -48,6 +48,8 @@ interface IssueSidebarProps {
   onReject?: (reason: string) => Promise<void>;
   isConverting?: boolean;
   isUndoing?: boolean;
+  /** Fields to highlight as missing (e.g., after type conversion) */
+  highlightedFields?: string[];
 }
 
 const STATES = [
@@ -102,7 +104,10 @@ export function IssueSidebar({
   onReject,
   isConverting = false,
   isUndoing = false,
+  highlightedFields = [],
 }: IssueSidebarProps) {
+  // Helper to check if a field should be highlighted
+  const isHighlighted = (field: string) => highlightedFields.includes(field);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [workspaceSprintStartDate, setWorkspaceSprintStartDate] = useState<Date | null>(null);
   const [sprintError, setSprintError] = useState<string | null>(null);
@@ -231,12 +236,14 @@ export function IssueSidebar({
         </div>
       )}
 
-      <PropertyRow label="Status">
+      <PropertyRow label="Status" highlighted={isHighlighted('state')}>
         <select
           value={issue.state}
           onChange={(e) => onUpdate({ state: e.target.value })}
           aria-label="Status"
-          className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+          className={`w-full rounded px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent ${
+            isHighlighted('state') ? 'bg-amber-500/20 border border-amber-500' : 'bg-border'
+          }`}
         >
           {STATES.map((s) => (
             <option key={s.value} value={s.value}>
@@ -246,12 +253,14 @@ export function IssueSidebar({
         </select>
       </PropertyRow>
 
-      <PropertyRow label="Priority">
+      <PropertyRow label="Priority" highlighted={isHighlighted('priority')}>
         <select
           value={issue.priority}
           onChange={(e) => onUpdate({ priority: e.target.value })}
           aria-label="Priority"
-          className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+          className={`w-full rounded px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent ${
+            isHighlighted('priority') ? 'bg-amber-500/20 border border-amber-500' : 'bg-border'
+          }`}
         >
           {PRIORITIES.map((p) => (
             <option key={p.value} value={p.value}>
@@ -395,10 +404,13 @@ export function IssueSidebar({
   );
 }
 
-function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
+function PropertyRow({ label, highlighted, children }: { label: string; highlighted?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-muted">{label}</label>
+      <label className={`mb-1 block text-xs font-medium ${highlighted ? 'text-amber-500' : 'text-muted'}`}>
+        {label}
+        {highlighted && <span className="ml-1 text-amber-500">*</span>}
+      </label>
       {children}
     </div>
   );
