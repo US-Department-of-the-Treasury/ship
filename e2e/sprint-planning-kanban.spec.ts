@@ -25,7 +25,7 @@ async function login(page: Page) {
 }
 
 async function navigateToSprintPlanningView(page: Page) {
-  // Navigate to a program's Sprints tab and click "Open →" to go to SprintView
+  // Navigate to a program's Sprints tab and click "Plan Sprint" to go to SprintView
   await page.goto('/programs')
   await page.getByRole('row', { name: /Ship Core/i }).click()
   await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
@@ -33,13 +33,18 @@ async function navigateToSprintPlanningView(page: Page) {
   // Click Sprints tab
   await page.getByRole('tab', { name: 'Sprints' }).click()
 
-  // Wait for active sprint content and click "Open →"
-  const openButton = page.getByRole('button', { name: /Open/ })
-  await expect(openButton).toBeVisible({ timeout: 10000 })
-  await openButton.click()
+  // Wait for active sprint content and click "Plan Sprint" button
+  // Use force:true because sidebar panel can overlap the button
+  const planSprintButton = page.getByRole('button', { name: /Plan Sprint/ })
+  await expect(planSprintButton).toBeVisible({ timeout: 10000 })
+  await planSprintButton.click({ force: true })
 
   // Should be on the sprint planning view
   await expect(page).toHaveURL(/\/sprints\/[a-f0-9-]+\/view/, { timeout: 5000 })
+
+  // Click Planning tab to see the kanban view
+  await page.getByRole('tab', { name: 'Planning' }).click()
+  await page.waitForLoadState('networkidle')
 }
 
 // =============================================================================

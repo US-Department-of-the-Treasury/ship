@@ -1068,12 +1068,14 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       // Hover over the third row (not first, to verify it's setting focus correctly)
       await rows.nth(2).hover();
 
-      // Third row should have focus ring
+      // Third row should have focus ring - wait for data-focused attribute
+      await expect(rows.nth(2)).toHaveAttribute('data-focused', 'true', { timeout: 5000 });
       await expect(rows.nth(2)).toHaveClass(/ring-2/, { timeout: 3000 });
 
       // Now press j and focus should move from third to fourth row (if exists)
       if (rowCount > 3) {
         await page.keyboard.press('j');
+        await expect(rows.nth(3)).toHaveAttribute('data-focused', 'true', { timeout: 5000 });
         await expect(rows.nth(3)).toHaveClass(/ring-2/, { timeout: 3000 });
         await expect(rows.nth(2)).not.toHaveClass(/ring-2/);
       }

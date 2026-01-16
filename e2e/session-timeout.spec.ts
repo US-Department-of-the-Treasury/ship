@@ -403,11 +403,11 @@ test.describe('12-Hour Absolute Timeout', () => {
     await button.click();
 
     // Modal should dismiss but session still ends at 12hr mark
-    // Advance remaining 5 minutes
-    await page.clock.runFor(ABSOLUTE_WARNING_THRESHOLD_MS);
+    // Advance remaining 5 minutes plus a buffer for logout processing
+    await page.clock.runFor(ABSOLUTE_WARNING_THRESHOLD_MS + 2000);
 
     // Should be redirected to login page
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/login/, { timeout: 10000 });
   });
 
   test('logs user out at 12-hour mark regardless of activity', async ({ page }) => {

@@ -246,9 +246,15 @@ test.describe('Triage Workflow: Reject', () => {
     await page.goto('/issues');
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
+    // Wait for initial table to load
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
     // The 'Rejected spam submission' was seeded as rejected
     // Filter to cancelled
     await page.getByRole('tab', { name: /cancelled/i }).click();
+
+    // Wait for filter to apply and table to re-render
+    await page.waitForTimeout(500);
 
     // Should see rejected issue
     const rejectedIssue = page.locator('tr[role="row"]', { hasText: 'Rejected spam submission' });
@@ -260,8 +266,14 @@ test.describe('Triage Workflow: Reject', () => {
     await page.goto('/issues');
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
+    // Wait for initial table to load
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
     // Filter to cancelled
     await page.getByRole('tab', { name: /cancelled/i }).click();
+
+    // Wait for filter to apply and table to re-render
+    await page.waitForTimeout(500);
 
     // Open rejected issue
     const rejectedIssue = page.locator('tr[role="row"]', { hasText: 'Rejected spam submission' });
@@ -438,8 +450,14 @@ test.describe('Data Migration', () => {
     await page.goto('/issues');
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
+    // Wait for initial table to load
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
     // Filter to cancelled
     await page.getByRole('tab', { name: /cancelled/i }).click();
+
+    // Wait for filter to apply and table to re-render
+    await page.waitForTimeout(500);
 
     // 'Rejected spam submission' should be here
     const rejectedExternal = page.locator('tr[role="row"]', { hasText: 'Rejected spam submission' });
@@ -490,8 +508,14 @@ test.describe('Issue Properties Panel', () => {
     await page.goto('/issues');
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
+    // Wait for initial table to load
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+
     // Filter to cancelled
     await page.getByRole('tab', { name: /cancelled/i }).click();
+
+    // Wait for filter to apply and table to re-render
+    await page.waitForTimeout(500);
 
     // Open rejected issue
     await page.locator('tr[role="row"]', { hasText: 'Rejected spam submission' }).click();

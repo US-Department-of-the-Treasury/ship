@@ -263,19 +263,20 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     // First, get explicit sprint document assignments (owner_id + project_id in properties)
+    // Use sprint's program_id directly (handles legacy programId assignments without project)
     const explicitResult = await pool.query(
       `SELECT
          s.properties->>'owner_id' as person_id,
          (s.properties->>'sprint_number')::int as sprint_number,
          s.properties->>'project_id' as project_id,
          proj.title as project_name,
-         proj.program_id,
+         s.program_id,
          prog.title as program_name,
          prog.properties->>'emoji' as program_emoji,
          prog.properties->>'color' as program_color
        FROM documents s
        LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
-       LEFT JOIN documents prog ON proj.program_id = prog.id
+       LEFT JOIN documents prog ON s.program_id = prog.id
        WHERE s.workspace_id = $1
          AND s.document_type = 'sprint'
          AND s.properties->>'owner_id' IS NOT NULL

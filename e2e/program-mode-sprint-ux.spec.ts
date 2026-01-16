@@ -244,13 +244,14 @@ test.describe('Phase 2: Sprints Tab UI', () => {
     await expect(page.getByText(/\d+ days? left/)).toBeVisible({ timeout: 5000 })
   })
 
-  test('Open button navigates to SprintView', async ({ page }) => {
+  test('Plan Sprint button navigates to SprintView', async ({ page }) => {
     await clickSprintsTab(page)
 
     // Wait for active sprint content to load
-    const openButton = page.getByRole('button', { name: /Open/ })
-    await expect(openButton).toBeVisible({ timeout: 10000 })
-    await openButton.click()
+    // Use force:true because sidebar panel can overlap the button
+    const planSprintButton = page.getByRole('button', { name: /Plan Sprint/ })
+    await expect(planSprintButton).toBeVisible({ timeout: 10000 })
+    await planSprintButton.click({ force: true })
     await expect(page).toHaveURL(/\/sprints\/[a-f0-9-]+\/view/, { timeout: 5000 })
   })
 
@@ -1189,7 +1190,10 @@ test.describe('Integration: Full User Flows', () => {
     const count = await rows.count()
 
     for (let i = 0; i < count; i++) {
-      const sprintCell = rows.nth(i).locator('td').last()
+      // Sprint column is second-to-last (last is action menu with ⋮)
+      const cells = rows.nth(i).locator('td')
+      const cellCount = await cells.count()
+      const sprintCell = cells.nth(cellCount - 2)
       await expect(sprintCell).toHaveText('—')
     }
   })
