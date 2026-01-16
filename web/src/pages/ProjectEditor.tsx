@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useProjects, Project } from '@/contexts/ProjectsContext';
@@ -16,6 +17,8 @@ import { ProjectRetro } from '@/components/ProjectRetro';
 import { IncompleteDocumentBanner } from '@/components/IncompleteDocumentBanner';
 import { computeICEScore } from '@ship/shared';
 import { useToast } from '@/components/ui/Toast';
+import { issueKeys } from '@/hooks/useIssuesQuery';
+import { projectKeys } from '@/hooks/useProjectsQuery';
 import { apiPost } from '@/lib/api';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -42,6 +45,7 @@ export function ProjectEditorPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const { projects, loading, updateProject: contextUpdateProject } = useProjects();
   const { programs } = usePrograms();
   const { createDocument } = useDocuments();
@@ -168,6 +172,11 @@ export function ProjectEditorPage() {
       const res = await apiPost(`/api/documents/${id}/convert`, { target_type: 'issue' });
       if (res.ok) {
         const data = await res.json();
+        // Invalidate both caches to reflect the conversion
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: issueKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
+        ]);
         // Navigate to the new issue (API returns document at root level)
         navigate(`/issues/${data.id}`, { replace: true });
       } else {
@@ -183,7 +192,7 @@ export function ProjectEditorPage() {
       setIsConverting(false);
       setShowConvertDialog(false);
     }
-  }, [id, navigate, showToast]);
+  }, [id, navigate, showToast, queryClient]);
 
   // Undo conversion (restore original document)
   const handleUndoConversion = useCallback(async () => {
@@ -193,6 +202,11 @@ export function ProjectEditorPage() {
       const res = await apiPost(`/api/documents/${id}/undo-conversion`, {});
       if (res.ok) {
         const data = await res.json();
+        // Invalidate both caches to reflect the undo
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: issueKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
+        ]);
         showToast('Conversion undone. Original document restored.', 'success');
         // Navigate to the restored document
         const restoredDocType = data.restored_document.document_type;
@@ -209,7 +223,7 @@ export function ProjectEditorPage() {
       showToast('Failed to undo conversion', 'error');
       setIsUndoing(false);
     }
-  }, [id, navigate, showToast]);
+  }, [id, navigate, showToast, queryClient]);
 
   // Throttled title save
   const throttledTitleSave = useAutoSave({

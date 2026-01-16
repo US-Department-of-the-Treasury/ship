@@ -21,6 +21,9 @@ import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { ContextMenu, ContextMenuItem, ContextMenuSubmenu, ContextMenuSeparator } from '@/components/ui/ContextMenu';
 import { useToast } from '@/components/ui/Toast';
 import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
+import { useQueryClient } from '@tanstack/react-query';
+import { issueKeys } from '@/hooks/useIssuesQuery';
+import { projectKeys } from '@/hooks/useProjectsQuery';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -882,6 +885,7 @@ function ProgramIssuesList({
 }) {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const [isMoving, setIsMoving] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; issueId: string } | null>(null);
   const [convertingIssue, setConvertingIssue] = useState<Issue | null>(null);
@@ -951,6 +955,11 @@ function ProgramIssuesList({
       const res = await apiPost(`/api/documents/${convertingIssue.id}/convert`, { target_type: 'project' });
       if (res.ok) {
         const data = await res.json();
+        // Invalidate both issues and projects caches to reflect the conversion
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: issueKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
+        ]);
         showToast(`Issue promoted to project: ${convertingIssue.title}`, 'success');
         navigate(`/projects/${data.id}`, { replace: true });
       } else {
@@ -963,7 +972,7 @@ function ProgramIssuesList({
       setIsConverting(false);
       setConvertingIssue(null);
     }
-  }, [convertingIssue, navigate, showToast]);
+  }, [convertingIssue, navigate, showToast, queryClient]);
 
   // Render function for issue rows
   const renderIssueRow = useCallback((issue: Issue, _props: RowRenderProps) => {

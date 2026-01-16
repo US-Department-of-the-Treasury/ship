@@ -5,7 +5,9 @@ import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components
 import { BulkActionBar } from '@/components/BulkActionBar';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
-import { useBulkUpdateIssues } from '@/hooks/useIssuesQuery';
+import { useBulkUpdateIssues, issueKeys } from '@/hooks/useIssuesQuery';
+import { projectKeys } from '@/hooks/useProjectsQuery';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { useListFilters, ViewMode } from '@/hooks/useListFilters';
@@ -76,6 +78,7 @@ export function IssuesPage() {
   const bulkUpdate = useBulkUpdateIssues();
   const { data: teamMembers = [] } = useAssignableMembersQuery();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   // Use shared hooks for list state management
   const { sortBy, setSortBy, viewMode, setViewMode } = useListFilters({
@@ -295,6 +298,11 @@ export function IssuesPage() {
       const res = await apiPost(`/api/documents/${convertingIssue.id}/convert`, { target_type: 'project' });
       if (res.ok) {
         const data = await res.json();
+        // Invalidate both issues and projects caches to reflect the conversion
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: issueKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
+        ]);
         showToast(`Issue promoted to project: ${convertingIssue.title}`, 'success');
         navigate(`/projects/${data.id}`, { replace: true });
       } else {
@@ -309,7 +317,7 @@ export function IssuesPage() {
       setIsConverting(false);
       setConvertingIssue(null);
     }
-  }, [convertingIssue, navigate, showToast]);
+  }, [convertingIssue, navigate, showToast, queryClient]);
 
   // Selection change handler - keeps parent state in sync with SelectableList
   const handleSelectionChange = useCallback((newSelectedIds: Set<string>, newSelection: UseSelectionReturn) => {

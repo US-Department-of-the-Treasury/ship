@@ -15,6 +15,9 @@ import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components
 import { FilterTabs } from '@/components/FilterTabs';
 import { cn } from '@/lib/cn';
 import { apiPost } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
+import { issueKeys } from '@/hooks/useIssuesQuery';
+import { projectKeys } from '@/hooks/useProjectsQuery';
 
 // All available columns with metadata
 const ALL_COLUMNS: ColumnDefinition[] = [
@@ -45,6 +48,7 @@ export function ProjectsPage() {
   const { programs } = usePrograms();
   const isOfflineEmpty = useOfflineEmptyState(allProjects, loading);
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
 
   // Use shared hooks for list state management
   const { sortBy, setSortBy, viewMode, setViewMode } = useListFilters({
@@ -257,6 +261,11 @@ export function ProjectsPage() {
       const res = await apiPost(`/api/documents/${convertingProject.id}/convert`, { target_type: 'issue' });
       if (res.ok) {
         const data = await res.json();
+        // Invalidate both issues and projects caches to reflect the conversion
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: issueKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
+        ]);
         showToast(`Project converted to issue: ${convertingProject.title}`, 'success');
         navigate(`/issues/${data.id}`, { replace: true });
       } else {
@@ -271,7 +280,7 @@ export function ProjectsPage() {
       setIsConverting(false);
       setConvertingProject(null);
     }
-  }, [convertingProject, navigate, showToast]);
+  }, [convertingProject, navigate, showToast, queryClient]);
 
   // Selection change handler - keeps parent state in sync with SelectableList
   const handleSelectionChange = useCallback((newSelectedIds: Set<string>, selection: UseSelectionReturn) => {

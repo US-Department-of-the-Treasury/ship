@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
@@ -9,6 +10,8 @@ import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useProgramsQuery } from '@/hooks/useProgramsQuery';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
+import { issueKeys } from '@/hooks/useIssuesQuery';
+import { projectKeys } from '@/hooks/useProjectsQuery';
 import { apiPost } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 
@@ -234,6 +237,7 @@ export function IssueEditorPage() {
   const navContext = (location.state as NavigationContext) || {};
   const { user } = useAuth();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const { issues, loading: issuesLoading, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
   const { createDocument } = useDocuments();
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -431,6 +435,11 @@ export function IssueEditorPage() {
       const res = await apiPost(`/api/documents/${id}/convert`, { target_type: 'project' });
       if (res.ok) {
         const data = await res.json();
+        // Invalidate both issues and projects caches to reflect the conversion
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: issueKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
+        ]);
         // Navigate to the new project (API returns document at root level)
         navigate(`/projects/${data.id}`, { replace: true });
       } else {
@@ -446,7 +455,7 @@ export function IssueEditorPage() {
       setIsConverting(false);
       setShowConvertDialog(false);
     }
-  }, [id, navigate, showToast]);
+  }, [id, navigate, showToast, queryClient]);
 
   // Undo conversion (restore original document)
   const handleUndoConversion = useCallback(async () => {
@@ -456,6 +465,11 @@ export function IssueEditorPage() {
       const res = await apiPost(`/api/documents/${id}/undo-conversion`, {});
       if (res.ok) {
         const data = await res.json();
+        // Invalidate both caches to reflect the undo
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: issueKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
+        ]);
         showToast('Conversion undone. Original document restored.', 'success');
         // Navigate to the restored document
         const restoredDocType = data.restored_document.document_type;
@@ -472,7 +486,7 @@ export function IssueEditorPage() {
       showToast('Failed to undo conversion', 'error');
       setIsUndoing(false);
     }
-  }, [id, navigate, showToast]);
+  }, [id, navigate, showToast, queryClient]);
 
   // Throttled title save with stale response handling
   const throttledTitleSave = useAutoSave({
