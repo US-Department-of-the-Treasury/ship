@@ -50,14 +50,14 @@ Following Notion's paradigm: **everything is a document with properties**. The d
 - Independence: Creating membership doesn't require creating person doc atomically
 - Clarity: No "repair logic" to keep layers in sync
 
-### Offline-Tolerant Design
+### Caching Strategy
 
-The application must work offline (planes, subways, spotty connections) and sync when reconnected:
+The application uses stale-while-revalidate caching for performance:
 
-- **Properties/metadata**: Full sync to IndexedDB, simple merge strategies
-- **Rich text content**: Yjs CRDT documents, partial sync, conflict-free merging
-- **Read offline**: Always available from local cache
-- **Write offline**: Changes queued, synced on reconnect
+- **Query cache**: TanStack Query with IndexedDB persistence for fast startup
+- **Rich text content**: Yjs CRDT documents with y-indexeddb for editor state persistence
+- **Read from cache**: Stale data shown immediately, fresh data fetched in background
+- **Write requires network**: Mutations use optimistic updates with rollback on error
 
 ## Document Types
 
@@ -511,15 +511,6 @@ Modes are **different lenses on the same data** for different personas:
 ## Roadmap
 
 Features planned but not yet implemented:
-
-### Sync API
-
-Dedicated sync endpoints for offline-first experience:
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/sync/changes?since=timestamp` | Get changes since last sync |
-| `POST /api/sync/push` | Push queued offline changes |
 
 ### Denormalized Snapshots
 
