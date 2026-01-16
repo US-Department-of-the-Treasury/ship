@@ -115,7 +115,7 @@ router.get('/context', authMiddleware, async (req: Request, res: Response) => {
  * Get comprehensive context for standup entry
  */
 async function getStandupContext(sprintId: string, workspaceId: string) {
-  // Get sprint with program and project info
+  // Get sprint with program and project info via junction table
   const sprintResult = await pool.query(`
     SELECT
       s.id as sprint_id,
@@ -140,8 +140,10 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       proj.properties->>'ice_ease' as ice_ease,
       proj.properties->>'monetary_impact' as monetary_impact_expected
     FROM documents s
-    LEFT JOIN documents p ON s.parent_id = p.id AND p.document_type = 'program'
-    LEFT JOIN documents proj ON s.project_id = proj.id AND proj.document_type = 'project'
+    LEFT JOIN document_associations da_proj ON da_proj.document_id = s.id AND da_proj.relationship_type = 'project'
+    LEFT JOIN documents proj ON da_proj.related_id = proj.id AND proj.document_type = 'project'
+    LEFT JOIN document_associations da_prog ON da_prog.document_id = proj.id AND da_prog.relationship_type = 'program'
+    LEFT JOIN documents p ON da_prog.related_id = p.id AND p.document_type = 'program'
     WHERE s.id = $1
       AND s.document_type = 'sprint'
       AND s.workspace_id = $2
@@ -153,7 +155,7 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
 
   const sprint = sprintResult.rows[0];
 
-  // Get recent standups for this sprint (last 5)
+  // Get recent standups for this sprint (last 5) via junction table
   const standupsResult = await pool.query(`
     SELECT
       d.id,
@@ -164,28 +166,28 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       u.name as author_name,
       u.email as author_email
     FROM documents d
+    JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
     LEFT JOIN users u ON (d.properties->>'author_id')::uuid = u.id
-    WHERE d.sprint_id = $1
-      AND d.document_type = 'standup'
+    WHERE d.document_type = 'standup'
       AND d.workspace_id = $2
     ORDER BY d.created_at DESC
     LIMIT 5
   `, [sprintId, workspaceId]);
 
-  // Get issues assigned to this sprint
+  // Get issues assigned to this sprint via junction table
   const issuesResult = await pool.query(`
     SELECT
-      id,
-      title,
-      properties->>'status' as status,
-      properties->>'priority' as priority,
-      properties->>'assignee_id' as assignee_id
-    FROM documents
-    WHERE sprint_id = $1
-      AND document_type = 'issue'
-      AND workspace_id = $2
+      d.id,
+      d.title,
+      d.properties->>'status' as status,
+      d.properties->>'priority' as priority,
+      d.properties->>'assignee_id' as assignee_id
+    FROM documents d
+    JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
+    WHERE d.document_type = 'issue'
+      AND d.workspace_id = $2
     ORDER BY
-      CASE (properties->>'priority')
+      CASE (d.properties->>'priority')
         WHEN 'high' THEN 1
         WHEN 'medium' THEN 2
         WHEN 'low' THEN 3
@@ -250,7 +252,7 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
  * Get comprehensive context for sprint review
  */
 async function getReviewContext(sprintId: string, workspaceId: string) {
-  // Get sprint with program and project info (same as standup)
+  // Get sprint with program and project info via junction table
   const sprintResult = await pool.query(`
     SELECT
       s.id as sprint_id,
@@ -275,8 +277,10 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       proj.properties->>'ice_ease' as ice_ease,
       proj.properties->>'monetary_impact' as monetary_impact_expected
     FROM documents s
-    LEFT JOIN documents p ON s.parent_id = p.id AND p.document_type = 'program'
-    LEFT JOIN documents proj ON s.project_id = proj.id AND proj.document_type = 'project'
+    LEFT JOIN document_associations da_proj ON da_proj.document_id = s.id AND da_proj.relationship_type = 'project'
+    LEFT JOIN documents proj ON da_proj.related_id = proj.id AND proj.document_type = 'project'
+    LEFT JOIN document_associations da_prog ON da_prog.document_id = proj.id AND da_prog.relationship_type = 'program'
+    LEFT JOIN documents p ON da_prog.related_id = p.id AND p.document_type = 'program'
     WHERE s.id = $1
       AND s.document_type = 'sprint'
       AND s.workspace_id = $2
@@ -288,7 +292,7 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
 
   const sprint = sprintResult.rows[0];
 
-  // Get ALL standups for this sprint (for review we want the full history)
+  // Get ALL standups for this sprint (for review we want the full history) via junction table
   const standupsResult = await pool.query(`
     SELECT
       d.id,
@@ -299,26 +303,26 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       u.name as author_name,
       u.email as author_email
     FROM documents d
+    JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
     LEFT JOIN users u ON (d.properties->>'author_id')::uuid = u.id
-    WHERE d.sprint_id = $1
-      AND d.document_type = 'standup'
+    WHERE d.document_type = 'standup'
       AND d.workspace_id = $2
     ORDER BY d.created_at DESC
   `, [sprintId, workspaceId]);
 
-  // Get issues with scope change tracking
+  // Get issues with scope change tracking via junction table
   const issuesResult = await pool.query(`
     SELECT
-      id,
-      title,
-      properties->>'status' as status,
-      properties->>'priority' as priority,
-      properties->>'added_mid_sprint' as added_mid_sprint,
-      properties->>'cancelled' as cancelled
-    FROM documents
-    WHERE sprint_id = $1
-      AND document_type = 'issue'
-      AND workspace_id = $2
+      d.id,
+      d.title,
+      d.properties->>'status' as status,
+      d.properties->>'priority' as priority,
+      d.properties->>'added_mid_sprint' as added_mid_sprint,
+      d.properties->>'cancelled' as cancelled
+    FROM documents d
+    JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
+    WHERE d.document_type = 'issue'
+      AND d.workspace_id = $2
   `, [sprintId, workspaceId]);
 
   // Calculate detailed issue stats
@@ -331,17 +335,17 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
     cancelled: issuesResult.rows.filter(i => i.cancelled === 'true').length,
   };
 
-  // Get existing review if any
+  // Get existing review if any via junction table
   const reviewResult = await pool.query(`
     SELECT
-      id,
-      content,
-      properties->>'hypothesis_validated' as hypothesis_validated,
-      properties->>'owner_id' as owner_id
-    FROM documents
-    WHERE sprint_id = $1
-      AND document_type = 'sprint_review'
-      AND workspace_id = $2
+      d.id,
+      d.content,
+      d.properties->>'hypothesis_validated' as hypothesis_validated,
+      d.properties->>'owner_id' as owner_id
+    FROM documents d
+    JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
+    WHERE d.document_type = 'sprint_review'
+      AND d.workspace_id = $2
     LIMIT 1
   `, [sprintId, workspaceId]);
 
@@ -398,7 +402,7 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
  * Get comprehensive context for project retrospective
  */
 async function getRetroContext(projectId: string, workspaceId: string) {
-  // Get project with program info
+  // Get project with program info via junction table
   const projectResult = await pool.query(`
     SELECT
       proj.id as project_id,
@@ -416,7 +420,8 @@ async function getRetroContext(projectId: string, workspaceId: string) {
       p.properties->>'description' as program_description,
       p.properties->>'goals' as program_goals
     FROM documents proj
-    LEFT JOIN documents p ON proj.parent_id = p.id AND p.document_type = 'program'
+    LEFT JOIN document_associations da_prog ON da_prog.document_id = proj.id AND da_prog.relationship_type = 'program'
+    LEFT JOIN documents p ON da_prog.related_id = p.id AND p.document_type = 'program'
     WHERE proj.id = $1
       AND proj.document_type = 'project'
       AND proj.workspace_id = $2
@@ -428,53 +433,55 @@ async function getRetroContext(projectId: string, workspaceId: string) {
 
   const project = projectResult.rows[0];
 
-  // Get all sprints for this project
+  // Get all sprints for this project via junction table
   const sprintsResult = await pool.query(`
     SELECT
-      id,
-      title,
-      sprint_number,
-      properties->>'status' as status,
-      properties->>'hypothesis' as hypothesis,
-      start_date,
-      end_date
-    FROM documents
-    WHERE project_id = $1
-      AND document_type = 'sprint'
-      AND workspace_id = $2
-    ORDER BY sprint_number
+      d.id,
+      d.title,
+      d.sprint_number,
+      d.properties->>'status' as status,
+      d.properties->>'hypothesis' as hypothesis,
+      d.start_date,
+      d.end_date
+    FROM documents d
+    JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
+    WHERE d.document_type = 'sprint'
+      AND d.workspace_id = $2
+    ORDER BY d.sprint_number
   `, [projectId, workspaceId]);
 
-  // Get all sprint reviews for this project's sprints
+  // Get all sprint reviews for this project's sprints via junction table
   const sprintIds = sprintsResult.rows.map(s => s.id);
   let reviewsData: Array<{sprint_id: string; content: unknown; hypothesis_validated: string}> = [];
 
   if (sprintIds.length > 0) {
     const reviewsResult = await pool.query(`
       SELECT
-        sprint_id,
-        content,
-        properties->>'hypothesis_validated' as hypothesis_validated
-      FROM documents
-      WHERE sprint_id = ANY($1)
-        AND document_type = 'sprint_review'
-        AND workspace_id = $2
+        da.related_id as sprint_id,
+        d.content,
+        d.properties->>'hypothesis_validated' as hypothesis_validated
+      FROM documents d
+      JOIN document_associations da ON da.document_id = d.id AND da.relationship_type = 'sprint'
+      WHERE da.related_id = ANY($1)
+        AND d.document_type = 'sprint_review'
+        AND d.workspace_id = $2
     `, [sprintIds, workspaceId]);
     reviewsData = reviewsResult.rows;
   }
 
-  // Get all standups across all sprints
+  // Get all standups across all sprints via junction table
   let standupsData: Array<{sprint_id: string; content: unknown; author_name: string; created_at: Date}> = [];
   if (sprintIds.length > 0) {
     const standupsResult = await pool.query(`
       SELECT
-        d.sprint_id,
+        da.related_id as sprint_id,
         d.content,
         u.name as author_name,
         d.created_at
       FROM documents d
+      JOIN document_associations da ON da.document_id = d.id AND da.relationship_type = 'sprint'
       LEFT JOIN users u ON (d.properties->>'author_id')::uuid = u.id
-      WHERE d.sprint_id = ANY($1)
+      WHERE da.related_id = ANY($1)
         AND d.document_type = 'standup'
         AND d.workspace_id = $2
       ORDER BY d.created_at DESC
@@ -483,17 +490,17 @@ async function getRetroContext(projectId: string, workspaceId: string) {
     standupsData = standupsResult.rows;
   }
 
-  // Get all issues for this project
+  // Get all issues for this project via junction table
   const issuesResult = await pool.query(`
     SELECT
-      id,
-      title,
-      properties->>'status' as status,
-      properties->>'priority' as priority
-    FROM documents
-    WHERE project_id = $1
-      AND document_type = 'issue'
-      AND workspace_id = $2
+      d.id,
+      d.title,
+      d.properties->>'status' as status,
+      d.properties->>'priority' as priority
+    FROM documents d
+    JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
+    WHERE d.document_type = 'issue'
+      AND d.workspace_id = $2
   `, [projectId, workspaceId]);
 
   // Calculate project-level stats
@@ -504,19 +511,19 @@ async function getRetroContext(projectId: string, workspaceId: string) {
     cancelled: issuesResult.rows.filter(i => i.status === 'cancelled').length,
   };
 
-  // Get existing retro if any
+  // Get existing retro if any via junction table
   const retroResult = await pool.query(`
     SELECT
-      id,
-      content,
-      properties->>'hypothesis_validated' as hypothesis_validated,
-      properties->>'monetary_impact_actual' as monetary_impact_actual,
-      properties->>'success_criteria' as success_criteria,
-      properties->>'key_learnings' as key_learnings
-    FROM documents
-    WHERE project_id = $1
-      AND document_type = 'project_retro'
-      AND workspace_id = $2
+      d.id,
+      d.content,
+      d.properties->>'hypothesis_validated' as hypothesis_validated,
+      d.properties->>'monetary_impact_actual' as monetary_impact_actual,
+      d.properties->>'success_criteria' as success_criteria,
+      d.properties->>'key_learnings' as key_learnings
+    FROM documents d
+    JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
+    WHERE d.document_type = 'project_retro'
+      AND d.workspace_id = $2
     LIMIT 1
   `, [projectId, workspaceId]);
 
