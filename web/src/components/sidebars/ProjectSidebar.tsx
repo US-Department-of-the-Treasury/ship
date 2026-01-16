@@ -52,6 +52,8 @@ interface ProjectSidebarProps {
   onUndoConversion?: () => void;
   isConverting?: boolean;
   isUndoing?: boolean;
+  /** Fields to highlight as missing (e.g., after type conversion) */
+  highlightedFields?: string[];
 }
 
 export function ProjectSidebar({
@@ -63,7 +65,10 @@ export function ProjectSidebar({
   onUndoConversion,
   isConverting = false,
   isUndoing = false,
+  highlightedFields = [],
 }: ProjectSidebarProps) {
+  // Helper to check if a field should be highlighted
+  const isHighlighted = (field: string) => highlightedFields.includes(field);
   // Compute ICE score from current values
   const iceScore = computeICEScore(project.impact, project.confidence, project.ease);
 
@@ -114,12 +119,14 @@ export function ProjectSidebar({
       <PropertyRow
         label="Impact"
         tooltip={`Expected value in next 12 months:\n5 - More than $1b\n4 - More than $100m\n3 - More than $10m\n2 - More than $1m\n1 - More than $100k`}
+        highlighted={isHighlighted('impact')}
       >
         <p className="text-xs text-muted mb-2">How much value will this deliver?</p>
         <ICESlider
           value={project.impact}
           onChange={(value) => onUpdate({ impact: value })}
           aria-label="Impact"
+          highlighted={isHighlighted('impact')}
         />
       </PropertyRow>
 
@@ -127,12 +134,14 @@ export function ProjectSidebar({
       <PropertyRow
         label="Confidence"
         tooltip={`How likely is this to succeed?\n5 - 100% certain, trivial complexity\n4 - 80% certain, familiar territory\n3 - 60% certain, somewhat complex\n2 - 40% certain, somewhat novel\n1 - 20% certain, pathfinding required`}
+        highlighted={isHighlighted('confidence')}
       >
         <p className="text-xs text-muted mb-2">How sure are we about the outcome?</p>
         <ICESlider
           value={project.confidence}
           onChange={(value) => onUpdate({ confidence: value })}
           aria-label="Confidence"
+          highlighted={isHighlighted('confidence')}
         />
       </PropertyRow>
 
@@ -140,12 +149,14 @@ export function ProjectSidebar({
       <PropertyRow
         label="Ease"
         tooltip={`Labor hours to deliver:\n5 - Less than 1 week\n4 - Less than 1 month\n3 - Less than 1 quarter\n2 - Less than 1 year\n1 - More than 1 year`}
+        highlighted={isHighlighted('ease')}
       >
         <p className="text-xs text-muted mb-2">How easy is this to implement?</p>
         <ICESlider
           value={project.ease}
           onChange={(value) => onUpdate({ ease: value })}
           aria-label="Ease"
+          highlighted={isHighlighted('ease')}
         />
       </PropertyRow>
 
@@ -254,11 +265,14 @@ export function ProjectSidebar({
   );
 }
 
-function PropertyRow({ label, tooltip, children }: { label: string; tooltip?: string; children: React.ReactNode }) {
+function PropertyRow({ label, tooltip, highlighted, children }: { label: string; tooltip?: string; highlighted?: boolean; children: React.ReactNode }) {
   return (
     <div>
       <div className="mb-1 flex items-center gap-1">
-        <label className="text-xs font-medium text-muted">{label}</label>
+        <label className={`text-xs font-medium ${highlighted ? 'text-amber-500' : 'text-muted'}`}>
+          {label}
+          {highlighted && <span className="ml-1 text-amber-500">*</span>}
+        </label>
         {tooltip && (
           <Tooltip content={tooltip} side="right" delayDuration={200}>
             <button
@@ -283,13 +297,15 @@ function ICESlider({
   value,
   onChange,
   'aria-label': ariaLabel,
+  highlighted,
 }: {
   value: number | null;
   onChange: (value: number) => void;
   'aria-label': string;
+  highlighted?: boolean;
 }) {
   return (
-    <div className="flex gap-1" role="group" aria-label={ariaLabel}>
+    <div className={cn('flex gap-1 rounded p-0.5', highlighted && 'ring-1 ring-amber-500 bg-amber-500/10')} role="group" aria-label={ariaLabel}>
       {ICE_VALUES.map((v) => (
         <button
           key={v}

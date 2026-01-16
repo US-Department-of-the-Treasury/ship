@@ -58,6 +58,7 @@ const updateDocumentSchema = z.object({
   position: z.number().int().min(0).optional(),
   properties: z.record(z.unknown()).optional(),
   visibility: z.enum(['private', 'workspace']).optional(),
+  document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person']).optional(),
 });
 
 // List documents
@@ -424,6 +425,42 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.visibility !== undefined) {
       updates.push(`visibility = $${paramIndex++}`);
       values.push(data.visibility);
+    }
+
+    // Handle document_type change
+    if (data.document_type !== undefined && data.document_type !== existing.document_type) {
+      // Only the document creator can change its type
+      if (existing.created_by !== userId) {
+        res.status(403).json({ error: 'Only the document creator can change its type' });
+        return;
+      }
+
+      // Restrict certain type changes (can't change to/from program or person)
+      const restrictedTypes = ['program', 'person'];
+      if (restrictedTypes.includes(existing.document_type) || restrictedTypes.includes(data.document_type)) {
+        res.status(400).json({ error: 'Cannot change to or from program or person document types' });
+        return;
+      }
+
+      updates.push(`document_type = $${paramIndex++}`);
+      values.push(data.document_type);
+
+      // When changing to 'issue', assign a ticket number if not already present
+      if (data.document_type === 'issue' && !existing.ticket_number) {
+        // Get next ticket number for this workspace
+        const ticketResult = await pool.query(
+          `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
+           FROM documents
+           WHERE workspace_id = $1 AND document_type = 'issue'`,
+          [workspaceId]
+        );
+        const ticketNumber = ticketResult.rows[0].next_number;
+        updates.push(`ticket_number = $${paramIndex++}`);
+        values.push(ticketNumber);
+      }
+
+      // When changing from 'issue' to another type, preserve ticket_number for reference
+      // (don't clear it - it serves as a historical reference)
     }
 
     if (updates.length === 0) {

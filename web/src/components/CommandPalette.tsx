@@ -17,12 +17,21 @@ interface SearchableDocument {
   };
 }
 
+type ConvertibleDocumentType = 'wiki' | 'issue' | 'project' | 'sprint';
+
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Current document context for type conversion commands */
+  currentDocument?: {
+    id: string;
+    type: string;
+  };
+  /** Handler for document type conversion */
+  onConvertDocument?: (newType: ConvertibleDocumentType) => void;
 }
 
-export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpenChange, currentDocument, onConvertDocument }: CommandPaletteProps) {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [documents, setDocuments] = useState<SearchableDocument[]>([]);
@@ -348,6 +357,36 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               </Command.Group>
             )}
 
+            {/* Convert Actions (only show when viewing a convertible document) */}
+            {currentDocument && onConvertDocument && ['wiki', 'issue', 'project', 'sprint'].includes(currentDocument.type) && (
+              <Command.Group heading="Convert" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
+                {currentDocument.type !== 'wiki' && (
+                  <CommandItem onSelect={() => runCommand(() => onConvertDocument('wiki'))}>
+                    <ConvertIcon />
+                    <span>Convert to Wiki</span>
+                  </CommandItem>
+                )}
+                {currentDocument.type !== 'issue' && (
+                  <CommandItem onSelect={() => runCommand(() => onConvertDocument('issue'))}>
+                    <ConvertIcon />
+                    <span>Convert to Issue</span>
+                  </CommandItem>
+                )}
+                {currentDocument.type !== 'project' && (
+                  <CommandItem onSelect={() => runCommand(() => onConvertDocument('project'))}>
+                    <ConvertIcon />
+                    <span>Convert to Project</span>
+                  </CommandItem>
+                )}
+                {currentDocument.type !== 'sprint' && (
+                  <CommandItem onSelect={() => runCommand(() => onConvertDocument('sprint'))}>
+                    <ConvertIcon />
+                    <span>Convert to Sprint</span>
+                  </CommandItem>
+                )}
+              </Command.Group>
+            )}
+
             {/* Create Actions */}
             <Command.Group heading="Create" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
               <CommandItem onSelect={() => runCommand(createIssue)}>
@@ -462,6 +501,14 @@ function PersonIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  );
+}
+
+function ConvertIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
     </svg>
   );
 }

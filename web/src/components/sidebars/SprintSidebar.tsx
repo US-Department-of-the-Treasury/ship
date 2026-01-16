@@ -23,10 +23,14 @@ interface Sprint {
 interface SprintSidebarProps {
   sprint: Sprint;
   onUpdate: (updates: Partial<Sprint>) => Promise<void>;
+  /** Fields to highlight as missing (e.g., after type conversion) */
+  highlightedFields?: string[];
 }
 
-export function SprintSidebar({ sprint, onUpdate }: SprintSidebarProps) {
+export function SprintSidebar({ sprint, onUpdate, highlightedFields = [] }: SprintSidebarProps) {
   const navigate = useNavigate();
+  // Helper to check if a field should be highlighted
+  const isHighlighted = (field: string) => highlightedFields.includes(field);
 
   const progress = (sprint.issue_count || 0) > 0
     ? Math.round(((sprint.completed_count || 0) / (sprint.issue_count || 1)) * 100)
@@ -34,11 +38,13 @@ export function SprintSidebar({ sprint, onUpdate }: SprintSidebarProps) {
 
   return (
     <div className="space-y-4 p-4">
-      <PropertyRow label="Status">
+      <PropertyRow label="Status" highlighted={isHighlighted('status')}>
         <select
           value={sprint.status}
           onChange={(e) => onUpdate({ status: e.target.value as Sprint['status'] })}
-          className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
+          className={`w-full rounded border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none ${
+            isHighlighted('status') ? 'border-amber-500 bg-amber-500/10' : 'border-border'
+          }`}
         >
           {STATUS_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -48,21 +54,25 @@ export function SprintSidebar({ sprint, onUpdate }: SprintSidebarProps) {
         </select>
       </PropertyRow>
 
-      <PropertyRow label="Start Date">
+      <PropertyRow label="Start Date" highlighted={isHighlighted('start_date')}>
         <input
           type="date"
           value={sprint.start_date}
           onChange={(e) => onUpdate({ start_date: e.target.value })}
-          className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
+          className={`w-full rounded border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none ${
+            isHighlighted('start_date') ? 'border-amber-500 bg-amber-500/10' : 'border-border'
+          }`}
         />
       </PropertyRow>
 
-      <PropertyRow label="End Date">
+      <PropertyRow label="End Date" highlighted={isHighlighted('end_date')}>
         <input
           type="date"
           value={sprint.end_date}
           onChange={(e) => onUpdate({ end_date: e.target.value })}
-          className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
+          className={`w-full rounded border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none ${
+            isHighlighted('end_date') ? 'border-amber-500 bg-amber-500/10' : 'border-border'
+          }`}
         />
       </PropertyRow>
 
@@ -113,10 +123,13 @@ export function SprintSidebar({ sprint, onUpdate }: SprintSidebarProps) {
   );
 }
 
-function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
+function PropertyRow({ label, highlighted, children }: { label: string; highlighted?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-medium text-muted">{label}</label>
+      <label className={`mb-1 block text-xs font-medium ${highlighted ? 'text-amber-500' : 'text-muted'}`}>
+        {label}
+        {highlighted && <span className="ml-1 text-amber-500">*</span>}
+      </label>
       {children}
     </div>
   );
