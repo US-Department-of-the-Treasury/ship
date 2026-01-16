@@ -102,6 +102,28 @@ export function PersonCombobox({
                 No people found
               </Command.Empty>
 
+              {/* Unassigned option - only show if there's a current value */}
+              {value && (
+                <Command.Item
+                  value="__unassigned__"
+                  onSelect={() => {
+                    onChange(null);
+                    setOpen(false);
+                    setSearch('');
+                  }}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm',
+                    'data-[selected=true]:bg-border/50',
+                    'text-muted'
+                  )}
+                >
+                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-border text-[10px] font-medium text-muted">
+                    &mdash;
+                  </div>
+                  <span>Unassigned</span>
+                </Command.Item>
+              )}
+
               {people.map((person) => (
                 <Command.Item
                   key={person.user_id}

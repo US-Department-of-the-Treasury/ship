@@ -15,9 +15,10 @@ type InferredProjectStatus = 'active' | 'planned' | 'completed' | 'backlog' | 'a
 // Helper to extract project from row with computed ice_score
 function extractProjectFromRow(row: any) {
   const props = row.properties || {};
-  const impact = props.impact ?? 3;
-  const confidence = props.confidence ?? 3;
-  const ease = props.ease ?? 3;
+  // ICE values can be null (not yet set) - don't default to 3
+  const impact = props.impact !== undefined ? props.impact : null;
+  const confidence = props.confidence !== undefined ? props.confidence : null;
+  const ease = props.ease !== undefined ? props.ease : null;
 
   return {
     id: row.id,
@@ -60,10 +61,10 @@ const iceScoreSchema = z.number().int().min(1).max(5);
 
 const createProjectSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
-  impact: iceScoreSchema.optional().default(3),
-  confidence: iceScoreSchema.optional().default(3),
-  ease: iceScoreSchema.optional().default(3),
-  owner_id: z.string().uuid(), // REQUIRED
+  impact: iceScoreSchema.optional().nullable().default(null),
+  confidence: iceScoreSchema.optional().nullable().default(null),
+  ease: iceScoreSchema.optional().nullable().default(null),
+  owner_id: z.string().uuid().optional().nullable().default(null), // Optional - can be unassigned
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#6366f1'),
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
@@ -71,10 +72,10 @@ const createProjectSchema = z.object({
 
 const updateProjectSchema = z.object({
   title: z.string().min(1).max(200).optional(),
-  impact: iceScoreSchema.optional(),
-  confidence: iceScoreSchema.optional(),
-  ease: iceScoreSchema.optional(),
-  owner_id: z.string().uuid().optional(),
+  impact: iceScoreSchema.optional().nullable(),
+  confidence: iceScoreSchema.optional().nullable(),
+  ease: iceScoreSchema.optional().nullable(),
+  owner_id: z.string().uuid().optional().nullable(), // Can be cleared (set to null)
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
@@ -118,10 +119,15 @@ async function generatePrefilledRetroContent(projectData: any, sprints: any[], i
   };
 
   // Add ICE Score section
-  const impact = props.impact ?? 3;
-  const confidence = props.confidence ?? 3;
-  const ease = props.ease ?? 3;
-  const iceScore = impact * confidence * ease;
+  const impact = props.impact;
+  const confidence = props.confidence;
+  const ease = props.ease;
+  const iceScore = (impact !== null && confidence !== null && ease !== null)
+    ? impact * confidence * ease
+    : null;
+
+  const formatIceValue = (val: number | null) => val !== null ? `${val}/5` : 'Not set';
+  const formatIceScore = (val: number | null) => val !== null ? String(val) : 'Not set';
 
   content.content.push({
     type: 'heading',
@@ -133,19 +139,19 @@ async function generatePrefilledRetroContent(projectData: any, sprints: any[], i
     content: [
       {
         type: 'listItem',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: `Impact: ${impact}/5` }] }],
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: `Impact: ${formatIceValue(impact)}` }] }],
       },
       {
         type: 'listItem',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: `Confidence: ${confidence}/5` }] }],
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: `Confidence: ${formatIceValue(confidence)}` }] }],
       },
       {
         type: 'listItem',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: `Ease: ${ease}/5` }] }],
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: `Ease: ${formatIceValue(ease)}` }] }],
       },
       {
         type: 'listItem',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: `ICE Score: ${iceScore}` }] }],
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: `ICE Score: ${formatIceScore(iceScore)}` }] }],
       },
     ],
   });
@@ -504,22 +510,28 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       [req.workspaceId, title, JSON.stringify(properties), program_id || null, req.userId]
     );
 
-    // Get user info for owner response
-    const userResult = await pool.query(
-      'SELECT id, name, email FROM users WHERE id = $1',
-      [owner_id]
-    );
-    const user = userResult.rows[0];
+    // Get user info for owner response (only if owner_id is set)
+    let owner = null;
+    if (owner_id) {
+      const userResult = await pool.query(
+        'SELECT id, name, email FROM users WHERE id = $1',
+        [owner_id]
+      );
+      const user = userResult.rows[0];
+      if (user) {
+        owner = {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+        };
+      }
+    }
 
     res.status(201).json({
       ...extractProjectFromRow({ ...result.rows[0], inferred_status: 'backlog' }),
       sprint_count: 0,
       issue_count: 0,
-      owner: user ? {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-      } : null
+      owner,
     });
   } catch (err) {
     console.error('Create project error:', err);

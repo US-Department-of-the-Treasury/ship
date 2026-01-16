@@ -8,11 +8,11 @@ export type InferredProjectStatus = 'active' | 'planned' | 'completed' | 'backlo
 export interface Project {
   id: string;
   title: string;
-  // ICE properties
-  impact: number;
-  confidence: number;
-  ease: number;
-  ice_score: number;
+  // ICE properties (null = not yet set)
+  impact: number | null;
+  confidence: number | null;
+  ease: number | null;
+  ice_score: number | null;
   // Visual properties
   color: string;
   emoji: string | null;
@@ -63,10 +63,10 @@ async function fetchProjects(): Promise<Project[]> {
 // Create project
 interface CreateProjectData {
   title?: string;
-  owner_id: string;
-  impact?: number;
-  confidence?: number;
-  ease?: number;
+  owner_id?: string | null;  // Optional - can be unassigned
+  impact?: number | null;
+  confidence?: number | null;
+  ease?: number | null;
   color?: string;
   program_id?: string;
 }
@@ -121,9 +121,10 @@ export function useCreateProject() {
       await queryClient.cancelQueries({ queryKey: projectKeys.lists() });
       const previousProjects = queryClient.getQueryData<Project[]>(projectKeys.lists());
 
-      const impact = newProject.impact ?? 3;
-      const confidence = newProject.confidence ?? 3;
-      const ease = newProject.ease ?? 3;
+      // ICE values default to null (not yet set)
+      const impact = newProject.impact ?? null;
+      const confidence = newProject.confidence ?? null;
+      const ease = newProject.ease ?? null;
 
       const optimisticProject: Project = {
         id: `temp-${crypto.randomUUID()}`,
@@ -250,7 +251,7 @@ export function useDeleteProject() {
 
 // Options for creating a project
 export interface CreateProjectOptions {
-  owner_id: string;
+  owner_id?: string | null;  // Optional - can be unassigned
   program_id?: string;
 }
 

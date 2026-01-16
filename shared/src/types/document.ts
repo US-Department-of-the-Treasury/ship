@@ -50,12 +50,12 @@ export interface ProgramProperties {
 export type ICEScore = 1 | 2 | 3 | 4 | 5;
 
 export interface ProjectProperties {
-  // ICE prioritization scores (1-5 scale)
-  impact: ICEScore;      // How much will this move the needle?
-  confidence: ICEScore;  // How certain are we this will achieve the impact?
-  ease: ICEScore;        // How easy is this to implement? (inverse of effort)
-  // Required owner for accountability
-  owner_id: string;
+  // ICE prioritization scores (1-5 scale, null = not yet set)
+  impact: ICEScore | null;      // How much will this move the needle?
+  confidence: ICEScore | null;  // How certain are we this will achieve the impact?
+  ease: ICEScore | null;        // How easy is this to implement? (inverse of effort)
+  // Owner for accountability (optional - null = unassigned)
+  owner_id?: string | null;
   // Visual identification
   color: string;
   emoji?: string | null;
@@ -267,14 +267,14 @@ export interface CreateSprintInput extends CreateDocumentInput {
   properties?: Partial<SprintProperties>;
 }
 
-// Helper type for project creation with required owner_id
+// Helper type for project creation (owner_id is optional - can be unassigned)
 export interface CreateProjectInput extends CreateDocumentInput {
   document_type: 'project';
   properties: {
-    impact?: ICEScore;
-    confidence?: ICEScore;
-    ease?: ICEScore;
-    owner_id: string;  // REQUIRED - person accountable for this project
+    impact?: ICEScore | null;
+    confidence?: ICEScore | null;
+    ease?: ICEScore | null;
+    owner_id?: string | null;  // Optional - can be unassigned
     color?: string;
     emoji?: string | null;
   };
@@ -293,11 +293,12 @@ export const DEFAULT_PROGRAM_PROPERTIES: Partial<ProgramProperties> = {
   color: '#6366f1',
 };
 
-// Default project properties - ICE defaults to middle value (3)
-export const DEFAULT_PROJECT_PROPERTIES: Omit<ProjectProperties, 'owner_id'> = {
-  impact: 3,
-  confidence: 3,
-  ease: 3,
+// Default project properties - ICE and owner start as null (not yet set)
+export const DEFAULT_PROJECT_PROPERTIES: Partial<ProjectProperties> = {
+  impact: null,
+  confidence: null,
+  ease: null,
+  owner_id: null,
   color: '#6366f1',
 };
 
@@ -352,15 +353,20 @@ export function getCurrentSprintNumber(workspaceStartDate: Date): number {
  * Compute ICE score from impact, confidence, and ease values.
  * ICE Score = Impact × Confidence × Ease
  * With 1-5 scale, max score is 125 (5 × 5 × 5).
+ * Returns null if any value is null (unset).
  */
-export function computeICEScore(impact: number, confidence: number, ease: number): number {
+export function computeICEScore(impact: number | null, confidence: number | null, ease: number | null): number | null {
+  if (impact === null || confidence === null || ease === null) {
+    return null;
+  }
   return impact * confidence * ease;
 }
 
 /**
  * Compute ICE score from project properties.
  * Convenience wrapper for computeICEScore.
+ * Returns null if any ICE value is unset.
  */
-export function computeProjectICEScore(properties: ProjectProperties): number {
+export function computeProjectICEScore(properties: ProjectProperties): number | null {
   return computeICEScore(properties.impact, properties.confidence, properties.ease);
 }

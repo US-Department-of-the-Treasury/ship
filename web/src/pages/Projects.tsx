@@ -139,22 +139,30 @@ export function ProjectsPage() {
   const projects = useMemo(() => {
     const sorted = [...filteredProjects];
 
+    // Helper to sort nullable values (nulls go to bottom)
+    const sortNullable = (aVal: number | null, bVal: number | null): number => {
+      if (aVal === null && bVal === null) return 0;
+      if (aVal === null) return 1; // a goes to bottom
+      if (bVal === null) return -1; // b goes to bottom
+      return bVal - aVal; // Descending
+    };
+
     sorted.sort((a, b) => {
       switch (sortBy) {
         case 'ice_score':
-          return b.ice_score - a.ice_score; // Descending
+          return sortNullable(a.ice_score, b.ice_score);
         case 'impact':
-          return b.impact - a.impact; // Descending
+          return sortNullable(a.impact, b.impact);
         case 'confidence':
-          return b.confidence - a.confidence; // Descending
+          return sortNullable(a.confidence, b.confidence);
         case 'ease':
-          return b.ease - a.ease; // Descending
+          return sortNullable(a.ease, b.ease);
         case 'title':
           return a.title.localeCompare(b.title); // Ascending
         case 'updated':
           return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(); // Descending
         default:
-          return b.ice_score - a.ice_score;
+          return sortNullable(a.ice_score, b.ice_score);
       }
     });
 
@@ -166,7 +174,8 @@ export function ProjectsPage() {
       showToast('You must be logged in to create a project', 'error');
       return;
     }
-    const project = await createProject({ owner_id: user.id });
+    // Create project without owner (unassigned) - owner can be set later
+    const project = await createProject({});
     if (project) {
       navigate(`/projects/${project.id}`);
     }
@@ -626,7 +635,10 @@ function ProjectRowContent({ project, visibleColumns, programNameById }: Project
   );
 }
 
-function ICEBadge({ value }: { value: number }) {
+function ICEBadge({ value }: { value: number | null }) {
+  if (value === null) {
+    return <span className="font-medium text-muted">&mdash;</span>;
+  }
   const colors = {
     1: 'text-red-400',
     2: 'text-orange-400',

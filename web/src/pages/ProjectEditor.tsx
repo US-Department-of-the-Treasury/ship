@@ -269,10 +269,6 @@ export function ProjectEditorPage() {
   }
 
   const handleOwnerChange = (ownerId: string | null) => {
-    if (!ownerId) {
-      setOwnerError('Owner is required');
-      return;
-    }
     setOwnerError(null);
     handleUpdateProject({ owner_id: ownerId } as Partial<Project>);
   };
@@ -397,19 +393,16 @@ export function ProjectEditorPage() {
             />
           </PropertyRow>
 
-          {/* Owner (Required) */}
+          {/* Owner */}
           <PropertyRow label="Owner">
             <PersonCombobox
               people={people}
               value={displayProject.owner?.id || null}
               onChange={handleOwnerChange}
-              placeholder="Select owner... (required)"
+              placeholder="Select owner..."
             />
             {ownerError && (
               <p className="mt-1 text-xs text-red-500">{ownerError}</p>
-            )}
-            {!displayProject.owner && !ownerError && (
-              <p className="mt-1 text-xs text-yellow-500">Owner is required for accountability</p>
             )}
           </PropertyRow>
 
@@ -540,7 +533,7 @@ function ICESlider({
   onChange,
   'aria-label': ariaLabel,
 }: {
-  value: number;
+  value: number | null;
   onChange: (value: number) => void;
   'aria-label': string;
 }) {
