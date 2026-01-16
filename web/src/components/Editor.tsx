@@ -22,7 +22,6 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { apiPost } from '@/lib/api';
-import { getIsOnline, subscribeToOnlineStatus } from '@/lib/queryClient';
 import { createSlashCommands } from './editor/SlashCommands';
 import { DocumentEmbed } from './editor/DocumentEmbed';
 import { DragHandleExtension } from './editor/DragHandle';
@@ -152,7 +151,7 @@ export function Editor({
   }, [initialTitle, title]);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('connecting');
-  const [isBrowserOnline, setIsBrowserOnline] = useState(getIsOnline());
+  const [isBrowserOnline, setIsBrowserOnline] = useState(navigator.onLine);
   const [connectedUsers, setConnectedUsers] = useState<{ name: string; color: string }[]>([]);
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => {
     return localStorage.getItem('ship:rightSidebarCollapsed') === 'true';
@@ -170,9 +169,16 @@ export function Editor({
     localStorage.setItem('ship:rightSidebarCollapsed', String(rightSidebarCollapsed));
   }, [rightSidebarCollapsed]);
 
-  // Track browser online status for sync indicator
+  // Track browser online status for sync indicator using native browser events
   useEffect(() => {
-    return subscribeToOnlineStatus(setIsBrowserOnline);
+    const handleOnline = () => setIsBrowserOnline(true);
+    const handleOffline = () => setIsBrowserOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   const color = userColor || stringToColor(userName);

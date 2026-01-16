@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, type FormEvent } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
-import { getIsOnline, subscribeToOnlineStatus } from '@/lib/queryClient';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -31,13 +30,20 @@ export function LoginPage() {
   const [errorField, setErrorField] = useState<'email' | 'password' | 'general' | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingSetup, setIsCheckingSetup] = useState(true);
-  const [isOnline, setIsOnline] = useState(getIsOnline());
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [caiaAvailable, setCaiaAvailable] = useState(false);
   const [isCaiaLoading, setIsCaiaLoading] = useState(false);
 
-  // Subscribe to online/offline status changes
+  // Subscribe to online/offline status changes using native browser events
   useEffect(() => {
-    return subscribeToOnlineStatus(setIsOnline);
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   const { login } = useAuth();

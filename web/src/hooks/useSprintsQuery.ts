@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
-import { addPendingMutation, removePendingMutation, getIsOnline } from '@/lib/queryClient';
 
 export interface SprintOwner {
   id: string;
@@ -24,8 +23,6 @@ export interface Sprint {
   // Completeness flags
   is_complete?: boolean | null;
   missing_fields?: string[];
-  _pending?: boolean;
-  _pendingId?: string;
 }
 
 export interface SprintsResponse {
@@ -150,33 +147,21 @@ export function useCreateSprint() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateSprintData & { _optimisticId?: string }) =>
-      createSprintApi(data),
+    mutationFn: (data: CreateSprintData) => createSprintApi(data),
     onMutate: async (newSprint) => {
       const programId = newSprint.program_id;
       await queryClient.cancelQueries({ queryKey: sprintKeys.list(programId) });
-
       const previousData = queryClient.getQueryData<SprintsResponse>(sprintKeys.list(programId));
 
-      const optimisticId = newSprint._optimisticId || `temp-${crypto.randomUUID()}`;
-      const pendingId = addPendingMutation({
-        type: 'create',
-        resource: 'sprint',
-        resourceId: optimisticId,
-        data: newSprint,
-      });
-
       const optimisticSprint: Sprint = {
-        id: optimisticId,
+        id: `temp-${crypto.randomUUID()}`,
         name: newSprint.title,
         sprint_number: newSprint.sprint_number,
-        owner: null, // Will be filled in after server response
+        owner: null,
         issue_count: 0,
         completed_count: 0,
         started_count: 0,
         total_estimate_hours: 0,
-        _pending: true,
-        _pendingId: pendingId,
       };
 
       queryClient.setQueryData<SprintsResponse>(
@@ -190,18 +175,15 @@ export function useCreateSprint() {
         }
       );
 
-      return { previousData, optimisticId, pendingId, programId };
+      return { previousData, optimisticId: optimisticSprint.id, programId };
     },
     onError: (_err, newSprint, context) => {
       if (context?.previousData) {
         queryClient.setQueryData(sprintKeys.list(newSprint.program_id), context.previousData);
       }
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
-      }
     },
     onSuccess: (data, _variables, context) => {
-      if (context?.optimisticId && context?.pendingId && context?.programId) {
+      if (context?.optimisticId && context?.programId) {
         queryClient.setQueryData<SprintsResponse>(
           sprintKeys.list(context.programId),
           (old) => old ? {
@@ -209,7 +191,6 @@ export function useCreateSprint() {
             sprints: old.sprints.map(s => s.id === context.optimisticId ? data : s),
           } : { workspace_sprint_start_date: new Date().toISOString(), sprints: [data] }
         );
-        removePendingMutation(context.pendingId);
       }
     },
     onSettled: (_data, _error, variables) => {
@@ -243,34 +224,24 @@ export function useUpdateSprint() {
       }
 
       if (!programId || !previousData) {
-        return { previousData: undefined, pendingId: undefined, programId: undefined };
+        return { previousData: undefined, programId: undefined };
       }
 
       await queryClient.cancelQueries({ queryKey: sprintKeys.list(programId) });
-
-      const pendingId = addPendingMutation({
-        type: 'update',
-        resource: 'sprint',
-        resourceId: id,
-        data: updates,
-      });
 
       queryClient.setQueryData<SprintsResponse>(
         sprintKeys.list(programId),
         (old) => old ? {
           ...old,
-          sprints: old.sprints.map(s => s.id === id ? { ...s, ...updates, _pending: true, _pendingId: pendingId } : s),
+          sprints: old.sprints.map(s => s.id === id ? { ...s, ...updates } : s),
         } : old
       );
 
-      return { previousData, pendingId, programId };
+      return { previousData, programId };
     },
     onError: (_err, _variables, context) => {
       if (context?.previousData && context?.programId) {
         queryClient.setQueryData(sprintKeys.list(context.programId), context.previousData);
-      }
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
       }
     },
     onSuccess: (data, { id }, context) => {
@@ -279,12 +250,9 @@ export function useUpdateSprint() {
           sprintKeys.list(context.programId),
           (old) => old ? {
             ...old,
-            sprints: old.sprints.map(s => s.id === id ? { ...data, _pending: false } : s),
+            sprints: old.sprints.map(s => s.id === id ? data : s),
           } : old
         );
-      }
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
       }
     },
     onSettled: (_data, _error, _variables, context) => {
@@ -349,7 +317,6 @@ export function useDeleteSprint() {
 
 // Compatibility hook that provides sprints data with the workspace start date
 export function useSprints(programId: string | undefined) {
-  const queryClient = useQueryClient();
   const { data, isLoading: loading, refetch } = useSprintsQuery(programId);
   const createMutation = useCreateSprint();
   const updateMutation = useUpdateSprint();
@@ -367,47 +334,13 @@ export function useSprints(programId: string | undefined) {
   ): Promise<Sprint | null> => {
     if (!programId) return null;
 
-    const sprintData = {
-      program_id: programId,
-      title: title || `Sprint ${sprintNumber}`,
-      sprint_number: sprintNumber,
-      owner_id: ownerId,
-    };
-
-    // When offline, add to cache synchronously and return immediately
-    if (!getIsOnline()) {
-      const optimisticId = `temp-${crypto.randomUUID()}`;
-      const optimisticSprint: Sprint = {
-        id: optimisticId,
-        name: sprintData.title,
-        sprint_number: sprintNumber,
-        owner: null,
-        issue_count: 0,
-        completed_count: 0,
-        started_count: 0,
-        total_estimate_hours: 0,
-        _pending: true,
-      };
-
-      // Add to cache synchronously
-      queryClient.setQueryData<SprintsResponse>(
-        sprintKeys.list(programId),
-        (old) => old ? {
-          ...old,
-          sprints: [...old.sprints, optimisticSprint].sort((a, b) => a.sprint_number - b.sprint_number),
-        } : {
-          workspace_sprint_start_date: new Date().toISOString(),
-          sprints: [optimisticSprint],
-        }
-      );
-
-      // Trigger mutation (will be queued)
-      createMutation.mutate({ ...sprintData, _optimisticId: optimisticId });
-      return optimisticSprint;
-    }
-
     try {
-      return await createMutation.mutateAsync(sprintData);
+      return await createMutation.mutateAsync({
+        program_id: programId,
+        title: title || `Sprint ${sprintNumber}`,
+        sprint_number: sprintNumber,
+        owner_id: ownerId,
+      });
     } catch {
       return null;
     }
@@ -417,12 +350,6 @@ export function useSprints(programId: string | undefined) {
     id: string,
     updates: Partial<Sprint> & { owner_id?: string }
   ): Promise<Sprint | null> => {
-    // When offline, trigger mutation and return immediately
-    if (!getIsOnline()) {
-      updateMutation.mutate({ id, updates });
-      return { ...updates, id } as Sprint;
-    }
-
     try {
       return await updateMutation.mutateAsync({ id, updates });
     } catch {
@@ -431,12 +358,6 @@ export function useSprints(programId: string | undefined) {
   };
 
   const deleteSprint = async (id: string): Promise<boolean> => {
-    // When offline, trigger mutation and return immediately
-    if (!getIsOnline()) {
-      deleteMutation.mutate(id);
-      return true;
-    }
-
     try {
       await deleteMutation.mutateAsync(id);
       return true;

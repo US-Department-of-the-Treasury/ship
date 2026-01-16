@@ -8,7 +8,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { useListFilters } from '@/hooks/useListFilters';
 import { IssuesListSkeleton } from '@/components/ui/Skeleton';
-import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
 import { Combobox } from '@/components/ui/Combobox';
 import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
@@ -46,7 +45,6 @@ export function ProjectsPage() {
   const { user } = useAuth();
   const { projects: allProjects, loading, createProject, updateProject, deleteProject, refreshProjects } = useProjects();
   const { programs } = usePrograms();
-  const isOfflineEmpty = useOfflineEmptyState(allProjects, loading);
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -331,15 +329,6 @@ export function ProjectsPage() {
     </div>
   ), [handleCreateProject]);
 
-  // Show offline empty state when offline with no cached data
-  if (isOfflineEmpty) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center">
-        <OfflineEmptyState resourceName="projects" />
-      </div>
-    );
-  }
-
   if (loading) {
     return <IssuesListSkeleton />;
   }
@@ -581,9 +570,6 @@ function ProjectRowContent({ project, visibleColumns, programNameById }: Project
             <span className={project.archived_at ? 'text-muted line-through' : ''}>
               {project.title}
             </span>
-            {project._pending && (
-              <span className="text-xs text-muted">(saving...)</span>
-            )}
             {project.is_complete === false && (
               <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/10 text-orange-500 border border-orange-500/20 whitespace-nowrap">
                 Incomplete

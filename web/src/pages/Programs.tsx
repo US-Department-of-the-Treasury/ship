@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { SelectableList, RowRenderProps } from '@/components/SelectableList';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
-import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { UseSelectionReturn } from '@/hooks/useSelection';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
@@ -35,7 +34,6 @@ export function ProgramsPage() {
   const navigate = useNavigate();
   const { programs, loading, createProgram, updateProgram, deleteProgram } = usePrograms();
   const { showToast } = useToast();
-  const isOfflineEmpty = useOfflineEmptyState(programs, loading);
   const [creating, setCreating] = useState(false);
   const [sortBy, setSortBy] = useState<string>('name');
 
@@ -165,15 +163,6 @@ export function ProgramsPage() {
       </button>
     </div>
   ), [creating, handleCreateProgram]);
-
-  // Show offline empty state when offline with no cached data
-  if (isOfflineEmpty) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center">
-        <OfflineEmptyState resourceName="programs" />
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-full flex-col">

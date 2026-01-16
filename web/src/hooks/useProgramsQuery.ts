@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
-import { addPendingMutation, removePendingMutation } from '@/lib/queryClient';
 
 export interface ProgramOwner {
   id: string;
@@ -19,8 +18,6 @@ export interface Program {
   issue_count?: number;
   sprint_count?: number;
   owner: ProgramOwner | null;
-  _pending?: boolean;
-  _pendingId?: string;
 }
 
 // Query keys
@@ -65,6 +62,16 @@ async function updateProgramApi(id: string, updates: Record<string, unknown>): P
   return res.json();
 }
 
+// Delete program
+async function deleteProgramApi(id: string): Promise<void> {
+  const res = await apiDelete(`/api/programs/${id}`);
+  if (!res.ok) {
+    const error = new Error('Failed to delete program') as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
+}
+
 // Hook to get programs
 export function useProgramsQuery() {
   return useQuery({
@@ -79,24 +86,14 @@ export function useCreateProgram() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data?: { title?: string; _optimisticId?: string }) =>
+    mutationFn: (data?: { title?: string }) =>
       createProgramApi({ title: data?.title ?? 'Untitled' }),
     onMutate: async (newProgram) => {
       await queryClient.cancelQueries({ queryKey: programKeys.lists() });
-
       const previousPrograms = queryClient.getQueryData<Program[]>(programKeys.lists());
 
-      // Use passed optimisticId if available (for offline creation)
-      const optimisticId = newProgram?._optimisticId || `temp-${crypto.randomUUID()}`;
-      const pendingId = addPendingMutation({
-        type: 'create',
-        resource: 'program',
-        resourceId: optimisticId,
-        data: newProgram,
-      });
-
       const optimisticProgram: Program = {
-        id: optimisticId,
+        id: `temp-${crypto.randomUUID()}`,
         name: newProgram?.title ?? 'Untitled',
         color: '#6B7280',
         emoji: null,
@@ -104,8 +101,6 @@ export function useCreateProgram() {
         issue_count: 0,
         sprint_count: 0,
         owner: null,
-        _pending: true,
-        _pendingId: pendingId,
       };
 
       queryClient.setQueryData<Program[]>(
@@ -113,23 +108,19 @@ export function useCreateProgram() {
         (old) => [optimisticProgram, ...(old || [])]
       );
 
-      return { previousPrograms, optimisticId, pendingId };
+      return { previousPrograms, optimisticId: optimisticProgram.id };
     },
     onError: (_err, _newProgram, context) => {
       if (context?.previousPrograms) {
         queryClient.setQueryData(programKeys.lists(), context.previousPrograms);
       }
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
-      }
     },
     onSuccess: (data, _variables, context) => {
-      if (context?.optimisticId && context?.pendingId) {
+      if (context?.optimisticId) {
         queryClient.setQueryData<Program[]>(
           programKeys.lists(),
           (old) => old?.map(p => p.id === context.optimisticId ? data : p) || [data]
         );
-        removePendingMutation(context.pendingId);
       }
     },
     onSettled: () => {
@@ -154,54 +145,30 @@ export function useUpdateProgram() {
     },
     onMutate: async ({ id, updates }) => {
       await queryClient.cancelQueries({ queryKey: programKeys.lists() });
-
       const previousPrograms = queryClient.getQueryData<Program[]>(programKeys.lists());
-
-      const pendingId = addPendingMutation({
-        type: 'update',
-        resource: 'program',
-        resourceId: id,
-        data: updates,
-      });
 
       queryClient.setQueryData<Program[]>(
         programKeys.lists(),
-        (old) => old?.map(p => p.id === id ? { ...p, ...updates, _pending: true, _pendingId: pendingId } : p) || []
+        (old) => old?.map(p => p.id === id ? { ...p, ...updates } : p) || []
       );
 
-      return { previousPrograms, pendingId };
+      return { previousPrograms };
     },
     onError: (_err, _variables, context) => {
       if (context?.previousPrograms) {
         queryClient.setQueryData(programKeys.lists(), context.previousPrograms);
       }
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
-      }
     },
-    onSuccess: (data, { id }, context) => {
+    onSuccess: (data, { id }) => {
       queryClient.setQueryData<Program[]>(
         programKeys.lists(),
-        (old) => old?.map(p => p.id === id ? { ...p, ...data, _pending: false } : p) || []
+        (old) => old?.map(p => p.id === id ? { ...p, ...data } : p) || []
       );
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
-      }
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: programKeys.lists() });
     },
   });
-}
-
-// Delete program
-async function deleteProgramApi(id: string): Promise<void> {
-  const res = await apiDelete(`/api/programs/${id}`);
-  if (!res.ok) {
-    const error = new Error('Failed to delete program') as Error & { status: number };
-    error.status = res.status;
-    throw error;
-  }
 }
 
 // Hook to delete program with optimistic update
@@ -212,35 +179,18 @@ export function useDeleteProgram() {
     mutationFn: (id: string) => deleteProgramApi(id),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: programKeys.lists() });
-
       const previousPrograms = queryClient.getQueryData<Program[]>(programKeys.lists());
 
-      const pendingId = addPendingMutation({
-        type: 'delete',
-        resource: 'program',
-        resourceId: id,
-        data: null,
-      });
-
-      // Optimistically remove the program
       queryClient.setQueryData<Program[]>(
         programKeys.lists(),
         (old) => old?.filter(p => p.id !== id) || []
       );
 
-      return { previousPrograms, pendingId };
+      return { previousPrograms };
     },
     onError: (_err, _id, context) => {
       if (context?.previousPrograms) {
         queryClient.setQueryData(programKeys.lists(), context.previousPrograms);
-      }
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
-      }
-    },
-    onSuccess: (_data, _id, context) => {
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
       }
     },
     onSettled: () => {
@@ -257,25 +207,6 @@ export function usePrograms() {
   const deleteMutation = useDeleteProgram();
 
   const createProgram = async (): Promise<Program | null> => {
-    // When offline, return optimistic data immediately instead of waiting for mutateAsync
-    if (!navigator.onLine) {
-      const optimisticId = `temp-${crypto.randomUUID()}`;
-      const optimisticProgram: Program = {
-        id: optimisticId,
-        name: 'Untitled',
-        color: '#6B7280',
-        emoji: null,
-        archived_at: null,
-        issue_count: 0,
-        sprint_count: 0,
-        owner: null,
-        _pending: true,
-      };
-      // Trigger mutation (will be queued)
-      createMutation.mutate({ _optimisticId: optimisticId } as { title?: string; _optimisticId?: string });
-      return optimisticProgram;
-    }
-
     try {
       return await createMutation.mutateAsync({});
     } catch {
@@ -284,12 +215,6 @@ export function usePrograms() {
   };
 
   const updateProgram = async (id: string, updates: Partial<Program> & { owner_id?: string | null }): Promise<Program | null> => {
-    // When offline, trigger mutation and return immediately
-    if (!navigator.onLine) {
-      updateMutation.mutate({ id, updates });
-      return { ...updates, id } as Program;
-    }
-
     try {
       return await updateMutation.mutateAsync({ id, updates });
     } catch {
@@ -297,23 +222,17 @@ export function usePrograms() {
     }
   };
 
-  const refreshPrograms = async (): Promise<void> => {
-    await refetch();
-  };
-
   const deleteProgram = async (id: string): Promise<boolean> => {
-    // When offline, trigger mutation and return immediately
-    if (!navigator.onLine) {
-      deleteMutation.mutate(id);
-      return true;
-    }
-
     try {
       await deleteMutation.mutateAsync(id);
       return true;
     } catch {
       return false;
     }
+  };
+
+  const refreshPrograms = async (): Promise<void> => {
+    await refetch();
   };
 
   return {

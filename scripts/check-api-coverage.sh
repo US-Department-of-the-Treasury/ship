@@ -169,8 +169,10 @@ for file in $FILES; do
       # - auth/ and health are common utility endpoints
       # - documents/.*/backlinks: backlinks.ts is mounted under /api/documents (not /api/backlinks)
       # - team/grid.*: template literal with params causes false positive (endpoint exists in team.ts)
+      # - admin/audit-logs/export: template literal with params causes false positive (endpoint exists in admin.ts)
       if [[ "$call" =~ ^auth/ ]] || [[ "$call" =~ ^health$ ]] || \
-         [[ "$call" =~ ^documents/.*backlinks ]] || [[ "$call" =~ ^team/grid ]]; then
+         [[ "$call" =~ ^documents/.*backlinks ]] || [[ "$call" =~ ^team/grid ]] || \
+         [[ "$call" =~ ^admin/audit-logs/export ]]; then
         continue
       fi
       MISSING+=("$file: /api/$call")

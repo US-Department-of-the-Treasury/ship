@@ -13,7 +13,6 @@ import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibili
 import { useListFilters, ViewMode } from '@/hooks/useListFilters';
 import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
 import { IssuesListSkeleton } from '@/components/ui/Skeleton';
-import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
 import { Combobox } from '@/components/ui/Combobox';
 import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
@@ -74,7 +73,6 @@ export function IssuesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { issues: allIssues, loading, createIssue: contextCreateIssue, updateIssue: contextUpdateIssue, refreshIssues } = useIssues();
-  const isOfflineEmpty = useOfflineEmptyState(allIssues, loading);
   const bulkUpdate = useBulkUpdateIssues();
   const { data: teamMembers = [] } = useAssignableMembersQuery();
   const { showToast } = useToast();
@@ -433,15 +431,6 @@ export function IssuesPage() {
       </button>
     </div>
   ), [handleCreateIssue]);
-
-  // Show offline empty state when offline with no cached data
-  if (isOfflineEmpty) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center">
-        <OfflineEmptyState resourceName="issues" />
-      </div>
-    );
-  }
 
   if (loading) {
     return <IssuesListSkeleton />;

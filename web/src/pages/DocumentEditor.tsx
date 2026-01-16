@@ -8,7 +8,6 @@ import { PersonCombobox } from '@/components/PersonCombobox';
 import { VisibilityDropdown } from '@/components/VisibilityDropdown';
 import { BacklinksPanel } from '@/components/editor/BacklinksPanel';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
-import { getIsOnline } from '@/lib/queryClient';
 
 export function DocumentEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -41,7 +40,7 @@ export function DocumentEditorPage() {
   // Skip redirect when offline - document might be in cache but API call would fail
   // First try refreshing the documents list before redirecting
   useEffect(() => {
-    const shouldHandleMissingDocument = !documentsLoading && id && !contextDocument && !id.startsWith('temp-') && getIsOnline();
+    const shouldHandleMissingDocument = !documentsLoading && id && !contextDocument && !id.startsWith('temp-') && navigator.onLine;
 
     if (shouldHandleMissingDocument) {
       // If we haven't tried refreshing for this specific document ID yet, try it first
@@ -87,7 +86,8 @@ export function DocumentEditorPage() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     visibility: 'workspace' as const,
-    _pending: true,
+    properties: {} as Record<string, unknown>,
+    created_by: user?.id || null,
   } : null);
 
   // Track last visited document for auto-open on /docs

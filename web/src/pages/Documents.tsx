@@ -4,9 +4,7 @@ import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { buildDocumentTree } from '@/lib/documentTree';
 import { DocumentTreeItem } from '@/components/DocumentTreeItem';
 import { DocumentsListSkeleton } from '@/components/ui/Skeleton';
-import { OfflineEmptyState, useOfflineEmptyState } from '@/components/OfflineEmptyState';
 import { useToast } from '@/components/ui/Toast';
-import { getPendingMutations, removePendingMutation } from '@/lib/queryClient';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/cn';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
@@ -39,7 +37,6 @@ type VisibilityFilter = 'all' | 'workspace' | 'private';
 
 export function DocumentsPage() {
   const { documents, loading, createDocument, deleteDocument } = useDocuments();
-  const isOfflineEmpty = useOfflineEmptyState(documents, loading);
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
@@ -155,9 +152,9 @@ export function DocumentsPage() {
     setSearchParams(searchParams);
   }
 
-  // Delete with undo support
+  // Delete with notification
   const handleDeleteWithUndo = useCallback(async (id: string) => {
-    // Find the document before deleting to enable undo
+    // Find the document before deleting
     const docToDelete = documents.find(d => d.id === id);
     if (!docToDelete) return;
 
@@ -165,32 +162,9 @@ export function DocumentsPage() {
     const success = await deleteDocument(id);
     if (!success) return;
 
-    // Show toast with undo action
-    showToast(
-      `"${docToDelete.title || 'Untitled'}" deleted`,
-      'info',
-      5000,
-      {
-        label: 'Undo',
-        onClick: () => {
-          // Find and remove the pending delete mutation
-          const pendingMutations = getPendingMutations();
-          const deleteMutation = pendingMutations.find(
-            m => m.type === 'delete' && m.resource === 'document' && m.resourceId === id
-          );
-          if (deleteMutation) {
-            removePendingMutation(deleteMutation.id);
-          }
-
-          // Restore the document to the query cache
-          queryClient.setQueryData<WikiDocument[]>(
-            ['documents', 'wiki'],
-            (old) => old ? [docToDelete, ...old] : [docToDelete]
-          );
-        }
-      }
-    );
-  }, [documents, deleteDocument, showToast, queryClient]);
+    // Show toast notification
+    showToast(`"${docToDelete.title || 'Untitled'}" deleted`, 'info');
+  }, [documents, deleteDocument, showToast]);
 
   // Bulk delete handler
   const handleBulkDelete = useCallback(async () => {
@@ -198,7 +172,6 @@ export function DocumentsPage() {
     if (idsToDelete.length === 0) return;
 
     const count = idsToDelete.length;
-    const docsToDelete = documents.filter(d => selectedIds.has(d.id));
 
     // Delete all selected documents
     await Promise.all(idsToDelete.map(id => deleteDocument(id)));
@@ -207,49 +180,15 @@ export function DocumentsPage() {
     setSelectedIds(new Set());
     setContextMenu(null);
 
-    // Show toast with undo
-    showToast(
-      `${count} document${count === 1 ? '' : 's'} deleted`,
-      'info',
-      5000,
-      {
-        label: 'Undo',
-        onClick: () => {
-          // Remove pending delete mutations
-          const pendingMutations = getPendingMutations();
-          idsToDelete.forEach(id => {
-            const deleteMutation = pendingMutations.find(
-              m => m.type === 'delete' && m.resource === 'document' && m.resourceId === id
-            );
-            if (deleteMutation) {
-              removePendingMutation(deleteMutation.id);
-            }
-          });
-
-          // Restore documents to cache
-          queryClient.setQueryData<WikiDocument[]>(
-            ['documents', 'wiki'],
-            (old) => old ? [...docsToDelete, ...old] : docsToDelete
-          );
-        }
-      }
-    );
-  }, [selectedIds, documents, deleteDocument, showToast, queryClient]);
+    // Show toast notification
+    showToast(`${count} document${count === 1 ? '' : 's'} deleted`, 'info');
+  }, [selectedIds, deleteDocument, showToast]);
 
   // Context menu handler
   const handleContextMenu = useCallback((e: React.MouseEvent, _item: WikiDocument, selection: UseSelectionReturn) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, selection });
   }, []);
-
-  // Show offline empty state when offline with no cached data
-  if (isOfflineEmpty) {
-    return (
-      <div className="p-6">
-        <OfflineEmptyState resourceName="documents" />
-      </div>
-    );
-  }
 
   if (loading) {
     return <DocumentsListSkeleton />;

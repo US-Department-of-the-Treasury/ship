@@ -16,15 +16,7 @@ import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
 import { SessionTimeoutModal } from '@/components/SessionTimeoutModal';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
-import { OfflineIndicator } from '@/components/OfflineIndicator';
-import { StorageWarning } from '@/components/StorageWarning';
 import { CacheCorruptionAlert } from '@/components/CacheCorruptionAlert';
-import { PrivateModeWarning } from '@/components/PrivateModeWarning';
-import { SyncFailureNotification } from '@/components/SyncFailureNotification';
-import { PendingSyncCount } from '@/components/PendingSyncCount';
-import { PendingSyncIcon, SyncStatus } from '@/components/PendingSyncIcon';
-import { SyncProgress } from '@/components/SyncProgress';
-import { StaleDataBanner } from '@/components/StaleDataBanner';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { useToast } from '@/components/ui/Toast';
 import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
@@ -154,25 +146,8 @@ export function AppLayout() {
         Skip to main content
       </a>
 
-      {/* Offline indicator banner */}
-      <div className="flex justify-center">
-        <OfflineIndicator />
-      </div>
-
-      {/* Storage quota warning banner */}
-      <StorageWarning />
-
       {/* Cache corruption alert */}
       <CacheCorruptionAlert />
-
-      {/* Private browsing mode warning */}
-      <PrivateModeWarning />
-
-      {/* Stale data warning (when offline with old cache) */}
-      <StaleDataBanner />
-
-      {/* Sync failure notifications */}
-      <SyncFailureNotification />
 
       {/* Impersonation banner */}
       {impersonating && (
@@ -435,11 +410,6 @@ export function AppLayout() {
               )}
             </div>
 
-            {/* Sync controls at bottom */}
-            <div className="flex flex-col gap-2 p-2 border-t border-border">
-              <SyncProgress />
-              <PendingSyncCount />
-            </div>
           </div>
         </aside>
 
@@ -744,10 +714,6 @@ function DocumentTreeItem({
             <LockIcon className="h-3 w-3 flex-shrink-0 text-muted" />
           )}
         </Link>
-        {/* Pending sync indicator */}
-        {'_pending' in document && document._pending && (
-          <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in document ? document._syncStatus as SyncStatus : undefined} />
-        )}
         {/* Three-dot menu button - visible on hover */}
         <button
           ref={menuButtonRef}
@@ -912,9 +878,6 @@ function IssuesList({
             >
               <span className={cn('h-2 w-2 rounded-full flex-shrink-0', stateColors[issue.state] || stateColors.backlog)} />
               <span className="flex-1 truncate">{issue.title || 'Untitled'}</span>
-              {'_pending' in issue && issue._pending && (
-                <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in issue ? issue._syncStatus as SyncStatus : undefined} />
-              )}
             </Link>
             {/* Three-dot menu button */}
             <button
@@ -1034,9 +997,6 @@ function ProjectsList({
               />
               <span className="flex-1 truncate">{project.title || 'Untitled'}</span>
               <span className="text-xs text-muted">{project.ice_score}</span>
-              {'_pending' in project && project._pending && (
-                <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in project ? project._syncStatus as SyncStatus : undefined} />
-              )}
             </Link>
             <button
               type="button"
@@ -1202,9 +1162,6 @@ function ProgramsList({
                     {program.emoji || program.name?.[0]?.toUpperCase() || '?'}
                   </span>
                   <span className="flex-1 truncate">{program.name}</span>
-                  {'_pending' in program && program._pending && (
-                    <PendingSyncIcon isPending={true} syncStatus={'_syncStatus' in program ? program._syncStatus as SyncStatus : undefined} />
-                  )}
                 </button>
               )}
               {/* Three-dot menu button */}

@@ -8,7 +8,6 @@ import {
 } from 'react';
 import { api, UserInfo, Workspace } from '@/lib/api';
 import { useWorkspace, WorkspaceWithRole } from '@/contexts/WorkspaceContext';
-import { getIsOnline } from '@/lib/queryClient';
 
 // Cache key for offline auth
 const AUTH_CACHE_KEY = 'ship:auth-cache';
@@ -99,15 +98,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         } else {
           // Session check failed - clear cache if online (session expired)
-          if (getIsOnline()) {
+          if (navigator.onLine) {
             clearCachedAuthData();
           }
         }
       } catch (error) {
         // Network error - try to use cached auth if offline
-        // Check both navigator.onLine and getIsOnline() to handle race conditions
-        // (Playwright's setOffline may block network before dispatching offline event)
-        if (!navigator.onLine || !getIsOnline()) {
+        if (!navigator.onLine) {
           const cached = getCachedAuthData();
           if (cached) {
             console.log('[Auth] Using cached auth data (offline)');

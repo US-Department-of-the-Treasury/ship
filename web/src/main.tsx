@@ -4,8 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { queryClient, queryPersister, loadPendingMutations } from '@/lib/queryClient';
-import { initializeSyncHandlers } from '@/lib/syncHandlers';
+import { queryClient, queryPersister } from '@/lib/queryClient';
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
@@ -40,26 +39,8 @@ import { ConvertedDocumentsPage } from '@/pages/ConvertedDocuments';
 import { InviteAcceptPage } from '@/pages/InviteAccept';
 import { SetupPage } from '@/pages/Setup';
 import { ToastProvider } from '@/components/ui/Toast';
+import { MutationErrorToast } from '@/components/MutationErrorToast';
 import './index.css';
-
-// Load pending mutations from IndexedDB on startup
-loadPendingMutations();
-
-// Initialize sync handlers for offline mutation processing
-initializeSyncHandlers();
-
-// Register service worker for offline support
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((registration) => {
-        console.log('[App] Service Worker registered:', registration.scope);
-      })
-      .catch((error) => {
-        console.log('[App] Service Worker registration failed:', error);
-      });
-  });
-}
 
 function PlaceholderPage({ title, subtitle }: { title: string; subtitle: string }) {
   return (
@@ -226,6 +207,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       persistOptions={{ persister: queryPersister }}
     >
       <ToastProvider>
+        <MutationErrorToast />
         <BrowserRouter>
           <App />
         </BrowserRouter>

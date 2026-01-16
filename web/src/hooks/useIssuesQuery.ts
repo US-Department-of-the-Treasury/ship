@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '@/lib/api';
-import { addPendingMutation, removePendingMutation, getIsOnline } from '@/lib/queryClient';
 
 export interface Issue {
   id: string;
@@ -28,8 +27,6 @@ export interface Issue {
   cancelled_at?: string | null;
   reopened_at?: string | null;
   converted_from_id?: string | null;
-  _pending?: boolean;
-  _pendingId?: string;
 }
 
 // Query keys
@@ -56,12 +53,10 @@ async function fetchIssues(): Promise<Issue[]> {
 interface CreateIssueData {
   title?: string;
   program_id?: string;
-  _optimisticId?: string;
 }
 
 async function createIssueApi(data: CreateIssueData): Promise<Issue> {
-  const { _optimisticId, ...apiData } = data;
-  const res = await apiPost('/api/issues', { title: 'Untitled', ...apiData });
+  const res = await apiPost('/api/issues', { title: 'Untitled', ...data });
   if (!res.ok) {
     const error = new Error('Failed to create issue') as Error & { status: number };
     error.status = res.status;
@@ -98,32 +93,14 @@ export function useCreateIssue() {
     mutationFn: (data?: CreateIssueData) => createIssueApi(data || {}),
     onMutate: async (newIssue) => {
       await queryClient.cancelQueries({ queryKey: issueKeys.lists() });
-
       const previousIssues = queryClient.getQueryData<Issue[]>(issueKeys.lists());
 
-      // Use passed optimisticId if available (for offline creation)
-      const optimisticId = newIssue?._optimisticId || `temp-${crypto.randomUUID()}`;
-
-      // Check if issue was already added to cache (offline path adds synchronously)
-      const alreadyExists = previousIssues?.some(i => i.id === optimisticId);
-      if (alreadyExists) {
-        // Issue already in cache from offline path - just track for rollback
-        return { previousIssues, optimisticId, pendingId: undefined };
-      }
-
-      const pendingId = addPendingMutation({
-        type: 'create',
-        resource: 'issue',
-        resourceId: optimisticId,
-        data: newIssue,
-      });
-
       const optimisticIssue: Issue = {
-        id: optimisticId,
+        id: `temp-${crypto.randomUUID()}`,
         title: newIssue?.title ?? 'Untitled',
         state: 'backlog',
         priority: 'none',
-        ticket_number: -1, // Temporary
+        ticket_number: -1,
         display_id: 'PENDING',
         assignee_id: null,
         assignee_name: null,
@@ -137,8 +114,6 @@ export function useCreateIssue() {
         rejection_reason: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        _pending: true,
-        _pendingId: pendingId,
       };
 
       queryClient.setQueryData<Issue[]>(
@@ -146,23 +121,19 @@ export function useCreateIssue() {
         (old) => [optimisticIssue, ...(old || [])]
       );
 
-      return { previousIssues, optimisticId, pendingId };
+      return { previousIssues, optimisticId: optimisticIssue.id };
     },
     onError: (_err, _newIssue, context) => {
       if (context?.previousIssues) {
         queryClient.setQueryData(issueKeys.lists(), context.previousIssues);
       }
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
-      }
     },
     onSuccess: (data, _variables, context) => {
-      if (context?.optimisticId && context?.pendingId) {
+      if (context?.optimisticId) {
         queryClient.setQueryData<Issue[]>(
           issueKeys.lists(),
           (old) => old?.map(i => i.id === context.optimisticId ? data : i) || [data]
         );
-        removePendingMutation(context.pendingId);
       }
     },
     onSettled: () => {
@@ -180,39 +151,25 @@ export function useUpdateIssue() {
       updateIssueApi(id, updates),
     onMutate: async ({ id, updates }) => {
       await queryClient.cancelQueries({ queryKey: issueKeys.lists() });
-
       const previousIssues = queryClient.getQueryData<Issue[]>(issueKeys.lists());
-
-      const pendingId = addPendingMutation({
-        type: 'update',
-        resource: 'issue',
-        resourceId: id,
-        data: updates,
-      });
 
       queryClient.setQueryData<Issue[]>(
         issueKeys.lists(),
-        (old) => old?.map(i => i.id === id ? { ...i, ...updates, _pending: true, _pendingId: pendingId } : i) || []
+        (old) => old?.map(i => i.id === id ? { ...i, ...updates } : i) || []
       );
 
-      return { previousIssues, pendingId };
+      return { previousIssues };
     },
     onError: (_err, _variables, context) => {
       if (context?.previousIssues) {
         queryClient.setQueryData(issueKeys.lists(), context.previousIssues);
       }
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
-      }
     },
-    onSuccess: (data, { id }, context) => {
+    onSuccess: (data, { id }) => {
       queryClient.setQueryData<Issue[]>(
         issueKeys.lists(),
-        (old) => old?.map(i => i.id === id ? { ...data, _pending: false } : i) || []
+        (old) => old?.map(i => i.id === id ? data : i) || []
       );
-      if (context?.pendingId) {
-        removePendingMutation(context.pendingId);
-      }
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: issueKeys.lists() });
@@ -254,25 +211,17 @@ export function useBulkUpdateIssues() {
     mutationFn: (data: BulkUpdateRequest) => bulkUpdateIssuesApi(data),
     onMutate: async ({ ids, action, updates }) => {
       await queryClient.cancelQueries({ queryKey: issueKeys.lists() });
-
       const previousIssues = queryClient.getQueryData<Issue[]>(issueKeys.lists());
 
-      // Optimistic update
       queryClient.setQueryData<Issue[]>(issueKeys.lists(), (old) => {
         if (!old) return old;
 
         if (action === 'archive' || action === 'delete') {
-          // Remove from list
           return old.filter(i => !ids.includes(i.id));
         }
 
         if (action === 'update' && updates) {
-          return old.map(i => {
-            if (ids.includes(i.id)) {
-              return { ...i, ...updates, _pending: true };
-            }
-            return i;
-          });
+          return old.map(i => ids.includes(i.id) ? { ...i, ...updates } : i);
         }
 
         return old;
@@ -298,50 +247,11 @@ export interface CreateIssueOptions {
 
 // Compatibility hook that matches the old useIssues interface
 export function useIssues() {
-  const queryClient = useQueryClient();
   const { data: issues = [], isLoading: loading, refetch } = useIssuesQuery();
   const createMutation = useCreateIssue();
   const updateMutation = useUpdateIssue();
 
   const createIssue = async (options?: CreateIssueOptions): Promise<Issue | null> => {
-    // When offline, add to cache synchronously and return immediately
-    // This avoids race condition where navigation happens before onMutate runs
-    // Use getIsOnline() which is updated by the offline event handler (more reliable than navigator.onLine)
-    if (!getIsOnline()) {
-      const optimisticId = `temp-${crypto.randomUUID()}`;
-      const optimisticIssue: Issue = {
-        id: optimisticId,
-        title: 'Untitled',
-        state: 'backlog',
-        priority: 'none',
-        ticket_number: -1,
-        display_id: 'PENDING',
-        assignee_id: null,
-        assignee_name: null,
-        estimate: null,
-        program_id: options?.program_id ?? null,
-        sprint_id: null,
-        program_name: null,
-        program_prefix: null,
-        sprint_name: null,
-        source: 'internal',
-        rejection_reason: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        _pending: true,
-      };
-
-      // Add to cache SYNCHRONOUSLY before mutate() to avoid race with navigation
-      queryClient.setQueryData<Issue[]>(
-        issueKeys.lists(),
-        (old) => [optimisticIssue, ...(old || [])]
-      );
-
-      // Trigger mutation (will be queued for when back online)
-      createMutation.mutate({ _optimisticId: optimisticId, ...options });
-      return optimisticIssue;
-    }
-
     try {
       return await createMutation.mutateAsync(options || {});
     } catch {
@@ -350,12 +260,6 @@ export function useIssues() {
   };
 
   const updateIssue = async (id: string, updates: Partial<Issue>): Promise<Issue | null> => {
-    // When offline, trigger mutation and return immediately
-    if (!getIsOnline()) {
-      updateMutation.mutate({ id, updates });
-      return { ...updates, id } as Issue;
-    }
-
     try {
       return await updateMutation.mutateAsync({ id, updates });
     } catch {

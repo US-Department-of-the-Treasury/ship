@@ -1,10 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
 import type { DocumentTreeNode } from '@/lib/documentTree';
-import { getPendingMutations, subscribeToPendingMutations } from '@/lib/queryClient';
-import { PendingSyncIcon } from './PendingSyncIcon';
 
 interface DocumentTreeItemProps {
   document: DocumentTreeNode;
@@ -63,26 +61,6 @@ export function DocumentTreeItem({
 }: DocumentTreeItemProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-  const [hasPendingMutations, setHasPendingMutations] = useState(() => {
-    // Initial check for pending mutations for this document
-    return getPendingMutations().some(m => m.resourceId === document.id);
-  });
-
-  // Subscribe to pending mutation changes
-  useEffect(() => {
-    const checkPending = () => {
-      const pending = getPendingMutations().some(m => m.resourceId === document.id);
-      setHasPendingMutations(pending);
-    };
-
-    // Check immediately
-    checkPending();
-
-    // Subscribe to changes
-    return subscribeToPendingMutations(() => {
-      checkPending();
-    });
-  }, [document.id]);
 
   const isActive = activeDocumentId === document.id;
   const hasChildren = document.children.length > 0;
@@ -130,11 +108,6 @@ export function DocumentTreeItem({
         >
           {document.title || 'Untitled'}
         </Link>
-
-        {/* Pending sync indicator - shows when document has unsynced changes */}
-        {hasPendingMutations && (
-          <PendingSyncIcon isPending={true} />
-        )}
 
         {/* Delete button - visible on hover */}
         {onDelete && (
