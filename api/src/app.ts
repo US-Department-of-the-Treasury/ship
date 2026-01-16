@@ -27,6 +27,7 @@ import apiTokensRoutes from './routes/api-tokens.js';
 import adminCredentialsRoutes from './routes/admin-credentials.js';
 import claudeRoutes from './routes/claude.js';
 import activityRoutes from './routes/activity.js';
+import associationsRoutes from './routes/associations.js';
 import { setupSwagger } from './swagger.js';
 import { initializeCAIA } from './services/caia.js';
 
@@ -175,6 +176,7 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/auth', conditionalCsrf, authRoutes);
   app.use('/api/documents', conditionalCsrf, documentsRoutes);
   app.use('/api/documents', conditionalCsrf, backlinksRoutes);
+  app.use('/api/documents', conditionalCsrf, associationsRoutes);
   app.use('/api/issues', conditionalCsrf, issuesRoutes);
   app.use('/api/feedback', conditionalCsrf, feedbackRoutes);
   app.use('/api/programs', conditionalCsrf, programsRoutes);
