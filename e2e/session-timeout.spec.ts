@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/offline';
+import { test, expect } from './fixtures/isolated-env';
 
 /**
  * Session Timeout UX Tests
