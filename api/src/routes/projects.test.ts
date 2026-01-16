@@ -121,7 +121,20 @@ describe('Projects API', () => {
   });
 
   describe('POST /api/projects', () => {
-    it('returns 400 when owner_id is missing', async () => {
+    it('creates project without owner_id (optional)', async () => {
+      const mockProject = {
+        id: 'project-new',
+        title: 'Test Project',
+        properties: { impact: 4, confidence: 3, ease: 5, owner_id: null, color: '#6366f1' },
+        program_id: null,
+        archived_at: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      vi.mocked(pool.query)
+        .mockResolvedValueOnce({ rows: [mockProject] } as any);
+
       const res = await request(app)
         .post('/api/projects')
         .send({
@@ -129,14 +142,14 @@ describe('Projects API', () => {
           impact: 4,
           confidence: 3,
           ease: 5,
-          // owner_id intentionally omitted
+          // owner_id intentionally omitted - should work
         });
 
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Invalid input');
+      expect(res.status).toBe(201);
+      expect(res.body.owner).toBe(null);
     });
 
-    it('creates project with valid data including required owner_id', async () => {
+    it('creates project with valid data including optional owner_id', async () => {
       const ownerId = '11111111-1111-1111-1111-111111111111';
       const mockProject = {
         id: 'project-new',
@@ -173,12 +186,11 @@ describe('Projects API', () => {
       expect(res.body.owner.id).toBe(ownerId);
     });
 
-    it('uses default ICE values (3/3/3) when not provided', async () => {
-      const ownerId = '22222222-2222-2222-2222-222222222222';
+    it('uses null ICE values when not provided', async () => {
       const mockProject = {
         id: 'project-new',
         title: 'Untitled',
-        properties: { impact: 3, confidence: 3, ease: 3, owner_id: ownerId, color: '#6366f1' },
+        properties: { impact: null, confidence: null, ease: null, owner_id: null, color: '#6366f1' },
         program_id: null,
         archived_at: null,
         created_at: new Date(),
@@ -186,18 +198,18 @@ describe('Projects API', () => {
       };
 
       vi.mocked(pool.query)
-        .mockResolvedValueOnce({ rows: [mockProject] } as any)
-        .mockResolvedValueOnce({ rows: [{ id: ownerId, name: 'Test', email: 't@e.com' }] } as any);
+        .mockResolvedValueOnce({ rows: [mockProject] } as any);
 
       const res = await request(app)
         .post('/api/projects')
-        .send({
-          owner_id: ownerId,
-        });
+        .send({});
 
       expect(res.status).toBe(201);
       expect(res.body.title).toBe('Untitled');
-      expect(res.body.ice_score).toBe(27); // 3 * 3 * 3
+      expect(res.body.impact).toBe(null);
+      expect(res.body.confidence).toBe(null);
+      expect(res.body.ease).toBe(null);
+      expect(res.body.ice_score).toBe(null);
     });
 
     it('validates ICE scores are within 1-5 range', async () => {
