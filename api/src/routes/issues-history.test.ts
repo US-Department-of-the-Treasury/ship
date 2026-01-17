@@ -235,10 +235,16 @@ describe('Issues History API', () => {
       vi.mocked(pool.query)
         // Get existing issue
         .mockResolvedValueOnce({ rows: [existingIssue] } as any)
+        // Check for children (cascade warning check)
+        .mockResolvedValueOnce({ rows: [] } as any)
         // Log state change
         .mockResolvedValueOnce({ rows: [] } as any)
         // Update issue
-        .mockResolvedValueOnce({ rows: [updatedRow] } as any);
+        .mockResolvedValueOnce({ rows: [updatedRow] } as any)
+        // Fetch updated issue after UPDATE
+        .mockResolvedValueOnce({ rows: [updatedRow] } as any)
+        // Get belongs_to associations
+        .mockResolvedValueOnce({ rows: [] } as any);
 
       const res = await request(app)
         .patch(`/api/issues/${issueId}`)

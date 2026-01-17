@@ -51,6 +51,8 @@ interface EditorProps {
   placeholder?: string;
   /** Badge to show in header (e.g., issue number) */
   headerBadge?: React.ReactNode;
+  /** Breadcrumbs to show above the title */
+  breadcrumbs?: React.ReactNode;
   /** Sidebar content (e.g., issue properties) */
   sidebar?: React.ReactNode;
   /** Callback to create a sub-document (for slash commands) */
@@ -109,6 +111,7 @@ export function Editor({
   roomPrefix = 'doc',
   placeholder = 'Start writing...',
   headerBadge,
+  breadcrumbs,
   sidebar,
   onCreateSubDocument,
   onNavigateToDocument,
@@ -581,6 +584,12 @@ export function Editor({
         {/* Editor area - clickable to focus at end */}
         <div className="flex flex-1 flex-col overflow-auto cursor-text">
           <div className="mx-auto max-w-3xl w-full py-8 pr-8 pl-12">
+            {/* Breadcrumbs above title */}
+            {breadcrumbs && (
+              <div className="mb-2 pl-8">
+                {breadcrumbs}
+              </div>
+            )}
             {/* Large document title */}
             <input
               ref={titleInputRef}

@@ -58,6 +58,7 @@ const updateDocumentSchema = z.object({
   position: z.number().int().min(0).optional(),
   properties: z.record(z.unknown()).optional(),
   visibility: z.enum(['private', 'workspace']).optional(),
+  document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person']).optional(),
 });
 
 // List documents
@@ -226,6 +227,25 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const props = doc.properties || {};
 
+    // Get belongs_to associations from junction table (for issues and other document types)
+    let belongs_to: Array<{ id: string; type: string; title?: string; color?: string }> = [];
+    if (doc.document_type === 'issue' || doc.document_type === 'wiki') {
+      const assocResult = await pool.query(
+        `SELECT da.related_id as id, da.relationship_type as type,
+                d.title, (d.properties->>'color') as color
+         FROM document_associations da
+         LEFT JOIN documents d ON d.id = da.related_id
+         WHERE da.document_id = $1`,
+        [id]
+      );
+      belongs_to = assocResult.rows.map(row => ({
+        id: row.id,
+        type: row.type,
+        title: row.title || undefined,
+        color: row.color || undefined,
+      }));
+    }
+
     // Return with flattened properties for backwards compatibility
     res.json({
       ...doc,
@@ -239,6 +259,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       end_date: props.end_date,
       sprint_status: props.sprint_status,
       goal: props.goal,
+      // Include belongs_to for issue documents
+      ...(doc.document_type === 'issue' && { belongs_to }),
     });
   } catch (err) {
     console.error('Get document error:', err);
@@ -424,6 +446,42 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.visibility !== undefined) {
       updates.push(`visibility = $${paramIndex++}`);
       values.push(data.visibility);
+    }
+
+    // Handle document_type change
+    if (data.document_type !== undefined && data.document_type !== existing.document_type) {
+      // Only the document creator can change its type
+      if (existing.created_by !== userId) {
+        res.status(403).json({ error: 'Only the document creator can change its type' });
+        return;
+      }
+
+      // Restrict certain type changes (can't change to/from program or person)
+      const restrictedTypes = ['program', 'person'];
+      if (restrictedTypes.includes(existing.document_type) || restrictedTypes.includes(data.document_type)) {
+        res.status(400).json({ error: 'Cannot change to or from program or person document types' });
+        return;
+      }
+
+      updates.push(`document_type = $${paramIndex++}`);
+      values.push(data.document_type);
+
+      // When changing to 'issue', assign a ticket number if not already present
+      if (data.document_type === 'issue' && !existing.ticket_number) {
+        // Get next ticket number for this workspace
+        const ticketResult = await pool.query(
+          `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
+           FROM documents
+           WHERE workspace_id = $1 AND document_type = 'issue'`,
+          [workspaceId]
+        );
+        const ticketNumber = ticketResult.rows[0].next_number;
+        updates.push(`ticket_number = $${paramIndex++}`);
+        values.push(ticketNumber);
+      }
+
+      // When changing from 'issue' to another type, preserve ticket_number for reference
+      // (don't clear it - it serves as a historical reference)
     }
 
     if (updates.length === 0) {
@@ -647,14 +705,30 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
       newDoc = result.rows[0];
       newDocId = newDoc.id;
 
-      // Orphan any child issues that were linked to this project
+      // Remove 'project' associations from child issues pointing to this project
+      // (They become orphaned - their parent project is being converted to an issue)
       await client.query(
-        `UPDATE documents
-         SET project_id = NULL, updated_at = NOW()
-         WHERE project_id = $1 AND workspace_id = $2`,
-        [id, workspaceId]
+        `DELETE FROM document_associations
+         WHERE related_id = $1 AND relationship_type = 'project'`,
+        [id]
       );
     }
+
+    // Copy associations from original to new document (filtered by target type validity)
+    // According to the association validity matrix:
+    // - issue: ["parent", "project", "sprint", "program"]
+    // - project: ["program"]
+    // When converting issue->project, only 'program' associations are valid for projects
+    // When converting project->issue, only 'program' associations are carried over
+    const validTypesForTarget = target_type === 'project' ? ['program'] : ['program'];
+
+    await client.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata, created_at)
+       SELECT $1, related_id, relationship_type, metadata, NOW()
+       FROM document_associations
+       WHERE document_id = $2 AND relationship_type = ANY($3)`,
+      [newDocId, id, validTypesForTarget]
+    );
 
     // Archive original document with converted_to_id pointer
     await client.query(
@@ -783,6 +857,23 @@ router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Re
            archived_at = NOW(),
            updated_at = NOW()
        WHERE id = $2`,
+      [originalDoc.id, id]
+    );
+
+    // Copy associations from current document back to original document
+    // (restoring the associations as they were before conversion)
+    // First, clear any existing associations on the original (shouldn't be many since it was archived)
+    await client.query(
+      `DELETE FROM document_associations WHERE document_id = $1`,
+      [originalDoc.id]
+    );
+
+    // Copy all associations from the current (being archived) document to the restored original
+    await client.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata, created_at)
+       SELECT $1, related_id, relationship_type, metadata, NOW()
+       FROM document_associations
+       WHERE document_id = $2`,
       [originalDoc.id, id]
     );
 
