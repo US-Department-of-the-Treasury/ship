@@ -964,6 +964,80 @@ function extractSprintFromRow(row: any) {
   };
 }
 
+// GET /api/projects/:id/issues - List issues for a project
+router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify project exists and user can access it
+    const projectCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (projectCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // Get issues associated with this project via junction table
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.ticket_number,
+              d.created_at, d.updated_at,
+              d.started_at, d.completed_at, d.cancelled_at,
+              u.name as assignee_name
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
+         AND da.related_id = $1 AND da.relationship_type = 'project'
+       LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+       WHERE d.workspace_id = $2 AND d.document_type = 'issue'
+         AND d.archived_at IS NULL AND d.deleted_at IS NULL
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
+       ORDER BY
+         CASE d.properties->>'priority'
+           WHEN 'urgent' THEN 1
+           WHEN 'high' THEN 2
+           WHEN 'medium' THEN 3
+           WHEN 'low' THEN 4
+           ELSE 5
+         END,
+         d.updated_at DESC`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    // Transform rows to issue objects
+    const issues = result.rows.map(row => {
+      const props = row.properties || {};
+      return {
+        id: row.id,
+        title: row.title,
+        ticket_number: row.ticket_number,
+        state: props.state || 'backlog',
+        priority: props.priority || 'medium',
+        assignee_id: props.assignee_id || null,
+        assignee_name: row.assignee_name,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        started_at: row.started_at,
+        completed_at: row.completed_at,
+        cancelled_at: row.cancelled_at,
+      };
+    });
+
+    res.json(issues);
+  } catch (err) {
+    console.error('Get project issues error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/projects/:id/sprints - List sprints for a project
 router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) => {
   try {

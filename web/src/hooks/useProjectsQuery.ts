@@ -40,6 +40,22 @@ export interface Project {
   converted_from_id?: string | null;
 }
 
+// Project issue type (subset of Issue for the list)
+export interface ProjectIssue {
+  id: string;
+  title: string;
+  ticket_number: number;
+  state: string;
+  priority: string;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+}
+
 // Query keys
 export const projectKeys = {
   all: ['projects'] as const,
@@ -47,6 +63,7 @@ export const projectKeys = {
   list: (filters?: Record<string, unknown>) => [...projectKeys.lists(), filters] as const,
   details: () => [...projectKeys.all, 'detail'] as const,
   detail: (id: string) => [...projectKeys.details(), id] as const,
+  issues: (id: string) => [...projectKeys.detail(id), 'issues'] as const,
 };
 
 // Fetch projects
@@ -299,4 +316,25 @@ export function useProjects() {
     deleteProject,
     refreshProjects,
   };
+}
+
+// Fetch project issues
+async function fetchProjectIssues(projectId: string): Promise<ProjectIssue[]> {
+  const res = await apiGet(`/api/projects/${projectId}/issues`);
+  if (!res.ok) {
+    const error = new Error('Failed to fetch project issues') as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+// Hook to get project issues
+export function useProjectIssuesQuery(projectId: string | undefined) {
+  return useQuery({
+    queryKey: projectId ? projectKeys.issues(projectId) : ['disabled'],
+    queryFn: () => fetchProjectIssues(projectId!),
+    enabled: !!projectId,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
 }

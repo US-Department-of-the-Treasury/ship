@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Editor } from '@/components/Editor';
@@ -18,8 +18,9 @@ import { IncompleteDocumentBanner } from '@/components/IncompleteDocumentBanner'
 import { computeICEScore } from '@ship/shared';
 import { useToast } from '@/components/ui/Toast';
 import { issueKeys } from '@/hooks/useIssuesQuery';
-import { projectKeys } from '@/hooks/useProjectsQuery';
+import { projectKeys, useProjectIssuesQuery, ProjectIssue } from '@/hooks/useProjectsQuery';
 import { apiPost } from '@/lib/api';
+import { issueStatusColors, priorityColors } from '@/lib/statusColors';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -51,7 +52,7 @@ export function ProjectEditorPage() {
   const { createDocument } = useDocuments();
   const [people, setPeople] = useState<Person[]>([]);
   const [ownerError, setOwnerError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'details' | 'retro'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'issues' | 'retro'>('details');
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [isUndoing, setIsUndoing] = useState(false);
@@ -64,6 +65,58 @@ export function ProjectEditorPage() {
   // Get the current project from context, or use direct-fetched project
   const contextProject = projects.find(p => p.id === id) || null;
   const project = contextProject || directFetchedProject;
+
+  // Fetch project issues
+  const { data: projectIssues = [], isLoading: issuesLoading } = useProjectIssuesQuery(id);
+
+  // Issues list sorting state
+  const [sortColumn, setSortColumn] = useState<'ticket_number' | 'title' | 'state' | 'priority' | 'assignee_name' | 'updated_at'>('priority');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Sort issues
+  const sortedIssues = useMemo(() => {
+    const priorityOrder = { urgent: 1, high: 2, medium: 3, low: 4, none: 5 };
+    const stateOrder = { in_progress: 1, in_review: 2, todo: 3, backlog: 4, triage: 5, done: 6, cancelled: 7 };
+
+    return [...projectIssues].sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortColumn) {
+        case 'ticket_number':
+          comparison = a.ticket_number - b.ticket_number;
+          break;
+        case 'title':
+          comparison = a.title.localeCompare(b.title);
+          break;
+        case 'state':
+          comparison = (stateOrder[a.state as keyof typeof stateOrder] || 99) -
+                       (stateOrder[b.state as keyof typeof stateOrder] || 99);
+          break;
+        case 'priority':
+          comparison = (priorityOrder[a.priority as keyof typeof priorityOrder] || 99) -
+                       (priorityOrder[b.priority as keyof typeof priorityOrder] || 99);
+          break;
+        case 'assignee_name':
+          comparison = (a.assignee_name || 'zzz').localeCompare(b.assignee_name || 'zzz');
+          break;
+        case 'updated_at':
+          comparison = new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+          break;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [projectIssues, sortColumn, sortDirection]);
+
+  // Handle column header click for sorting
+  const handleSort = useCallback((column: typeof sortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  }, [sortColumn]);
 
   // Fetch team members for owner selection (filter out pending users)
   useEffect(() => {
@@ -278,15 +331,16 @@ export function ProjectEditorPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Tab bar for switching between Details and Retro */}
+      {/* Tab bar for switching between Details, Issues, and Retro */}
       <div className="border-b border-border px-4">
         <TabBar
           tabs={[
             { id: 'details', label: 'Details' },
+            { id: 'issues', label: `Issues${projectIssues.length > 0 ? ` (${projectIssues.length})` : ''}` },
             { id: 'retro', label: 'Retro' },
           ]}
           activeTab={activeTab}
-          onTabChange={(tabId) => setActiveTab(tabId as 'details' | 'retro')}
+          onTabChange={(tabId) => setActiveTab(tabId as 'details' | 'issues' | 'retro')}
         />
       </div>
 
@@ -485,6 +539,15 @@ export function ProjectEditorPage() {
         </div>
             }
           />
+        ) : activeTab === 'issues' ? (
+          <ProjectIssuesList
+            issues={sortedIssues}
+            loading={issuesLoading}
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+            onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+          />
         ) : (
           <ProjectRetro projectId={displayProject.id} />
         )}
@@ -645,6 +708,144 @@ function ConversionDialog({ isOpen, onClose, onConvert, sourceType, title, isCon
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Project Issues List component - sortable table of child issues
+interface ProjectIssuesListProps {
+  issues: ProjectIssue[];
+  loading: boolean;
+  sortColumn: 'ticket_number' | 'title' | 'state' | 'priority' | 'assignee_name' | 'updated_at';
+  sortDirection: 'asc' | 'desc';
+  onSort: (column: ProjectIssuesListProps['sortColumn']) => void;
+  onIssueClick: (issueId: string) => void;
+}
+
+function ProjectIssuesList({
+  issues,
+  loading,
+  sortColumn,
+  sortDirection,
+  onSort,
+  onIssueClick,
+}: ProjectIssuesListProps) {
+  // Column header with sort indicator
+  const SortHeader = ({
+    column,
+    label,
+    className = '',
+  }: {
+    column: ProjectIssuesListProps['sortColumn'];
+    label: string;
+    className?: string;
+  }) => (
+    <th
+      className={cn(
+        'px-3 py-2 text-left text-xs font-medium text-muted uppercase tracking-wide cursor-pointer hover:text-foreground transition-colors select-none',
+        className
+      )}
+      onClick={() => onSort(column)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        {sortColumn === column && (
+          <svg
+            className={cn('w-3 h-3 transition-transform', sortDirection === 'desc' && 'rotate-180')}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        )}
+      </div>
+    </th>
+  );
+
+  // Format state label for display
+  const formatState = (state: string) => {
+    return state.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  };
+
+  // Format priority label for display
+  const formatPriority = (priority: string) => {
+    return priority.charAt(0).toUpperCase() + priority.slice(1);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="flex items-center gap-2 text-muted">
+          <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          Loading issues...
+        </div>
+      </div>
+    );
+  }
+
+  if (issues.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-48 text-muted">
+        <svg className="w-12 h-12 mb-3 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <p className="text-sm font-medium">No issues in this project</p>
+        <p className="text-xs mt-1">Add issues to this project from the issue sidebar</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-auto">
+      <table className="w-full">
+        <thead className="sticky top-0 bg-background border-b border-border">
+          <tr>
+            <SortHeader column="ticket_number" label="#" className="w-16" />
+            <SortHeader column="title" label="Title" />
+            <SortHeader column="state" label="Status" className="w-28" />
+            <SortHeader column="priority" label="Priority" className="w-24" />
+            <SortHeader column="assignee_name" label="Assignee" className="w-32" />
+          </tr>
+        </thead>
+        <tbody>
+          {issues.map((issue) => (
+            <tr
+              key={issue.id}
+              onClick={() => onIssueClick(issue.id)}
+              className="border-b border-border/50 hover:bg-accent/5 cursor-pointer transition-colors"
+            >
+              <td className="px-3 py-2 text-sm text-muted tabular-nums">
+                {issue.ticket_number}
+              </td>
+              <td className="px-3 py-2 text-sm text-foreground truncate max-w-md">
+                {issue.title}
+              </td>
+              <td className="px-3 py-2">
+                <span className={cn(
+                  'inline-flex px-2 py-0.5 text-xs font-medium rounded',
+                  issueStatusColors[issue.state] || 'bg-gray-500/20 text-gray-300'
+                )}>
+                  {formatState(issue.state)}
+                </span>
+              </td>
+              <td className="px-3 py-2">
+                <span className={cn(
+                  'text-xs font-medium',
+                  priorityColors[issue.priority] || 'text-muted'
+                )}>
+                  {formatPriority(issue.priority)}
+                </span>
+              </td>
+              <td className="px-3 py-2 text-sm text-muted truncate">
+                {issue.assignee_name || '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
