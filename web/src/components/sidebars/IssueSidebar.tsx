@@ -427,19 +427,17 @@ export function IssueSidebar({
       </PropertyRow>
 
       {/* Projects - Multi-association chips */}
-      {projects.length > 0 && (
-        <PropertyRow label="Projects">
-          <MultiAssociationChips
-            associations={belongsTo}
-            options={projects.map(p => ({ id: p.id, name: p.title, color: p.color }))}
-            type="project"
-            onAdd={handleAddAssociation}
-            onRemove={handleRemoveAssociation}
-            placeholder="Add project..."
-            aria-label="Projects"
-          />
-        </PropertyRow>
-      )}
+      <PropertyRow label="Projects">
+        <MultiAssociationChips
+          associations={belongsTo}
+          options={projects.map(p => ({ id: p.id, name: p.title, color: p.color }))}
+          type="project"
+          onAdd={handleAddAssociation}
+          onRemove={handleRemoveAssociation}
+          placeholder={projects.length > 0 ? "Add project..." : "No projects yet"}
+          aria-label="Projects"
+        />
+      </PropertyRow>
 
       {/* Programs - Multi-association chips */}
       <PropertyRow label="Programs">

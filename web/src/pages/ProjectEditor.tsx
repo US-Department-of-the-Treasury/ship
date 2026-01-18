@@ -23,6 +23,7 @@ import { issueKeys } from '@/hooks/useIssuesQuery';
 import { projectKeys, useProjectIssuesQuery, ProjectIssue } from '@/hooks/useProjectsQuery';
 import { apiPost } from '@/lib/api';
 import { issueStatusColors, priorityColors } from '@/lib/statusColors';
+import { useSprintsQuery } from '@/hooks/useSprintsQuery';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -71,6 +72,9 @@ export function ProjectEditorPage() {
   const [newIssueTitle, setNewIssueTitle] = useState('');
   const [isCreatingIssue, setIsCreatingIssue] = useState(false);
 
+  // Modal issue creation state
+  const [showCreateIssueModal, setShowCreateIssueModal] = useState(false);
+
   // Direct-fetched project (when not found in context cache)
   const [directFetchedProject, setDirectFetchedProject] = useState<Project | null>(null);
   const [directFetchLoading, setDirectFetchLoading] = useState(false);
@@ -82,6 +86,10 @@ export function ProjectEditorPage() {
 
   // Fetch project issues
   const { data: projectIssues = [], isLoading: issuesLoading } = useProjectIssuesQuery(id);
+
+  // Fetch sprints for the project's program (used in modal)
+  const { data: sprintsData } = useSprintsQuery(project?.program_id || undefined);
+  const availableSprints = sprintsData?.sprints || [];
 
   // Issues list sorting state
   const [sortColumn, setSortColumn] = useState<'ticket_number' | 'title' | 'state' | 'priority' | 'assignee_name' | 'updated_at'>('priority');
@@ -623,17 +631,29 @@ export function ProjectEditorPage() {
           <div className="h-full flex flex-col">
             {/* Toolbar with add button and view toggle */}
             <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border">
-              {/* Add issue button */}
-              <button
-                onClick={() => setShowInlineIssueInput(true)}
-                className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-muted hover:text-foreground hover:bg-accent/10 rounded transition-colors"
-                aria-label="Add new issue"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                </svg>
-                Add Issue
-              </button>
+              {/* Add issue buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowInlineIssueInput(true)}
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-muted hover:text-foreground hover:bg-accent/10 rounded transition-colors"
+                  aria-label="Add new issue"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                  </svg>
+                  Add Issue
+                </button>
+                <button
+                  onClick={() => setShowCreateIssueModal(true)}
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium bg-accent text-white rounded hover:bg-accent/90 transition-colors"
+                  aria-label="Create new issue with full form"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V8z" clipRule="evenodd" />
+                  </svg>
+                  New Issue
+                </button>
+              </div>
 
               {/* View toggle */}
               <div className="flex items-center rounded-md bg-border/30 p-0.5">
@@ -737,6 +757,22 @@ export function ProjectEditorPage() {
           <ProjectRetro projectId={displayProject.id} />
         )}
       </div>
+
+      {/* Create Issue Modal */}
+      <CreateIssueModal
+        isOpen={showCreateIssueModal}
+        onClose={() => setShowCreateIssueModal(false)}
+        projectId={id!}
+        projectTitle={displayProject.title}
+        programId={displayProject.program_id}
+        people={people}
+        sprints={availableSprints}
+        onIssueCreated={() => {
+          queryClient.invalidateQueries({ queryKey: projectKeys.issues(id!) });
+          queryClient.invalidateQueries({ queryKey: issueKeys.lists() });
+          showToast('Issue created', 'success');
+        }}
+      />
 
       {/* Conversion Dialog */}
       <ConversionDialog
@@ -1031,6 +1067,273 @@ function ProjectIssuesList({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Create Issue Modal component
+interface CreateIssueModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  projectId: string;
+  projectTitle: string;
+  programId: string | null;
+  people: Person[];
+  sprints: { id: string; name: string; sprint_number: number }[];
+  onIssueCreated: () => void;
+}
+
+const PRIORITIES = [
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
+  { value: 'none', label: 'None' },
+];
+
+function CreateIssueModal({
+  isOpen,
+  onClose,
+  projectId,
+  projectTitle,
+  programId,
+  people,
+  sprints,
+  onIssueCreated,
+}: CreateIssueModalProps) {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState('medium');
+  const [assigneeId, setAssigneeId] = useState<string | null>(null);
+  const [sprintId, setSprintId] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reset form when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setTitle('');
+      setDescription('');
+      setPriority('medium');
+      setAssigneeId(null);
+      setSprintId('');
+      setError(null);
+    }
+  }, [isOpen]);
+
+  // Handle Escape key
+  useEffect(() => {
+    if (!isOpen || isSubmitting) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isSubmitting, onClose]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      setError('Title is required');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      // Create the issue
+      const res = await apiPost('/api/issues', {
+        title: title.trim(),
+        state: 'backlog',
+        priority,
+        assignee_id: assigneeId,
+        sprint_id: sprintId || null,
+        program_id: programId,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to create issue');
+      }
+
+      const newIssue = await res.json();
+
+      // Create association to link issue to the project
+      const assocRes = await apiPost(`/api/documents/${newIssue.id}/associations`, {
+        related_id: projectId,
+        relationship_type: 'project',
+      });
+
+      if (!assocRes.ok) {
+        console.warn('Failed to create project association');
+      }
+
+      // Success
+      onIssueCreated();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create issue');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Handle backdrop click
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && !isSubmitting) {
+      onClose();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      onClick={handleBackdropClick}
+    >
+      <div className="w-full max-w-lg rounded-lg bg-background p-6 shadow-lg max-h-[90vh] overflow-y-auto">
+        <h2 className="mb-4 text-lg font-semibold text-foreground">Create Issue</h2>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Project (read-only) */}
+          <div>
+            <label className="block text-xs font-medium text-muted mb-1">Project</label>
+            <div className="w-full h-9 flex items-center px-3 text-sm bg-border/30 border border-border rounded-md text-foreground/70">
+              {projectTitle}
+            </div>
+          </div>
+
+          {/* Title */}
+          <div>
+            <label htmlFor="issue-title" className="block text-xs font-medium text-muted mb-1">
+              Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="issue-title"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Issue title..."
+              className="w-full h-9 px-3 text-sm bg-transparent border border-border rounded-md text-foreground placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+              autoFocus
+              disabled={isSubmitting}
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label htmlFor="issue-description" className="block text-xs font-medium text-muted mb-1">
+              Description
+            </label>
+            <textarea
+              id="issue-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Add a description..."
+              rows={4}
+              className="w-full px-3 py-2 text-sm bg-transparent border border-border rounded-md text-foreground placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent resize-none"
+              disabled={isSubmitting}
+            />
+          </div>
+
+          {/* Priority */}
+          <div>
+            <label htmlFor="issue-priority" className="block text-xs font-medium text-muted mb-1">
+              Priority
+            </label>
+            <select
+              id="issue-priority"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              className="w-full h-9 text-sm bg-transparent border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+              disabled={isSubmitting}
+            >
+              {PRIORITIES.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Assignee */}
+          <div>
+            <label className="block text-xs font-medium text-muted mb-1">Assignee</label>
+            <PersonCombobox
+              people={people}
+              value={assigneeId}
+              onChange={setAssigneeId}
+              placeholder="Select assignee..."
+            />
+          </div>
+
+          {/* Sprint */}
+          <div>
+            <label htmlFor="issue-sprint" className="block text-xs font-medium text-muted mb-1">
+              Sprint
+            </label>
+            <select
+              id="issue-sprint"
+              value={sprintId}
+              onChange={(e) => setSprintId(e.target.value)}
+              className="w-full h-9 text-sm bg-transparent border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+              disabled={isSubmitting || sprints.length === 0}
+            >
+              <option value="">No sprint</option>
+              {sprints.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name || `Sprint ${s.sprint_number}`}
+                </option>
+              ))}
+            </select>
+            {sprints.length === 0 && (
+              <p className="mt-1 text-xs text-muted">No sprints available for this program</p>
+            )}
+          </div>
+
+          {/* Error message */}
+          {error && (
+            <div className="rounded bg-red-500/10 border border-red-500/30 p-3">
+              <p className="text-sm text-red-400">{error}</p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="rounded px-3 py-1.5 text-sm text-muted hover:text-foreground transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || !title.trim()}
+              className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50 transition-colors flex items-center gap-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Creating...
+                </>
+              ) : (
+                'Create Issue'
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
