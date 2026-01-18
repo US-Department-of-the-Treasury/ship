@@ -24,7 +24,7 @@ import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { ContextTreeNav } from '@/components/ContextTreeNav';
 
-type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard';
+type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week';
 
 export function AppLayout() {
   const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
@@ -78,6 +78,7 @@ export function AppLayout() {
   // Determine active mode from path
   const getActiveMode = (): Mode => {
     if (location.pathname.startsWith('/dashboard')) return 'dashboard';
+    if (location.pathname.startsWith('/my-week')) return 'my-week';
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
     if (location.pathname.startsWith('/projects')) return 'projects';
@@ -95,6 +96,7 @@ export function AppLayout() {
   const handleModeClick = (mode: Mode) => {
     switch (mode) {
       case 'dashboard': navigate('/dashboard'); break;
+      case 'my-week': navigate('/my-week'); break;
       case 'docs': navigate('/docs'); break;
       case 'issues': navigate('/issues'); break;
       case 'projects': navigate('/projects'); break;
@@ -262,6 +264,12 @@ export function AppLayout() {
               onClick={() => handleModeClick('issues')}
             />
             <RailIcon
+              icon={<MyWeekIcon />}
+              label="My Week"
+              active={activeMode === 'my-week'}
+              onClick={() => handleModeClick('my-week')}
+            />
+            <RailIcon
               icon={<TeamIcon />}
               label="Teams"
               active={activeMode === 'team'}
@@ -313,6 +321,7 @@ export function AppLayout() {
             <div className="flex h-10 items-center justify-between border-b border-border px-3">
               <h2 className="text-sm font-medium text-foreground m-0">
                 {activeMode === 'dashboard' && 'Dashboard'}
+                {activeMode === 'my-week' && 'My Week'}
                 {activeMode === 'docs' && 'Docs'}
                 {activeMode === 'issues' && 'Issues'}
                 {activeMode === 'projects' && 'Projects'}
@@ -409,6 +418,9 @@ export function AppLayout() {
               )}
               {activeMode === 'dashboard' && (
                 <DashboardSidebar />
+              )}
+              {activeMode === 'my-week' && (
+                <div className="px-3 py-2 text-sm text-muted">Your sprint assignments</div>
               )}
             </div>
 
@@ -1434,6 +1446,16 @@ function SprintsIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  );
+}
+
+function MyWeekIcon() {
+  // Calendar with week indicator (CalendarDays style)
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" />
     </svg>
   );
 }
