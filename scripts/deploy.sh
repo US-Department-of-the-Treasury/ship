@@ -41,23 +41,25 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Parse environment argument
 ENV="${1:-}"
-if [[ ! "$ENV" =~ ^(dev|prod)$ ]]; then
-  echo "Usage: $0 <dev|prod>"
+if [[ ! "$ENV" =~ ^(dev|shadow|prod)$ ]]; then
+  echo "Usage: $0 <dev|shadow|prod>"
   echo ""
   echo "Examples:"
   echo "  $0 dev     # Deploy to dev environment"
+  echo "  $0 shadow  # Deploy to shadow environment (UAT)"
   echo "  $0 prod    # Deploy to prod environment"
   exit 1
 fi
 
 # Environment-specific configuration
 # - prod uses existing terraform at root with original app name (ship-api)
-# - dev uses new modular structure with environment-suffixed app name
+# - dev/shadow use new modular structure with environment-suffixed app name
 if [ "$ENV" = "prod" ]; then
   TF_DIR="$PROJECT_ROOT/terraform"
   APP_NAME="ship-api"
   ENV_NAME="ship-api-prod"
 else
+  # dev and shadow both use the modular terraform structure
   TF_DIR="$PROJECT_ROOT/terraform/environments/$ENV"
   APP_NAME="ship-api-${ENV}"
   ENV_NAME="ship-api-${ENV}"
