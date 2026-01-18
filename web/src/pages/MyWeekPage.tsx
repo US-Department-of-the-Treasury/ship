@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { apiGet } from '@/lib/api';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate } from 'react-router-dom';
+import { apiGet, apiPatch } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { priorityColors } from '@/lib/statusColors';
+import { KanbanBoard } from '@/components/KanbanBoard';
+import { useToast } from '@/components/ui/Toast';
 
 interface Issue {
   id: string;
@@ -69,6 +71,15 @@ type FilterState = 'all' | 'todo' | 'in_progress' | 'in_review' | 'done';
 export function MyWeekPage() {
   const [showMine, setShowMine] = useState(false);
   const [stateFilter, setStateFilter] = useState<FilterState>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() => {
+    const saved = localStorage.getItem('my-week-view');
+    if (saved === 'kanban') return 'kanban';
+    return 'list';
+  });
+
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { showToast } = useToast();
 
   // Build query params
   const queryParams = new URLSearchParams();
@@ -87,6 +98,39 @@ export function MyWeekPage() {
       return response.json();
     },
   });
+
+  // Persist view mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('my-week-view', viewMode);
+  }, [viewMode]);
+
+  // Flatten all issues from all groups for kanban view
+  const allIssues = useMemo(() => {
+    if (!data?.groups) return [];
+    return data.groups.flatMap(group => group.issues);
+  }, [data?.groups]);
+
+  // Handle issue state update from kanban drag-drop
+  const handleUpdateIssue = useCallback(async (issueId: string, updates: { state: string }) => {
+    try {
+      const res = await apiPatch(`/api/issues/${issueId}`, updates);
+      if (res.ok) {
+        // Invalidate my-week query to refresh the list
+        queryClient.invalidateQueries({ queryKey: ['my-week'] });
+      } else {
+        const errorData = await res.json();
+        showToast(errorData.error || 'Failed to update issue', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to update issue:', err);
+      showToast('Failed to update issue', 'error');
+    }
+  }, [queryClient, showToast]);
+
+  // Handle issue click from kanban
+  const handleIssueClick = useCallback((issueId: string) => {
+    navigate(`/issues/${issueId}`);
+  }, [navigate]);
 
   if (isLoading) {
     return (
@@ -123,7 +167,7 @@ export function MyWeekPage() {
             </p>
           </div>
 
-          {/* Filters */}
+          {/* Filters and View Toggle */}
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -146,6 +190,42 @@ export function MyWeekPage() {
               <option value="in_review">In Review</option>
               <option value="done">Done</option>
             </select>
+
+            {/* View Toggle */}
+            <div className="flex items-center border border-border rounded-md bg-border/30 p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={cn(
+                  'flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded transition-colors',
+                  viewMode === 'list'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted hover:text-foreground'
+                )}
+                aria-pressed={viewMode === 'list'}
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+                </svg>
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('kanban')}
+                className={cn(
+                  'flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded transition-colors',
+                  viewMode === 'kanban'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted hover:text-foreground'
+                )}
+                aria-pressed={viewMode === 'kanban'}
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm0 2h3v10H5V5zm5 0h3v10h-3V5zm5 0h0v10h0V5z" />
+                </svg>
+                Board
+              </button>
+            </div>
           </div>
         </div>
 
@@ -195,20 +275,40 @@ export function MyWeekPage() {
           </div>
         )}
 
-        {/* Issue Groups */}
-        {groups.length === 0 ? (
-          <div className="rounded-lg border border-border bg-background p-8 text-center">
-            <p className="text-muted">No issues found for this week</p>
-            <p className="text-sm text-muted mt-1">
-              {showMine ? 'Try unchecking "Show mine only"' : 'Issues will appear here when assigned to active sprints'}
-            </p>
-          </div>
+        {/* Issue View (List or Kanban) */}
+        {viewMode === 'kanban' ? (
+          allIssues.length === 0 ? (
+            <div className="rounded-lg border border-border bg-background p-8 text-center">
+              <p className="text-muted">No issues found for this week</p>
+              <p className="text-sm text-muted mt-1">
+                {showMine ? 'Try unchecking "Show mine only"' : 'Issues will appear here when assigned to active sprints'}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border bg-background overflow-hidden -mx-6">
+              <KanbanBoard
+                issues={allIssues}
+                onUpdateIssue={handleUpdateIssue}
+                onIssueClick={handleIssueClick}
+              />
+            </div>
+          )
         ) : (
-          <div className="space-y-6">
-            {groups.map((group) => (
-              <IssueGroup key={`${group.sprint.id}-${group.program.id}`} group={group} />
-            ))}
-          </div>
+          /* List View (grouped by sprint) */
+          groups.length === 0 ? (
+            <div className="rounded-lg border border-border bg-background p-8 text-center">
+              <p className="text-muted">No issues found for this week</p>
+              <p className="text-sm text-muted mt-1">
+                {showMine ? 'Try unchecking "Show mine only"' : 'Issues will appear here when assigned to active sprints'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {groups.map((group) => (
+                <IssueGroup key={`${group.sprint.id}-${group.program.id}`} group={group} />
+              ))}
+            </div>
+          )
         )}
       </div>
     </div>
