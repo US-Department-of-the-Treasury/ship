@@ -55,7 +55,13 @@ export function ProjectEditorPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [ownerError, setOwnerError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'issues' | 'retro'>('details');
-  const [issuesViewMode, setIssuesViewMode] = useState<'list' | 'kanban'>('list');
+  const [issuesViewMode, setIssuesViewMode] = useState<'list' | 'kanban'>(() => {
+    if (id) {
+      const saved = localStorage.getItem(`project-${id}-view`);
+      if (saved === 'kanban') return 'kanban';
+    }
+    return 'list';
+  });
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [isUndoing, setIsUndoing] = useState(false);
@@ -75,6 +81,13 @@ export function ProjectEditorPage() {
   // Issues list sorting state
   const [sortColumn, setSortColumn] = useState<'ticket_number' | 'title' | 'state' | 'priority' | 'assignee_name' | 'updated_at'>('priority');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Persist view mode to localStorage
+  useEffect(() => {
+    if (id) {
+      localStorage.setItem(`project-${id}-view`, issuesViewMode);
+    }
+  }, [id, issuesViewMode]);
 
   // Sort issues
   const sortedIssues = useMemo(() => {
