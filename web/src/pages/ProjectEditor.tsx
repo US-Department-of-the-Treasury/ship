@@ -66,6 +66,11 @@ export function ProjectEditorPage() {
   const [isConverting, setIsConverting] = useState(false);
   const [isUndoing, setIsUndoing] = useState(false);
 
+  // Inline issue creation state
+  const [showInlineIssueInput, setShowInlineIssueInput] = useState(false);
+  const [newIssueTitle, setNewIssueTitle] = useState('');
+  const [isCreatingIssue, setIsCreatingIssue] = useState(false);
+
   // Direct-fetched project (when not found in context cache)
   const [directFetchedProject, setDirectFetchedProject] = useState<Project | null>(null);
   const [directFetchLoading, setDirectFetchLoading] = useState(false);
@@ -150,6 +155,48 @@ export function ProjectEditorPage() {
       showToast('Failed to update issue', 'error');
     }
   }, [id, queryClient, showToast]);
+
+  // Handle inline issue creation
+  const handleCreateInlineIssue = useCallback(async () => {
+    if (!newIssueTitle.trim() || !id || isCreatingIssue) return;
+
+    setIsCreatingIssue(true);
+    try {
+      // Create the issue with backlog state and program from project
+      const res = await apiPost('/api/issues', {
+        title: newIssueTitle.trim(),
+        state: 'backlog',
+        program_id: project?.program_id || null,
+      });
+
+      if (res.ok) {
+        const newIssue = await res.json();
+
+        // Create association to link issue to this project
+        await apiPost(`/api/documents/${newIssue.id}/associations`, {
+          related_id: id,
+          relationship_type: 'project',
+        });
+
+        // Invalidate project issues to refresh the list
+        queryClient.invalidateQueries({ queryKey: projectKeys.issues(id) });
+        queryClient.invalidateQueries({ queryKey: issueKeys.lists() });
+
+        // Clear input and hide
+        setNewIssueTitle('');
+        setShowInlineIssueInput(false);
+        showToast('Issue created', 'success');
+      } else {
+        const error = await res.json();
+        showToast(error.error || 'Failed to create issue', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to create issue:', err);
+      showToast('Failed to create issue', 'error');
+    } finally {
+      setIsCreatingIssue(false);
+    }
+  }, [newIssueTitle, id, isCreatingIssue, project?.program_id, queryClient, showToast]);
 
   // Fetch team members for owner selection (filter out pending users)
   useEffect(() => {
@@ -574,8 +621,21 @@ export function ProjectEditorPage() {
           />
         ) : activeTab === 'issues' ? (
           <div className="h-full flex flex-col">
-            {/* View toggle toolbar */}
-            <div className="flex items-center justify-end gap-2 px-4 py-2 border-b border-border">
+            {/* Toolbar with add button and view toggle */}
+            <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border">
+              {/* Add issue button */}
+              <button
+                onClick={() => setShowInlineIssueInput(true)}
+                className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-muted hover:text-foreground hover:bg-accent/10 rounded transition-colors"
+                aria-label="Add new issue"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+                Add Issue
+              </button>
+
+              {/* View toggle */}
               <div className="flex items-center rounded-md bg-border/30 p-0.5">
                 <button
                   onClick={() => setIssuesViewMode('list')}
@@ -609,6 +669,50 @@ export function ProjectEditorPage() {
                 </button>
               </div>
             </div>
+
+            {/* Inline issue creation input */}
+            {showInlineIssueInput && (
+              <div className="px-4 py-2 border-b border-border bg-accent/5">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newIssueTitle}
+                    onChange={(e) => setNewIssueTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newIssueTitle.trim()) {
+                        handleCreateInlineIssue();
+                      } else if (e.key === 'Escape') {
+                        setShowInlineIssueInput(false);
+                        setNewIssueTitle('');
+                      }
+                    }}
+                    placeholder="Issue title..."
+                    className="flex-1 bg-transparent border border-border rounded px-2 py-1.5 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+                    autoFocus
+                    disabled={isCreatingIssue}
+                  />
+                  <button
+                    onClick={handleCreateInlineIssue}
+                    disabled={!newIssueTitle.trim() || isCreatingIssue}
+                    className="px-3 py-1.5 text-xs font-medium bg-accent text-white rounded hover:bg-accent/90 disabled:opacity-50 transition-colors"
+                  >
+                    {isCreatingIssue ? 'Creating...' : 'Create'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowInlineIssueInput(false);
+                      setNewIssueTitle('');
+                    }}
+                    disabled={isCreatingIssue}
+                    className="px-2 py-1.5 text-xs text-muted hover:text-foreground transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-muted">Press Enter to create, Escape to cancel</p>
+              </div>
+            )}
+
             {/* View content */}
             <div className="flex-1 overflow-hidden">
               {issuesViewMode === 'list' ? (
