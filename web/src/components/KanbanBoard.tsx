@@ -52,6 +52,7 @@ const COLUMNS = [
   { id: 'backlog', title: 'Backlog', color: 'bg-gray-500' },
   { id: 'todo', title: 'Todo', color: 'bg-blue-500' },
   { id: 'in_progress', title: 'In Progress', color: 'bg-yellow-500' },
+  { id: 'in_review', title: 'In Review', color: 'bg-cyan-500' },
   { id: 'done', title: 'Done', color: 'bg-green-500' },
 ];
 
@@ -385,6 +386,13 @@ function ColumnStatusIcon({ state, color }: { state: string; color: string }) {
         <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
           <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
           <path d="M8 2 A6 6 0 1 1 2 8" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'in_review':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+          <path d="M8 2 A6 6 0 1 1 8 14" fill="currentColor" stroke="none" />
         </svg>
       );
     case 'done':

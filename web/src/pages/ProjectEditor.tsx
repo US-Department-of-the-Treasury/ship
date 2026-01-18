@@ -14,6 +14,8 @@ import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TabBar } from '@/components/ui/TabBar';
 import { ProjectRetro } from '@/components/ProjectRetro';
+import { KanbanBoard } from '@/components/KanbanBoard';
+import { apiPatch } from '@/lib/api';
 import { IncompleteDocumentBanner } from '@/components/IncompleteDocumentBanner';
 import { computeICEScore } from '@ship/shared';
 import { useToast } from '@/components/ui/Toast';
@@ -53,6 +55,7 @@ export function ProjectEditorPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [ownerError, setOwnerError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'issues' | 'retro'>('details');
+  const [issuesViewMode, setIssuesViewMode] = useState<'list' | 'kanban'>('list');
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [isUndoing, setIsUndoing] = useState(false);
@@ -117,6 +120,23 @@ export function ProjectEditorPage() {
       setSortDirection('asc');
     }
   }, [sortColumn]);
+
+  // Handle issue state update from kanban drag-drop
+  const handleUpdateIssue = useCallback(async (issueId: string, updates: { state: string }) => {
+    try {
+      const res = await apiPatch(`/api/issues/${issueId}`, updates);
+      if (res.ok) {
+        // Invalidate project issues to refresh the list
+        queryClient.invalidateQueries({ queryKey: projectKeys.issues(id!) });
+      } else {
+        const error = await res.json();
+        showToast(error.error || 'Failed to update issue', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to update issue:', err);
+      showToast('Failed to update issue', 'error');
+    }
+  }, [id, queryClient, showToast]);
 
   // Fetch team members for owner selection (filter out pending users)
   useEffect(() => {
@@ -540,14 +560,62 @@ export function ProjectEditorPage() {
             }
           />
         ) : activeTab === 'issues' ? (
-          <ProjectIssuesList
-            issues={sortedIssues}
-            loading={issuesLoading}
-            sortColumn={sortColumn}
-            sortDirection={sortDirection}
-            onSort={handleSort}
-            onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
-          />
+          <div className="h-full flex flex-col">
+            {/* View toggle toolbar */}
+            <div className="flex items-center justify-end gap-2 px-4 py-2 border-b border-border">
+              <div className="flex items-center rounded-md bg-border/30 p-0.5">
+                <button
+                  onClick={() => setIssuesViewMode('list')}
+                  className={cn(
+                    'flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded transition-colors',
+                    issuesViewMode === 'list'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted hover:text-foreground'
+                  )}
+                  aria-pressed={issuesViewMode === 'list'}
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+                  </svg>
+                  List
+                </button>
+                <button
+                  onClick={() => setIssuesViewMode('kanban')}
+                  className={cn(
+                    'flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded transition-colors',
+                    issuesViewMode === 'kanban'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted hover:text-foreground'
+                  )}
+                  aria-pressed={issuesViewMode === 'kanban'}
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm0 2h3v10H5V5zm5 0h3v10h-3V5zm5 0h0v10h0V5z" />
+                  </svg>
+                  Board
+                </button>
+              </div>
+            </div>
+            {/* View content */}
+            <div className="flex-1 overflow-hidden">
+              {issuesViewMode === 'list' ? (
+                <ProjectIssuesList
+                  issues={sortedIssues}
+                  loading={issuesLoading}
+                  sortColumn={sortColumn}
+                  sortDirection={sortDirection}
+                  onSort={handleSort}
+                  onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+                />
+              ) : (
+                <KanbanBoard
+                  issues={projectIssues}
+                  onUpdateIssue={handleUpdateIssue}
+                  onIssueClick={(issueId) => navigate(`/issues/${issueId}`)}
+                />
+              )}
+            </div>
+          </div>
         ) : (
           <ProjectRetro projectId={displayProject.id} />
         )}
