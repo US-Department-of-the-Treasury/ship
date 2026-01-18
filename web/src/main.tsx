@@ -18,7 +18,6 @@ import { AppLayout } from '@/pages/App';
 import { DocumentsPage } from '@/pages/Documents';
 import { DocumentEditorPage } from '@/pages/DocumentEditor';
 import { IssuesPage } from '@/pages/Issues';
-import { IssueEditorPage } from '@/pages/IssueEditor';
 import { ProgramsPage } from '@/pages/Programs';
 import { ProgramEditorPage } from '@/pages/ProgramEditor';
 import { SprintEditorPage } from '@/pages/SprintEditor';
@@ -176,7 +175,7 @@ function AppRoutes() {
         <Route path="docs/:id" element={<DocumentEditorPage />} />
         <Route path="documents/:id" element={<UnifiedDocumentPage />} />
         <Route path="issues" element={<IssuesPage />} />
-        <Route path="issues/:id" element={<IssueEditorPage />} />
+        <Route path="issues/:id" element={<UnifiedDocumentPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:id" element={<ProjectEditorPage />} />
         <Route path="programs" element={<ProgramsPage />} />

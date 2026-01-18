@@ -71,9 +71,8 @@ module "aurora" {
   min_capacity = var.aurora_min_capacity
   max_capacity = var.aurora_max_capacity
 
-  # Migration testing: optionally restore from dev snapshot
-  # When set, database_name, master_username, and master_password are inherited from snapshot
-  snapshot_identifier = var.snapshot_identifier
+  # NOTE: snapshot_identifier support would need to be added to the aurora module
+  # For now, shadow environment creates a fresh database
 }
 
 # Elastic Beanstalk (shadow has its own EB application and environment)
