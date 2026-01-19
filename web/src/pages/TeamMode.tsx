@@ -685,6 +685,7 @@ export function TeamModePage() {
                         {!isCollapsed && group.users.map((user) => {
                           const isPending = user.isPending || !user.id;
                           const assignment = assignments[user.personId]?.[sprint.number];
+                          const previousWeekAssignment = assignments[user.personId]?.[sprint.number - 1];
                           const cellKey = `${user.personId}-${sprint.number}`;
                           const isLoading = operationLoading === cellKey;
 
@@ -692,6 +693,7 @@ export function TeamModePage() {
                             <SprintCell
                               key={cellKey}
                               assignment={assignment}
+                              previousWeekAssignment={previousWeekAssignment}
                               projects={projects}
                               isCurrent={sprint.isCurrent}
                               loading={isLoading}
@@ -780,6 +782,7 @@ export function TeamModePage() {
 
 function SprintCell({
   assignment,
+  previousWeekAssignment,
   projects,
   isCurrent,
   loading,
@@ -788,6 +791,7 @@ function SprintCell({
   onNavigate,
 }: {
   assignment?: Assignment;
+  previousWeekAssignment?: Assignment;
   projects: Project[];
   isCurrent: boolean;
   loading: boolean;
@@ -795,6 +799,19 @@ function SprintCell({
   onChange: (projectId: string | null) => void;
   onNavigate: (projectId: string) => void;
 }) {
+  // Convert previous week assignment to Project format for the quick select
+  const previousWeekProject: Project | null =
+    previousWeekAssignment?.projectId && previousWeekAssignment?.projectName
+      ? {
+          id: previousWeekAssignment.projectId,
+          title: previousWeekAssignment.projectName,
+          programId: previousWeekAssignment.programId,
+          programName: previousWeekAssignment.programName,
+          programEmoji: previousWeekAssignment.emoji,
+          programColor: previousWeekAssignment.color,
+        }
+      : null;
+
   // isPending is only used for visual styling (dashed border), not for blocking assignment
   return (
     <div
@@ -812,6 +829,7 @@ function SprintCell({
         onNavigate={onNavigate}
         disabled={loading}
         placeholder="+"
+        previousWeekProject={previousWeekProject}
         triggerClassName={cn(
           'w-full h-full justify-start',
           !assignment && 'hover:bg-border/30'

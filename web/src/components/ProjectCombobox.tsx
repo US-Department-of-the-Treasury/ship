@@ -20,6 +20,8 @@ interface ProjectComboboxProps {
   disabled?: boolean;
   placeholder?: string;
   triggerClassName?: string;
+  /** If provided and exists in projects list, shows a "Same as last week" quick option */
+  previousWeekProject?: Project | null;
 }
 
 export function ProjectCombobox({
@@ -30,12 +32,18 @@ export function ProjectCombobox({
   disabled = false,
   placeholder = 'Select project...',
   triggerClassName,
+  previousWeekProject,
 }: ProjectComboboxProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [isHovered, setIsHovered] = useState(false);
 
   const selectedProject = projects.find((p) => p.id === value);
+
+  // Check if previous week's project is valid (exists in available projects)
+  const validPreviousWeekProject = previousWeekProject
+    ? projects.find((p) => p.id === previousWeekProject.id)
+    : null;
 
   // Group projects by program
   const projectsByProgram = projects.reduce<Record<string, Project[]>>((acc, project) => {
@@ -152,6 +160,34 @@ export function ProjectCombobox({
               return 0;
             }}
           >
+            {/* Quick select: Same as last week */}
+            {validPreviousWeekProject && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(validPreviousWeekProject.id);
+                  setOpen(false);
+                  setSearch('');
+                }}
+                className={cn(
+                  'flex items-center gap-2 px-2 py-2 text-sm text-left',
+                  'bg-accent/10 hover:bg-accent/20 border-b border-border',
+                  'transition-colors'
+                )}
+              >
+                <span
+                  className="shrink-0 rounded px-1.5 py-0.5 text-xs font-bold text-white"
+                  style={{ backgroundColor: validPreviousWeekProject.programColor || '#6b7280' }}
+                >
+                  {validPreviousWeekProject.programEmoji || validPreviousWeekProject.title[0]}
+                </span>
+                <span className="truncate">
+                  <span className="text-muted">Same as last week:</span>{' '}
+                  <span className="text-foreground">{validPreviousWeekProject.title}</span>
+                </span>
+              </button>
+            )}
+
             <div className="border-b border-border p-2">
               <Command.Input
                 value={search}
