@@ -46,6 +46,8 @@ interface KanbanBoardProps {
   onCheckboxClick?: (id: string, e: React.MouseEvent) => void;
   // Context menu props
   onContextMenu?: (event: ContextMenuEvent) => void;
+  // Disable drag-drop (for historical/read-only views)
+  disabled?: boolean;
 }
 
 const COLUMNS = [
@@ -71,6 +73,7 @@ export function KanbanBoard({
   selectedIds = new Set(),
   onCheckboxClick,
   onContextMenu,
+  disabled = false,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -90,12 +93,15 @@ export function KanbanBoard({
   };
 
   const handleDragStart = (event: DragStartEvent) => {
+    if (disabled) return;
     setActiveId(event.active.id as string);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+
+    if (disabled) return;
 
     if (!over) return;
 

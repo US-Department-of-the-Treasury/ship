@@ -365,13 +365,14 @@ router.get('/my-action-items', authMiddleware, async (req: Request, res: Respons
   }
 });
 
-// Get aggregated "My Week" view - all issues from active sprints across programs
-// Returns issues grouped by sprint/program with filtering options
+// Get "My Week" view - aggregates issues from all active sprints
+// Virtual aggregation: no 'week' document created, purely computed
+// Supports historical week viewing via sprint_number query param
 router.get('/my-week', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
-    const { state, assignee, show_mine } = req.query;
+    const { state, assignee, show_mine, sprint_number: requestedSprintNumber } = req.query;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -405,15 +406,30 @@ router.get('/my-week', authMiddleware, async (req: Request, res: Response) => {
     const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
     const currentSprintNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
 
-    // Calculate sprint dates
-    const currentSprintStart = new Date(workspaceStartDate);
-    currentSprintStart.setUTCDate(currentSprintStart.getUTCDate() + (currentSprintNumber - 1) * sprintDuration);
-    const currentSprintEnd = new Date(currentSprintStart);
-    currentSprintEnd.setUTCDate(currentSprintEnd.getUTCDate() + sprintDuration - 1);
-    const daysRemaining = Math.max(0, Math.ceil((currentSprintEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+    // Determine which sprint to show (current or historical)
+    let targetSprintNumber = currentSprintNumber;
+    let isHistorical = false;
+
+    if (requestedSprintNumber && typeof requestedSprintNumber === 'string') {
+      const parsed = parseInt(requestedSprintNumber, 10);
+      // Validate: must be positive, not in the future, and within 12 weeks back
+      if (!isNaN(parsed) && parsed > 0 && parsed <= currentSprintNumber && parsed >= currentSprintNumber - 12) {
+        targetSprintNumber = parsed;
+        isHistorical = targetSprintNumber < currentSprintNumber;
+      }
+    }
+
+    // Calculate sprint dates for the target sprint
+    const targetSprintStart = new Date(workspaceStartDate);
+    targetSprintStart.setUTCDate(targetSprintStart.getUTCDate() + (targetSprintNumber - 1) * sprintDuration);
+    const targetSprintEnd = new Date(targetSprintStart);
+    targetSprintEnd.setUTCDate(targetSprintEnd.getUTCDate() + sprintDuration - 1);
+
+    // Days remaining only makes sense for current sprint
+    const daysRemaining = isHistorical ? 0 : Math.max(0, Math.ceil((targetSprintEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
     // Build dynamic WHERE clause for issue filters
-    const params: any[] = [workspaceId, currentSprintNumber, userId, isAdmin];
+    const params: any[] = [workspaceId, targetSprintNumber, userId, isAdmin];
     let filterConditions = '';
 
     if (state && typeof state === 'string') {
@@ -481,7 +497,7 @@ router.get('/my-week', authMiddleware, async (req: Request, res: Response) => {
           sprint: {
             id: row.sprint_id,
             name: row.sprint_name,
-            sprint_number: sprintProps.sprint_number || currentSprintNumber,
+            sprint_number: sprintProps.sprint_number || targetSprintNumber,
           },
           program: row.program_id ? {
             id: row.program_id,
@@ -528,10 +544,12 @@ router.get('/my-week', authMiddleware, async (req: Request, res: Response) => {
         remaining_issues: totalIssues - completedIssues,
       },
       week: {
+        sprint_number: targetSprintNumber,
         current_sprint_number: currentSprintNumber,
-        start_date: currentSprintStart.toISOString().split('T')[0],
-        end_date: currentSprintEnd.toISOString().split('T')[0],
+        start_date: targetSprintStart.toISOString().split('T')[0],
+        end_date: targetSprintEnd.toISOString().split('T')[0],
         days_remaining: daysRemaining,
+        is_historical: isHistorical,
       },
     });
   } catch (err) {

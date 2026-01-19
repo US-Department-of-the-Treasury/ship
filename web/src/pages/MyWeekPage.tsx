@@ -41,10 +41,12 @@ interface MyWeekData {
     remaining_issues: number;
   };
   week: {
+    sprint_number: number;
     current_sprint_number: number;
     start_date: string;
     end_date: string;
     days_remaining: number;
+    is_historical: boolean;
   };
 }
 
@@ -71,6 +73,7 @@ type FilterState = 'all' | 'todo' | 'in_progress' | 'in_review' | 'done';
 export function MyWeekPage() {
   const [showMine, setShowMine] = useState(false);
   const [stateFilter, setStateFilter] = useState<FilterState>('all');
+  const [selectedSprintNumber, setSelectedSprintNumber] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() => {
     const saved = localStorage.getItem('my-week-view');
     if (saved === 'kanban') return 'kanban';
@@ -85,10 +88,11 @@ export function MyWeekPage() {
   const queryParams = new URLSearchParams();
   if (showMine) queryParams.set('show_mine', 'true');
   if (stateFilter !== 'all') queryParams.set('state', stateFilter);
+  if (selectedSprintNumber !== null) queryParams.set('sprint_number', String(selectedSprintNumber));
   const queryString = queryParams.toString();
 
   const { data, isLoading, error } = useQuery<MyWeekData>({
-    queryKey: ['my-week', showMine, stateFilter],
+    queryKey: ['my-week', showMine, stateFilter, selectedSprintNumber],
     queryFn: async () => {
       const url = queryString
         ? `/api/sprints/my-week?${queryString}`
@@ -132,6 +136,32 @@ export function MyWeekPage() {
     navigate(`/issues/${issueId}`);
   }, [navigate]);
 
+  // Generate week options for the picker (current week + past 12 weeks)
+  // Must be before early returns to maintain hooks order
+  const weekOptions = useMemo(() => {
+    if (!data?.week?.current_sprint_number) return [];
+    const options: { value: number; label: string }[] = [];
+    const currentNum = data.week.current_sprint_number;
+
+    for (let i = 0; i <= 12; i++) {
+      const sprintNum = currentNum - i;
+      if (sprintNum <= 0) break;
+      options.push({
+        value: sprintNum,
+        label: i === 0 ? `Sprint ${sprintNum} (Current)` : `Sprint ${sprintNum}`,
+      });
+    }
+    return options;
+  }, [data?.week?.current_sprint_number]);
+
+  // Format date range for display
+  const formatDateRange = useCallback((startDate: string, endDate: string) => {
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+    return `${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', options)}`;
+  }, []);
+
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -155,15 +185,50 @@ export function MyWeekPage() {
     ? Math.round((summary.completed_issues / summary.total_issues) * 100)
     : 0;
 
+  // Is this a historical view?
+  const isHistorical = week?.is_historical ?? false;
+
   return (
     <div className="h-full overflow-auto p-6">
       <div className="mx-auto max-w-5xl space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">My Week</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-foreground">My Week</h1>
+              {/* Week Picker Dropdown */}
+              {weekOptions.length > 0 && (
+                <select
+                  value={selectedSprintNumber ?? week?.current_sprint_number ?? ''}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    // Reset to current week if selecting current
+                    if (val === week?.current_sprint_number) {
+                      setSelectedSprintNumber(null);
+                    } else {
+                      setSelectedSprintNumber(val);
+                    }
+                  }}
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground"
+                >
+                  {weekOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              )}
+            </div>
             <p className="mt-1 text-sm text-muted">
-              Sprint {week?.current_sprint_number} &middot; {week?.days_remaining} days remaining
+              {isHistorical ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+                  <span className="text-amber-600 font-medium">Viewing {week && formatDateRange(week.start_date, week.end_date)}</span>
+                  <span className="text-muted">&middot; Historical view (read-only)</span>
+                </span>
+              ) : (
+                <>
+                  {week && formatDateRange(week.start_date, week.end_date)} &middot; {week?.days_remaining} days remaining
+                </>
+              )}
             </p>
           </div>
 
@@ -290,6 +355,7 @@ export function MyWeekPage() {
                 issues={allIssues}
                 onUpdateIssue={handleUpdateIssue}
                 onIssueClick={handleIssueClick}
+                disabled={isHistorical}
               />
             </div>
           )
