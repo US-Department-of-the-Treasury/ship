@@ -11,6 +11,7 @@ import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
 import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
+import { useStandupStatusQuery } from '@/hooks/useStandupStatusQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -56,6 +57,10 @@ export function AppLayout() {
     warningType,
     resetTimer: resetSessionTimer,
   } = useSessionTimeout(handleSessionTimeout);
+
+  // Check if user needs to post a standup today
+  const { data: standupStatus } = useStandupStatusQuery();
+  const standupDue = standupStatus?.due ?? false;
 
   // Accessibility: focus management on navigation
   useFocusOnNavigate();
@@ -266,9 +271,10 @@ export function AppLayout() {
             />
             <RailIcon
               icon={<SprintsIcon />}
-              label="Sprints"
+              label={standupDue ? "Sprints (standup due)" : "Sprints"}
               active={activeMode === 'sprints'}
               onClick={() => handleModeClick('sprints')}
+              showBadge={standupDue}
             />
             <RailIcon
               icon={<IssuesIcon />}
@@ -472,18 +478,21 @@ export function AppLayout() {
   );
 }
 
-function RailIcon({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+function RailIcon({ icon, label, active, onClick, showBadge }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void; showBadge?: boolean }) {
   return (
     <Tooltip content={label} side="right">
       <button
         onClick={onClick}
         className={cn(
-          'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+          'relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
           active ? 'bg-border text-foreground' : 'text-muted hover:bg-border/50 hover:text-foreground'
         )}
         aria-label={label}
       >
         {icon}
+        {showBadge && (
+          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-orange-500" />
+        )}
       </button>
     </Tooltip>
   );
