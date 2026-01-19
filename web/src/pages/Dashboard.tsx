@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
 import { useProjects, Project } from '@/contexts/ProjectsContext';
+import { useDashboardActionItems, ActionItem } from '@/hooks/useDashboardActionItems';
+import { useDashboardMyWork, WorkItem } from '@/hooks/useDashboardMyWork';
 import { cn } from '@/lib/cn';
+
+type DashboardView = 'my-work' | 'overview';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -56,12 +60,19 @@ function formatRelativeTime(dateString: string): string {
 }
 
 export function DashboardPage() {
+  const [searchParams] = useSearchParams();
+  const currentView: DashboardView = (searchParams.get('view') as DashboardView) || 'my-work';
+
   const { data: sprintsData, isLoading: sprintsLoading } = useActiveSprintsQuery();
   const { projects, loading: projectsLoading } = useProjects();
+  const { data: actionItemsData, isLoading: actionItemsLoading } = useDashboardActionItems();
+  const { data: myWorkData, isLoading: myWorkLoading } = useDashboardMyWork();
   const [recentStandups, setRecentStandups] = useState<Standup[]>([]);
   const [standupsLoading, setStandupsLoading] = useState(true);
 
   const activeSprints = sprintsData?.sprints || [];
+  const actionItems = actionItemsData?.action_items || [];
+  const myWorkGrouped = myWorkData?.grouped || { overdue: [], this_sprint: [], later: [] };
 
   // Fetch recent standups from all active sprints
   useEffect(() => {
@@ -136,92 +147,239 @@ export function DashboardPage() {
     );
   }
 
+  // Filter overdue items for blocking banner
+  const overdueItems = actionItems.filter(item => item.urgency === 'overdue');
+
   return (
-    <div className="h-full overflow-auto p-6">
-      <div className="mx-auto max-w-6xl space-y-8">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="mt-1 text-sm text-muted">
-            Cross-program overview of work transparency
-          </p>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-4 gap-4">
-          <StatCard
-            label="Active Sprints"
-            value={activeSprints.length}
-            color="text-blue-600"
-          />
-          <StatCard
-            label="Active Projects"
-            value={projectSummary.active}
-            color="text-green-600"
-          />
-          <StatCard
-            label="Recent Standups"
-            value={recentStandups.length}
-            color="text-purple-600"
-          />
-          <StatCard
-            label="Days in Sprint"
-            value={sprintsData?.days_remaining ? `${14 - sprintsData.days_remaining}` : '-'}
-            subtitle={sprintsData?.days_remaining ? `${sprintsData.days_remaining} remaining` : undefined}
-            color="text-orange-600"
-          />
-        </div>
-
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-2 gap-6">
-          {/* Active Sprints */}
-          <div className="rounded-lg border border-border bg-background p-4">
-            <h2 className="text-lg font-semibold text-foreground mb-4">
-              Active Sprints
-            </h2>
-            {activeSprints.length === 0 ? (
-              <p className="text-sm text-muted">No active sprints</p>
+    <div className="h-full overflow-auto">
+      {/* Blocking Banner for Overdue Items */}
+      {overdueItems.length > 0 && (
+        <div className="bg-red-600 text-white px-6 py-3">
+          <div className="mx-auto max-w-6xl">
+            {overdueItems.length === 1 ? (
+              <Link
+                to={`/programs/${overdueItems[0].program_id}/sprints/${overdueItems[0].sprint_id}`}
+                className="flex items-center gap-2 hover:underline"
+              >
+                <span className="font-medium">
+                  {overdueItems[0].program_name} Sprint {overdueItems[0].sprint_number} is missing a {overdueItems[0].type}
+                </span>
+                <span className="text-red-200">→ Write now</span>
+              </Link>
             ) : (
-              <div className="space-y-3">
-                {activeSprints.map((sprint) => (
-                  <SprintCard key={sprint.id} sprint={sprint} />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Top Projects by ICE */}
-          <div className="rounded-lg border border-border bg-background p-4">
-            <h2 className="text-lg font-semibold text-foreground mb-4">
-              Top Projects by ICE
-            </h2>
-            {topProjects.length === 0 ? (
-              <p className="text-sm text-muted">No active projects</p>
-            ) : (
-              <div className="space-y-3">
-                {topProjects.map((project) => (
-                  <ProjectCard key={project.id} project={project} />
-                ))}
+              <div className="space-y-1">
+                <div className="font-medium">
+                  {overdueItems.length} overdue sprint documents need your attention:
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {overdueItems.map(item => (
+                    <Link
+                      key={item.id}
+                      to={`/programs/${item.program_id}/sprints/${item.sprint_id}`}
+                      className="text-sm hover:underline text-red-100"
+                    >
+                      {item.program_name} Sprint {item.sprint_number} ({item.type}) →
+                    </Link>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         </div>
+      )}
 
-        {/* Recent Standups */}
-        <div className="rounded-lg border border-border bg-background p-4">
-          <h2 className="text-lg font-semibold text-foreground mb-4">
-            Recent Standups
-          </h2>
-          {standupsLoading ? (
-            <p className="text-sm text-muted">Loading standups...</p>
-          ) : recentStandups.length === 0 ? (
-            <p className="text-sm text-muted">No recent standups</p>
+      <div className="p-6">
+        <div className="mx-auto max-w-6xl space-y-8">
+          {/* Header */}
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">
+              {currentView === 'my-work' ? 'My Work' : 'Dashboard'}
+            </h1>
+            <p className="mt-1 text-sm text-muted">
+              {currentView === 'my-work'
+                ? 'Your sprint documentation and assigned work'
+                : 'Cross-program overview of work transparency'}
+            </p>
+          </div>
+
+          {currentView === 'my-work' ? (
+            /* My Work View - Action Items + Context */
+            <>
+              {/* Action Items Section */}
+              {actionItemsLoading ? (
+                <div className="rounded-lg border border-border bg-background p-4">
+                  <p className="text-sm text-muted">Loading action items...</p>
+                </div>
+              ) : actionItems.length > 0 ? (
+                <div className="rounded-lg border border-border bg-background p-4">
+                  <h2 className="text-lg font-semibold text-foreground mb-4">
+                    Action Items
+                  </h2>
+                  <div className="space-y-3">
+                    {actionItems.map((item) => (
+                      <ActionItemCard key={item.id} item={item} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* My Work Context Section */}
+              {myWorkLoading ? (
+                <div className="rounded-lg border border-border bg-background p-4">
+                  <p className="text-sm text-muted">Loading your work...</p>
+                </div>
+              ) : (myWorkGrouped.overdue.length > 0 || myWorkGrouped.this_sprint.length > 0 || myWorkGrouped.later.length > 0) ? (
+                <div className="space-y-6">
+                  {/* Overdue Section */}
+                  {myWorkGrouped.overdue.length > 0 && (
+                    <div className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/20 p-4">
+                      <h2 className="text-lg font-semibold text-red-700 dark:text-red-400 mb-4">
+                        Overdue ({myWorkGrouped.overdue.length})
+                      </h2>
+                      <div className="space-y-2">
+                        {myWorkGrouped.overdue.map((item) => (
+                          <WorkItemCard key={item.id} item={item} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* This Sprint Section */}
+                  {myWorkGrouped.this_sprint.length > 0 && (
+                    <div className="rounded-lg border border-border bg-background p-4">
+                      <h2 className="text-lg font-semibold text-foreground mb-4">
+                        This Sprint ({myWorkGrouped.this_sprint.length})
+                      </h2>
+                      <div className="space-y-2">
+                        {myWorkGrouped.this_sprint.map((item) => (
+                          <WorkItemCard key={item.id} item={item} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Later Section */}
+                  {myWorkGrouped.later.length > 0 && (
+                    <div className="rounded-lg border border-border bg-background p-4">
+                      <h2 className="text-lg font-semibold text-muted mb-4">
+                        Later ({myWorkGrouped.later.length})
+                      </h2>
+                      <div className="space-y-2">
+                        {myWorkGrouped.later.map((item) => (
+                          <WorkItemCard key={item.id} item={item} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : actionItems.length === 0 ? (
+                /* Empty State - only show when no action items AND no work items */
+                <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20 p-8 text-center">
+                  <div className="text-5xl mb-4">&#x2713;</div>
+                  <h2 className="text-xl font-semibold text-green-700 dark:text-green-400 mb-2">
+                    All caught up!
+                  </h2>
+                  <p className="text-sm text-muted mb-6">
+                    You have no overdue sprint docs, assigned issues, or active projects right now.
+                  </p>
+                  <div className="flex justify-center gap-4">
+                    <Link
+                      to="/dashboard?view=overview"
+                      className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
+                    >
+                      View team overview
+                    </Link>
+                    <Link
+                      to="/issues/new"
+                      className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
+                    >
+                      Create a new issue
+                    </Link>
+                  </div>
+                </div>
+              ) : null}
+            </>
           ) : (
-            <div className="space-y-3">
-              {recentStandups.map((standup) => (
-                <StandupCard key={standup.id} standup={standup} />
-              ))}
-            </div>
+            /* Overview View - Stats and Lists */
+            <>
+              {/* Stats Grid */}
+              <div className="grid grid-cols-4 gap-4">
+                <StatCard
+                  label="Active Sprints"
+                  value={activeSprints.length}
+                  color="text-blue-600"
+                />
+                <StatCard
+                  label="Active Projects"
+                  value={projectSummary.active}
+                  color="text-green-600"
+                />
+                <StatCard
+                  label="Recent Standups"
+                  value={recentStandups.length}
+                  color="text-purple-600"
+                />
+                <StatCard
+                  label="Days in Sprint"
+                  value={sprintsData?.days_remaining ? `${14 - sprintsData.days_remaining}` : '-'}
+                  subtitle={sprintsData?.days_remaining ? `${sprintsData.days_remaining} remaining` : undefined}
+                  color="text-orange-600"
+                />
+              </div>
+
+              {/* Main Content Grid */}
+              <div className="grid grid-cols-2 gap-6">
+                {/* Active Sprints */}
+                <div className="rounded-lg border border-border bg-background p-4">
+                  <h2 className="text-lg font-semibold text-foreground mb-4">
+                    Active Sprints
+                  </h2>
+                  {activeSprints.length === 0 ? (
+                    <p className="text-sm text-muted">No active sprints</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {activeSprints.map((sprint) => (
+                        <SprintCard key={sprint.id} sprint={sprint} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Top Projects by ICE */}
+                <div className="rounded-lg border border-border bg-background p-4">
+                  <h2 className="text-lg font-semibold text-foreground mb-4">
+                    Top Projects by ICE
+                  </h2>
+                  {topProjects.length === 0 ? (
+                    <p className="text-sm text-muted">No active projects</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {topProjects.map((project) => (
+                        <ProjectCard key={project.id} project={project} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Recent Standups */}
+              <div className="rounded-lg border border-border bg-background p-4">
+                <h2 className="text-lg font-semibold text-foreground mb-4">
+                  Recent Standups
+                </h2>
+                {standupsLoading ? (
+                  <p className="text-sm text-muted">Loading standups...</p>
+                ) : recentStandups.length === 0 ? (
+                  <p className="text-sm text-muted">No recent standups</p>
+                ) : (
+                  <div className="space-y-3">
+                    {recentStandups.map((standup) => (
+                      <StandupCard key={standup.id} standup={standup} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -365,5 +523,141 @@ function StandupCard({ standup }: { standup: Standup }) {
         {contentPreview || 'No content'}
       </p>
     </div>
+  );
+}
+
+function ActionItemCard({ item }: { item: ActionItem }) {
+  const urgencyStyles = {
+    overdue: 'border-red-500 bg-red-50 dark:bg-red-950/20',
+    due_today: 'border-orange-500 bg-orange-50 dark:bg-orange-950/20',
+    due_soon: 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20',
+    upcoming: 'border-border bg-background',
+  };
+
+  const urgencyTextStyles = {
+    overdue: 'text-red-600 dark:text-red-400',
+    due_today: 'text-orange-600 dark:text-orange-400',
+    due_soon: 'text-yellow-600 dark:text-yellow-400',
+    upcoming: 'text-muted',
+  };
+
+  const urgencyLabel = {
+    overdue: `${Math.abs(item.days_until_due)}d overdue`,
+    due_today: 'Due today',
+    due_soon: `Due in ${item.days_until_due}d`,
+    upcoming: `Due in ${item.days_until_due}d`,
+  };
+
+  return (
+    <Link
+      to={`/programs/${item.program_id}/sprints/${item.sprint_id}`}
+      className={cn(
+        'block rounded-md border p-3 hover:border-accent/50 transition-colors',
+        urgencyStyles[item.urgency]
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+            item.type === 'plan' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+          )}>
+            {item.type === 'plan' ? 'Plan' : 'Retro'}
+          </span>
+          <span className="font-medium text-foreground">
+            {item.message}
+          </span>
+        </div>
+        <span className={cn('text-xs font-medium', urgencyTextStyles[item.urgency])}>
+          {urgencyLabel[item.urgency]}
+        </span>
+      </div>
+      <div className="mt-1 text-xs text-muted">
+        {item.program_name} · Sprint {item.sprint_number}
+      </div>
+    </Link>
+  );
+}
+
+function WorkItemCard({ item }: { item: WorkItem }) {
+  // Determine link destination based on item type
+  const getLink = () => {
+    switch (item.type) {
+      case 'issue':
+        return `/issues/${item.id}`;
+      case 'project':
+        return `/projects/${item.id}`;
+      case 'sprint':
+        return `/sprints/${item.id}`;
+      default:
+        return '#';
+    }
+  };
+
+  // Type badge styles
+  const typeBadgeStyles = {
+    issue: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+    project: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+    sprint: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+  };
+
+  // Priority badge for issues
+  const priorityStyles: Record<string, string> = {
+    urgent: 'text-red-600 dark:text-red-400',
+    high: 'text-orange-600 dark:text-orange-400',
+    medium: 'text-yellow-600 dark:text-yellow-400',
+    low: 'text-gray-500 dark:text-gray-400',
+    none: 'text-gray-400 dark:text-gray-500',
+  };
+
+  return (
+    <Link
+      to={getLink()}
+      className="flex items-center justify-between rounded-md border border-border bg-background p-3 hover:border-accent/50 transition-colors"
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        {/* Type Badge */}
+        <span className={cn(
+          'inline-flex items-center shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
+          typeBadgeStyles[item.type]
+        )}>
+          {item.type === 'issue' && item.ticket_number ? `#${item.ticket_number}` : item.type.charAt(0).toUpperCase() + item.type.slice(1)}
+        </span>
+
+        {/* Title and metadata */}
+        <div className="min-w-0">
+          <div className="font-medium text-foreground truncate">
+            {item.title || 'Untitled'}
+          </div>
+          <div className="text-xs text-muted truncate">
+            {item.program_name && <span>{item.program_name}</span>}
+            {item.type === 'issue' && item.sprint_name && (
+              <span> · {item.sprint_name}</span>
+            )}
+            {item.type === 'sprint' && item.days_remaining !== undefined && (
+              <span> · {item.days_remaining}d remaining</span>
+            )}
+            {item.type === 'project' && item.inferred_status && (
+              <span> · {item.inferred_status}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right side - priority/score */}
+      <div className="shrink-0 text-right">
+        {item.type === 'issue' && item.priority && (
+          <span className={cn('text-xs font-medium', priorityStyles[item.priority] || 'text-muted')}>
+            {item.priority}
+          </span>
+        )}
+        {item.type === 'project' && item.ice_score !== null && (
+          <div>
+            <span className="text-sm font-bold text-accent tabular-nums">{item.ice_score}</span>
+            <span className="text-xs text-muted ml-1">ICE</span>
+          </div>
+        )}
+      </div>
+    </Link>
   );
 }
