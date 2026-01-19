@@ -998,6 +998,7 @@ const bulkUpdateSchema = z.object({
     state: z.enum(['triage', 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional(),
     sprint_id: z.string().uuid().nullable().optional(),
     assignee_id: z.string().uuid().nullable().optional(),
+    project_id: z.string().uuid().nullable().optional(),
   }).optional(),
 });
 
@@ -1111,6 +1112,38 @@ router.post('/bulk', authMiddleware, async (req: Request, res: Response) => {
            RETURNING *`,
           values
         );
+
+        // Handle project_id via document_associations table
+        if (updates.project_id !== undefined) {
+          // Remove existing project associations for all updated issues
+          await client.query(
+            `DELETE FROM document_associations
+             WHERE document_id = ANY($1) AND relationship_type = 'project'`,
+            [validIds]
+          );
+
+          // Add new project associations if project_id is not null
+          if (updates.project_id !== null) {
+            // Verify the project exists and user has access
+            const projectCheck = await client.query(
+              `SELECT id FROM documents
+               WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+                 AND deleted_at IS NULL`,
+              [updates.project_id, workspaceId]
+            );
+
+            if (projectCheck.rows.length > 0) {
+              // Insert associations for all valid issues
+              const insertValues = validIds.map((_, i) => `($${i + 1}, $${validIds.length + 1}, 'project')`).join(', ');
+              await client.query(
+                `INSERT INTO document_associations (document_id, related_id, relationship_type)
+                 VALUES ${insertValues}
+                 ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+                [...validIds, updates.project_id]
+              );
+            }
+          }
+        }
         break;
 
       default:

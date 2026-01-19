@@ -417,7 +417,9 @@ router.get('/:id/projects', authMiddleware, async (req: Request, res: Response) 
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
+               WHERE i.document_type = 'issue') as issue_count
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
        WHERE d.program_id = $1 AND d.document_type = 'project'
@@ -498,10 +500,18 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
     const result = await pool.query(
       `SELECT d.id, d.title as name, d.properties,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
-              (SELECT COALESCE(SUM((i.properties->>'estimate')::numeric), 0) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as total_estimate_hours,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COALESCE(SUM((i.properties->>'estimate')::numeric), 0) FROM documents i
+               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue') as total_estimate_hours,
               (SELECT COUNT(*) > 0 FROM documents p WHERE p.parent_id = d.id AND p.document_type = 'sprint_plan') as has_plan,
               (SELECT COUNT(*) > 0 FROM documents r WHERE r.parent_id = d.id AND r.document_type = 'sprint_retro') as has_retro,
               (SELECT created_at FROM documents p WHERE p.parent_id = d.id AND p.document_type = 'sprint_plan' LIMIT 1) as plan_created_at,

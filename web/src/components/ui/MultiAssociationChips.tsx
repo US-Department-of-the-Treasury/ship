@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import type { BelongsTo, BelongsToType } from '@ship/shared';
 
 interface AssociationOption {
   id: string;
   name: string;
   color?: string;
+  href?: string;
 }
 
 interface MultiAssociationChipsProps {
@@ -94,6 +96,7 @@ export function MultiAssociationChips({
         id: a.id,
         name: option?.name || a.title || 'Unknown',
         color: option?.color || a.color,
+        href: option?.href,
       };
     });
 
@@ -117,7 +120,17 @@ export function MultiAssociationChips({
                 style={{ backgroundColor: assoc.color }}
               />
             )}
-            <span className="truncate max-w-[120px]">{assoc.name}</span>
+            {assoc.href ? (
+              <Link
+                to={assoc.href}
+                className="truncate max-w-[120px] hover:underline"
+                title={`Go to ${assoc.name}`}
+              >
+                {assoc.name}
+              </Link>
+            ) : (
+              <span className="truncate max-w-[120px]">{assoc.name}</span>
+            )}
             {!disabled && (
               <button
                 type="button"

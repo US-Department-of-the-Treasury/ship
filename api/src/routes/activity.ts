@@ -147,10 +147,13 @@ router.get('/:entityType/:entityId', authMiddleware, async (req: Request, res: R
             FROM documents
             WHERE workspace_id = $2
               AND (
-                -- Direct project documents
+                -- Direct project documents (sprints use project_id column)
                 project_id = $1
-                -- Sprint documents (issues, standups)
-                OR sprint_id IN (SELECT id FROM project_sprints)
+                -- Documents linked to sprints via junction table (issues)
+                OR id IN (SELECT da.document_id FROM document_associations da
+                          JOIN project_sprints ps ON ps.id = da.related_id AND da.relationship_type = 'sprint')
+                -- Documents linked directly to project via junction table (issues)
+                OR id IN (SELECT document_id FROM document_associations WHERE related_id = $1 AND relationship_type = 'project')
                 -- The project document itself
                 OR id = $1
               )
@@ -179,8 +182,8 @@ router.get('/:entityType/:entityId', authMiddleware, async (req: Request, res: R
             FROM documents
             WHERE workspace_id = $2
               AND (
-                -- Documents linked to this sprint (issues, standups)
-                sprint_id = $1
+                -- Documents linked to this sprint via junction table (issues)
+                id IN (SELECT document_id FROM document_associations WHERE related_id = $1 AND relationship_type = 'sprint')
                 -- The sprint document itself
                 OR id = $1
               )

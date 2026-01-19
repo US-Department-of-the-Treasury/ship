@@ -430,7 +430,7 @@ export function IssueSidebar({
       <PropertyRow label="Projects">
         <MultiAssociationChips
           associations={belongsTo}
-          options={projects.map(p => ({ id: p.id, name: p.title, color: p.color }))}
+          options={projects.map(p => ({ id: p.id, name: p.title, color: p.color, href: `/documents/${p.id}` }))}
           type="project"
           onAdd={handleAddAssociation}
           onRemove={handleRemoveAssociation}
@@ -443,7 +443,7 @@ export function IssueSidebar({
       <PropertyRow label="Programs">
         <MultiAssociationChips
           associations={belongsTo}
-          options={programs.map(p => ({ id: p.id, name: p.name, color: p.color }))}
+          options={programs.map(p => ({ id: p.id, name: p.name, color: p.color, href: `/programs/${p.id}` }))}
           type="program"
           onAdd={handleAddAssociation}
           onRemove={handleRemoveAssociation}

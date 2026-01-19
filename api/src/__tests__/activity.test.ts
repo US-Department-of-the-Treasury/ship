@@ -339,7 +339,10 @@ describe('Activity API', () => {
 
         expect(activityQuery).toContain('project_sprints');
         expect(activityQuery).toContain('project_id = $1');
-        expect(activityQuery).toContain('sprint_id IN');
+        // Issues linked via junction table
+        expect(activityQuery).toContain('document_associations');
+        expect(activityQuery).toContain("relationship_type = 'sprint'");
+        expect(activityQuery).toContain("relationship_type = 'project'");
       });
 
       it('sprint query includes direct documents only', async () => {
@@ -360,7 +363,9 @@ describe('Activity API', () => {
 
         const activityQuery = vi.mocked(pool.query).mock.calls[1]![0] as string;
 
-        expect(activityQuery).toContain('sprint_id = $1');
+        // Issues linked via junction table
+        expect(activityQuery).toContain('document_associations');
+        expect(activityQuery).toContain("relationship_type = 'sprint'");
         expect(activityQuery).toContain('OR id = $1'); // Sprint document itself
         expect(activityQuery).not.toContain('project_sprints');
       });

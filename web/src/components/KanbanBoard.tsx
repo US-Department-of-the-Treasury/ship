@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import {
   DndContext,
   DragOverlay,
-  closestCorners,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -16,6 +16,7 @@ import {
   verticalListSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
+import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -132,7 +133,7 @@ export function KanbanBoard({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
@@ -176,10 +177,13 @@ function KanbanColumn({
   onCheckboxClick?: (id: string, e: React.MouseEvent) => void;
   onContextMenu?: (event: ContextMenuEvent) => void;
 }) {
-  const { setNodeRef } = useSortable({ id: column.id });
+  const { setNodeRef, isOver } = useDroppable({ id: column.id });
 
   return (
-    <div className="flex w-72 flex-shrink-0 flex-col rounded-lg bg-border/30">
+    <div className={cn(
+      "flex w-72 flex-shrink-0 flex-col rounded-lg bg-border/30",
+      isOver && "ring-2 ring-accent ring-inset"
+    )}>
       <div className="flex items-center gap-2 px-3 py-2">
         <span
           data-status-indicator

@@ -20,7 +20,7 @@ import { IncompleteDocumentBanner } from '@/components/IncompleteDocumentBanner'
 import { computeICEScore } from '@ship/shared';
 import { useToast } from '@/components/ui/Toast';
 import { issueKeys } from '@/hooks/useIssuesQuery';
-import { projectKeys, useProjectIssuesQuery, ProjectIssue } from '@/hooks/useProjectsQuery';
+import { projectKeys, useProjectIssuesQuery, useProjectSprintsQuery, ProjectIssue, ProjectSprint } from '@/hooks/useProjectsQuery';
 import { apiPost } from '@/lib/api';
 import { issueStatusColors, priorityColors } from '@/lib/statusColors';
 import { useSprintsQuery } from '@/hooks/useSprintsQuery';
@@ -55,7 +55,7 @@ export function ProjectEditorPage() {
   const { createDocument } = useDocuments();
   const [people, setPeople] = useState<Person[]>([]);
   const [ownerError, setOwnerError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'details' | 'issues' | 'retro'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'issues' | 'sprints' | 'retro'>('details');
   const [issuesViewMode, setIssuesViewMode] = useState<'list' | 'kanban'>(() => {
     if (id) {
       const saved = localStorage.getItem(`project-${id}-view`);
@@ -86,6 +86,9 @@ export function ProjectEditorPage() {
 
   // Fetch project issues
   const { data: projectIssues = [], isLoading: issuesLoading } = useProjectIssuesQuery(id);
+
+  // Fetch project sprints
+  const { data: projectSprints = [], isLoading: sprintsLoading } = useProjectSprintsQuery(id);
 
   // Fetch sprints for the project's program (used in modal)
   const { data: sprintsData } = useSprintsQuery(project?.program_id || undefined);
@@ -425,10 +428,11 @@ export function ProjectEditorPage() {
           tabs={[
             { id: 'details', label: 'Details' },
             { id: 'issues', label: `Issues${projectIssues.length > 0 ? ` (${projectIssues.length})` : ''}` },
+            { id: 'sprints', label: `Sprints${projectSprints.length > 0 ? ` (${projectSprints.length})` : ''}` },
             { id: 'retro', label: 'Retro' },
           ]}
           activeTab={activeTab}
-          onTabChange={(tabId) => setActiveTab(tabId as 'details' | 'issues' | 'retro')}
+          onTabChange={(tabId) => setActiveTab(tabId as 'details' | 'issues' | 'sprints' | 'retro')}
         />
       </div>
 
@@ -753,6 +757,12 @@ export function ProjectEditorPage() {
               )}
             </div>
           </div>
+        ) : activeTab === 'sprints' ? (
+          <ProjectSprintsList
+            sprints={projectSprints}
+            loading={sprintsLoading}
+            onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
+          />
         ) : (
           <ProjectRetro projectId={displayProject.id} />
         )}
@@ -1333,6 +1343,113 @@ function CreateIssueModal({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Project Sprints List component
+interface ProjectSprintsListProps {
+  sprints: ProjectSprint[];
+  loading: boolean;
+  onSprintClick: (sprintId: string) => void;
+}
+
+function ProjectSprintsList({ sprints, loading, onSprintClick }: ProjectSprintsListProps) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="flex items-center gap-2 text-muted">
+          <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          Loading sprints...
+        </div>
+      </div>
+    );
+  }
+
+  if (sprints.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-48 text-muted">
+        <svg className="w-12 h-12 mb-3 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+        </svg>
+        <p className="text-sm font-medium">No sprints in this project</p>
+        <p className="text-xs mt-1">Link sprints to this project from the sprint editor</p>
+      </div>
+    );
+  }
+
+  // Format date for display
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return '—';
+    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  // Get status badge styling
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'bg-green-500/20 text-green-300';
+      case 'completed':
+        return 'bg-blue-500/20 text-blue-300';
+      case 'planning':
+      default:
+        return 'bg-gray-500/20 text-gray-300';
+    }
+  };
+
+  return (
+    <div className="h-full overflow-auto p-4">
+      <div className="space-y-2">
+        {sprints.map((sprint) => (
+          <div
+            key={sprint.id}
+            onClick={() => onSprintClick(sprint.id)}
+            className="flex items-center gap-4 p-3 rounded-lg border border-border hover:bg-accent/5 cursor-pointer transition-colors"
+          >
+            {/* Sprint number */}
+            <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
+              <span className="text-sm font-bold text-accent">{sprint.sprint_number}</span>
+            </div>
+
+            {/* Sprint info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-medium text-foreground truncate">
+                  {sprint.name || `Sprint ${sprint.sprint_number}`}
+                </h3>
+                <span className={cn(
+                  'inline-flex px-2 py-0.5 text-xs font-medium rounded capitalize',
+                  getStatusBadge(sprint.status)
+                )}>
+                  {sprint.status}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 mt-1 text-xs text-muted">
+                <span>{formatDate(sprint.start_date)} – {formatDate(sprint.end_date)}</span>
+                {sprint.days_remaining !== null && sprint.status === 'active' && (
+                  <span className="text-accent">{sprint.days_remaining}d remaining</span>
+                )}
+              </div>
+            </div>
+
+            {/* Progress */}
+            <div className="flex-shrink-0 text-right">
+              <div className="text-sm font-medium text-foreground">
+                {sprint.completed_count}/{sprint.issue_count}
+              </div>
+              <div className="text-xs text-muted">issues done</div>
+            </div>
+
+            {/* Arrow */}
+            <svg className="w-4 h-4 text-muted flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+            </svg>
+          </div>
+        ))}
       </div>
     </div>
   );

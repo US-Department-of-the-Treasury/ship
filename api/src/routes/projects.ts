@@ -346,11 +346,13 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
               ELSE NULL
               END
             FROM documents issue
-            JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+            JOIN document_associations da_project ON da_project.document_id = issue.id
+              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
+            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
+              AND da_sprint.relationship_type = 'sprint'
+            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
             JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.project_id = d.id
-              AND issue.document_type = 'issue'
-              AND issue.sprint_id IS NOT NULL
+            WHERE issue.document_type = 'issue'
           ),
           'backlog'
         )
@@ -363,7 +365,9 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
              (d.properties->>'owner_id')::uuid as owner_id,
              u.name as owner_name, u.email as owner_email,
              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
-             (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
+             (SELECT COUNT(*) FROM documents i
+              JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
+              WHERE i.document_type = 'issue') as issue_count,
              (${inferredStatusSubquery}) as inferred_status
       FROM documents d
       LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
@@ -420,11 +424,13 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               ELSE NULL
               END
             FROM documents issue
-            JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+            JOIN document_associations da_project ON da_project.document_id = issue.id
+              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
+            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
+              AND da_sprint.relationship_type = 'sprint'
+            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
             JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.project_id = d.id
-              AND issue.document_type = 'issue'
-              AND issue.sprint_id IS NOT NULL
+            WHERE issue.document_type = 'issue'
           ),
           'backlog'
         )
@@ -437,7 +443,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
+               WHERE i.document_type = 'issue') as issue_count,
               (${inferredStatusSubquery}) as inferred_status
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
@@ -694,11 +702,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
               ELSE NULL
               END
             FROM documents issue
-            JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+            JOIN document_associations da_project ON da_project.document_id = issue.id
+              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
+            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
+              AND da_sprint.relationship_type = 'sprint'
+            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
             JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.project_id = d.id
-              AND issue.document_type = 'issue'
-              AND issue.sprint_id IS NOT NULL
+            WHERE issue.document_type = 'issue'
           ),
           'backlog'
         )
@@ -711,7 +721,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
+               WHERE i.document_type = 'issue') as issue_count,
               (${updateInferredStatusSubquery}) as inferred_status
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
@@ -806,11 +818,14 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
       [id]
     );
 
-    // Get issues for this project
+    // Get issues for this project via junction table
     const issuesResult = await pool.query(
-      `SELECT id, title, properties->>'state' as state
-       FROM documents
-       WHERE project_id = $1 AND document_type = 'issue'`,
+      `SELECT d.id, d.title, d.properties->>'state' as state
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
+         AND da.related_id = $1 AND da.relationship_type = 'project'
+       WHERE d.document_type = 'issue'
+         AND d.archived_at IS NULL AND d.deleted_at IS NULL`,
       [id]
     );
 
@@ -1088,9 +1103,15 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
               w.sprint_start_date as workspace_sprint_start_date,
               proj.id as project_id, proj.title as project_name,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
        FROM documents d
        JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
        LEFT JOIN documents p ON d.program_id = p.id

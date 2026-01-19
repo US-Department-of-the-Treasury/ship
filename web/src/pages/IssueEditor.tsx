@@ -6,12 +6,13 @@ import { useAuth } from '@/hooks/useAuth';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useDocuments } from '@/contexts/DocumentsContext';
 import { Combobox } from '@/components/ui/Combobox';
+import { LinkedCombobox } from '@/components/ui/LinkedCombobox';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useProgramsQuery } from '@/hooks/useProgramsQuery';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { issueKeys, isCascadeWarningError, type IncompleteChild } from '@/hooks/useIssuesQuery';
-import { projectKeys } from '@/hooks/useProjectsQuery';
+import { projectKeys, useProjectsQuery } from '@/hooks/useProjectsQuery';
 import { useDocumentContextQuery } from '@/hooks/useDocumentContextQuery';
 import { DocumentBreadcrumbs } from '@/components/ContextTreeNav';
 import { apiPost } from '@/lib/api';
@@ -286,8 +287,9 @@ export function IssueEditorPage() {
     incompleteChildren: IncompleteChild[];
   }>({ open: false, pendingState: null, incompleteChildren: [] });
 
-  // Use TanStack Query for programs and team members (supports offline via cache)
+  // Use TanStack Query for programs, projects, and team members (supports offline via cache)
   const { data: programsData = [], isLoading: programsLoading } = useProgramsQuery();
+  const { data: projectsData = [], isLoading: projectsLoading } = useProjectsQuery();
   // Use assignable members only - pending users can't be assigned to issues
   const { data: teamMembersData = [], isLoading: teamMembersLoading } = useAssignableMembersQuery();
   // Get document context for breadcrumbs (ancestors + children)
@@ -597,6 +599,7 @@ export function IssueEditorPage() {
     source: 'internal' as const,
     rejection_reason: null,
     converted_from_id: null,
+    belongs_to: [],
   } : null);
 
   if (!displayIssue || !user) {
@@ -606,6 +609,19 @@ export function IssueEditorPage() {
   const handleProgramChange = async (programId: string | null) => {
     await handleUpdateIssue({ program_id: programId, sprint_id: null } as Partial<Issue>);
     // Sprints will be fetched automatically via the useEffect when issue.program_id changes
+  };
+
+  // Extract project_id from belongs_to array
+  const projectAssociation = displayIssue.belongs_to?.find((bt: { type: string }) => bt.type === 'project');
+  const project_id = projectAssociation?.id ?? null;
+
+  const handleProjectChange = async (newProjectId: string | null) => {
+    // Preserve existing program and sprint associations when updating project
+    await handleUpdateIssue({
+      project_id: newProjectId,
+      program_id: displayIssue.program_id,
+      sprint_id: displayIssue.sprint_id,
+    } as Partial<Issue>);
   };
 
   // Breadcrumb label based on navigation context
@@ -762,8 +778,8 @@ export function IssueEditorPage() {
             </PropertyRow>
 
             <PropertyRow label="Program">
-              <Combobox
-                options={programs.map((p) => ({ value: p.id, label: p.name, description: '' }))}
+              <LinkedCombobox
+                options={programs.map((p) => ({ value: p.id, label: p.name, description: '', href: `/programs/${p.id}` }))}
                 value={displayIssue.program_id}
                 onChange={handleProgramChange}
                 placeholder="No Program"
@@ -771,6 +787,19 @@ export function IssueEditorPage() {
                 searchPlaceholder="Search programs..."
                 emptyText="No programs found"
                 aria-label="Program"
+              />
+            </PropertyRow>
+
+            <PropertyRow label="Project">
+              <LinkedCombobox
+                options={projectsData.map((p) => ({ value: p.id, label: p.title, description: '', href: `/projects/${p.id}` }))}
+                value={project_id}
+                onChange={handleProjectChange}
+                placeholder="No Project"
+                clearLabel="No Project"
+                searchPlaceholder="Search projects..."
+                emptyText="No projects found"
+                aria-label="Project"
               />
             </PropertyRow>
 

@@ -56,6 +56,19 @@ export interface ProjectIssue {
   cancelled_at: string | null;
 }
 
+// Project sprint type (subset of Sprint for the list)
+export interface ProjectSprint {
+  id: string;
+  name: string;
+  sprint_number: number;
+  start_date: string | null;
+  end_date: string | null;
+  status: 'planning' | 'active' | 'completed';
+  issue_count: number;
+  completed_count: number;
+  days_remaining: number | null;
+}
+
 // Query keys
 export const projectKeys = {
   all: ['projects'] as const,
@@ -64,6 +77,7 @@ export const projectKeys = {
   details: () => [...projectKeys.all, 'detail'] as const,
   detail: (id: string) => [...projectKeys.details(), id] as const,
   issues: (id: string) => [...projectKeys.detail(id), 'issues'] as const,
+  sprints: (id: string) => [...projectKeys.detail(id), 'sprints'] as const,
 };
 
 // Fetch projects
@@ -339,6 +353,27 @@ export function useProjectIssuesQuery(projectId: string | undefined) {
   return useQuery({
     queryKey: projectId ? projectKeys.issues(projectId) : ['disabled'],
     queryFn: () => fetchProjectIssues(projectId!),
+    enabled: !!projectId,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+}
+
+// Fetch project sprints
+async function fetchProjectSprints(projectId: string): Promise<ProjectSprint[]> {
+  const res = await apiGet(`/api/projects/${projectId}/sprints`);
+  if (!res.ok) {
+    const error = new Error('Failed to fetch project sprints') as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+// Hook to get project sprints
+export function useProjectSprintsQuery(projectId: string | undefined) {
+  return useQuery({
+    queryKey: projectId ? projectKeys.sprints(projectId) : ['disabled'],
+    queryFn: () => fetchProjectSprints(projectId!),
     enabled: !!projectId,
     staleTime: 1000 * 60 * 2, // 2 minutes
   });

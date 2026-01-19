@@ -136,11 +136,11 @@ async function createIssueApi(data: CreateIssueData): Promise<Issue> {
 
 // Update issue
 async function updateIssueApi(id: string, updates: Partial<Issue>): Promise<Issue> {
-  // Convert program_id/sprint_id to belongs_to format for API compatibility
+  // Convert program_id/sprint_id/project_id to belongs_to format for API compatibility
   const apiUpdates: Record<string, unknown> = { ...updates };
 
-  // Build belongs_to array from program_id and sprint_id if either is present
-  if ('program_id' in updates || 'sprint_id' in updates) {
+  // Build belongs_to array from program_id, sprint_id, and project_id if any is present
+  if ('program_id' in updates || 'sprint_id' in updates || 'project_id' in updates) {
     const belongs_to: Array<{ id: string; type: string }> = [];
 
     // Handle program association
@@ -153,12 +153,18 @@ async function updateIssueApi(id: string, updates: Partial<Issue>): Promise<Issu
       belongs_to.push({ id: updates.sprint_id, type: 'sprint' });
     }
 
+    // Handle project association
+    if ('project_id' in updates && (updates as { project_id?: string | null }).project_id) {
+      belongs_to.push({ id: (updates as { project_id: string }).project_id, type: 'project' });
+    }
+
     // Set belongs_to (empty array removes all associations of these types)
     apiUpdates.belongs_to = belongs_to;
 
     // Remove old fields from API payload
     delete apiUpdates.program_id;
     delete apiUpdates.sprint_id;
+    delete (apiUpdates as { project_id?: unknown }).project_id;
   }
 
   const res = await apiPatch(`/api/issues/${id}`, apiUpdates);
@@ -280,6 +286,12 @@ export function useUpdateIssue() {
               newBelongsTo.push({ id: updates.sprint_id, type: 'sprint' });
             }
           }
+          if ('project_id' in updates) {
+            newBelongsTo = newBelongsTo.filter(a => a.type !== 'project');
+            if ((updates as { project_id?: string | null }).project_id) {
+              newBelongsTo.push({ id: (updates as { project_id: string }).project_id, type: 'project' });
+            }
+          }
 
           return { ...i, ...updates, belongs_to: newBelongsTo };
         }) || []
@@ -312,6 +324,7 @@ interface BulkUpdateRequest {
     state?: string;
     sprint_id?: string | null;
     assignee_id?: string | null;
+    project_id?: string | null;
   };
 }
 
