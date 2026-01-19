@@ -324,4 +324,152 @@ describe('Standups API', () => {
       expect(response.status).toBe(404)
     })
   })
+
+  describe('GET /api/standups/status', () => {
+    it('returns due=false when no active sprints have issues assigned', async () => {
+      const response = await request(app)
+        .get('/api/standups/status')
+        .set('Cookie', sessionCookie)
+
+      expect(response.status).toBe(200)
+      expect(response.body).toHaveProperty('due')
+      expect(response.body).toHaveProperty('lastPosted')
+      expect(typeof response.body.due).toBe('boolean')
+    })
+
+    it('returns due=true when user has issue in active sprint but no standup today', async () => {
+      // Get current sprint number from workspace
+      const workspaceResult = await pool.query(
+        `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+        [testWorkspaceId]
+      )
+      const rawStartDate = workspaceResult.rows[0].sprint_start_date
+      let workspaceStartDate: Date
+      if (rawStartDate instanceof Date) {
+        workspaceStartDate = new Date(Date.UTC(rawStartDate.getFullYear(), rawStartDate.getMonth(), rawStartDate.getDate()))
+      } else if (typeof rawStartDate === 'string') {
+        workspaceStartDate = new Date(rawStartDate + 'T00:00:00Z')
+      } else {
+        workspaceStartDate = new Date()
+      }
+      const today = new Date()
+      today.setUTCHours(0, 0, 0, 0)
+      const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24))
+      const currentSprintNumber = Math.floor(daysSinceStart / 7) + 1
+
+      // Create a sprint with the current sprint number
+      const activeSprintResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, parent_id, program_id, visibility, properties)
+         VALUES ($1, 'sprint', 'Active Sprint', $2, $3, $3, 'workspace', $4)
+         RETURNING id`,
+        [testWorkspaceId, testUserId, testProgramId, JSON.stringify({
+          sprint_number: currentSprintNumber
+        })]
+      )
+      const activeSprintId = activeSprintResult.rows[0].id
+
+      // Create an issue assigned to the test user
+      const issueResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility, properties)
+         VALUES ($1, 'issue', 'Test Issue', $2, 'workspace', $3)
+         RETURNING id`,
+        [testWorkspaceId, testUserId, JSON.stringify({ assignee_id: testUserId })]
+      )
+      const issueId = issueResult.rows[0].id
+
+      // Create the sprint-issue association via document_associations table
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'sprint')`,
+        [issueId, activeSprintId]
+      )
+
+      const response = await request(app)
+        .get('/api/standups/status')
+        .set('Cookie', sessionCookie)
+
+      expect(response.status).toBe(200)
+      expect(response.body.due).toBe(true)
+      expect(response.body.lastPosted).toBeNull()
+
+      // Cleanup
+      await pool.query('DELETE FROM document_associations WHERE document_id = $1', [issueId])
+      await pool.query('DELETE FROM documents WHERE id IN ($1, $2)', [activeSprintId, issueId])
+    })
+
+    it('returns due=false when user posted standup today', async () => {
+      // Get current sprint number from workspace
+      const workspaceResult = await pool.query(
+        `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+        [testWorkspaceId]
+      )
+      const rawStartDate = workspaceResult.rows[0].sprint_start_date
+      let workspaceStartDate: Date
+      if (rawStartDate instanceof Date) {
+        workspaceStartDate = new Date(Date.UTC(rawStartDate.getFullYear(), rawStartDate.getMonth(), rawStartDate.getDate()))
+      } else if (typeof rawStartDate === 'string') {
+        workspaceStartDate = new Date(rawStartDate + 'T00:00:00Z')
+      } else {
+        workspaceStartDate = new Date()
+      }
+      const today = new Date()
+      today.setUTCHours(0, 0, 0, 0)
+      const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24))
+      const currentSprintNumber = Math.floor(daysSinceStart / 7) + 1
+
+      // Create a sprint with the current sprint number
+      const activeSprintResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, parent_id, program_id, visibility, properties)
+         VALUES ($1, 'sprint', 'Active Sprint 2', $2, $3, $3, 'workspace', $4)
+         RETURNING id`,
+        [testWorkspaceId, testUserId, testProgramId, JSON.stringify({
+          sprint_number: currentSprintNumber
+        })]
+      )
+      const activeSprintId = activeSprintResult.rows[0].id
+
+      // Create an issue assigned to the test user
+      const issueResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility, properties)
+         VALUES ($1, 'issue', 'Test Issue 2', $2, 'workspace', $3)
+         RETURNING id`,
+        [testWorkspaceId, testUserId, JSON.stringify({ assignee_id: testUserId })]
+      )
+      const issueId = issueResult.rows[0].id
+
+      // Create the sprint-issue association via document_associations table
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'sprint')`,
+        [issueId, activeSprintId]
+      )
+
+      // Create a standup posted today
+      await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, parent_id, created_by, properties, visibility)
+         VALUES ($1, 'standup', 'Today Standup', $2, $3, $4, 'workspace')`,
+        [testWorkspaceId, activeSprintId, testUserId, JSON.stringify({ author_id: testUserId })]
+      )
+
+      const response = await request(app)
+        .get('/api/standups/status')
+        .set('Cookie', sessionCookie)
+
+      expect(response.status).toBe(200)
+      expect(response.body.due).toBe(false)
+      expect(response.body.lastPosted).not.toBeNull()
+
+      // Cleanup
+      await pool.query(`DELETE FROM documents WHERE parent_id = $1 AND document_type = 'standup'`, [activeSprintId])
+      await pool.query('DELETE FROM document_associations WHERE document_id = $1', [issueId])
+      await pool.query('DELETE FROM documents WHERE id IN ($1, $2)', [activeSprintId, issueId])
+    })
+
+    it('returns 401 without authentication', async () => {
+      const response = await request(app)
+        .get('/api/standups/status')
+
+      expect(response.status).toBe(401)
+    })
+  })
 })
