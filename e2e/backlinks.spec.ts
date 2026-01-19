@@ -354,54 +354,54 @@ test.describe('Backlinks', () => {
     // In page2, mention Document P
     const editor2 = page2.locator('.ProseMirror')
     await editor2.click()
-    await page2.keyboard.type('@Real-time Doc')
+
+    // Type @ first to trigger mention popup, then type search term
+    await page2.keyboard.type('@')
+
+    // Wait for mention popup to appear
+    const mentionPopup = page2.locator('[role="listbox"]')
+    await expect(mentionPopup).toBeVisible({ timeout: 5000 })
+
+    // Type search term to filter
+    await page2.keyboard.type('Real-time Doc')
     await page2.waitForTimeout(500)
 
-    const mentionPopup = page2.locator('[role="listbox"]')
-    if (await mentionPopup.isVisible({ timeout: 3000 })) {
-      const docOption = page2.locator('[role="option"]').filter({ hasText: 'Real-time Doc' })
-      if (await docOption.isVisible()) {
-        await docOption.click()
+    // Select the document option
+    const docOption = page2.locator('[role="option"]').filter({ hasText: 'Real-time Doc' })
+    await expect(docOption).toBeVisible({ timeout: 5000 })
+    await docOption.click()
 
-        // Wait for sync to complete in page2
-        await page2.waitForResponse(
-          resp => resp.url().includes('/api/documents/') && resp.request().method() === 'PATCH',
-          { timeout: 5000 }
-        ).catch(() => {}) // Ignore if no response
-        await page2.waitForTimeout(2000)
+    // Wait for sync to complete in page2
+    await page2.waitForResponse(
+      resp => resp.url().includes('/api/documents/') && resp.request().method() === 'PATCH',
+      { timeout: 5000 }
+    ).catch(() => {}) // Ignore if no response
+    await page2.waitForTimeout(2000)
 
-        // In page1 (Document P), check if backlinks updated
-        await page.goto(docPUrl)
-        await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
-        await page.waitForTimeout(1000)
+    // In page1 (Document P), check if backlinks updated
+    await page.goto(docPUrl)
+    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
+    await page.waitForTimeout(1000)
 
-        // Reload to ensure backlinks are fetched fresh from server
-        await page.reload()
-        await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
-        await page.waitForTimeout(1000)
+    // Reload to ensure backlinks are fetched fresh from server
+    await page.reload()
+    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
+    await page.waitForTimeout(1000)
 
-        // Should see "Live Update Doc" in backlinks within properties sidebar
-        const propertiesSidebar = page.locator('aside[aria-label="Document properties"]')
-        await expect(propertiesSidebar).toBeVisible({ timeout: 3000 })
+    // Should see "Live Update Doc" in backlinks within properties sidebar
+    const propertiesSidebar = page.locator('aside[aria-label="Document properties"]')
+    await expect(propertiesSidebar).toBeVisible({ timeout: 3000 })
 
-        // Look for backlinks heading
-        const backlinksHeading = propertiesSidebar.locator('text="Backlinks"')
-        await expect(backlinksHeading).toBeVisible({ timeout: 3000 })
+    // Look for backlinks heading
+    const backlinksHeading = propertiesSidebar.locator('text="Backlinks"')
+    await expect(backlinksHeading).toBeVisible({ timeout: 3000 })
 
-        // Check for "Live Update Doc" within the properties sidebar
-        const hasLiveUpdateDoc = await propertiesSidebar.locator('text="Live Update Doc"').isVisible({ timeout: 5000 })
-        expect(hasLiveUpdateDoc).toBeTruthy()
+    // Check for "Live Update Doc" within the properties sidebar
+    const liveUpdateDocLink = propertiesSidebar.locator('text="Live Update Doc"')
+    await expect(liveUpdateDocLink).toBeVisible({ timeout: 5000 })
 
-        // Clean up
-        await page2.close()
-      } else {
-        await page2.close()
-        expect(true).toBe(false) // Element not found, test cannot continue
-      }
-    } else {
-      await page2.close()
-      expect(true).toBe(false) // Element not found, test cannot continue
-    }
+    // Clean up
+    await page2.close()
   })
 
   test('backlinks panel shows empty state when no backlinks', async ({ page }) => {

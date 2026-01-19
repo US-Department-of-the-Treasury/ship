@@ -147,16 +147,6 @@ export function TeamModePage() {
   };
 
   // Dialog states
-  const [confirmDialog, setConfirmDialog] = useState<{
-    open: boolean;
-    personId: string; // Person document ID for API calls
-    userName: string;
-    sprintNumber: number;
-    sprintName: string;
-    currentAssignment: Assignment | null;
-    newProjectId: string | null;
-    newProject: Project | null;
-  } | null>(null);
   const [lastPersonDialog, setLastPersonDialog] = useState<{
     open: boolean;
     userId: string;
@@ -280,22 +270,6 @@ export function TeamModePage() {
 
       const json = await res.json();
 
-      if (res.status === 409) {
-        // Rollback optimistic update
-        setAssignments(prev => {
-          const newAssignments = { ...prev };
-          if (previousAssignment) {
-            newAssignments[personId] = { ...newAssignments[personId], [sprintNumber]: previousAssignment };
-          } else {
-            const { [sprintNumber]: _, ...rest } = newAssignments[personId] || {};
-            newAssignments[personId] = rest;
-          }
-          return newAssignments;
-        });
-        setError(`User already assigned to ${json.existingProjectName || json.existingProgramName} for this sprint`);
-        return;
-      }
-
       if (!res.ok) {
         // Rollback optimistic update
         setAssignments(prev => {
@@ -404,41 +378,12 @@ export function TeamModePage() {
       return;
     }
 
-    // New assignment (no existing)
-    if (newProjectId && !currentAssignment) {
+    // New assignment or adding to existing - both just call handleAssign
+    // (multiple people can now be assigned to same project/sprint)
+    if (newProjectId) {
       handleAssign(personId, newProjectId, sprintNumber);
-      return;
-    }
-
-    // Reassignment - show confirmation dialog
-    if (newProjectId && currentAssignment) {
-      const newProject = projects.find(p => p.id === newProjectId) || null;
-      setConfirmDialog({
-        open: true,
-        personId,
-        userName,
-        sprintNumber,
-        sprintName,
-        currentAssignment,
-        newProjectId,
-        newProject,
-      });
     }
   }, [projects]);
-
-  const handleConfirmReassign = async () => {
-    if (!confirmDialog) return;
-
-    const { personId, sprintNumber, newProjectId } = confirmDialog;
-    setConfirmDialog(null);
-
-    if (!newProjectId) return;
-
-    // First unassign from current project
-    await handleUnassign(personId, sprintNumber, true);
-    // Then assign to new project
-    await handleAssign(personId, newProjectId, sprintNumber);
-  };
 
   // Fetch more sprints
   const fetchMoreSprints = useCallback(async (direction: 'left' | 'right') => {
@@ -605,94 +550,97 @@ export function TeamModePage() {
       {activeTab === 'accountability' ? (
         <AccountabilityTable />
       ) : (
-        /* Assignments Grid container */
-        <div className="flex flex-1 overflow-hidden">
-          {/* Fixed user column with program groups */}
-          <div className="flex flex-col border-r border-border bg-background overflow-y-auto">
-            <div className="flex h-[41.5px] w-[180px] items-center justify-center border-b border-border px-3 sticky top-0 bg-background z-10">
-              <span className="text-xs font-medium text-muted">Team Member</span>
-            </div>
-            {programGroups.map((group) => {
-              const groupKey = group.programId || '__unassigned__';
-              const isCollapsed = collapsedPrograms.has(groupKey);
+        /* Assignments Grid - Single scroll container with sticky person column */
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 overflow-auto"
+        >
+          <div className="inline-flex min-w-full">
+            {/* Sticky person column */}
+            <div className="flex flex-col sticky left-0 z-20 bg-background border-r border-border">
+              {/* Header cell */}
+              <div className="flex h-10 w-[180px] items-center justify-center border-b border-border px-3 sticky top-0 z-30 bg-background">
+                <span className="text-xs font-medium text-muted">Team Member</span>
+              </div>
 
-              return (
-                <div key={groupKey}>
-                  {/* Program group header */}
-                  <button
-                    onClick={() => toggleProgramCollapse(group.programId)}
-                    className="flex h-8 w-[180px] items-center gap-2 border-b border-border bg-border/30 px-3 hover:bg-border/50 transition-colors sticky top-[41.5px] z-10 cursor-pointer"
-                  >
-                    <ChevronIcon
-                      className={cn(
-                        "h-3 w-3 text-muted transition-transform",
-                        isCollapsed && "-rotate-90"
-                      )}
-                    />
-                    {group.programId ? (
-                      <span
-                        className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-white"
-                        style={{ backgroundColor: group.color || '#6b7280' }}
-                      >
-                        {group.emoji || group.programName[0]}
-                      </span>
-                    ) : (
-                      <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-white bg-gray-500">
-                        ?
-                      </span>
-                    )}
-                    <span className="truncate text-xs font-medium text-foreground">
-                      {isCollapsed ? `${group.programName} (${group.users.length})` : group.programName}
-                    </span>
-                    {!isCollapsed && (
-                      <span className="ml-auto text-[10px] text-muted">
-                        {group.users.length}
-                      </span>
-                    )}
-                  </button>
+              {/* Program groups with users */}
+              {programGroups.map((group) => {
+                const groupKey = group.programId || '__unassigned__';
+                const isCollapsed = collapsedPrograms.has(groupKey);
 
-                  {/* Users in this group */}
-                  {!isCollapsed && group.users.map((user, idx) => (
-                    <div
-                      key={user.id ?? `pending-${idx}`}
-                      className={cn(
-                        "flex h-12 w-[180px] items-center border-b border-border px-3",
-                        user.isArchived && "opacity-50",
-                        user.isPending && "opacity-70"
-                      )}
+                return (
+                  <div key={groupKey}>
+                    {/* Program group header */}
+                    <button
+                      onClick={() => toggleProgramCollapse(group.programId)}
+                      className="flex h-8 w-[180px] items-center gap-2 border-b border-border bg-border/30 px-3 hover:bg-border/50 transition-colors cursor-pointer"
                     >
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <div className={cn(
-                          "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white",
-                          user.isArchived ? "bg-gray-400" : user.isPending ? "bg-gray-400" : "bg-accent/80"
-                        )}>
-                          {user.name.charAt(0).toUpperCase()}
-                        </div>
-                        <span className={cn(
-                          "truncate text-sm",
-                          user.isArchived ? "text-muted" : user.isPending ? "text-muted italic" : "text-foreground"
-                        )}>
-                          {user.name}
-                          {user.isArchived && <span className="ml-1 text-xs">(archived)</span>}
-                          {user.isPending && <span className="ml-1 text-xs font-normal not-italic">(pending)</span>}
+                      <ChevronIcon
+                        className={cn(
+                          "h-3 w-3 text-muted transition-transform",
+                          isCollapsed && "-rotate-90"
+                        )}
+                      />
+                      {group.programId ? (
+                        <span
+                          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-white"
+                          style={{ backgroundColor: group.color || '#6b7280' }}
+                        >
+                          {group.emoji || group.programName[0]}
                         </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
+                      ) : (
+                        <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-white bg-gray-500">
+                          ?
+                        </span>
+                      )}
+                      <span className="truncate text-xs font-medium text-foreground">
+                        {isCollapsed ? `${group.programName} (${group.users.length})` : group.programName}
+                      </span>
+                      {!isCollapsed && (
+                        <span className="ml-auto text-[10px] text-muted">
+                          {group.users.length}
+                        </span>
+                      )}
+                    </button>
 
-          {/* Scrollable sprint columns with program groups */}
-          <div
-            ref={scrollContainerRef}
-            className="flex-1 overflow-auto"
-          >
-            <div className="inline-flex items-start">
+                    {/* Users in this group */}
+                    {!isCollapsed && group.users.map((user, idx) => (
+                      <div
+                        key={user.id ?? `pending-${idx}`}
+                        className={cn(
+                          "flex h-12 w-[180px] items-center border-b border-border px-3 bg-background",
+                          user.isArchived && "opacity-50",
+                          user.isPending && "opacity-70"
+                        )}
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <div className={cn(
+                            "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white",
+                            user.isArchived ? "bg-gray-400" : user.isPending ? "bg-gray-400" : "bg-accent/80"
+                          )}>
+                            {user.name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className={cn(
+                            "truncate text-sm",
+                            user.isArchived ? "text-muted" : user.isPending ? "text-muted italic" : "text-foreground"
+                          )}>
+                            {user.name}
+                            {user.isArchived && <span className="ml-1 text-xs">(archived)</span>}
+                            {user.isPending && <span className="ml-1 text-xs font-normal not-italic">(pending)</span>}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Sprint columns */}
+            <div className="flex">
               {loadingMore === 'left' && (
-                <div className="flex h-full w-[60px] flex-col items-center justify-center">
-                  <div className="h-10 flex items-center justify-center border-b border-border">
+                <div className="flex flex-col w-[60px]">
+                  <div className="h-10 flex items-center justify-center border-b border-border sticky top-0 bg-background z-10">
                     <span className="text-xs text-muted animate-pulse">...</span>
                   </div>
                 </div>
@@ -703,8 +651,8 @@ export function TeamModePage() {
                   {/* Sprint header */}
                   <div
                     className={cn(
-                      'flex h-10 w-[140px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 bg-background z-10',
-                      sprint.isCurrent && 'bg-accent/10'
+                      'flex h-10 w-[140px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10',
+                      sprint.isCurrent ? 'bg-accent/10' : 'bg-background'
                     )}
                   >
                     <span className={cn(
@@ -765,62 +713,20 @@ export function TeamModePage() {
                       </div>
                     );
                   })}
-              </div>
-            ))}
-
-            {loadingMore === 'right' && (
-              <div className="flex h-full w-[60px] flex-col items-center justify-center">
-                <div className="h-10 flex items-center justify-center border-b border-border">
-                  <span className="text-xs text-muted animate-pulse">...</span>
                 </div>
-              </div>
-            )}
+              ))}
+
+              {loadingMore === 'right' && (
+                <div className="flex flex-col w-[60px]">
+                  <div className="h-10 flex items-center justify-center border-b border-border sticky top-0 bg-background z-10">
+                    <span className="text-xs text-muted animate-pulse">...</span>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
       )}
-
-      {/* Confirmation Dialog for Reassignment */}
-      <Dialog.Root open={confirmDialog?.open || false} onOpenChange={(open: boolean) => !open && setConfirmDialog(null)}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-6 shadow-xl">
-            <Dialog.Title className="text-lg font-semibold text-foreground">
-              Reassign {confirmDialog?.userName}?
-            </Dialog.Title>
-            <Dialog.Description className="mt-2 text-sm text-muted">
-              {confirmDialog?.userName} is currently assigned to{' '}
-              <span className="font-medium text-foreground">{confirmDialog?.currentAssignment?.projectName}</span>
-              {' '}for {confirmDialog?.sprintName}.
-            </Dialog.Description>
-
-            <div className="mt-4 flex items-center gap-2">
-              <span className="text-sm text-muted">Change to:</span>
-              <span
-                className="rounded px-1.5 py-0.5 text-xs font-bold text-white whitespace-nowrap"
-                style={{ backgroundColor: confirmDialog?.newProject?.programColor || '#666' }}
-              >
-                {confirmDialog?.newProject?.programEmoji || confirmDialog?.newProject?.title?.[0]}
-              </span>
-              <span className="text-sm text-foreground">{confirmDialog?.newProject?.title}</span>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <Dialog.Close asChild>
-                <button className="rounded-md px-4 py-2 text-sm text-muted hover:bg-border">
-                  Cancel
-                </button>
-              </Dialog.Close>
-              <button
-                onClick={handleConfirmReassign}
-                className="rounded-md bg-accent px-4 py-2 text-sm text-white hover:bg-accent/90"
-              >
-                Confirm Reassignment
-              </button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
 
       {/* Last Person Dialog */}
       <Dialog.Root open={lastPersonDialog?.open || false} onOpenChange={(open: boolean) => !open && setLastPersonDialog(null)}>

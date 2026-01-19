@@ -262,11 +262,11 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
-    // First, get explicit sprint document assignments (owner_id + project_id in properties)
+    // First, get explicit sprint document assignments (assignee_ids array + project_id in properties)
     // Use sprint's program_id directly (handles legacy programId assignments without project)
     const explicitResult = await pool.query(
       `SELECT
-         s.properties->>'owner_id' as person_id,
+         jsonb_array_elements_text(s.properties->'assignee_ids') as person_id,
          (s.properties->>'sprint_number')::int as sprint_number,
          s.properties->>'project_id' as project_id,
          proj.title as project_name,
@@ -279,7 +279,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
        LEFT JOIN documents prog ON s.program_id = prog.id
        WHERE s.workspace_id = $1
          AND s.document_type = 'sprint'
-         AND s.properties->>'owner_id' IS NOT NULL
+         AND jsonb_array_length(COALESCE(s.properties->'assignee_ids', '[]'::jsonb)) > 0
          AND ${VISIBILITY_FILTER_SQL('s', '$2', '$3')}`,
       [workspaceId, userId, isAdmin]
     );
@@ -522,49 +522,48 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
       resolvedProgramId = programId;
     }
 
-    // Check if person is already assigned to another project/program for this sprint window
+    // Check if person is already assigned to this exact project/sprint (prevent duplicates)
     const existingAssignment = await pool.query(
-      `SELECT s.id, s.properties->>'project_id' as project_id, p.id as program_id, p.title as program_name,
-              proj.title as project_name
+      `SELECT s.id
        FROM documents s
-       JOIN documents p ON s.program_id = p.id
-       LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
        WHERE s.workspace_id = $1 AND s.document_type = 'sprint'
-         AND s.properties->>'owner_id' = $2
+         AND s.properties->'assignee_ids' ? $2
          AND (s.properties->>'sprint_number')::int = $3
-         AND (s.properties->>'project_id' IS DISTINCT FROM $4 OR p.id != $5)`,
+         AND s.properties->>'project_id' = $4
+         AND s.program_id = $5`,
       [workspaceId, personDocId, sprintNumber, resolvedProjectId, resolvedProgramId]
     );
 
     if (existingAssignment.rows[0]) {
-      const existing = existingAssignment.rows[0];
-      res.status(409).json({
-        error: 'User already assigned to another project',
-        existingProjectId: existing.project_id,
-        existingProjectName: existing.project_name,
-        existingProgramId: existing.program_id,
-        existingProgramName: existing.program_name,
-      });
+      // Already assigned to this exact project/sprint - no-op, return success
+      res.json({ success: true, sprintId: existingAssignment.rows[0].id });
       return;
     }
 
-    // Find existing sprint for this program and sprint number
+    // Find existing sprint for this program, project, and sprint number
     let sprintResult = await pool.query(
       `SELECT id, properties FROM documents
        WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND program_id = $2 AND (properties->>'sprint_number')::int = $3`,
-      [workspaceId, resolvedProgramId, sprintNumber]
+         AND program_id = $2 AND (properties->>'sprint_number')::int = $3
+         AND properties->>'project_id' = $4`,
+      [workspaceId, resolvedProgramId, sprintNumber, resolvedProjectId]
     );
 
     let sprintId: string;
     if (sprintResult.rows[0]) {
-      // Update existing sprint's owner_id and project_id
+      // Add person to existing sprint's assignee_ids array
       sprintId = sprintResult.rows[0].id;
       const currentProps = sprintResult.rows[0].properties || {};
+      const currentAssignees: string[] = currentProps.assignee_ids || [];
+
+      // Add person to array if not already present
+      if (!currentAssignees.includes(personDocId)) {
+        currentAssignees.push(personDocId);
+      }
+
       const updatedProps = {
         ...currentProps,
-        owner_id: personDocId,
-        ...(resolvedProjectId && { project_id: resolvedProjectId }),
+        assignee_ids: currentAssignees,
       };
 
       await pool.query(
@@ -572,10 +571,10 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
         [JSON.stringify(updatedProps), sprintId]
       );
     } else {
-      // Create new sprint with owner_id and project_id
+      // Create new sprint with assignee_ids array and project_id
       const props: Record<string, unknown> = {
         sprint_number: sprintNumber,
-        owner_id: personDocId,
+        assignee_ids: [personDocId],
       };
       if (resolvedProjectId) {
         props.project_id = resolvedProjectId;
@@ -643,12 +642,11 @@ router.delete('/assign', authMiddleware, async (req: Request, res: Response) => 
       }
     }
 
-    // Find the sprint this person owns for this sprint number (only visible sprints)
-    // owner_id now stores person document ID
+    // Find the sprint containing this person in assignee_ids for this sprint number
     const sprintResult = await pool.query(
       `SELECT id, properties FROM documents
        WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND properties->>'owner_id' = $2
+         AND properties->'assignee_ids' ? $2
          AND (properties->>'sprint_number')::int = $3
          AND ${VISIBILITY_FILTER_SQL('documents', '$4', '$5')}`,
       [workspaceId, personDocId, sprintNumber, currentUserId, isAdmin]
@@ -662,8 +660,14 @@ router.delete('/assign', authMiddleware, async (req: Request, res: Response) => 
     const sprintId = sprintResult.rows[0].id;
     const currentProps = sprintResult.rows[0].properties || {};
 
-    // Remove owner_id from sprint properties
-    const { owner_id: _, ...updatedProps } = currentProps;
+    // Remove person from assignee_ids array (keep sprint doc even if empty - Story 5)
+    const currentAssignees: string[] = currentProps.assignee_ids || [];
+    const updatedAssignees = currentAssignees.filter((id: string) => id !== personDocId);
+
+    const updatedProps = {
+      ...currentProps,
+      assignee_ids: updatedAssignees,
+    };
 
     await pool.query(
       `UPDATE documents SET properties = $1, updated_at = now() WHERE id = $2`,
