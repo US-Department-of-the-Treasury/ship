@@ -1347,35 +1347,67 @@ function SprintsList() {
 
   return (
     <ul className="space-y-0.5 px-2" data-testid="sprints-list">
-      {sprints.map((sprint) => (
-        <li key={sprint.id} data-testid="sprint-item">
-          <button
-            onClick={() => navigate(`/programs/${sprint.program_id}/sprints/${sprint.id}`)}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-              activeId === sprint.id
-                ? 'bg-border/50 text-foreground'
-                : 'text-muted hover:bg-border/30 hover:text-foreground'
-            )}
-          >
-            {/* Owner avatar */}
-            {sprint.owner ? (
-              <span
-                className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent/80 text-[10px] font-medium text-white"
-                title={sprint.owner.name}
+      {sprints.map((sprint) => {
+        const isEnded = sprint.days_remaining <= 0;
+        const isEndingSoon = !isEnded && sprint.days_remaining <= 2;
+        const showReviewIndicator = isEnded || isEndingSoon;
+        return (
+          <li key={sprint.id} data-testid="sprint-item">
+            <div
+              className={cn(
+                'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                activeId === sprint.id
+                  ? 'bg-border/50 text-foreground'
+                  : 'text-muted hover:bg-border/30 hover:text-foreground'
+              )}
+            >
+              {/* Owner avatar */}
+              <button
+                onClick={() => navigate(`/programs/${sprint.program_id}/sprints/${sprint.id}`)}
+                className="flex items-center gap-2 flex-1 min-w-0"
               >
-                {sprint.owner.name?.charAt(0).toUpperCase() || '?'}
-              </span>
-            ) : (
-              <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-border text-[10px] text-muted">
-                ?
-              </span>
-            )}
-            {/* Program name (sprint number is redundant since all active sprints are the same) */}
-            <span className="flex-1 truncate">{sprint.program_name || 'Untitled'}</span>
-          </button>
-        </li>
-      ))}
+                {sprint.owner ? (
+                  <span
+                    className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent/80 text-[10px] font-medium text-white"
+                    title={sprint.owner.name}
+                  >
+                    {sprint.owner.name?.charAt(0).toUpperCase() || '?'}
+                  </span>
+                ) : (
+                  <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-border text-[10px] text-muted">
+                    ?
+                  </span>
+                )}
+                {/* Program name (sprint number is redundant since all active sprints are the same) */}
+                <span className="flex-1 truncate">{sprint.program_name || 'Untitled'}</span>
+              </button>
+              {/* Sprint ended / Review due badge and quick action */}
+              {showReviewIndicator && (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <span className={cn(
+                    'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                    isEnded
+                      ? 'bg-red-500/20 text-red-400'
+                      : 'bg-amber-500/20 text-amber-400'
+                  )}>
+                    {isEnded ? 'Sprint ended' : 'Review due'}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/sprints/${sprint.id}/review`);
+                    }}
+                    className="hidden group-hover:inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/20"
+                    title="Go to sprint review"
+                  >
+                    Review
+                  </button>
+                </div>
+              )}
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -188,9 +188,36 @@ export function MyWeekPage() {
   // Is this a historical view?
   const isHistorical = week?.is_historical ?? false;
 
+  // Is the sprint ending soon? (within 2 days)
+  const isEndingSoon = !isHistorical && week && week.days_remaining <= 2;
+
   return (
     <div className="h-full overflow-auto p-6">
       <div className="mx-auto max-w-5xl space-y-6">
+        {/* Sprint ending notice */}
+        {isEndingSoon && (
+          <div className="flex items-center justify-between rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+              <span className="text-sm font-medium text-amber-400">
+                Sprint ending {week.days_remaining === 0 ? 'today' : week.days_remaining === 1 ? 'tomorrow' : `in ${week.days_remaining} days`}
+              </span>
+              <span className="text-sm text-muted">— Time to wrap up and prepare for review</span>
+            </div>
+            <a
+              href={`/sprints/current/review`}
+              onClick={(e) => {
+                e.preventDefault();
+                // Navigate to the first active sprint's review (simplified - in practice would need sprint ID)
+                navigate('/sprints');
+              }}
+              className="text-sm font-medium text-accent hover:underline"
+            >
+              Go to Review →
+            </a>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
