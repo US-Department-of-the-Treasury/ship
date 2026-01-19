@@ -63,6 +63,9 @@ export function SprintReconciliation({
 }: SprintReconciliationProps) {
   const queryClient = useQueryClient();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [bulkPending, setBulkPending] = useState(false);
 
   // Fetch sprint issues
   const { data: issues = [], isLoading } = useQuery<Issue[]>({
@@ -207,6 +210,48 @@ export function SprintReconciliation({
     },
   });
 
+  // Bulk mutation to move all incomplete issues to backlog
+  const moveAllToBacklogMutation = useMutation({
+    mutationFn: async (issues: Issue[]) => {
+      const results = await Promise.all(
+        issues.map(async (issue) => {
+          const belongs_to = [{ id: programId, type: 'program' }];
+          const response = await apiPatch(`/api/issues/${issue.id}`, {
+            belongs_to,
+          });
+          if (!response.ok) {
+            throw new Error(`Failed to move issue ${issue.display_id} to backlog`);
+          }
+          return issue;
+        })
+      );
+      return results;
+    },
+    onSuccess: (movedIssues) => {
+      queryClient.invalidateQueries({ queryKey: ['sprint-issues', sprintId] });
+
+      movedIssues.forEach(issue => {
+        onDecisionMade?.({
+          issue_id: issue.id,
+          issue_title: issue.title,
+          display_id: issue.display_id,
+          action: 'backlog',
+          timestamp: new Date().toISOString(),
+        });
+      });
+
+      setBulkPending(false);
+    },
+    onError: () => {
+      setBulkPending(false);
+    },
+  });
+
+  const handleMoveAllToBacklog = useCallback(() => {
+    setBulkPending(true);
+    moveAllToBacklogMutation.mutate(incompleteIssues);
+  }, [moveAllToBacklogMutation, incompleteIssues]);
+
   const handleNextSprint = useCallback((issue: Issue) => {
     setPendingAction(issue.id);
     moveToNextSprintMutation.mutate(issue);
@@ -230,6 +275,7 @@ export function SprintReconciliation({
     );
   }
 
+  // If no incomplete issues, show success message
   if (incompleteIssues.length === 0) {
     return (
       <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4">
@@ -246,91 +292,126 @@ export function SprintReconciliation({
     );
   }
 
+  // If dismissed, don't show anything
+  if (dismissed) {
+    return null;
+  }
+
+  // Soft prompt with collapse/expand functionality
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
-        <div className="flex items-center gap-2">
-          <svg className="h-5 w-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-          <span className="font-medium text-yellow-600">
-            {incompleteIssues.length} incomplete issue{incompleteIssues.length !== 1 ? 's' : ''}
-          </span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <svg className="h-5 w-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span className="font-medium text-yellow-600">
+              {incompleteIssues.length} incomplete issue{incompleteIssues.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          {/* Quick actions */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleMoveAllToBacklog}
+              disabled={bulkPending}
+              className="rounded-md bg-gray-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700 disabled:opacity-50 transition-colors"
+            >
+              {bulkPending ? 'Moving...' : 'Move all to backlog'}
+            </button>
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+            >
+              {expanded ? 'Collapse' : 'Review individually'}
+            </button>
+            <button
+              onClick={() => setDismissed(true)}
+              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted hover:bg-border/50 transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
         <p className="mt-1 text-sm text-muted">
-          Decide what to do with each issue before completing the sprint review.
+          {expanded
+            ? 'Choose what to do with each issue below.'
+            : 'Move all to backlog, review individually, or dismiss to continue with the review.'}
         </p>
       </div>
 
-      <div className="space-y-2">
-        {incompleteIssues.map(issue => {
-          const isPending = pendingAction === issue.id;
+      {/* Expanded issue list */}
+      {expanded && (
+        <div className="space-y-2">
+          {incompleteIssues.map(issue => {
+            const isPending = pendingAction === issue.id;
 
-          return (
-            <div
-              key={issue.id}
-              className="flex items-center gap-3 rounded-lg border border-border bg-background p-3"
-            >
-              {/* Issue info */}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className={cn('h-2 w-2 rounded-full flex-shrink-0', STATE_COLORS[issue.state])} />
-                  <span className="text-xs font-mono text-muted">{issue.display_id}</span>
-                  <span className={cn('text-xs', priorityColors[issue.priority])}>
-                    {issue.priority !== 'none' && issue.priority.charAt(0).toUpperCase()}
-                  </span>
-                  {issue.estimate && (
-                    <span className="text-xs text-muted">{issue.estimate}h</span>
+            return (
+              <div
+                key={issue.id}
+                className="flex items-center gap-3 rounded-lg border border-border bg-background p-3"
+              >
+                {/* Issue info */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className={cn('h-2 w-2 rounded-full flex-shrink-0', STATE_COLORS[issue.state])} />
+                    <span className="text-xs font-mono text-muted">{issue.display_id}</span>
+                    <span className={cn('text-xs', priorityColors[issue.priority])}>
+                      {issue.priority !== 'none' && issue.priority.charAt(0).toUpperCase()}
+                    </span>
+                    {issue.estimate && (
+                      <span className="text-xs text-muted">{issue.estimate}h</span>
+                    )}
+                    <span className="text-xs text-muted capitalize">
+                      {STATE_LABELS[issue.state] || issue.state}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-sm text-foreground">{issue.title}</p>
+                  {issue.assignee_name && (
+                    <p className="text-xs text-muted">Assigned to {issue.assignee_name}</p>
                   )}
-                  <span className="text-xs text-muted capitalize">
-                    {STATE_LABELS[issue.state] || issue.state}
-                  </span>
                 </div>
-                <p className="mt-1 truncate text-sm text-foreground">{issue.title}</p>
-                {issue.assignee_name && (
-                  <p className="text-xs text-muted">Assigned to {issue.assignee_name}</p>
-                )}
-              </div>
 
-              {/* Action buttons */}
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => handleNextSprint(issue)}
-                  disabled={isPending}
-                  className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                  title="Move to next sprint"
-                >
-                  {isPending && moveToNextSprintMutation.isPending ? '...' : 'Next Sprint'}
-                </button>
-                <button
-                  onClick={() => handleBacklog(issue)}
-                  disabled={isPending}
-                  className="rounded-md bg-gray-600 px-2 py-1 text-xs font-medium text-white hover:bg-gray-700 disabled:opacity-50 transition-colors"
-                  title="Return to backlog"
-                >
-                  {isPending && moveToBacklogMutation.isPending ? '...' : 'Backlog'}
-                </button>
-                <button
-                  onClick={() => handleClose(issue, 'done')}
-                  disabled={isPending}
-                  className="rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
-                  title="Mark as done"
-                >
-                  {isPending && closeIssueMutation.isPending ? '...' : 'Done'}
-                </button>
-                <button
-                  onClick={() => handleClose(issue, 'cancelled')}
-                  disabled={isPending}
-                  className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
-                  title="Cancel issue"
-                >
-                  {isPending && closeIssueMutation.isPending ? '...' : 'Cancel'}
-                </button>
+                {/* Action buttons */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => handleNextSprint(issue)}
+                    disabled={isPending || bulkPending}
+                    className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    title="Move to next sprint"
+                  >
+                    {isPending && moveToNextSprintMutation.isPending ? '...' : 'Next Sprint'}
+                  </button>
+                  <button
+                    onClick={() => handleBacklog(issue)}
+                    disabled={isPending || bulkPending}
+                    className="rounded-md bg-gray-600 px-2 py-1 text-xs font-medium text-white hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                    title="Return to backlog"
+                  >
+                    {isPending && moveToBacklogMutation.isPending ? '...' : 'Backlog'}
+                  </button>
+                  <button
+                    onClick={() => handleClose(issue, 'done')}
+                    disabled={isPending || bulkPending}
+                    className="rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                    title="Mark as done"
+                  >
+                    {isPending && closeIssueMutation.isPending ? '...' : 'Done'}
+                  </button>
+                  <button
+                    onClick={() => handleClose(issue, 'cancelled')}
+                    disabled={isPending || bulkPending}
+                    className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    title="Cancel issue"
+                  >
+                    {isPending && closeIssueMutation.isPending ? '...' : 'Cancel'}
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
