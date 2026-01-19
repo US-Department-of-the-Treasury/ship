@@ -68,6 +68,8 @@ const createProjectSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#6366f1'),
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
+  hypothesis: z.string().max(2000).optional().nullable(),
+  target_date: z.string().datetime().optional().nullable(),
 });
 
 const updateProjectSchema = z.object({
@@ -80,6 +82,8 @@ const updateProjectSchema = z.object({
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
   archived_at: z.string().datetime().optional().nullable(),
+  hypothesis: z.string().max(2000).optional().nullable(),
+  target_date: z.string().datetime().optional().nullable(),
 });
 
 // Schema for project retro
@@ -484,7 +488,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, impact, confidence, ease, owner_id, color, emoji, program_id } = parsed.data;
+    const { title, impact, confidence, ease, owner_id, color, emoji, program_id, hypothesis, target_date } = parsed.data;
 
     // Build properties JSONB
     const properties: Record<string, unknown> = {
@@ -496,6 +500,12 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     };
     if (emoji) {
       properties.emoji = emoji;
+    }
+    if (hypothesis) {
+      properties.hypothesis = hypothesis;
+    }
+    if (target_date) {
+      properties.target_date = target_date;
     }
 
     // Calculate completeness for new project (no linked issues yet)
@@ -618,6 +628,16 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     if (data.emoji !== undefined) {
       newProps.emoji = data.emoji;
+      propsChanged = true;
+    }
+
+    if (data.hypothesis !== undefined) {
+      newProps.hypothesis = data.hypothesis;
+      propsChanged = true;
+    }
+
+    if (data.target_date !== undefined) {
+      newProps.target_date = data.target_date;
       propsChanged = true;
     }
 

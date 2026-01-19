@@ -23,6 +23,7 @@ import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
 import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { ContextTreeNav } from '@/components/ContextTreeNav';
+import { ProjectSetupWizard, ProjectSetupData } from '@/components/ProjectSetupWizard';
 
 type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week';
 
@@ -40,6 +41,7 @@ export function AppLayout() {
   });
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
+  const [projectSetupWizardOpen, setProjectSetupWizardOpen] = useState(false);
 
   // Session timeout handling
   const handleSessionTimeout = useCallback(() => {
@@ -121,11 +123,22 @@ export function AppLayout() {
     }
   };
 
-  const handleCreateProject = async () => {
-    // Projects require an owner_id - use current user as default owner
+  const handleCreateProject = () => {
+    // Open the project setup wizard instead of immediately creating
+    setProjectSetupWizardOpen(true);
+  };
+
+  const handleProjectSetupSubmit = async (data: ProjectSetupData) => {
     if (!user?.id) return;
-    const project = await createProject({ owner_id: user.id });
+    const project = await createProject({
+      owner_id: user.id,
+      title: data.title,
+      program_id: data.program_id,
+      hypothesis: data.hypothesis,
+      target_date: data.target_date ? new Date(data.target_date).toISOString() : undefined,
+    });
     if (project) {
+      setProjectSetupWizardOpen(false);
       navigate(`/projects/${project.id}`);
     }
   };
@@ -439,6 +452,13 @@ export function AppLayout() {
 
       {/* Command Palette (Cmd+K) */}
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+
+      {/* Project Setup Wizard */}
+      <ProjectSetupWizard
+        open={projectSetupWizardOpen}
+        onCancel={() => setProjectSetupWizardOpen(false)}
+        onSubmit={handleProjectSetupSubmit}
+      />
 
       {/* Session Timeout Warning Modal */}
       <SessionTimeoutModal

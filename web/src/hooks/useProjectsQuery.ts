@@ -86,6 +86,8 @@ interface CreateProjectData {
   ease?: number | null;
   color?: string;
   program_id?: string;
+  hypothesis?: string;
+  target_date?: string;
 }
 
 async function createProjectApi(data: CreateProjectData): Promise<Project> {
@@ -268,8 +270,11 @@ export function useDeleteProject() {
 
 // Options for creating a project
 export interface CreateProjectOptions {
+  title?: string;
   owner_id?: string | null;  // Optional - can be unassigned
   program_id?: string;
+  hypothesis?: string;
+  target_date?: string;
 }
 
 // Compatibility hook that matches the context interface
