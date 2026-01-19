@@ -72,6 +72,12 @@ test.describe('Data Integrity - Document Persistence', () => {
     await titleInput.click()
     await titleInput.fill('Complete Document Test')
 
+    // Wait for title to save
+    await page.waitForResponse(
+      resp => resp.url().includes('/api/documents/') && resp.request().method() === 'PATCH',
+      { timeout: 5000 }
+    ).catch(() => {})
+
     // Add content using markdown shortcuts (more reliable than keyboard shortcuts)
     await editor.click()
     await page.waitForTimeout(200)
@@ -79,21 +85,28 @@ test.describe('Data Integrity - Document Persistence', () => {
     // Heading using markdown shortcut (## at start of line)
     await page.keyboard.type('## My Test Heading')
     await page.keyboard.press('Enter')
+    await page.waitForTimeout(300)
+
+    // Ensure editor still has focus after markdown conversion
+    await editor.click()
     await page.waitForTimeout(200)
 
     // Plain paragraph content - focus on data integrity, not formatting shortcuts
     await page.keyboard.type('This is regular paragraph text with unique identifier XYZ123 to verify persistence.')
-    await page.waitForTimeout(300)
 
-    // Verify content appears in editor
+    // Verify content appears in editor BEFORE waiting for sync
     await expect(editor).toContainText('My Test Heading', { timeout: 5000 })
     await expect(editor).toContainText('XYZ123', { timeout: 5000 })
+
+    // Click outside editor to trigger blur/save, then wait for sync
+    await titleInput.click()
+    await page.waitForTimeout(500)
 
     // Wait for sync status to show "Saved" (ensures WebSocket sync is complete)
     await expect(page.getByTestId('sync-status').getByText(/Saved|Cached/)).toBeVisible({ timeout: 10000 })
 
     // Extra buffer for Yjs to fully propagate to server
-    await page.waitForTimeout(1000)
+    await page.waitForTimeout(2000)
 
     // Get document URL
     const docUrl = page.url()
@@ -101,6 +114,9 @@ test.describe('Data Integrity - Document Persistence', () => {
     // Hard reload
     await page.goto(docUrl)
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
+
+    // Wait for content to load from server
+    await page.waitForTimeout(1000)
 
     // Verify all content is preserved after reload
     await expect(titleInput).toHaveValue('Complete Document Test')
@@ -523,25 +539,36 @@ test.describe('Data Integrity - Copy/Paste', () => {
     const editor = page.locator('.ProseMirror')
     await editor.click()
 
-    // Create structured content
+    // Platform-aware shortcuts (Meta for Mac, Control for others)
+    const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+
+    // Create structured content using markdown shortcuts
     await page.keyboard.type('# Heading')
     await page.keyboard.press('Enter')
+    await page.waitForTimeout(300) // Wait for markdown conversion
+
     await page.keyboard.type('- List item 1')
     await page.keyboard.press('Enter')
     await page.keyboard.type('List item 2')
+    await page.waitForTimeout(300)
+
+    // Verify content was created before copying
+    await expect(editor.locator('h1')).toBeVisible({ timeout: 3000 })
+    await expect(editor.locator('li').first()).toBeVisible({ timeout: 3000 })
 
     // Select all and copy
-    await page.keyboard.press('Control+a')
-    await page.keyboard.press('Control+c')
+    await page.keyboard.press(`${modifier}+a`)
+    await page.keyboard.press(`${modifier}+c`)
+    await page.waitForTimeout(200)
 
-    // Click at end to deselect and position cursor (End key doesn't always deselect)
+    // Click at end to deselect and position cursor
     await editor.click()
-    await page.keyboard.press('Control+End')
+    await page.keyboard.press(`${modifier}+End`)
     await page.keyboard.press('Enter')
     await page.keyboard.press('Enter')
 
     // Paste
-    await page.keyboard.press('Control+v')
+    await page.keyboard.press(`${modifier}+v`)
 
     await page.waitForTimeout(1000)
 
