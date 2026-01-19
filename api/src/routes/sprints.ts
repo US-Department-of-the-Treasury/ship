@@ -9,7 +9,8 @@ type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
 // Validation schemas
-// Sprint properties: sprint_number, owner_id, and hypothesis fields
+// Sprint properties: sprint_number, assignee_ids (array), and hypothesis fields
+// API accepts owner_id for backwards compatibility, stored internally as assignee_ids[0]
 // Dates and status are computed from sprint_number + workspace.sprint_start_date
 const createSprintSchema = z.object({
   program_id: z.string().uuid(),
@@ -135,7 +136,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
               (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
        JOIN documents p ON d.program_id = p.id
-       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       LEFT JOIN users u ON (d.properties->'assignee_ids'->>0)::uuid = u.id
        WHERE d.workspace_id = $1 AND d.document_type = 'sprint'
          AND (d.properties->>'sprint_number')::int = $2
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
@@ -187,7 +188,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
-       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       LEFT JOIN users u ON (d.properties->'assignee_ids'->>0)::uuid = u.id
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
@@ -206,7 +207,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // Create sprint (creates a document with document_type = 'sprint')
-// Only stores sprint_number and owner_id - dates/status computed from sprint_number
+// Only stores sprint_number and assignee_ids - dates/status computed from sprint_number
 router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId!;
@@ -263,10 +264,10 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Build properties JSONB - sprint_number, owner_id, goal, and hypothesis fields
+    // Build properties JSONB - sprint_number, assignee_ids, goal, and hypothesis fields
     const properties: Record<string, unknown> = {
       sprint_number,
-      owner_id,
+      assignee_ids: owner_id ? [owner_id] : [],
     };
 
     // Add goal if provided (concise objective, separate from hypothesis)
@@ -329,7 +330,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// Update sprint - only title and owner_id can be updated
+// Update sprint - only title and owner (via assignee_ids) can be updated
 // sprint_number cannot be changed (determines window), dates/status are computed
 router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -372,7 +373,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       values.push(data.title);
     }
 
-    // Handle owner_id update (in properties)
+    // Handle owner_id update (stored as first element of assignee_ids array)
     const newProps = { ...currentProps };
     let propsChanged = false;
 
@@ -390,7 +391,8 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         return;
       }
 
-      newProps.owner_id = data.owner_id;
+      // Store as assignee_ids array (migration converted owner_id to assignee_ids)
+      newProps.assignee_ids = data.owner_id ? [data.owner_id] : [];
       propsChanged = true;
     }
 
@@ -428,7 +430,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
-       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       LEFT JOIN users u ON (d.properties->'assignee_ids'->>0)::uuid = u.id
        WHERE d.id = $1 AND d.document_type = 'sprint'`,
       [id]
     );
@@ -568,7 +570,7 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
-       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       LEFT JOIN users u ON (d.properties->'assignee_ids'->>0)::uuid = u.id
        WHERE d.id = $1 AND d.document_type = 'sprint'`,
       [id]
     );
@@ -1232,6 +1234,7 @@ router.get('/:id/review', authMiddleware, async (req: Request, res: Response) =>
     const sprintProps = sprint.properties || {};
 
     // Check if a sprint_review already exists for this sprint
+    // Note: sprint_review documents use owner_id (not assignee_ids like sprint docs)
     const existingReview = await pool.query(
       `SELECT d.id, d.title, d.content, d.properties, d.created_at, d.updated_at,
               u.name as owner_name, u.email as owner_email
@@ -1475,6 +1478,7 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
     );
 
     // Re-query to get full review with owner info
+    // Note: sprint_review documents use owner_id (not assignee_ids like sprint docs)
     const result = await pool.query(
       `SELECT d.id, d.title, d.content, d.properties, d.created_at, d.updated_at,
               u.name as owner_name, u.email as owner_email
