@@ -307,11 +307,11 @@ async function seed() {
           number: sprint.number,
         });
       } else {
-        // New sprint properties: only sprint_number and owner_id
+        // New sprint properties: only sprint_number and assignee_ids
         // Dates and status are computed at runtime from sprint_number + workspace.sprint_start_date
         const sprintProperties = {
           sprint_number: sprint.number,
-          owner_id: owner.id,
+          assignee_ids: [owner.id],
         };
         const sprintResult = await pool.query(
           `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
