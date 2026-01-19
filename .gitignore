@@ -42,6 +42,9 @@ Thumbs.db
 # Playwright MCP screenshots
 .playwright-mcp/
 
+# Evidence/verification screenshots
+evidence/
+
 # Playwright test artifacts
 playwright-report/
 test-results/
