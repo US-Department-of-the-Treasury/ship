@@ -162,6 +162,164 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// Get action items for current user (sprints needing docs)
+// Returns sprints owned by the user that need plan or retro
+router.get('/my-action-items', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get workspace sprint configuration
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    if (workspaceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Workspace not found' });
+      return;
+    }
+
+    const rawStartDate = workspaceResult.rows[0].sprint_start_date;
+    const sprintDuration = 7; // 7-day sprints
+
+    // Calculate the current sprint number
+    let workspaceStartDate: Date;
+    if (rawStartDate instanceof Date) {
+      workspaceStartDate = new Date(Date.UTC(rawStartDate.getFullYear(), rawStartDate.getMonth(), rawStartDate.getDate()));
+    } else if (typeof rawStartDate === 'string') {
+      workspaceStartDate = new Date(rawStartDate + 'T00:00:00Z');
+    } else {
+      workspaceStartDate = new Date();
+    }
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
+
+    // Get sprints owned by this user that need either plan or retro
+    // Include current sprint (for plans) and recent past sprints (for retros)
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.program_id,
+              p.title as program_name,
+              (d.properties->>'sprint_number')::int as sprint_number,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro
+       FROM documents d
+       JOIN documents p ON d.program_id = p.id
+       WHERE d.workspace_id = $1
+         AND d.document_type = 'sprint'
+         AND (d.properties->>'owner_id')::uuid = $2
+         AND (d.properties->>'sprint_number')::int >= $3 - 3
+         AND (d.properties->>'sprint_number')::int <= $3
+       ORDER BY (d.properties->>'sprint_number')::int DESC`,
+      [workspaceId, userId, currentSprintNumber]
+    );
+
+    interface ActionItem {
+      id: string;
+      type: 'plan' | 'retro';
+      sprint_id: string;
+      sprint_title: string;
+      program_id: string;
+      program_name: string;
+      sprint_number: number;
+      urgency: 'overdue' | 'due_today' | 'due_soon' | 'upcoming';
+      days_until_due: number;
+      message: string;
+    }
+
+    const actionItems: ActionItem[] = [];
+
+    for (const row of result.rows) {
+      const sprintNumber = parseInt(row.sprint_number, 10);
+      const hasPlan = row.has_plan === true || row.has_plan === 't';
+      const hasRetro = row.has_retro === true || row.has_retro === 't';
+
+      // Calculate sprint dates
+      const sprintStart = new Date(workspaceStartDate);
+      sprintStart.setUTCDate(sprintStart.getUTCDate() + (sprintNumber - 1) * sprintDuration);
+      const sprintEnd = new Date(sprintStart);
+      sprintEnd.setUTCDate(sprintEnd.getUTCDate() + sprintDuration - 1);
+
+      // Days into current sprint (for plan urgency)
+      const daysIntoSprint = Math.floor((today.getTime() - sprintStart.getTime()) / (1000 * 60 * 60 * 24));
+      // Days since sprint ended (for retro urgency)
+      const daysSinceEnd = Math.floor((today.getTime() - sprintEnd.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Check for missing sprint plan (active sprint only)
+      if (sprintNumber === currentSprintNumber && !hasPlan) {
+        let urgency: ActionItem['urgency'] = 'upcoming';
+        let message = 'Write sprint plan';
+
+        if (daysIntoSprint >= 3) {
+          urgency = 'overdue';
+          message = `Sprint plan is ${daysIntoSprint - 2} days overdue`;
+        } else if (daysIntoSprint >= 2) {
+          urgency = 'due_today';
+          message = 'Sprint plan due today';
+        } else if (daysIntoSprint >= 1) {
+          urgency = 'due_soon';
+          message = 'Sprint plan due tomorrow';
+        }
+
+        actionItems.push({
+          id: `plan-${row.id}`,
+          type: 'plan',
+          sprint_id: row.id,
+          sprint_title: row.title || `Sprint ${sprintNumber}`,
+          program_id: row.program_id,
+          program_name: row.program_name,
+          sprint_number: sprintNumber,
+          urgency,
+          days_until_due: Math.max(0, 2 - daysIntoSprint),
+          message,
+        });
+      }
+
+      // Check for missing retro (past sprints only)
+      if (sprintNumber < currentSprintNumber && !hasRetro) {
+        let urgency: ActionItem['urgency'] = 'upcoming';
+        let message = 'Write sprint retro';
+
+        if (daysSinceEnd > 3) {
+          urgency = 'overdue';
+          message = `Sprint retro is ${daysSinceEnd - 3} days overdue`;
+        } else if (daysSinceEnd === 3) {
+          urgency = 'due_today';
+          message = 'Sprint retro due today';
+        } else if (daysSinceEnd >= 1) {
+          urgency = 'due_soon';
+          message = `Sprint retro due in ${3 - daysSinceEnd} days`;
+        }
+
+        actionItems.push({
+          id: `retro-${row.id}`,
+          type: 'retro',
+          sprint_id: row.id,
+          sprint_title: row.title || `Sprint ${sprintNumber}`,
+          program_id: row.program_id,
+          program_name: row.program_name,
+          sprint_number: sprintNumber,
+          urgency,
+          days_until_due: Math.max(0, 3 - daysSinceEnd),
+          message,
+        });
+      }
+    }
+
+    // Sort by urgency (overdue first, then due_today, due_soon, upcoming)
+    const urgencyOrder = { overdue: 0, due_today: 1, due_soon: 2, upcoming: 3 };
+    actionItems.sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency]);
+
+    res.json({ action_items: actionItems });
+  } catch (err) {
+    console.error('Get my action items error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get single sprint
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {

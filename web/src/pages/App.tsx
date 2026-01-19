@@ -21,6 +21,7 @@ import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu 
 import { useToast } from '@/components/ui/Toast';
 import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
 import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
+import { DashboardSidebar } from '@/components/DashboardSidebar';
 
 type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard';
 
@@ -406,7 +407,7 @@ export function AppLayout() {
                 <div className="px-3 py-2 text-sm text-muted">Settings</div>
               )}
               {activeMode === 'dashboard' && (
-                <div className="px-3 py-2 text-sm text-muted">Cross-program overview</div>
+                <DashboardSidebar />
               )}
             </div>
 

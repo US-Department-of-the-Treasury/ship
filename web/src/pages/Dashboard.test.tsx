@@ -25,11 +25,20 @@ vi.mock('@/contexts/ProjectsContext', () => ({
   }),
 }));
 
+vi.mock('@/hooks/useDashboardActionItems', () => ({
+  useDashboardActionItems: () => ({
+    data: { action_items: [] },
+    isLoading: false,
+  }),
+}));
+
 // Import the component after mocking
 import { DashboardPage } from './Dashboard';
 
 // Helper to render with router context
+// Uses ?view=overview to test the Overview view (stats, sections, etc.)
 function renderWithRouter(ui: React.ReactElement) {
+  window.history.pushState({}, '', '?view=overview');
   return render(<BrowserRouter>{ui}</BrowserRouter>);
 }
 
