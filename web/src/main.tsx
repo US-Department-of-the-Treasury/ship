@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
@@ -28,7 +28,6 @@ import { TeamDirectoryPage } from '@/pages/TeamDirectory';
 import { PersonEditorPage } from '@/pages/PersonEditor';
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
-import { ProjectEditorPage } from '@/pages/ProjectEditor';
 import { ProjectsPage } from '@/pages/Projects';
 import { DashboardPage } from '@/pages/Dashboard';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
@@ -37,11 +36,21 @@ import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
 import { ConvertedDocumentsPage } from '@/pages/ConvertedDocuments';
 import { UnifiedDocumentPage } from '@/pages/UnifiedDocumentPage';
 import { MyWeekPage } from '@/pages/MyWeekPage';
+
 import { InviteAcceptPage } from '@/pages/InviteAccept';
 import { SetupPage } from '@/pages/Setup';
 import { ToastProvider } from '@/components/ui/Toast';
 import { MutationErrorToast } from '@/components/MutationErrorToast';
 import './index.css';
+
+/**
+ * Redirect component for type-specific routes to canonical /documents/:id
+ * Uses replace to ensure browser history only has one entry
+ */
+function DocumentRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/documents/${id}`} replace />;
+}
 
 function PlaceholderPage({ title, subtitle }: { title: string; subtitle: string }) {
   return (
@@ -175,9 +184,9 @@ function AppRoutes() {
         <Route path="docs/:id" element={<DocumentEditorPage />} />
         <Route path="documents/:id" element={<UnifiedDocumentPage />} />
         <Route path="issues" element={<IssuesPage />} />
-        <Route path="issues/:id" element={<UnifiedDocumentPage />} />
+        <Route path="issues/:id" element={<DocumentRedirect />} />
         <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/:id" element={<ProjectEditorPage />} />
+        <Route path="projects/:id" element={<DocumentRedirect />} />
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />
         <Route path="programs/:id/issues" element={<ProgramEditorPage />} />
