@@ -512,6 +512,59 @@ async function canAccessDocumentForCollab(
  * @param oldDocType - The original document type ('issue' or 'project')
  * @param newDocType - The new document type ('issue' or 'project')
  */
+/**
+ * Invalidate the in-memory cache for a document.
+ * Call this when document content is updated via REST API to ensure
+ * the collaboration server reloads from database on next connection.
+ *
+ * @param docId - The document ID to invalidate
+ */
+export function invalidateDocumentCache(docId: string): void {
+  // Find all doc names that match this docId (could be "wiki:uuid", "issue:uuid", etc.)
+  const docNamesToInvalidate: string[] = [];
+  docs.forEach((_, docName) => {
+    if (parseDocId(docName) === docId) {
+      docNamesToInvalidate.push(docName);
+    }
+  });
+
+  if (docNamesToInvalidate.length === 0) {
+    console.log(`[Collaboration] No cached doc found for ${docId}`);
+    return;
+  }
+
+  for (const docName of docNamesToInvalidate) {
+    // Close any active connections with "content updated" code
+    const connectionsToClose: WebSocket[] = [];
+    conns.forEach((conn, ws) => {
+      if (conn.docName === docName) {
+        connectionsToClose.push(ws);
+      }
+    });
+
+    for (const ws of connectionsToClose) {
+      if (ws.readyState === WebSocket.OPEN) {
+        // Close with custom code 4101 (content updated via API)
+        // Frontend should handle this by reconnecting to get fresh content
+        ws.close(4101, 'Content updated');
+      }
+    }
+
+    // Clear any pending saves
+    const pendingSave = pendingSaves.get(docName);
+    if (pendingSave) {
+      clearTimeout(pendingSave);
+      pendingSaves.delete(docName);
+    }
+
+    // Remove from cache - next connection will reload from database
+    docs.delete(docName);
+    awareness.delete(docName);
+
+    console.log(`[Collaboration] Invalidated cache for ${docName}`);
+  }
+}
+
 export function handleDocumentConversion(
   oldDocId: string,
   newDocId: string,

@@ -2,8 +2,9 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
-import { handleVisibilityChange, handleDocumentConversion } from '../collaboration/index.js';
+import { handleVisibilityChange, handleDocumentConversion, invalidateDocumentCache } from '../collaboration/index.js';
 import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, extractVisionFromContent, extractGoalsFromContent, checkDocumentCompleteness } from '../utils/extractHypothesis.js';
+import { loadContentFromYjsState } from '../utils/yjsConverter.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -289,6 +290,129 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     });
   } catch (err) {
     console.error('Get document error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get document content as TipTap JSON
+// This endpoint converts Yjs state to TipTap JSON if content is null
+// Useful for API-based document editing without using the collaborative editor
+router.get('/:id/content', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+
+    // Verify document exists and user can access it
+    const result = await pool.query(
+      `SELECT d.id, d.content, d.yjs_state, d.title,
+              (d.visibility = 'workspace' OR d.created_by = $2 OR
+               (SELECT role FROM workspace_memberships WHERE workspace_id = $3 AND user_id = $2) = 'admin') as can_access
+       FROM documents d
+       WHERE d.id = $1 AND d.workspace_id = $3 AND d.archived_at IS NULL`,
+      [id, userId, workspaceId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    const doc = result.rows[0];
+
+    if (!doc.can_access) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    let content = doc.content;
+
+    // If content is null but yjs_state exists, convert Yjs to TipTap JSON
+    if (!content && doc.yjs_state) {
+      content = loadContentFromYjsState(doc.yjs_state);
+
+      if (!content) {
+        res.status(500).json({ error: 'Failed to convert document content' });
+        return;
+      }
+    }
+
+    // Return content with document metadata
+    res.json({
+      id: doc.id,
+      title: doc.title,
+      content: content || { type: 'doc', content: [] },
+    });
+  } catch (err) {
+    console.error('Get document content error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update document content with TipTap JSON
+// This endpoint updates content and clears yjs_state (forcing regeneration)
+// Useful for API-based document editing without using the collaborative editor
+router.patch('/:id/content', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+
+    // Validate content
+    const { content } = req.body;
+    if (!content || typeof content !== 'object') {
+      res.status(400).json({ error: 'Content is required and must be a valid TipTap JSON object' });
+      return;
+    }
+
+    // Verify document exists and user can access it
+    const { canAccess, doc: existing } = await canAccessDocument(id, userId, workspaceId);
+
+    if (!existing) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    if (!canAccess) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    // Extract hypothesis, success criteria, vision, and goals from content
+    const extractedHypothesis = extractHypothesisFromContent(content);
+    const extractedCriteria = extractSuccessCriteriaFromContent(content);
+    const extractedVision = extractVisionFromContent(content);
+    const extractedGoals = extractGoalsFromContent(content);
+
+    // Merge with existing properties (extracted values always win)
+    const currentProps = existing.properties || {};
+    const newProps = {
+      ...currentProps,
+      hypothesis: extractedHypothesis,
+      success_criteria: extractedCriteria,
+      vision: extractedVision,
+      goals: extractedGoals,
+    };
+
+    // Update content and clear yjs_state (forces regeneration on next collaboration session)
+    const result = await pool.query(
+      `UPDATE documents
+       SET content = $1, yjs_state = NULL, properties = $2, updated_at = now()
+       WHERE id = $3 AND workspace_id = $4
+       RETURNING id, title, content`,
+      [JSON.stringify(content), JSON.stringify(newProps), id, workspaceId]
+    );
+
+    // Invalidate collaboration cache so connected clients get fresh content
+    invalidateDocumentCache(id);
+
+    res.json({
+      id: result.rows[0].id,
+      title: result.rows[0].title,
+      content: result.rows[0].content,
+    });
+  } catch (err) {
+    console.error('Update document content error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -584,6 +708,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       `UPDATE documents SET ${updates.join(', ')} WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} RETURNING *`,
       [...values, id, workspaceId]
     );
+
+    // Invalidate collaboration cache when content is updated via API
+    if (contentUpdated) {
+      invalidateDocumentCache(id);
+    }
 
     // Cascade visibility changes to child documents
     if (data.visibility !== undefined && data.visibility !== existing.visibility) {
