@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useEditor, EditorContent, JSONContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Editor } from '@/components/Editor';
+import { CardGrid } from '@/components/CardGrid';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
@@ -2648,23 +2649,17 @@ function ProjectsList({ projects, onProjectClick }: { projects: Project[]; onPro
 }
 
 function ProjectsCardView({ projects, onProjectClick }: { projects: Project[]; onProjectClick: (id: string) => void }) {
-  if (projects.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center py-12 text-center">
-        <p className="text-muted">No projects yet</p>
-        <p className="mt-2 text-sm text-muted">Projects assigned to this program will appear here</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
-      {projects.map((project) => (
-        <div
-          key={project.id}
-          onClick={() => onProjectClick(project.id)}
-          className="cursor-pointer rounded-lg border border-border bg-card p-4 transition-colors hover:border-accent/50 hover:bg-card/80"
-        >
+    <CardGrid
+      items={projects}
+      emptyState={
+        <div className="py-12 text-center">
+          <p className="text-muted">No projects yet</p>
+          <p className="mt-2 text-sm text-muted">Projects assigned to this program will appear here</p>
+        </div>
+      }
+      renderCard={(project) => (
+        <div className="rounded-lg border border-border bg-card p-4 transition-colors hover:border-accent/50 hover:bg-card/80">
           <div className="flex items-start gap-3">
             <div
               className="flex h-10 w-10 items-center justify-center rounded-lg text-lg font-medium"
@@ -2704,7 +2699,10 @@ function ProjectsCardView({ projects, onProjectClick }: { projects: Project[]; o
             <ActivityChartMini entityType="project" entityId={project.id} />
           </div>
         </div>
-      ))}
-    </div>
+      )}
+      columns={{ sm: 1, md: 2, lg: 3, xl: 3 }}
+      onItemClick={(project) => onProjectClick(project.id)}
+      className="p-4"
+    />
   );
 }

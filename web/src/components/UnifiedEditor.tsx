@@ -1,10 +1,14 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
-import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
-import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
-import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
-import { SprintSidebar } from '@/components/sidebars/SprintSidebar';
+import { PropertiesPanel } from '@/components/sidebars/PropertiesPanel';
+import type {
+  PanelDocument,
+  WikiPanelProps,
+  IssuePanelProps,
+  ProjectPanelProps,
+  SprintPanelProps,
+} from '@/components/sidebars/PropertiesPanel';
 import { DocumentTypeSelector, getMissingRequiredFields } from '@/components/sidebars/DocumentTypeSelector';
 import type { DocumentType as SelectableDocumentType } from '@/components/sidebars/DocumentTypeSelector';
 import { useAuth } from '@/hooks/useAuth';
@@ -247,77 +251,71 @@ export function UnifiedEditor({
   // Check if this document type can have its type changed
   const canChangeType = ['wiki', 'issue', 'project', 'sprint'].includes(document.document_type);
 
-  // Render the type-specific sidebar content
-  const typeSpecificSidebar = useMemo(() => {
+  // Build panel-specific props from sidebarData
+  const panelProps = useMemo(() => {
     switch (document.document_type) {
-      case 'wiki':
-        return (
-          <WikiSidebar
-            document={document as WikiDocument}
-            teamMembers={(sidebarData as WikiSidebarData).teamMembers || []}
-            currentUserId={user?.id}
-            onUpdate={onUpdate as (updates: Partial<WikiDocument>) => Promise<void>}
-          />
-        );
-
+      case 'wiki': {
+        const wikiData = sidebarData as WikiSidebarData;
+        return {
+          teamMembers: wikiData.teamMembers || [],
+          currentUserId: user?.id,
+        } as WikiPanelProps;
+      }
       case 'issue': {
         const issueData = sidebarData as IssueSidebarData;
-        return (
-          <IssueSidebar
-            issue={document as IssueDocument}
-            teamMembers={issueData.teamMembers || []}
-            programs={issueData.programs || []}
-            projects={issueData.projects || []}
-            onUpdate={onUpdate as (updates: Partial<IssueDocument>) => Promise<void>}
-            onConvert={issueData.onConvert}
-            onUndoConversion={issueData.onUndoConversion}
-            onAccept={issueData.onAccept}
-            onReject={issueData.onReject}
-            isConverting={issueData.isConverting}
-            isUndoing={issueData.isUndoing}
-            highlightedFields={missingFields}
-            onAssociationChange={issueData.onAssociationChange}
-          />
-        );
+        return {
+          teamMembers: issueData.teamMembers || [],
+          programs: issueData.programs || [],
+          projects: issueData.projects || [],
+          onConvert: issueData.onConvert,
+          onUndoConversion: issueData.onUndoConversion,
+          onAccept: issueData.onAccept,
+          onReject: issueData.onReject,
+          isConverting: issueData.isConverting,
+          isUndoing: issueData.isUndoing,
+          onAssociationChange: issueData.onAssociationChange,
+        } as IssuePanelProps;
       }
-
       case 'project': {
         const projectData = sidebarData as ProjectSidebarData;
-        return (
-          <ProjectSidebar
-            project={document as ProjectDocument}
-            programs={projectData.programs || []}
-            people={projectData.people || []}
-            onUpdate={onUpdate as (updates: Partial<ProjectDocument>) => Promise<void>}
-            onConvert={projectData.onConvert}
-            onUndoConversion={projectData.onUndoConversion}
-            isConverting={projectData.isConverting}
-            isUndoing={projectData.isUndoing}
-            highlightedFields={missingFields}
-          />
-        );
+        return {
+          programs: projectData.programs || [],
+          people: projectData.people || [],
+          onConvert: projectData.onConvert,
+          onUndoConversion: projectData.onUndoConversion,
+          isConverting: projectData.isConverting,
+          isUndoing: projectData.isUndoing,
+        } as ProjectPanelProps;
       }
-
       case 'sprint':
-        return (
-          <SprintSidebar
-            sprint={document as SprintDocument}
-            onUpdate={onUpdate as (updates: Partial<SprintDocument>) => Promise<void>}
-            highlightedFields={missingFields}
-          />
-        );
-
-      // Default fallback for types without specific sidebars
+        return {} as SprintPanelProps;
       default:
-        return (
-          <div className="p-4">
-            <p className="text-xs text-muted">
-              Document type: {document.document_type}
-            </p>
-          </div>
-        );
+        return {};
     }
-  }, [document, sidebarData, user?.id, onUpdate, missingFields]);
+  }, [document.document_type, sidebarData, user?.id]);
+
+  // Render the type-specific sidebar content via unified PropertiesPanel
+  const typeSpecificSidebar = useMemo(() => {
+    // Check if document type has a properties panel
+    if (!['wiki', 'issue', 'project', 'sprint'].includes(document.document_type)) {
+      return (
+        <div className="p-4">
+          <p className="text-xs text-muted">
+            Document type: {document.document_type}
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <PropertiesPanel
+        document={document as PanelDocument}
+        panelProps={panelProps}
+        onUpdate={onUpdate}
+        highlightedFields={missingFields}
+      />
+    );
+  }, [document, panelProps, onUpdate, missingFields]);
 
   // Compose full sidebar with type selector
   const sidebar = useMemo(() => {
@@ -396,7 +394,18 @@ function getDefaultPlaceholder(documentType: DocumentType): string {
   }
 }
 
-// Re-export sidebar components for direct use
+// Re-export PropertiesPanel as the unified entry point for sidebars
+export { PropertiesPanel } from '@/components/sidebars/PropertiesPanel';
+export type {
+  PanelDocument,
+  PanelDocumentType,
+  WikiPanelProps,
+  IssuePanelProps,
+  ProjectPanelProps,
+  SprintPanelProps,
+} from '@/components/sidebars/PropertiesPanel';
+
+// Legacy re-exports for backwards compatibility (deprecated - use PropertiesPanel)
 export { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 export { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 export { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';

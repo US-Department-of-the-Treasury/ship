@@ -3,6 +3,14 @@ import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 import { authMiddleware } from '../middleware/auth.js';
+import {
+  logDocumentChange,
+  getTimestampUpdates,
+  getBelongsToAssociations,
+  getBelongsToAssociationsBatch,
+  TRACKED_FIELDS,
+  type BelongsToEntry,
+} from '../utils/document-crud.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -56,118 +64,6 @@ const updateIssueSchema = z.object({
 const rejectIssueSchema = z.object({
   reason: z.string().min(1).max(1000),
 });
-
-// Fields to track in document_history
-const TRACKED_FIELDS = [
-  'title', 'state', 'priority', 'assignee_id', 'estimate', 'belongs_to'
-];
-
-// Log a field change to document_history
-async function logDocumentChange(
-  documentId: string,
-  field: string,
-  oldValue: string | null,
-  newValue: string | null,
-  changedBy: string,
-  automatedBy?: string
-) {
-  await pool.query(
-    `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by, automated_by)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [documentId, field, oldValue, newValue, changedBy, automatedBy ?? null]
-  );
-}
-
-// Get timestamp column updates based on status change
-function getTimestampUpdates(oldState: string | null, newState: string): Record<string, string> {
-  const updates: Record<string, string> = {};
-
-  if (newState === 'in_progress' && oldState !== 'in_progress') {
-    if (oldState === 'done' || oldState === 'cancelled') {
-      // Reopening from done/cancelled
-      updates.reopened_at = 'NOW()';
-    } else {
-      // First time starting work
-      updates.started_at = 'COALESCE(started_at, NOW())';
-    }
-  }
-  if (newState === 'done' && oldState !== 'done') {
-    updates.completed_at = 'COALESCE(completed_at, NOW())';
-  }
-  if (newState === 'cancelled' && oldState !== 'cancelled') {
-    updates.cancelled_at = 'NOW()';
-  }
-
-  return updates;
-}
-
-// BelongsTo type for association entries
-interface BelongsToEntry {
-  id: string;
-  type: 'program' | 'project' | 'sprint' | 'parent';
-  title?: string;
-  color?: string;
-}
-
-// Get belongs_to associations for a document from junction table
-async function getBelongsToAssociations(documentId: string): Promise<BelongsToEntry[]> {
-  const result = await pool.query(
-    `SELECT da.related_id as id, da.relationship_type as type,
-            d.title, d.properties->>'color' as color
-     FROM document_associations da
-     LEFT JOIN documents d ON da.related_id = d.id
-     WHERE da.document_id = $1
-     ORDER BY da.relationship_type, da.created_at`,
-    [documentId]
-  );
-  return result.rows.map(row => ({
-    id: row.id,
-    type: row.type,
-    title: row.title || undefined,
-    color: row.color || undefined,
-  }));
-}
-
-// Batch version to avoid N+1 queries - fetches associations for multiple documents in one query
-async function getBelongsToAssociationsBatch(documentIds: string[]): Promise<Map<string, BelongsToEntry[]>> {
-  if (documentIds.length === 0) {
-    return new Map();
-  }
-
-  const result = await pool.query(
-    `SELECT da.document_id, da.related_id as id, da.relationship_type as type,
-            d.title, d.properties->>'color' as color
-     FROM document_associations da
-     LEFT JOIN documents d ON da.related_id = d.id
-     WHERE da.document_id = ANY($1)
-     ORDER BY da.document_id, da.relationship_type, da.created_at`,
-    [documentIds]
-  );
-
-  // Group results by document_id
-  const associationsMap = new Map<string, BelongsToEntry[]>();
-  for (const row of result.rows) {
-    const docId = row.document_id;
-    if (!associationsMap.has(docId)) {
-      associationsMap.set(docId, []);
-    }
-    associationsMap.get(docId)!.push({
-      id: row.id,
-      type: row.type,
-      title: row.title || undefined,
-      color: row.color || undefined,
-    });
-  }
-
-  // Ensure all requested IDs have an entry (empty array if no associations)
-  for (const id of documentIds) {
-    if (!associationsMap.has(id)) {
-      associationsMap.set(id, []);
-    }
-  }
-
-  return associationsMap;
-}
 
 // Helper to extract issue properties from row (without belongs_to - added separately)
 function extractIssueFromRow(row: any) {

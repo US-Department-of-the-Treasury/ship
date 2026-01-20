@@ -1,3 +1,14 @@
+/**
+ * @deprecated Use useUnifiedDocuments from '@/hooks/useUnifiedDocuments' instead.
+ *
+ * This context is maintained for backward compatibility but should not be used
+ * for new code. The unified document model treats all document types consistently
+ * through a single hook.
+ *
+ * Migration:
+ *   Before: const { documents } = useDocuments()
+ *   After:  const { byType: { wiki: documents } } = useUnifiedDocuments({ type: 'wiki' })
+ */
 import { createContext, useContext, ReactNode } from 'react';
 import { useDocuments as useDocumentsQuery, WikiDocument } from '@/hooks/useDocumentsQuery';
 
