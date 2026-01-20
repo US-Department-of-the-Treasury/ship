@@ -7,6 +7,54 @@
 
 import * as Y from 'yjs';
 
+// Mark types that should be converted from wrapper elements to text marks
+const MARK_TYPES = new Set(['bold', 'italic', 'strike', 'underline', 'code', 'link']);
+
+/**
+ * Check if an element is an inline mark (bold, italic, etc.) rather than a block element
+ */
+function isMarkElement(nodeName: string): boolean {
+  return MARK_TYPES.has(nodeName);
+}
+
+/**
+ * Extract text content and marks from a mark element (e.g., <bold>text</bold>)
+ * Returns array of text nodes with marks applied
+ */
+function extractTextWithMarks(element: Y.XmlElement, inheritedMarks: any[] = []): any[] {
+  const nodeName = element.nodeName;
+  const attrs = element.getAttributes();
+
+  // Build mark for this element
+  const mark: any = { type: nodeName };
+  if (nodeName === 'link' && attrs.href) {
+    mark.attrs = { href: attrs.href, target: attrs.target || '_blank' };
+  }
+
+  const currentMarks = [...inheritedMarks, mark];
+  const result: any[] = [];
+
+  for (let i = 0; i < element.length; i++) {
+    const child = element.get(i);
+    if (child instanceof Y.XmlText) {
+      const text = child.toString();
+      if (text) {
+        result.push({ type: 'text', text, marks: currentMarks });
+      }
+    } else if (child instanceof Y.XmlElement) {
+      if (isMarkElement(child.nodeName)) {
+        // Nested mark (e.g., <bold><italic>text</italic></bold>)
+        result.push(...extractTextWithMarks(child, currentMarks));
+      } else {
+        // Block element inside mark - shouldn't happen but handle gracefully
+        result.push(...yjsElementToJson(child));
+      }
+    }
+  }
+
+  return result;
+}
+
 /**
  * Convert Yjs XmlFragment to TipTap JSON
  * This is used when reading documents that were edited via the collaborative editor
@@ -23,33 +71,38 @@ export function yjsToJson(fragment: Y.XmlFragment): any {
         content.push({ type: 'text', text });
       }
     } else if (item instanceof Y.XmlElement) {
-      // Handle element nodes
-      const node: any = { type: item.nodeName };
+      // Check if this is a mark element (bold, italic, etc.)
+      if (isMarkElement(item.nodeName)) {
+        content.push(...extractTextWithMarks(item));
+      } else {
+        // Handle block element nodes
+        const node: any = { type: item.nodeName };
 
-      // Get attributes
-      const attrs = item.getAttributes();
-      if (Object.keys(attrs).length > 0) {
-        // Convert string attributes to proper types (e.g., level should be number)
-        const typedAttrs: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(attrs)) {
-          if (key === 'level' && typeof value === 'string') {
-            typedAttrs[key] = parseInt(value, 10);
-          } else {
-            typedAttrs[key] = value;
+        // Get attributes
+        const attrs = item.getAttributes();
+        if (Object.keys(attrs).length > 0) {
+          // Convert string attributes to proper types (e.g., level should be number)
+          const typedAttrs: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(attrs)) {
+            if (key === 'level' && typeof value === 'string') {
+              typedAttrs[key] = parseInt(value, 10);
+            } else {
+              typedAttrs[key] = value;
+            }
+          }
+          node.attrs = typedAttrs;
+        }
+
+        // Recursively convert children
+        if (item.length > 0) {
+          const childContent = yjsElementToJson(item);
+          if (childContent.length > 0) {
+            node.content = childContent;
           }
         }
-        node.attrs = typedAttrs;
-      }
 
-      // Recursively convert children
-      if (item.length > 0) {
-        const childContent = yjsElementToJson(item);
-        if (childContent.length > 0) {
-          node.content = childContent;
-        }
+        content.push(node);
       }
-
-      content.push(node);
     }
   }
 
@@ -70,29 +123,34 @@ function yjsElementToJson(element: Y.XmlElement): any[] {
         content.push({ type: 'text', text });
       }
     } else if (item instanceof Y.XmlElement) {
-      const node: any = { type: item.nodeName };
+      // Check if this is a mark element (bold, italic, etc.)
+      if (isMarkElement(item.nodeName)) {
+        content.push(...extractTextWithMarks(item));
+      } else {
+        const node: any = { type: item.nodeName };
 
-      const attrs = item.getAttributes();
-      if (Object.keys(attrs).length > 0) {
-        const typedAttrs: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(attrs)) {
-          if (key === 'level' && typeof value === 'string') {
-            typedAttrs[key] = parseInt(value, 10);
-          } else {
-            typedAttrs[key] = value;
+        const attrs = item.getAttributes();
+        if (Object.keys(attrs).length > 0) {
+          const typedAttrs: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(attrs)) {
+            if (key === 'level' && typeof value === 'string') {
+              typedAttrs[key] = parseInt(value, 10);
+            } else {
+              typedAttrs[key] = value;
+            }
+          }
+          node.attrs = typedAttrs;
+        }
+
+        if (item.length > 0) {
+          const childContent = yjsElementToJson(item);
+          if (childContent.length > 0) {
+            node.content = childContent;
           }
         }
-        node.attrs = typedAttrs;
-      }
 
-      if (item.length > 0) {
-        const childContent = yjsElementToJson(item);
-        if (childContent.length > 0) {
-          node.content = childContent;
-        }
+        content.push(node);
       }
-
-      content.push(node);
     }
   }
 
