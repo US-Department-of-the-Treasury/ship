@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments } from '@/contexts/DocumentsContext';
-import { cn } from '@/lib/cn';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { IncompleteDocumentBanner } from '@/components/IncompleteDocumentBanner';
+import { SprintSidebar } from '@/components/sidebars/SprintSidebar';
+import { cn } from '@/lib/cn';
 
 interface Sprint {
   id: string;
@@ -14,13 +15,14 @@ interface Sprint {
   start_date: string;
   end_date: string;
   status: 'planned' | 'active' | 'completed';
-  program_id: string;
+  program_id: string | null;
   program_name?: string;
   program_prefix?: string;
   issue_count: number;
   completed_count: number;
   is_complete: boolean | null;
   missing_fields: string[];
+  hypothesis?: string;
 }
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -120,10 +122,6 @@ export function SprintEditorPage() {
     return null;
   }
 
-  const progress = sprint.issue_count > 0
-    ? Math.round((sprint.completed_count / sprint.issue_count) * 100)
-    : 0;
-
   return (
     <div className="flex h-full flex-col">
       {/* Incomplete document warning banner */}
@@ -153,85 +151,14 @@ export function SprintEditorPage() {
         </span>
       }
       sidebar={
-        <div className="space-y-4 p-4">
-          <PropertyRow label="Status">
-              <select
-                value={sprint.status}
-                onChange={(e) => updateSprint({ sprint_status: e.target.value } as any)}
-                className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
-              >
-                {STATUS_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </PropertyRow>
-
-            <PropertyRow label="Start Date">
-              <input
-                type="date"
-                value={sprint.start_date}
-                onChange={(e) => updateSprint({ start_date: e.target.value })}
-                className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
-              />
-            </PropertyRow>
-
-            <PropertyRow label="End Date">
-              <input
-                type="date"
-                value={sprint.end_date}
-                onChange={(e) => updateSprint({ end_date: e.target.value })}
-                className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none"
-              />
-            </PropertyRow>
-
-            <PropertyRow label="Progress">
-              <div className="space-y-1">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-border">
-                  <div
-                    className="h-full bg-accent transition-all"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <p className="text-xs text-muted">
-                  {sprint.completed_count} of {sprint.issue_count} issues completed ({progress}%)
-                </p>
-              </div>
-            </PropertyRow>
-
-            {sprint.program_name && (
-              <PropertyRow label="Program">
-                <button
-                  onClick={() => navigate(`/programs/${sprint.program_id}`)}
-                  className="w-full rounded bg-border/50 px-2 py-1.5 text-left text-sm text-foreground hover:bg-border transition-colors"
-                >
-                  {sprint.program_name}
-                </button>
-              </PropertyRow>
-            )}
-
-            <div className="border-t border-border pt-4">
-              <button
-                onClick={() => navigate(`/sprints/${sprint.id}/view`)}
-                className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
-              >
-                Plan Sprint
-              </button>
-            </div>
-        </div>
+        <SprintSidebar
+          sprint={sprint}
+          onUpdate={updateSprint}
+          highlightedFields={sprint.missing_fields}
+        />
       }
     />
       </div>
-    </div>
-  );
-}
-
-function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="mb-1 block text-xs font-medium text-muted">{label}</label>
-      {children}
     </div>
   );
 }

@@ -12,8 +12,30 @@ config({ path: join(__dirname, '../../.env') });
 
 const { Pool } = pg;
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  // Production-ready pool configuration
+  max: isProduction ? 20 : 10, // Max connections (default is 10)
+  idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
+  connectionTimeoutMillis: 2000, // Fail fast if can't connect in 2 seconds
+  maxUses: 7500, // Recycle connections after 7500 queries to prevent memory leaks
+});
+
+// Graceful shutdown - close pool connections on process termination
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, closing database pool...');
+  await pool.end();
+  console.log('Database pool closed');
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, closing database pool...');
+  await pool.end();
+  console.log('Database pool closed');
+  process.exit(0);
 });
 
 export { pool };

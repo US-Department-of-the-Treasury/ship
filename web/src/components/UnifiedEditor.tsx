@@ -53,14 +53,14 @@ interface IssueDocument extends BaseDocument {
 // Project document
 interface ProjectDocument extends BaseDocument {
   document_type: 'project';
-  impact: number;
-  confidence: number;
-  ease: number;
-  ice_score?: number;
+  impact: number | null;
+  confidence: number | null;
+  ease: number | null;
+  ice_score?: number | null;
   color: string;
   emoji: string | null;
   program_id: string | null;
-  owner?: { id: string; name: string } | null;
+  owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
   sprint_count?: number;
   issue_count?: number;

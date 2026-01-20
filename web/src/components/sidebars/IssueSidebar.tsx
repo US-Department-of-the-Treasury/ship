@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Combobox } from '@/components/ui/Combobox';
 import { MultiAssociationChips } from '@/components/ui/MultiAssociationChips';
+import { PropertyRow } from '@/components/ui/PropertyRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { isCascadeWarningError, type IncompleteChild } from '@/hooks/useIssuesQuery';
 import { apiPost, apiDelete } from '@/lib/api';
@@ -550,14 +551,3 @@ export function IssueSidebar({
   );
 }
 
-function PropertyRow({ label, highlighted, children }: { label: string; highlighted?: boolean; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className={`mb-1 block text-xs font-medium ${highlighted ? 'text-amber-500' : 'text-muted'}`}>
-        {label}
-        {highlighted && <span className="ml-1 text-amber-500">*</span>}
-      </label>
-      {children}
-    </div>
-  );
-}

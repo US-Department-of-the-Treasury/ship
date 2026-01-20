@@ -1,7 +1,7 @@
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
-import { Tooltip } from '@/components/ui/Tooltip';
+import { PropertyRow } from '@/components/ui/PropertyRow';
 import { computeICEScore } from '@ship/shared';
 
 const PROJECT_COLORS = [
@@ -23,14 +23,14 @@ const ICE_VALUES = [1, 2, 3, 4, 5] as const;
 interface Project {
   id: string;
   title: string;
-  impact: number;
-  confidence: number;
-  ease: number;
-  ice_score?: number;
+  impact: number | null;
+  confidence: number | null;
+  ease: number | null;
+  ice_score?: number | null;
   color: string;
   emoji: string | null;
   program_id: string | null;
-  owner?: { id: string; name: string } | null;
+  owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
   sprint_count?: number;
   issue_count?: number;
@@ -69,8 +69,11 @@ export function ProjectSidebar({
 }: ProjectSidebarProps) {
   // Helper to check if a field should be highlighted
   const isHighlighted = (field: string) => highlightedFields.includes(field);
-  // Compute ICE score from current values
-  const iceScore = computeICEScore(project.impact, project.confidence, project.ease);
+  // Compute ICE score from current values (default to 3 for null values)
+  const impact = project.impact ?? 3;
+  const confidence = project.confidence ?? 3;
+  const ease = project.ease ?? 3;
+  const iceScore = computeICEScore(impact, confidence, ease);
 
   return (
     <div className="space-y-4 p-4">
@@ -111,7 +114,7 @@ export function ProjectSidebar({
           <span className="text-2xl font-bold text-accent tabular-nums">{iceScore}</span>
         </div>
         <div className="text-xs text-muted">
-          {project.impact} × {project.confidence} × {project.ease} = {iceScore}
+          {impact} × {confidence} × {ease} = {iceScore}
         </div>
       </div>
 
@@ -265,32 +268,6 @@ export function ProjectSidebar({
   );
 }
 
-function PropertyRow({ label, tooltip, highlighted, children }: { label: string; tooltip?: string; highlighted?: boolean; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="mb-1 flex items-center gap-1">
-        <label className={`text-xs font-medium ${highlighted ? 'text-amber-500' : 'text-muted'}`}>
-          {label}
-          {highlighted && <span className="ml-1 text-amber-500">*</span>}
-        </label>
-        {tooltip && (
-          <Tooltip content={tooltip} side="right" delayDuration={200}>
-            <button
-              type="button"
-              className="text-muted/60 hover:text-muted transition-colors"
-              aria-label={`More info about ${label}`}
-            >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </Tooltip>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-}
 
 // ICE Slider component (1-5 segmented buttons)
 function ICESlider({

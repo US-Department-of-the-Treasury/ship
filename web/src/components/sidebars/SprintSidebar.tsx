@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { PropertyRow } from '@/components/ui/PropertyRow';
 
 const STATUS_OPTIONS = [
   { value: 'planned', label: 'Planned', color: 'bg-gray-500' },
@@ -123,14 +124,3 @@ export function SprintSidebar({ sprint, onUpdate, highlightedFields = [] }: Spri
   );
 }
 
-function PropertyRow({ label, highlighted, children }: { label: string; highlighted?: boolean; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className={`mb-1 block text-xs font-medium ${highlighted ? 'text-amber-500' : 'text-muted'}`}>
-        {label}
-        {highlighted && <span className="ml-1 text-amber-500">*</span>}
-      </label>
-      {children}
-    </div>
-  );
-}

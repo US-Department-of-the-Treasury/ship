@@ -2,47 +2,29 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Editor } from '@/components/Editor';
+import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
 import { useAuth } from '@/hooks/useAuth';
 import { useProjects, Project } from '@/contexts/ProjectsContext';
 import { usePrograms } from '@/contexts/ProgramsContext';
 import { useDocuments } from '@/contexts/DocumentsContext';
-import { cn, getContrastTextColor } from '@/lib/cn';
+import { cn } from '@/lib/cn';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
-import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
-import { Tooltip } from '@/components/ui/Tooltip';
 import { TabBar } from '@/components/ui/TabBar';
 import { ProjectRetro } from '@/components/ProjectRetro';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { apiPatch } from '@/lib/api';
 import { IncompleteDocumentBanner } from '@/components/IncompleteDocumentBanner';
-import { computeICEScore } from '@ship/shared';
 import { useToast } from '@/components/ui/Toast';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { projectKeys, useProjectIssuesQuery, useProjectSprintsQuery, ProjectIssue, ProjectSprint } from '@/hooks/useProjectsQuery';
 import { apiPost } from '@/lib/api';
 import { issueStatusColors, priorityColors } from '@/lib/statusColors';
 import { useSprintsQuery } from '@/hooks/useSprintsQuery';
+import { ConversionDialog } from '@/components/dialogs/ConversionDialog';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
-
-const PROJECT_COLORS = [
-  '#6366f1', // Indigo
-  '#8b5cf6', // Violet
-  '#ec4899', // Pink
-  '#f43f5e', // Rose
-  '#ef4444', // Red
-  '#f97316', // Orange
-  '#eab308', // Yellow
-  '#22c55e', // Green
-  '#14b8a6', // Teal
-  '#06b6d4', // Cyan
-  '#3b82f6', // Blue
-];
-
-// ICE score range (1-5)
-const ICE_VALUES = [1, 2, 3, 4, 5] as const;
 
 export function ProjectEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -54,7 +36,6 @@ export function ProjectEditorPage() {
   const { programs } = usePrograms();
   const { createDocument } = useDocuments();
   const [people, setPeople] = useState<Person[]>([]);
-  const [ownerError, setOwnerError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'issues' | 'sprints' | 'retro'>('details');
   const [issuesViewMode, setIssuesViewMode] = useState<'list' | 'kanban'>(() => {
     if (id) {
@@ -412,14 +393,6 @@ export function ProjectEditorPage() {
     return null;
   }
 
-  const handleOwnerChange = (ownerId: string | null) => {
-    setOwnerError(null);
-    handleUpdateProject({ owner_id: ownerId } as Partial<Project>);
-  };
-
-  // Compute ICE score from current values
-  const iceScore = computeICEScore(displayProject.impact, displayProject.confidence, displayProject.ease);
-
   return (
     <div className="flex h-full flex-col">
       {/* Tab bar for switching between Details, Issues, and Retro */}
@@ -458,177 +431,16 @@ export function ProjectEditorPage() {
             onNavigateToDocument={handleNavigateToDocument}
             onDocumentConverted={handleDocumentConverted}
             sidebar={
-        <div className="space-y-4 p-4">
-          {/* Undo Conversion Banner - show when this project was converted from another document */}
-          {displayProject.converted_from_id && (
-            <div className="mb-4 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
-              <p className="mb-2 text-sm text-blue-300">This project was promoted from an issue.</p>
-              <button
-                onClick={handleUndoConversion}
-                disabled={isUndoing}
-                className="w-full rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-              >
-                {isUndoing ? (
-                  <>
-                    <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Undoing...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M7.707 3.293a1 1 0 010 1.414L5.414 7H11a7 7 0 017 7v2a1 1 0 11-2 0v-2a5 5 0 00-5-5H5.414l2.293 2.293a1 1 0 11-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                    Undo Conversion
-                  </>
-                )}
-              </button>
-              <p className="mt-1 text-xs text-blue-300/70 text-center">Restore the original issue</p>
-            </div>
-          )}
-
-          {/* ICE Score Display */}
-          <div className="rounded-lg border border-border bg-accent/10 p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-muted uppercase tracking-wide">ICE Score</span>
-              <span className="text-2xl font-bold text-accent tabular-nums">{iceScore}</span>
-            </div>
-            <div className="text-xs text-muted">
-              {displayProject.impact} × {displayProject.confidence} × {displayProject.ease} = {iceScore}
-            </div>
-          </div>
-
-          {/* Impact Slider */}
-          <PropertyRow
-            label="Impact"
-            tooltip={`Expected value in next 12 months:\n5 - More than $1b\n4 - More than $100m\n3 - More than $10m\n2 - More than $1m\n1 - More than $100k`}
-          >
-            <p className="text-xs text-muted mb-2">How much value will this deliver?</p>
-            <ICESlider
-              value={displayProject.impact}
-              onChange={(value) => handleUpdateProject({ impact: value })}
-              aria-label="Impact"
-            />
-          </PropertyRow>
-
-          {/* Confidence Slider */}
-          <PropertyRow
-            label="Confidence"
-            tooltip={`How likely is this to succeed?\n5 - 100% certain, trivial complexity\n4 - 80% certain, familiar territory\n3 - 60% certain, somewhat complex\n2 - 40% certain, somewhat novel\n1 - 20% certain, pathfinding required`}
-          >
-            <p className="text-xs text-muted mb-2">How sure are we about the outcome?</p>
-            <ICESlider
-              value={displayProject.confidence}
-              onChange={(value) => handleUpdateProject({ confidence: value })}
-              aria-label="Confidence"
-            />
-          </PropertyRow>
-
-          {/* Ease Slider */}
-          <PropertyRow
-            label="Ease"
-            tooltip={`Labor hours to deliver:\n5 - Less than 1 week\n4 - Less than 1 month\n3 - Less than 1 quarter\n2 - Less than 1 year\n1 - More than 1 year`}
-          >
-            <p className="text-xs text-muted mb-2">How easy is this to implement?</p>
-            <ICESlider
-              value={displayProject.ease}
-              onChange={(value) => handleUpdateProject({ ease: value })}
-              aria-label="Ease"
-            />
-          </PropertyRow>
-
-          {/* Owner */}
-          <PropertyRow label="Owner">
-            <PersonCombobox
-              people={people}
-              value={displayProject.owner?.id || null}
-              onChange={handleOwnerChange}
-              placeholder="Select owner..."
-            />
-            {ownerError && (
-              <p className="mt-1 text-xs text-red-500">{ownerError}</p>
-            )}
-          </PropertyRow>
-
-          {/* Icon (Emoji) */}
-          <PropertyRow label="Icon">
-            <EmojiPickerPopover
-              value={displayProject.emoji}
-              onChange={(emoji) => handleUpdateProject({ emoji })}
-            >
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-lg text-lg cursor-pointer hover:ring-2 hover:ring-accent transition-all"
-                style={{ backgroundColor: displayProject.color, color: getContrastTextColor(displayProject.color) }}
-              >
-                {displayProject.emoji || displayProject.title?.[0]?.toUpperCase() || '?'}
-              </div>
-            </EmojiPickerPopover>
-            <p className="mt-1 text-xs text-muted">Click to change</p>
-          </PropertyRow>
-
-          {/* Color */}
-          <PropertyRow label="Color">
-            <div className="flex flex-wrap gap-1.5">
-              {PROJECT_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => handleUpdateProject({ color: c })}
-                  className={cn(
-                    'h-6 w-6 rounded-full transition-transform',
-                    displayProject.color === c ? 'ring-2 ring-white ring-offset-1 ring-offset-background scale-110' : 'hover:scale-105'
-                  )}
-                  style={{ backgroundColor: c }}
-                  aria-label={`Select ${c} color`}
-                />
-              ))}
-            </div>
-          </PropertyRow>
-
-          {/* Program (Optional) */}
-          <PropertyRow label="Program">
-            <select
-              value={displayProject.program_id || ''}
-              onChange={(e) => handleUpdateProject({ program_id: e.target.value || null })}
-              className="w-full h-9 text-sm bg-transparent border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-            >
-              <option value="">No program</option>
-              {programs.map((program) => (
-                <option key={program.id} value={program.id}>
-                  {program.emoji ? `${program.emoji} ` : ''}{program.name}
-                </option>
-              ))}
-            </select>
-          </PropertyRow>
-
-          {/* Stats */}
-          <div className="pt-4 border-t border-border space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted">Sprints</span>
-              <span className="text-foreground">{displayProject.sprint_count}</span>
-            </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted">Issues</span>
-              <span className="text-foreground">{displayProject.issue_count}</span>
-            </div>
-          </div>
-
-          {/* Document Conversion */}
-          <div className="pt-4 mt-4 border-t border-border">
-            <button
-              onClick={() => setShowConvertDialog(true)}
-              className="w-full rounded bg-border px-3 py-2 text-sm font-medium text-muted hover:bg-border/80 hover:text-foreground transition-colors flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.707-10.293a1 1 0 00-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L9.414 11H13a1 1 0 100-2H9.414l1.293-1.293z" clipRule="evenodd" />
-              </svg>
-              Convert to Issue
-            </button>
-            <p className="mt-1 text-xs text-muted text-center">Convert this project into an issue</p>
-          </div>
-        </div>
+              <ProjectSidebar
+                project={displayProject}
+                programs={programs}
+                people={people}
+                onUpdate={handleUpdateProject}
+                onConvert={() => setShowConvertDialog(true)}
+                onUndoConversion={handleUndoConversion}
+                isConverting={isConverting}
+                isUndoing={isUndoing}
+              />
             }
           />
         ) : activeTab === 'issues' ? (
@@ -793,152 +605,6 @@ export function ProjectEditorPage() {
         title={displayProject.title}
         isConverting={isConverting}
       />
-    </div>
-  );
-}
-
-function PropertyRow({ label, tooltip, children }: { label: string; tooltip?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="mb-1 flex items-center gap-1">
-        <label className="text-xs font-medium text-muted">{label}</label>
-        {tooltip && (
-          <Tooltip content={tooltip} side="right" delayDuration={200}>
-            <button
-              type="button"
-              className="text-muted/60 hover:text-muted transition-colors"
-              aria-label={`More info about ${label}`}
-            >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </Tooltip>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-// ICE Slider component (1-5 segmented buttons)
-function ICESlider({
-  value,
-  onChange,
-  'aria-label': ariaLabel,
-}: {
-  value: number | null;
-  onChange: (value: number) => void;
-  'aria-label': string;
-}) {
-  return (
-    <div className="flex gap-1" role="group" aria-label={ariaLabel}>
-      {ICE_VALUES.map((v) => (
-        <button
-          key={v}
-          type="button"
-          onClick={() => onChange(v)}
-          aria-pressed={value === v}
-          className={cn(
-            'flex-1 py-1.5 text-sm font-medium rounded transition-colors',
-            value === v
-              ? 'bg-accent text-white'
-              : 'bg-border/50 text-muted hover:bg-border hover:text-foreground'
-          )}
-        >
-          {v}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// Conversion dialog component
-interface ConversionDialogProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConvert: () => void;
-  sourceType: 'issue' | 'project';
-  title: string;
-  isConverting?: boolean;
-}
-
-function ConversionDialog({ isOpen, onClose, onConvert, sourceType, title, isConverting }: ConversionDialogProps) {
-  // Handle Escape key
-  useEffect(() => {
-    if (!isOpen || isConverting) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isConverting, onClose]);
-
-  if (!isOpen) return null;
-
-  const targetType = sourceType === 'issue' ? 'project' : 'issue';
-  const actionLabel = sourceType === 'issue' ? 'Promote to Project' : 'Convert to Issue';
-
-  // Handle click outside dialog
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget && !isConverting) {
-      onClose();
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" onClick={handleBackdropClick}>
-      <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold text-foreground">{actionLabel}</h2>
-        <p className="mb-4 text-sm text-foreground">
-          Convert <strong>"{title}"</strong> from {sourceType} to {targetType}?
-        </p>
-        <div className="mb-4 rounded bg-amber-500/10 border border-amber-500/30 p-3">
-          <p className="text-sm text-amber-300 font-medium mb-2">What will happen:</p>
-          <ul className="text-xs text-muted space-y-1">
-            <li>• A new {targetType} will be created with the same title and content</li>
-            <li>• The original {sourceType} will be archived</li>
-            <li>• Links to the old {sourceType} will redirect to the new {targetType}</li>
-            {sourceType === 'issue' && (
-              <li>• Issue properties (state, priority, assignee) will be reset</li>
-            )}
-            {sourceType === 'project' && (
-              <>
-                <li>• Project properties (ICE scores, owner) will be reset</li>
-                <li>• Child issues will be orphaned (unlinked from project)</li>
-              </>
-            )}
-          </ul>
-        </div>
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            disabled={isConverting}
-            className="rounded px-3 py-1.5 text-sm text-muted hover:text-foreground transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConvert}
-            disabled={isConverting}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50 transition-colors flex items-center gap-2"
-          >
-            {isConverting ? (
-              <>
-                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Converting...
-              </>
-            ) : (
-              actionLabel
-            )}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

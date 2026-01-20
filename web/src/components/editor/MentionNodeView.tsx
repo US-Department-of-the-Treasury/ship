@@ -17,10 +17,10 @@ export function MentionNodeView({ node }: NodeViewProps) {
   // Check if this person is archived
   const isArchived = isPerson && archivedIds.has(id);
 
-  // Build the href
+  // Build the href - all documents use the unified /documents/:id route
   const href = isPerson
     ? `/team/${id}`
-    : `/${documentType || 'documents'}/${id}`;
+    : `/documents/${id}`;
 
   // Build CSS classes
   const classes = [
