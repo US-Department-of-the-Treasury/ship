@@ -124,14 +124,16 @@ describe('Circular Reference Protection', () => {
       let lastId: string | null = null
 
       for (let i = 0; i < 10; i++) {
-        const result = await pool.query(
+        const parentIdForInsert = lastId
+        const insertResult = await pool.query(
           `INSERT INTO documents (workspace_id, document_type, title, parent_id)
            VALUES ($1, 'wiki', $2, $3)
            RETURNING id`,
-          [testWorkspaceId, `Chain Doc ${i}`, lastId]
+          [testWorkspaceId, `Chain Doc ${i}`, parentIdForInsert]
         )
-        chainIds.push(result.rows[0].id)
-        lastId = result.rows[0].id
+        const newId = insertResult.rows[0].id as string
+        chainIds.push(newId)
+        lastId = newId
       }
 
       // Verify chain was created
