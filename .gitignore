@@ -101,3 +101,6 @@ vendor/
 # SSDF-Helper - Memory Safety Analysis Reports (CUI/ISVI)
 /SSDF-Helper/
 .pr-checklist.json
+
+# local Claude
+.claude/settings.local.json
