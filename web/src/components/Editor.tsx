@@ -210,6 +210,8 @@ export function Editor({
     let wsProvider: WebsocketProvider | null = null;
     let hasCachedContent = false;
     let cancelled = false;
+    // Store the updateUsers callback so we can properly remove it on cleanup
+    let updateUsersCallback: (() => void) | null = null;
 
     // Create IndexedDB persistence for content caching
     // This loads cached content BEFORE WebSocket connects for instant navigation
@@ -258,6 +260,7 @@ export function Editor({
       });
 
       wsProvider.on('status', (event: { status: string }) => {
+        if (cancelled) return; // Don't update state if effect was cleaned up
         console.log(`[Editor] WebSocket status: ${event.status} for ${roomPrefix}:${documentId}`);
         if (event.status === 'connected') {
           setSyncStatus('synced');
@@ -269,6 +272,7 @@ export function Editor({
 
       // Handle WebSocket close events to detect access revoked or document converted
       wsProvider.on('connection-close', (event: CloseEvent | null) => {
+        if (cancelled) return; // Don't process if effect was cleaned up
         if (event?.code === 4403) {
           console.log(`[Editor] Access revoked for document ${documentId}`);
           // Disable auto-reconnect since access was revoked
@@ -300,6 +304,7 @@ export function Editor({
       });
 
       wsProvider.on('sync', (isSynced: boolean) => {
+        if (cancelled) return; // Don't update state if effect was cleaned up
         console.log(`[Editor] WebSocket sync: ${isSynced} for ${roomPrefix}:${documentId}`);
         if (isSynced) {
           setSyncStatus('synced');
@@ -312,8 +317,9 @@ export function Editor({
         color: color,
       });
 
-      // Track connected users
-      const updateUsers = () => {
+      // Track connected users - store callback reference for proper cleanup
+      updateUsersCallback = () => {
+        if (cancelled) return; // Don't update state if effect was cleaned up
         const users: { name: string; color: string }[] = [];
         wsProvider!.awareness.getStates().forEach((state) => {
           if (state.user) {
@@ -323,19 +329,32 @@ export function Editor({
         setConnectedUsers(users);
       };
 
-      wsProvider.awareness.on('change', updateUsers);
-      updateUsers();
+      wsProvider.awareness.on('change', updateUsersCallback);
+      updateUsersCallback();
 
-      setProvider(wsProvider);
+      if (!cancelled) {
+        setProvider(wsProvider);
+      }
     });
 
     return () => {
       cancelled = true;
       if (wsProvider) {
-        wsProvider.awareness.off('change', () => {});
+        // CRITICAL: Clear awareness state before destroying to prevent ghost cursors
+        // This notifies other clients that this user has left the document
+        wsProvider.awareness.setLocalState(null);
+        // Remove the awareness change listener using the stored callback reference
+        if (updateUsersCallback) {
+          wsProvider.awareness.off('change', updateUsersCallback);
+        }
+        // Destroy provider (disconnects WebSocket)
         wsProvider.destroy();
       }
+      // Destroy IndexedDB persistence
       indexeddbProvider.destroy();
+      // Clear provider state
+      setProvider(null);
+      setConnectedUsers([]);
     };
   }, [documentId, userName, color, ydoc, roomPrefix, onBack, onDocumentConverted]);
 

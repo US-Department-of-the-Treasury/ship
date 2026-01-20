@@ -5,6 +5,12 @@ import bcrypt from 'bcryptjs'
 import { createApp } from '../app.js'
 import { pool } from '../db/client.js'
 
+// Helper to normalize set-cookie header (can be string or string[])
+function getCookiesArray(setCookie: string | string[] | undefined): string[] {
+  if (!setCookie) return []
+  return Array.isArray(setCookie) ? setCookie : [setCookie]
+}
+
 describe('Auth API', () => {
   const app = createApp()
   const testRunId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -136,9 +142,9 @@ describe('Auth API', () => {
       expect(res.body.data.workspaces).toBeInstanceOf(Array)
 
       // Check cookie is set
-      const cookies = res.headers['set-cookie']
-      expect(cookies).toBeDefined()
-      const sessionCookie = cookies?.find((c: string) => c.startsWith('session_id='))
+      const cookies = getCookiesArray(res.headers['set-cookie'])
+      expect(cookies.length).toBeGreaterThan(0)
+      const sessionCookie = cookies.find((c: string) => c.startsWith('session_id='))
       expect(sessionCookie).toBeDefined()
       expect(sessionCookie).toContain('HttpOnly')
     })
@@ -195,8 +201,8 @@ describe('Auth API', () => {
       const loginRes = await loginWithCsrf(testEmail, testPassword)
 
       expect(loginRes.status).toBe(200)
-      const cookies = loginRes.headers['set-cookie']
-      const sessionCookie = cookies?.find((c: string) => c.startsWith('session_id='))?.split(';')[0]
+      const cookies = getCookiesArray(loginRes.headers['set-cookie'])
+      const sessionCookie = cookies.find((c: string) => c.startsWith('session_id='))?.split(';')[0]
 
       // Get CSRF token with session
       const csrfRes = await request(app)
@@ -233,8 +239,8 @@ describe('Auth API', () => {
       // Login to get a session
       const loginRes = await loginWithCsrf(testEmail, testPassword)
 
-      const cookies = loginRes.headers['set-cookie']
-      sessionCookie = cookies?.find((c: string) => c.startsWith('session_id='))?.split(';')[0] || ''
+      const cookies = getCookiesArray(loginRes.headers['set-cookie'])
+      sessionCookie = cookies.find((c: string) => c.startsWith('session_id='))?.split(';')[0] || ''
 
       // Get CSRF token with session
       const csrfRes = await request(app)
@@ -295,8 +301,8 @@ describe('Auth API', () => {
       // Login to get a session
       const loginRes = await loginWithCsrf(testEmail, testPassword)
 
-      const cookies = loginRes.headers['set-cookie']
-      let sessionCookie = cookies?.find((c: string) => c.startsWith('session_id='))?.split(';')[0] || ''
+      const cookies = getCookiesArray(loginRes.headers['set-cookie'])
+      let sessionCookie = cookies.find((c: string) => c.startsWith('session_id='))?.split(';')[0] || ''
 
       // Get CSRF token with session
       const csrfRes = await request(app)
@@ -331,8 +337,8 @@ describe('Auth API', () => {
       // Login to get a session
       const loginRes = await loginWithCsrf(testEmail, testPassword)
 
-      const cookies = loginRes.headers['set-cookie']
-      let sessionCookie = cookies?.find((c: string) => c.startsWith('session_id='))?.split(';')[0] || ''
+      const cookies = getCookiesArray(loginRes.headers['set-cookie'])
+      let sessionCookie = cookies.find((c: string) => c.startsWith('session_id='))?.split(';')[0] || ''
 
       // Get CSRF token with session
       const csrfRes = await request(app)
@@ -363,13 +369,13 @@ describe('Auth API', () => {
       // Login twice and verify different session IDs
       const login1 = await loginWithCsrf(testEmail, testPassword)
 
-      const cookies1 = login1.headers['set-cookie']
-      const session1 = cookies1?.find((c: string) => c.startsWith('session_id='))?.split(';')[0]?.split('=')[1]
+      const cookies1 = getCookiesArray(login1.headers['set-cookie'])
+      const session1 = cookies1.find((c: string) => c.startsWith('session_id='))?.split(';')[0]?.split('=')[1]
 
       const login2 = await loginWithCsrf(testEmail, testPassword)
 
-      const cookies2 = login2.headers['set-cookie']
-      const session2 = cookies2?.find((c: string) => c.startsWith('session_id='))?.split(';')[0]?.split('=')[1]
+      const cookies2 = getCookiesArray(login2.headers['set-cookie'])
+      const session2 = cookies2.find((c: string) => c.startsWith('session_id='))?.split(';')[0]?.split('=')[1]
 
       expect(session1).not.toBe(session2)
     })
@@ -378,8 +384,8 @@ describe('Auth API', () => {
       // Login to get first session
       const login1 = await loginWithCsrf(testEmail, testPassword)
 
-      const cookies1 = login1.headers['set-cookie']
-      let session1Cookie = cookies1?.find((c: string) => c.startsWith('session_id='))?.split(';')[0] || ''
+      const cookies1 = getCookiesArray(login1.headers['set-cookie'])
+      let session1Cookie = cookies1.find((c: string) => c.startsWith('session_id='))?.split(';')[0] || ''
 
       // Get CSRF for first session
       const csrfRes = await request(app)
