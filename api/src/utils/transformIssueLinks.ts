@@ -196,11 +196,13 @@ function transformNodes(
  *
  * @param content - TipTap JSON document
  * @param workspaceId - Workspace ID for issue lookup
+ * @param preloadedIssueMap - Optional pre-fetched issue map to avoid N+1 queries in batch scenarios
  * @returns Transformed TipTap JSON with issue links
  */
 export async function transformIssueLinks(
   content: unknown,
-  workspaceId: string
+  workspaceId: string,
+  preloadedIssueMap?: Map<number, IssueInfo>
 ): Promise<unknown> {
   if (!content || typeof content !== 'object') return content;
 
@@ -211,8 +213,21 @@ export async function transformIssueLinks(
   const ticketNumbers = extractAllTicketNumbers(doc.content);
   if (ticketNumbers.length === 0) return content;
 
-  // Look up which issues exist
-  const issueMap = await lookupIssuesByTicketNumbers(workspaceId, ticketNumbers);
+  // Use preloaded map if provided, otherwise look up
+  let issueMap: Map<number, IssueInfo>;
+  if (preloadedIssueMap) {
+    // Filter the preloaded map to only include ticket numbers found in this content
+    issueMap = new Map();
+    for (const num of ticketNumbers) {
+      const issue = preloadedIssueMap.get(num);
+      if (issue) {
+        issueMap.set(num, issue);
+      }
+    }
+  } else {
+    issueMap = await lookupIssuesByTicketNumbers(workspaceId, ticketNumbers);
+  }
+
   if (issueMap.size === 0) return content;
 
   // Transform the content
@@ -220,4 +235,41 @@ export async function transformIssueLinks(
     ...doc,
     content: transformNodes(doc.content, issueMap),
   };
+}
+
+/**
+ * Extract all ticket numbers from multiple TipTap JSON documents.
+ * Useful for batch pre-loading issue data to avoid N+1 queries.
+ *
+ * @param contents - Array of TipTap JSON documents
+ * @returns Deduplicated list of ticket numbers
+ */
+export function extractTicketNumbersFromContents(contents: unknown[]): number[] {
+  const allNumbers: number[] = [];
+
+  for (const content of contents) {
+    if (!content || typeof content !== 'object') continue;
+
+    const doc = content as TipTapDoc;
+    if (doc.type !== 'doc' || !Array.isArray(doc.content)) continue;
+
+    allNumbers.push(...extractAllTicketNumbers(doc.content));
+  }
+
+  return [...new Set(allNumbers)];
+}
+
+/**
+ * Batch lookup issues by ticket numbers.
+ * Use this to pre-fetch issue data before calling transformIssueLinks multiple times.
+ *
+ * @param workspaceId - Workspace ID for issue lookup
+ * @param ticketNumbers - Array of ticket numbers to look up
+ * @returns Map of ticket number to issue info
+ */
+export async function batchLookupIssues(
+  workspaceId: string,
+  ticketNumbers: number[]
+): Promise<Map<number, IssueInfo>> {
+  return lookupIssuesByTicketNumbers(workspaceId, ticketNumbers);
 }

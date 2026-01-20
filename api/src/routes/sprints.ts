@@ -3,7 +3,11 @@ import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { transformIssueLinks } from '../utils/transformIssueLinks.js';
+import {
+  transformIssueLinks,
+  extractTicketNumbersFromContents,
+  batchLookupIssues,
+} from '../utils/transformIssueLinks.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -1434,10 +1438,15 @@ router.get('/:id/standups', authMiddleware, async (req: Request, res: Response) 
     );
 
     // Transform issue links in standup content (e.g., #123 -> clickable links)
+    // Batch pre-load all issue references to avoid N+1 queries
+    const allContents = result.rows.map((row) => row.content);
+    const allTicketNumbers = extractTicketNumbersFromContents(allContents);
+    const issueMap = await batchLookupIssues(workspaceId, allTicketNumbers);
+
     const standups = await Promise.all(
       result.rows.map(async (row) => {
         const formatted = formatStandupResponse(row);
-        formatted.content = await transformIssueLinks(formatted.content, workspaceId);
+        formatted.content = await transformIssueLinks(formatted.content, workspaceId, issueMap);
         return formatted;
       })
     );
