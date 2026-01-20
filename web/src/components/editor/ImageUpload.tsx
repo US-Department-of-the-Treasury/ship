@@ -21,6 +21,11 @@ export interface ImageUploadOptions {
    * Callback when an image upload fails
    */
   onUploadError?: (error: Error) => void;
+  /**
+   * AbortController for cancelling uploads on navigation/cleanup
+   * When aborted, pending uploads will be cancelled and won't update the document
+   */
+  abortController?: AbortController;
 }
 
 export const ImageUploadExtension = Extension.create<ImageUploadOptions>({
@@ -31,6 +36,7 @@ export const ImageUploadExtension = Extension.create<ImageUploadOptions>({
       onUploadStart: undefined,
       onUploadComplete: undefined,
       onUploadError: undefined,
+      abortController: undefined,
     };
   },
 
@@ -92,10 +98,22 @@ async function handleImageUpload(
   file: File,
   options: ImageUploadOptions
 ) {
+  const signal = options.abortController?.signal;
+
+  // Check if already aborted (e.g., user navigated away before upload started)
+  if (signal?.aborted) {
+    return;
+  }
+
   options.onUploadStart?.(file);
 
   // Create a data URL for immediate preview
   const dataUrl = await fileToDataUrl(file);
+
+  // Check again after async operation
+  if (signal?.aborted) {
+    return;
+  }
 
   // Insert image with data URL for immediate preview
   editor
@@ -109,10 +127,21 @@ async function handleImageUpload(
     .run();
 
   try {
-    const result = await uploadFile(file, (progress) => {
-      // Could update a progress indicator here
-      console.log(`Upload progress: ${progress.progress}%`);
-    });
+    const result = await uploadFile(
+      file,
+      (progress) => {
+        // Could update a progress indicator here
+        console.log(`Upload progress: ${progress.progress}%`);
+      },
+      signal
+    );
+
+    // Check if aborted before updating the editor
+    // This prevents updating a stale editor after navigation
+    if (signal?.aborted) {
+      console.log('Image upload completed but was cancelled - not updating editor');
+      return;
+    }
 
     // Replace the data URL with the CDN URL
     // Find and update the image node with matching src
@@ -142,6 +171,12 @@ async function handleImageUpload(
 
     options.onUploadComplete?.(result.cdnUrl);
   } catch (error) {
+    // Don't report cancellation as an error - it's intentional
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.log('Image upload cancelled');
+      return;
+    }
+
     console.error('Image upload failed:', error);
     options.onUploadError?.(
       error instanceof Error ? error : new Error('Upload failed')
@@ -171,12 +206,21 @@ export function triggerImageUpload(
   editor: Editor,
   options: ImageUploadOptions = {}
 ) {
+  // Check if already aborted
+  if (options.abortController?.signal?.aborted) {
+    return;
+  }
+
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
   input.multiple = true;
 
   input.onchange = () => {
+    // Check again in case it was aborted while file picker was open
+    if (options.abortController?.signal?.aborted) {
+      return;
+    }
     const files = Array.from(input.files || []);
     files.forEach((file) => {
       handleImageUpload(editor, file, options);

@@ -161,6 +161,10 @@ export function Editor({
   });
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 
+  // AbortController for cancelling async uploads (images, files) when navigating away
+  // This prevents uploads from completing into a different document after navigation
+  const imageUploadAbortRef = useRef<AbortController>(new AbortController());
+
   // Find portal target for properties sidebar (for proper landmark order)
   useLayoutEffect(() => {
     const target = document.getElementById('properties-portal');
@@ -339,6 +343,12 @@ export function Editor({
 
     return () => {
       cancelled = true;
+
+      // Abort any pending image uploads to prevent them from completing into wrong document
+      imageUploadAbortRef.current.abort();
+      // Create a new AbortController for the next document
+      imageUploadAbortRef.current = new AbortController();
+
       if (wsProvider) {
         // CRITICAL: Clear awareness state before destroying to prevent ghost cursors
         // This notifies other clients that this user has left the document
@@ -428,6 +438,7 @@ export function Editor({
       onUploadStart: (file) => console.log('Upload started:', file.name),
       onUploadComplete: (url) => console.log('Upload complete:', url),
       onUploadError: (error) => console.error('Upload error:', error),
+      abortController: imageUploadAbortRef.current,
     }),
     FileAttachmentExtension,
     DocumentEmbed,
