@@ -77,6 +77,9 @@ const updateDocumentSchema = z.object({
   ease: z.number().min(1).max(10).nullable().optional(),
   color: z.string().optional(),
   owner_id: z.string().uuid().nullable().optional(),
+  // Common association fields (shared across document types)
+  program_id: z.string().uuid().nullable().optional(),
+  sprint_id: z.string().uuid().nullable().optional(),
   // Sprint-specific fields (stored in properties but accepted at top level)
   start_date: z.string().optional(),
   end_date: z.string().optional(),
@@ -230,8 +233,10 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Check if document was converted - redirect to new document
-    if (doc.converted_to_id) {
+    // LEGACY: Handle old-style conversions that created new documents
+    // New conversions (2024+) use in-place updates with snapshots, so converted_to_id won't be set.
+    // This redirect only applies to documents converted before the in-place model was implemented.
+    if (doc.converted_to_id && doc.converted_to_id !== doc.id) {
       // Fetch the new document to determine its type for proper routing
       const newDocResult = await pool.query(
         'SELECT id, document_type FROM documents WHERE id = $1 AND workspace_id = $2',
@@ -241,7 +246,6 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       if (newDocResult.rows.length > 0) {
         const newDoc = newDocResult.rows[0];
         // Return 301 with Location header to the new document's API endpoint
-        // Include X-Converted-Type header so frontend knows the target type for routing
         res.set('X-Converted-Type', newDoc.document_type);
         res.set('X-Converted-To', newDoc.id);
         res.redirect(301, `/api/documents/${newDoc.id}`);
@@ -250,6 +254,22 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     const props = doc.properties || {};
+
+    // Get owner details for projects (owner_id is a user_id, lookup person document by user_id)
+    // Return user_id as id so PersonCombobox can match correctly
+    let owner: { id: string; name: string; email: string } | null = null;
+    if (doc.document_type === 'project' && props.owner_id) {
+      const ownerResult = await pool.query(
+        `SELECT (d.properties->>'user_id')::text as id, d.title as name, COALESCE(d.properties->>'email', u.email) as email
+         FROM documents d
+         LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
+         WHERE (d.properties->>'user_id')::uuid = $1 AND d.workspace_id = $2 AND d.document_type = 'person'`,
+        [props.owner_id, workspaceId]
+      );
+      if (ownerResult.rows.length > 0) {
+        owner = ownerResult.rows[0];
+      }
+    }
 
     // Get belongs_to associations from junction table (for issues and other document types)
     let belongs_to: Array<{ id: string; type: string; title?: string; color?: string }> = [];
@@ -273,17 +293,27 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Return with flattened properties for backwards compatibility
     res.json({
       ...doc,
+      // Issue properties
       state: props.state,
       priority: props.priority,
       estimate: props.estimate,
       assignee_id: props.assignee_id,
       source: props.source,
+      // Project properties
+      impact: props.impact,
+      confidence: props.confidence,
+      ease: props.ease,
+      owner_id: props.owner_id,
+      owner,
+      // Generic properties
       prefix: props.prefix,
       color: props.color,
+      // Sprint properties
       start_date: props.start_date,
       end_date: props.end_date,
       sprint_status: props.sprint_status,
       goal: props.goal,
+      hypothesis: props.hypothesis,
       // Include belongs_to for issue documents
       ...(doc.document_type === 'issue' && { belongs_to }),
     });
@@ -416,6 +446,14 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.parent_id !== undefined) {
       updates.push(`parent_id = $${paramIndex++}`);
       values.push(data.parent_id);
+    }
+    if (data.program_id !== undefined) {
+      updates.push(`program_id = $${paramIndex++}`);
+      values.push(data.program_id);
+    }
+    if (data.sprint_id !== undefined) {
+      updates.push(`sprint_id = $${paramIndex++}`);
+      values.push(data.sprint_id);
     }
     if (data.position !== undefined) {
       updates.push(`position = $${paramIndex++}`);
@@ -608,19 +646,46 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Flatten properties for backwards compatibility (match GET endpoint format)
     const updatedDoc = result.rows[0];
     const props = updatedDoc.properties || {};
+
+    // Get owner details for projects (owner_id is a user_id, lookup person document by user_id)
+    // Return user_id as id so PersonCombobox can match correctly
+    let owner: { id: string; name: string; email: string } | null = null;
+    if (updatedDoc.document_type === 'project' && props.owner_id) {
+      const ownerResult = await pool.query(
+        `SELECT (d.properties->>'user_id')::text as id, d.title as name, COALESCE(d.properties->>'email', u.email) as email
+         FROM documents d
+         LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
+         WHERE (d.properties->>'user_id')::uuid = $1 AND d.workspace_id = $2 AND d.document_type = 'person'`,
+        [props.owner_id, workspaceId]
+      );
+      if (ownerResult.rows.length > 0) {
+        owner = ownerResult.rows[0];
+      }
+    }
+
     res.json({
       ...updatedDoc,
+      // Issue properties
       state: props.state,
       priority: props.priority,
       estimate: props.estimate,
       assignee_id: props.assignee_id,
       source: props.source,
+      // Project properties
+      impact: props.impact,
+      confidence: props.confidence,
+      ease: props.ease,
+      owner_id: props.owner_id,
+      owner,
+      // Generic properties
       prefix: props.prefix,
       color: props.color,
+      // Sprint properties
       start_date: props.start_date,
       end_date: props.end_date,
       sprint_status: props.sprint_status,
       goal: props.goal,
+      hypothesis: props.hypothesis,
     });
   } catch (err) {
     console.error('Update document error:', err);
@@ -666,7 +731,7 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // Convert document type (issue <-> project)
-// Uses create-and-reference pattern: creates new doc, archives original with pointer
+// Uses in-place conversion with snapshots: same ID, state preserved for undo
 const convertDocumentSchema = z.object({
   target_type: z.enum(['issue', 'project']),
 });
@@ -717,100 +782,79 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
       return;
     }
 
-    // Check if document is already archived/converted
-    if (doc.archived_at || doc.converted_to_id) {
-      res.status(400).json({ error: 'Document has already been archived or converted' });
+    // Check if document is archived
+    if (doc.archived_at) {
+      res.status(400).json({ error: 'Cannot convert an archived document' });
       return;
     }
 
     await client.query('BEGIN');
 
-    let newDocId: string;
-    let newDoc: any;
+    const currentProps = doc.properties || {};
+    const sourceType = doc.document_type;
+
+    // 1. Create snapshot of current state for undo capability
+    await client.query(
+      `INSERT INTO document_snapshots (
+        document_id, document_type, title, properties, ticket_number,
+        snapshot_reason, created_by
+      )
+      VALUES ($1, $2, $3, $4, $5, 'conversion', $6)`,
+      [
+        id,
+        sourceType,
+        doc.title,
+        JSON.stringify(currentProps),
+        doc.ticket_number,
+        userId,
+      ]
+    );
+
+    // 2. Prepare new properties based on target type
+    let newProperties: Record<string, unknown>;
+    let newTicketNumber: number | null = null;
 
     if (target_type === 'project') {
-      // Issue -> Project conversion
-      // Preserve title and content, set default project properties
-      const projectProperties = {
+      // Issue -> Project: set project defaults, preserve program_id
+      newProperties = {
         impact: 3,
         confidence: 3,
         ease: 3,
         color: '#6366f1',
         owner_id: userId,
+        program_id: currentProps.program_id || null,
         // Track original ticket number for reference
         promoted_from_ticket: doc.ticket_number,
       };
-
-      const result = await client.query(
-        `INSERT INTO documents (
-          workspace_id, document_type, title, content, yjs_state, properties,
-          created_by, visibility, converted_from_id
-        )
-        VALUES ($1, 'project', $2, $3, $4, $5, $6, $7, $8)
-        RETURNING *`,
-        [
-          workspaceId,
-          doc.title,
-          JSON.stringify(doc.content || {}),
-          doc.yjs_state, // Copy collaborative content
-          JSON.stringify(projectProperties),
-          userId,
-          doc.visibility,
-          id, // converted_from_id points to original
-        ]
-      );
-      newDoc = result.rows[0];
-      newDocId = newDoc.id;
-
+      // Clear ticket_number for projects
+      newTicketNumber = null;
     } else {
-      // Project -> Issue conversion
-      // Needs fresh ticket number with advisory lock
-
-      // Use advisory lock to serialize ticket number generation per workspace
+      // Project -> Issue: set issue defaults, preserve program_id
+      // Need fresh ticket number with advisory lock
       const workspaceIdHex = workspaceId.replace(/-/g, '').substring(0, 15);
       const lockKey = parseInt(workspaceIdHex, 16);
       await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
 
-      // Get next ticket number
       const ticketResult = await client.query(
         `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
          FROM documents
          WHERE workspace_id = $1 AND document_type = 'issue'`,
         [workspaceId]
       );
-      const ticketNumber = ticketResult.rows[0].next_number;
+      newTicketNumber = ticketResult.rows[0].next_number;
 
-      const issueProperties = {
+      newProperties = {
         state: 'backlog',
         priority: 'medium',
         source: 'internal',
         assignee_id: null,
         rejection_reason: null,
+        program_id: currentProps.program_id || null,
+        // Track conversion from project
+        demoted_from_project: true,
       };
 
-      const result = await client.query(
-        `INSERT INTO documents (
-          workspace_id, document_type, title, content, yjs_state, properties,
-          ticket_number, created_by, visibility, converted_from_id
-        )
-        VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7, $8, $9)
-        RETURNING *`,
-        [
-          workspaceId,
-          doc.title,
-          JSON.stringify(doc.content || {}),
-          doc.yjs_state, // Copy collaborative content
-          JSON.stringify(issueProperties),
-          ticketNumber,
-          userId,
-          doc.visibility,
-          id, // converted_from_id points to original
-        ]
-      );
-      newDoc = result.rows[0];
-      newDocId = newDoc.id;
-
-      // Remove 'project' associations from child issues pointing to this project
+      // Remove 'project' associations from child issues pointing to this document
       // (They become orphaned - their parent project is being converted to an issue)
       await client.query(
         `DELETE FROM document_associations
@@ -819,52 +863,69 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
       );
     }
 
-    // Copy associations from original to new document (filtered by target type validity)
-    // According to the association validity matrix:
-    // - issue: ["parent", "project", "sprint", "program"]
-    // - project: ["program"]
-    // When converting issue->project, only 'program' associations are valid for projects
-    // When converting project->issue, only 'program' associations are carried over
-    const validTypesForTarget = target_type === 'project' ? ['program'] : ['program'];
-
-    await client.query(
-      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata, created_at)
-       SELECT $1, related_id, relationship_type, metadata, NOW()
-       FROM document_associations
-       WHERE document_id = $2 AND relationship_type = ANY($3)`,
-      [newDocId, id, validTypesForTarget]
-    );
-
-    // Archive original document with converted_to_id pointer
-    await client.query(
+    // 3. Update document in-place with new type and properties
+    const updateResult = await client.query(
       `UPDATE documents
-       SET archived_at = NOW(),
-           converted_to_id = $1,
+       SET document_type = $1,
+           properties = $2,
+           ticket_number = $3,
+           original_type = COALESCE(original_type, $4),
+           conversion_count = COALESCE(conversion_count, 0) + 1,
+           converted_from_id = $5,
            converted_at = NOW(),
-           converted_by = $2,
+           converted_by = $6,
            updated_at = NOW()
-       WHERE id = $3 AND workspace_id = $4`,
-      [newDocId, userId, id, workspaceId]
+       WHERE id = $7 AND workspace_id = $8
+       RETURNING *`,
+      [
+        target_type,
+        JSON.stringify(newProperties),
+        newTicketNumber,
+        sourceType, // Set original_type only if not already set
+        id, // converted_from_id points to self (for tracking conversion happened)
+        userId,
+        id,
+        workspaceId,
+      ]
     );
+
+    const updatedDoc = updateResult.rows[0];
+
+    // 4. Update associations - remove invalid ones for new type
+    // Issues can have: parent, project, sprint, program
+    // Projects can only have: program
+    if (target_type === 'project') {
+      // Remove non-program associations (project can only have program)
+      await client.query(
+        `DELETE FROM document_associations
+         WHERE document_id = $1 AND relationship_type != 'program'`,
+        [id]
+      );
+    }
+    // If converting to issue, keep all associations (issues support more types)
 
     await client.query('COMMIT');
 
-    // Notify collaborators about the conversion
-    handleDocumentConversion(
-      id,
-      newDocId,
-      doc.document_type as 'issue' | 'project',
-      target_type
-    );
-
-    // Return the new document with conversion metadata
-    res.status(201).json({
-      ...newDoc,
-      converted_from: {
-        id: id,
-        document_type: doc.document_type,
-        ticket_number: doc.ticket_number,
-      },
+    // Return the updated document (same ID!)
+    const props = updatedDoc.properties || {};
+    res.status(200).json({
+      ...updatedDoc,
+      // Flatten properties for frontend
+      ...(target_type === 'issue' && {
+        state: props.state,
+        priority: props.priority,
+        assignee_id: props.assignee_id,
+        source: props.source,
+      }),
+      ...(target_type === 'project' && {
+        impact: props.impact,
+        confidence: props.confidence,
+        ease: props.ease,
+        color: props.color,
+        owner_id: props.owner_id,
+      }),
+      program_id: props.program_id,
+      converted_from_type: sourceType,
     });
 
   } catch (err) {
@@ -876,7 +937,7 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
   }
 });
 
-// POST /documents/:id/undo-conversion - Undo a document conversion
+// POST /documents/:id/undo-conversion - Undo a document conversion using snapshots
 router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Response) => {
   const id = String(req.params.id);
   const userId = String(req.userId);
@@ -895,10 +956,9 @@ router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Re
     return;
   }
 
-  // Only the creator, the person who converted it, or workspace admin can undo
+  // Only the creator or the person who converted it can undo
   const isCreator = currentDoc.created_by === userId;
   const isConverter = currentDoc.converted_by === userId;
-  // For simplicity, we allow creator or converter (admin check would require additional query)
   if (!isCreator && !isConverter) {
     res.status(403).json({ error: 'Only the document creator or converter can undo conversion' });
     return;
@@ -909,93 +969,130 @@ router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Re
   try {
     await client.query('BEGIN');
 
-    // Check if this document was converted from another (already checked above but need in transaction)
-    if (!currentDoc.converted_from_id) {
-      await client.query('ROLLBACK');
-      res.status(400).json({ error: 'This document was not converted from another document' });
-      return;
-    }
-
-    // Get the original document
-    const originalResult = await client.query(
-      `SELECT * FROM documents WHERE id = $1 AND workspace_id = $2`,
-      [currentDoc.converted_from_id, workspaceId]
+    // Get the most recent snapshot for this document
+    const snapshotResult = await client.query(
+      `SELECT * FROM document_snapshots
+       WHERE document_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [id]
     );
 
-    if (originalResult.rows.length === 0) {
+    if (snapshotResult.rows.length === 0) {
       await client.query('ROLLBACK');
-      res.status(404).json({ error: 'Original document not found' });
+      res.status(400).json({ error: 'No conversion history found for this document' });
       return;
     }
 
-    const originalDoc = originalResult.rows[0];
+    const snapshot = snapshotResult.rows[0];
+    const currentProps = currentDoc.properties || {};
+    const restoredType = snapshot.document_type;
 
-    // Verify the original document points to this one
-    if (originalDoc.converted_to_id !== id) {
-      await client.query('ROLLBACK');
-      res.status(400).json({ error: 'Document conversion chain is inconsistent' });
-      return;
-    }
-
-    // Restore the original document:
-    // - Clear converted_to_id so it's no longer archived
-    // - Clear archived_at so it appears in lists again
-    // - Set converted_from_id to point to the current doc (for history)
+    // 1. Create snapshot of current state (so user can re-convert if needed)
     await client.query(
+      `INSERT INTO document_snapshots (
+        document_id, document_type, title, properties, ticket_number,
+        snapshot_reason, created_by
+      )
+      VALUES ($1, $2, $3, $4, $5, 'undo', $6)`,
+      [
+        id,
+        currentDoc.document_type,
+        currentDoc.title,
+        JSON.stringify(currentProps),
+        currentDoc.ticket_number,
+        userId,
+      ]
+    );
+
+    // 2. Restore document from snapshot
+    const snapshotProps = snapshot.properties || {};
+
+    // Handle ticket number restoration
+    let restoredTicketNumber = snapshot.ticket_number;
+
+    // If restoring to an issue and we don't have a ticket number, generate one
+    if (restoredType === 'issue' && !restoredTicketNumber) {
+      const workspaceIdHex = workspaceId.replace(/-/g, '').substring(0, 15);
+      const lockKey = parseInt(workspaceIdHex, 16);
+      await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
+
+      const ticketResult = await client.query(
+        `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
+         FROM documents
+         WHERE workspace_id = $1 AND document_type = 'issue'`,
+        [workspaceId]
+      );
+      restoredTicketNumber = ticketResult.rows[0].next_number;
+    }
+
+    // If restoring to a project, clear ticket number
+    if (restoredType === 'project') {
+      restoredTicketNumber = null;
+    }
+
+    const updateResult = await client.query(
       `UPDATE documents
-       SET converted_to_id = NULL,
-           converted_from_id = $1,
-           archived_at = NULL,
+       SET document_type = $1,
+           properties = $2,
+           ticket_number = $3,
+           converted_at = NOW(),
+           converted_by = $4,
            updated_at = NOW()
-       WHERE id = $2`,
-      [id, originalDoc.id]
+       WHERE id = $5 AND workspace_id = $6
+       RETURNING *`,
+      [
+        restoredType,
+        JSON.stringify(snapshotProps),
+        restoredTicketNumber,
+        userId,
+        id,
+        workspaceId,
+      ]
     );
 
-    // Archive the current document:
-    // - Set converted_to_id to point back to original (making it the archived one now)
-    // - Set archived_at since this is now the archived conversion
-    // - Clear converted_from_id
+    const restoredDoc = updateResult.rows[0];
+
+    // 3. Delete the snapshot we just restored from (keep the undo snapshot)
     await client.query(
-      `UPDATE documents
-       SET converted_to_id = $1,
-           converted_from_id = NULL,
-           archived_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $2`,
-      [originalDoc.id, id]
+      `DELETE FROM document_snapshots WHERE id = $1`,
+      [snapshot.id]
     );
 
-    // Copy associations from current document back to original document
-    // (restoring the associations as they were before conversion)
-    // First, clear any existing associations on the original (shouldn't be many since it was archived)
-    await client.query(
-      `DELETE FROM document_associations WHERE document_id = $1`,
-      [originalDoc.id]
-    );
-
-    // Copy all associations from the current (being archived) document to the restored original
-    await client.query(
-      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata, created_at)
-       SELECT $1, related_id, relationship_type, metadata, NOW()
-       FROM document_associations
-       WHERE document_id = $2`,
-      [originalDoc.id, id]
-    );
+    // 4. Update associations based on restored type
+    if (restoredType === 'project') {
+      // Remove non-program associations (project can only have program)
+      await client.query(
+        `DELETE FROM document_associations
+         WHERE document_id = $1 AND relationship_type != 'program'`,
+        [id]
+      );
+    }
+    // If restoring to issue, keep all associations
 
     await client.query('COMMIT');
 
-    // Get the restored original document for response
-    const restoredResult = await client.query(
-      `SELECT * FROM documents WHERE id = $1`,
-      [originalDoc.id]
-    );
-
-    const restoredDoc = restoredResult.rows[0];
-
+    // Return the restored document (same ID!)
+    const props = restoredDoc.properties || {};
     res.status(200).json({
-      restored_document: restoredDoc,
-      archived_document_id: id,
-      message: `Conversion undone. Original ${originalDoc.document_type} has been restored.`,
+      ...restoredDoc,
+      // Flatten properties for frontend
+      ...(restoredType === 'issue' && {
+        state: props.state,
+        priority: props.priority,
+        assignee_id: props.assignee_id,
+        source: props.source,
+      }),
+      ...(restoredType === 'project' && {
+        impact: props.impact,
+        confidence: props.confidence,
+        ease: props.ease,
+        color: props.color,
+        owner_id: props.owner_id,
+      }),
+      program_id: props.program_id,
+      restored_from_type: currentDoc.document_type,
+      message: `Conversion undone. Document restored to ${restoredType}.`,
     });
 
   } catch (err) {

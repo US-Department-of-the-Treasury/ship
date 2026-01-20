@@ -7,7 +7,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { useProgramsQuery } from '@/hooks/useProgramsQuery';
 import { useProjectsQuery } from '@/hooks/useProjectsQuery';
-import { apiGet, apiPatch, apiDelete } from '@/lib/api';
+import { useDocumentConversion } from '@/hooks/useDocumentConversion';
+import { apiGet, apiPatch, apiDelete, apiPost } from '@/lib/api';
+import { useToast } from '@/components/ui/Toast';
+import { issueKeys } from '@/hooks/useIssuesQuery';
+import { projectKeys } from '@/hooks/useProjectsQuery';
 
 interface DocumentResponse extends Record<string, unknown> {
   id: string;
@@ -33,9 +37,12 @@ interface DocumentResponse extends Record<string, unknown> {
   impact?: number;
   confidence?: number;
   ease?: number;
+  owner_id?: string | null;
+  owner?: { id: string; name: string; email: string } | null;
   start_date?: string;
   end_date?: string;
   status?: string;
+  hypothesis?: string;
   visibility?: 'private' | 'workspace';
   parent_id?: string | null;
   ticket_number?: number;
@@ -59,6 +66,7 @@ export function UnifiedDocumentPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { showToast } = useToast();
 
   // Fetch the document by ID
   const { data: document, isLoading, error } = useQuery<DocumentResponse>({
@@ -108,17 +116,98 @@ export function UnifiedDocumentPage() {
     queryClient.invalidateQueries({ queryKey: ['document', id] });
   }, [queryClient, id]);
 
-  // Update mutation
+  // Document conversion (issue <-> project)
+  const { convert, undoConversion, isConverting } = useDocumentConversion({
+    navigateAfterConvert: true,
+  });
+
+  // Conversion callbacks that use the current document
+  const handleConvert = useCallback(() => {
+    if (!document || !id) return;
+    const sourceType = document.document_type as 'issue' | 'project';
+    convert(id, sourceType, document.title);
+  }, [convert, document, id]);
+
+  const handleUndoConversion = useCallback(async () => {
+    if (!document || !id) return;
+
+    try {
+      const res = await apiPost(`/api/documents/${id}/undo-conversion`, {});
+
+      if (res.ok) {
+        // Invalidate caches to refresh the UI
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: issueKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: ['document', id] }),
+        ]);
+        showToast('Conversion undone successfully', 'success');
+      } else {
+        const error = await res.json();
+        showToast(error.error || 'Failed to undo conversion', 'error');
+      }
+    } catch (err) {
+      showToast('Failed to undo conversion', 'error');
+    }
+  }, [document, id, queryClient, showToast]);
+
+  // Handle document type change via DocumentTypeSelector
+  const handleTypeChange = useCallback(async (newType: string) => {
+    if (!document || !id) return;
+
+    const currentType = document.document_type;
+
+    // Only issue <-> project conversions are supported
+    const isValidConversion =
+      (currentType === 'issue' && newType === 'project') ||
+      (currentType === 'project' && newType === 'issue');
+
+    if (!isValidConversion) {
+      showToast(`Converting ${currentType} to ${newType} is not supported`, 'error');
+      return;
+    }
+
+    try {
+      const res = await apiPost(`/api/documents/${id}/convert`, { target_type: newType });
+
+      if (res.ok) {
+        const data = await res.json();
+
+        // Invalidate caches
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: issueKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: ['document', id] }),
+        ]);
+
+        // Navigate to the new document
+        navigate(`/documents/${data.id}`, { replace: true });
+      } else {
+        const error = await res.json();
+        showToast(error.error || 'Failed to convert document', 'error');
+      }
+    } catch (err) {
+      showToast('Failed to convert document', 'error');
+    }
+  }, [document, id, navigate, queryClient, showToast]);
+
+  // Handle WebSocket notification that document was converted
+  const handleDocumentConverted = useCallback((newDocId: string, _newDocType: 'issue' | 'project') => {
+    // Navigate to the converted document
+    navigate(`/documents/${newDocId}`, { replace: true });
+  }, [navigate]);
+
+  // Update mutation - pass documentId as variable to avoid stale closure issues after navigation
   const updateMutation = useMutation({
-    mutationFn: async (updates: Partial<DocumentResponse>) => {
-      const response = await apiPatch(`/api/documents/${id}`, updates);
+    mutationFn: async ({ documentId, updates }: { documentId: string; updates: Partial<DocumentResponse> }) => {
+      const response = await apiPatch(`/api/documents/${documentId}`, updates);
       if (!response.ok) {
         throw new Error('Failed to update document');
       }
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['document', id] });
+    onSuccess: (_, { documentId }) => {
+      queryClient.invalidateQueries({ queryKey: ['document', documentId] });
       // Also invalidate type-specific queries for list views
       if (document?.document_type) {
         queryClient.invalidateQueries({ queryKey: [document.document_type + 's', 'list'] });
@@ -129,10 +218,10 @@ export function UnifiedDocumentPage() {
     },
   });
 
-  // Delete mutation
+  // Delete mutation - pass documentId as variable to avoid stale closure issues
   const deleteMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiDelete(`/api/documents/${id}`);
+    mutationFn: async (documentId: string) => {
+      const response = await apiDelete(`/api/documents/${documentId}`);
       if (!response.ok) {
         throw new Error('Failed to delete document');
       }
@@ -144,14 +233,16 @@ export function UnifiedDocumentPage() {
 
   // Handle update
   const handleUpdate = useCallback(async (updates: Partial<UnifiedDocument>) => {
-    await updateMutation.mutateAsync(updates as Partial<DocumentResponse>);
-  }, [updateMutation]);
+    if (!id) return;
+    await updateMutation.mutateAsync({ documentId: id, updates: updates as Partial<DocumentResponse> });
+  }, [updateMutation, id]);
 
   // Handle delete
   const handleDelete = useCallback(async () => {
+    if (!id) return;
     if (!window.confirm('Are you sure you want to delete this document?')) return;
-    await deleteMutation.mutateAsync();
-  }, [deleteMutation]);
+    await deleteMutation.mutateAsync(id);
+  }, [deleteMutation, id]);
 
   // Handle back navigation
   const handleBack = useCallback(() => {
@@ -184,18 +275,26 @@ export function UnifiedDocumentPage() {
           programs,
           projects,
           onAssociationChange: handleAssociationChange,
+          onConvert: handleConvert,
+          onUndoConversion: handleUndoConversion,
+          isConverting,
+          isUndoing: isConverting,
         };
       case 'project':
         return {
           programs,
           people: teamMembers,
+          onConvert: handleConvert,
+          onUndoConversion: handleUndoConversion,
+          isConverting,
+          isUndoing: isConverting,
         };
       case 'sprint':
         return {};
       default:
         return {};
     }
-  }, [document, teamMembers, programs, projects, handleAssociationChange]);
+  }, [document, teamMembers, programs, projects, handleAssociationChange, handleConvert, handleUndoConversion, isConverting]);
 
   // Transform API response to UnifiedDocument format
   const unifiedDocument: UnifiedDocument | null = useMemo(() => {
@@ -230,6 +329,8 @@ export function UnifiedDocumentPage() {
         color: document.color || '#3b82f6',
         emoji: null,
         program_id: document.program_id,
+        owner: document.owner,
+        owner_id: document.owner_id,
         converted_from_id: document.converted_from_id,
       }),
       ...(document.document_type === 'sprint' && {
@@ -237,6 +338,7 @@ export function UnifiedDocumentPage() {
         end_date: document.end_date || '',
         status: (document.status as 'planned' | 'active' | 'completed') || 'planned',
         program_id: document.program_id,
+        hypothesis: document.hypothesis || '',
       }),
       ...(document.document_type === 'wiki' && {
         parent_id: document.parent_id,
@@ -280,6 +382,8 @@ export function UnifiedDocumentPage() {
       document={unifiedDocument}
       sidebarData={sidebarData}
       onUpdate={handleUpdate}
+      onTypeChange={handleTypeChange}
+      onDocumentConverted={handleDocumentConverted}
       onBack={handleBack}
       backLabel="Back to documents"
       onDelete={handleDelete}
