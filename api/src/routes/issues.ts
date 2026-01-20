@@ -128,6 +128,47 @@ async function getBelongsToAssociations(documentId: string): Promise<BelongsToEn
   }));
 }
 
+// Batch version to avoid N+1 queries - fetches associations for multiple documents in one query
+async function getBelongsToAssociationsBatch(documentIds: string[]): Promise<Map<string, BelongsToEntry[]>> {
+  if (documentIds.length === 0) {
+    return new Map();
+  }
+
+  const result = await pool.query(
+    `SELECT da.document_id, da.related_id as id, da.relationship_type as type,
+            d.title, d.properties->>'color' as color
+     FROM document_associations da
+     LEFT JOIN documents d ON da.related_id = d.id
+     WHERE da.document_id = ANY($1)
+     ORDER BY da.document_id, da.relationship_type, da.created_at`,
+    [documentIds]
+  );
+
+  // Group results by document_id
+  const associationsMap = new Map<string, BelongsToEntry[]>();
+  for (const row of result.rows) {
+    const docId = row.document_id;
+    if (!associationsMap.has(docId)) {
+      associationsMap.set(docId, []);
+    }
+    associationsMap.get(docId)!.push({
+      id: row.id,
+      type: row.type,
+      title: row.title || undefined,
+      color: row.color || undefined,
+    });
+  }
+
+  // Ensure all requested IDs have an entry (empty array if no associations)
+  for (const id of documentIds) {
+    if (!associationsMap.has(id)) {
+      associationsMap.set(id, []);
+    }
+  }
+
+  return associationsMap;
+}
+
 // Helper to extract issue properties from row (without belongs_to - added separately)
 function extractIssueFromRow(row: any) {
   const props = row.properties || {};
@@ -267,16 +308,18 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
     const result = await pool.query(query, params);
 
-    // Extract issues and add belongs_to associations
-    const issues = await Promise.all(result.rows.map(async row => {
+    // Extract issues and batch-fetch associations to avoid N+1 queries
+    const issueIds = result.rows.map(row => row.id);
+    const associationsMap = await getBelongsToAssociationsBatch(issueIds);
+
+    const issues = result.rows.map(row => {
       const issue = extractIssueFromRow(row);
-      const belongs_to = await getBelongsToAssociations(row.id);
       return {
         ...issue,
         display_id: `#${issue.ticket_number}`,
-        belongs_to,
+        belongs_to: associationsMap.get(row.id) || [],
       };
-    }));
+    });
 
     res.json(issues);
   } catch (err) {
@@ -421,15 +464,18 @@ router.get('/:id/children', authMiddleware, async (req: Request, res: Response) 
       [id, workspaceId, userId, isAdmin]
     );
 
-    const children = await Promise.all(result.rows.map(async row => {
+    // Batch-fetch associations to avoid N+1 queries
+    const childIds = result.rows.map(row => row.id);
+    const associationsMap = await getBelongsToAssociationsBatch(childIds);
+
+    const children = result.rows.map(row => {
       const issue = extractIssueFromRow(row);
-      const belongs_to = await getBelongsToAssociations(row.id);
       return {
         ...issue,
         display_id: `#${issue.ticket_number}`,
-        belongs_to,
+        belongs_to: associationsMap.get(row.id) || [],
       };
-    }));
+    });
 
     res.json(children);
   } catch (err) {
