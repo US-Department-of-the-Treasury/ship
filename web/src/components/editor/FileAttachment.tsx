@@ -195,8 +195,15 @@ export const FileAttachmentExtension = Node.create({
 /**
  * Handle file upload and insertion into editor
  * Used by both drag-and-drop and file picker
+ * @param editor - TipTap editor instance
+ * @param file - File to upload
+ * @param signal - Optional AbortSignal for cancelling uploads on navigation/cleanup
  */
-async function handleFileUpload(editor: any, file: File) {
+async function handleFileUpload(editor: any, file: File, signal?: AbortSignal) {
+  // Check if already aborted
+  if (signal?.aborted) {
+    return;
+  }
   // Check if file type is blocked (executables/scripts are blocked for security)
   if (!isAllowedFileType(file.type, file.name)) {
     const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
@@ -222,10 +229,16 @@ async function handleFileUpload(editor: any, file: File) {
     .run();
 
   try {
-    // Upload file
+    // Upload file with abort signal
     const result = await uploadFile(file, (progress) => {
       console.log(`Upload progress: ${progress.progress}%`);
-    });
+    }, signal);
+
+    // Check if aborted before updating the editor
+    if (signal?.aborted) {
+      console.log('File upload completed but was cancelled - not updating editor');
+      return;
+    }
 
     // Find and update the attachment node
     const { state, view } = editor;
@@ -259,6 +272,12 @@ async function handleFileUpload(editor: any, file: File) {
       view.dispatch(transaction);
     }
   } catch (error) {
+    // Don't report cancellation as an error - it's intentional
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.log('File upload cancelled');
+      return;
+    }
+
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('File upload failed:', { filename: file.name, error: errorMessage, fullError: error });
     alert(`Upload failed: ${errorMessage}\n\nPlease try again.`);
@@ -288,17 +307,30 @@ async function handleFileUpload(editor: any, file: File) {
 
 /**
  * Trigger file picker for file upload
+ * @param editor - TipTap editor instance
+ * @param signal - Optional AbortSignal for cancelling uploads on navigation/cleanup
  */
-export function triggerFileUpload(editor: any) {
+export function triggerFileUpload(editor: any, signal?: AbortSignal) {
+  // Check if already aborted
+  if (signal?.aborted) {
+    return;
+  }
+
   const input = document.createElement('input');
   input.type = 'file';
   // No accept restriction - allow any file type (blocklist enforced in isAllowedFileType)
   input.multiple = false;
 
   input.onchange = async () => {
+    // Check if aborted while file picker was open
+    if (signal?.aborted) {
+      return;
+    }
+
     const file = input.files?.[0];
     if (!file) return;
-    await handleFileUpload(editor, file);
+
+    await handleFileUpload(editor, file, signal);
   };
 
   input.click();

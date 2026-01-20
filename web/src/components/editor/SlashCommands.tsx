@@ -141,6 +141,8 @@ interface CreateSlashCommandsOptions {
   onNavigateToDocument?: (id: string) => void;
   /** Document type for filtering document-specific commands */
   documentType?: string;
+  /** AbortSignal for cancelling async operations on navigation/cleanup */
+  abortSignal?: AbortSignal;
 }
 
 // Icons for slash commands
@@ -251,7 +253,7 @@ const icons = {
   ),
 };
 
-export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument, documentType }: CreateSlashCommandsOptions) {
+export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument, documentType, abortSignal }: CreateSlashCommandsOptions) {
   const slashCommands: SlashCommandItem[] = [
     // Sub-document (requires async callback)
     {
@@ -374,6 +376,9 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
           // Create data URL for immediate preview
           const reader = new FileReader();
           reader.onload = async () => {
+            // Check if aborted before processing
+            if (abortSignal?.aborted) return;
+
             const dataUrl = reader.result as string;
 
             // Insert image with data URL preview
@@ -381,7 +386,13 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
 
             try {
               // Upload and replace with CDN URL
-              const result = await uploadFile(file);
+              const result = await uploadFile(file, undefined, abortSignal);
+
+              // Check if aborted before updating editor
+              if (abortSignal?.aborted) {
+                console.log('Slash command image upload completed but was cancelled - not updating editor');
+                return;
+              }
 
               // Find and update the image node
               const { state, view } = editor;
@@ -406,6 +417,11 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
                 view.dispatch(transaction);
               }
             } catch (error) {
+              // Don't report cancellation as an error - it's intentional
+              if (error instanceof DOMException && error.name === 'AbortError') {
+                console.log('Slash command image upload cancelled');
+                return;
+              }
               console.error('Image upload failed:', error);
             }
           };
@@ -424,7 +440,7 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
         editor.chain().focus().deleteRange(range).run();
         // Import and trigger file upload
         const { triggerFileUpload } = await import('./FileAttachment');
-        triggerFileUpload(editor);
+        triggerFileUpload(editor, abortSignal);
       },
     },
     // Toggle/Details

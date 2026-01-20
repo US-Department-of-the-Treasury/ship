@@ -369,10 +369,16 @@ export function Editor({
   }, [documentId, userName, color, ydoc, roomPrefix, onBack, onDocumentConverted]);
 
   // Create slash commands extension (memoized to avoid recreation)
+  // documentId is in deps to ensure fresh AbortSignal when switching documents
   const slashCommandsExtension = useMemo(() => {
     if (!onCreateSubDocument) return null;
-    return createSlashCommands({ onCreateSubDocument, onNavigateToDocument, documentType });
-  }, [onCreateSubDocument, onNavigateToDocument, documentType]);
+    return createSlashCommands({
+      onCreateSubDocument,
+      onNavigateToDocument,
+      documentType,
+      abortSignal: imageUploadAbortRef.current.signal,
+    });
+  }, [onCreateSubDocument, onNavigateToDocument, documentType, documentId]);
 
   // Create mention extension (memoized to avoid recreation)
   const mentionExtension = useMemo(() => {
