@@ -20,7 +20,7 @@ import { DocumentEditorPage } from '@/pages/DocumentEditor';
 import { IssuesPage } from '@/pages/Issues';
 import { ProgramsPage } from '@/pages/Programs';
 import { ProgramEditorPage } from '@/pages/ProgramEditor';
-import { SprintEditorPage } from '@/pages/SprintEditor';
+// SprintEditorPage deprecated - using UnifiedDocumentPage via DocumentRedirect
 import { SprintViewPage } from '@/pages/SprintView';
 import { SprintsPage } from '@/pages/Sprints';
 import { TeamModePage } from '@/pages/TeamMode';
@@ -29,7 +29,7 @@ import { PersonEditorPage } from '@/pages/PersonEditor';
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
 import { ProjectsPage } from '@/pages/Projects';
-import { ProjectEditorPage } from '@/pages/ProjectEditor';
+// ProjectEditorPage deprecated - using UnifiedDocumentPage via DocumentRedirect
 import { DashboardPage } from '@/pages/Dashboard';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
@@ -187,16 +187,16 @@ function AppRoutes() {
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:id" element={<DocumentRedirect />} />
         <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/:id" element={<ProjectEditorPage />} />
+        <Route path="projects/:id" element={<DocumentRedirect />} />
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />
         <Route path="programs/:id/issues" element={<ProgramEditorPage />} />
         <Route path="programs/:id/projects" element={<ProgramEditorPage />} />
         <Route path="programs/:id/sprints" element={<ProgramEditorPage />} />
         <Route path="programs/:id/sprints/:sprintId" element={<ProgramEditorPage />} />
-        <Route path="programs/:programId/sprints/:id" element={<SprintEditorPage />} />
+        <Route path="programs/:programId/sprints/:id" element={<DocumentRedirect />} />
         <Route path="sprints" element={<SprintsPage />} />
-        <Route path="sprints/:id" element={<SprintEditorPage />} />
+        <Route path="sprints/:id" element={<DocumentRedirect />} />
         <Route path="sprints/:id/view" element={<SprintViewPage />} />
         <Route path="sprints/:id/planning" element={<SprintViewPage />} />
         <Route path="sprints/:id/standups" element={<SprintViewPage />} />
