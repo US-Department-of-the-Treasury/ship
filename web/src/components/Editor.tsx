@@ -187,10 +187,21 @@ export function Editor({
   const color = userColor || stringToColor(userName);
 
   // Auto-focus and select title if "Untitled" (new document)
+  // Uses double requestAnimationFrame to run AFTER useFocusOnNavigate's
+  // requestAnimationFrame (which focuses #main-content for accessibility).
+  // This ensures title gets focus for new docs while preserving a11y flow.
   useEffect(() => {
-    if (titleInputRef.current && (!title || title === 'Untitled')) {
-      titleInputRef.current.focus();
-      titleInputRef.current.select();
+    if (!title || title === 'Untitled') {
+      // First rAF: queued alongside useFocusOnNavigate's rAF
+      // Second rAF: runs after useFocusOnNavigate completes
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (titleInputRef.current) {
+            titleInputRef.current.focus();
+            titleInputRef.current.select();
+          }
+        });
+      });
     }
   }, []);
 
