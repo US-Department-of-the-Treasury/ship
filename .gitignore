@@ -97,3 +97,6 @@ vendor/
 
 # SSDF-Helper - Memory Safety Analysis Reports (CUI/ISVI)
 /SSDF-Helper/
+
+# local Claude
+.claude/settings.local.json
