@@ -23,7 +23,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { issueKeys } from '@/hooks/useIssuesQuery';
-import { projectKeys } from '@/hooks/useProjectsQuery';
+import { projectKeys, useProjectsQuery, Project as ProjectFromQuery } from '@/hooks/useProjectsQuery';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -203,6 +203,9 @@ export function ProgramEditorPage() {
     workspaceSprintStartDate,
     createSprint: createSprintMutation,
   } = useSprints(id);
+
+  // Fetch all projects for assignment dropdown
+  const { data: allProjects = [] } = useProjectsQuery();
 
   // Reset tab data when program ID changes
   useEffect(() => {
@@ -561,6 +564,19 @@ export function ProgramEditorPage() {
                   const res = await fetch(`${API_URL}/api/programs/${id}/issues`, { credentials: 'include' });
                   if (res.ok) setIssues(await res.json());
                 }}
+                allProjects={allProjects}
+                onAssignToProject={async (issueId, projectId) => {
+                  const token = await getCsrfToken();
+                  await fetch(`${API_URL}/api/issues/${issueId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
+                    credentials: 'include',
+                    body: JSON.stringify({ belongs_to: projectId ? [{ id: projectId, type: 'project' }] : [] }),
+                  });
+                  // Refresh issues
+                  const res = await fetch(`${API_URL}/api/programs/${id}/issues`, { credentials: 'include' });
+                  if (res.ok) setIssues(await res.json());
+                }}
               />
             )}
           </div>
@@ -874,6 +890,8 @@ function ProgramIssuesList({
   onIssueClick,
   onBulkMoveToSprint,
   onAssignToSprint,
+  allProjects,
+  onAssignToProject,
 }: {
   issues: Issue[];
   sprints: Sprint[];
@@ -882,6 +900,8 @@ function ProgramIssuesList({
   onIssueClick: (id: string) => void;
   onBulkMoveToSprint: (sprintId: string | null) => Promise<void>;
   onAssignToSprint: (issueId: string, sprintId: string | null) => Promise<void>;
+  allProjects: ProjectFromQuery[];
+  onAssignToProject: (issueId: string, projectId: string | null) => Promise<void>;
 }) {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -940,6 +960,14 @@ function ProgramIssuesList({
       setContextMenu(null);
     }
   }, [contextMenu, onAssignToSprint]);
+
+  // Handle assign to project from context menu
+  const handleAssignToProject = useCallback(async (projectId: string | null) => {
+    if (contextMenu) {
+      await onAssignToProject(contextMenu.issueId, projectId);
+      setContextMenu(null);
+    }
+  }, [contextMenu, onAssignToProject]);
 
   // Handle promote to project from context menu
   const handlePromoteToProject = useCallback((issue: Issue) => {
@@ -1081,6 +1109,16 @@ function ProgramIssuesList({
             {sprints.map(sprint => (
               <ContextMenuItem key={sprint.id} onClick={() => handleAssignToSprint(sprint.id)}>
                 Sprint {sprint.sprint_number}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubmenu>
+          <ContextMenuSubmenu label="Assign to Project">
+            <ContextMenuItem onClick={() => handleAssignToProject(null)}>
+              No Project
+            </ContextMenuItem>
+            {allProjects.map(project => (
+              <ContextMenuItem key={project.id} onClick={() => handleAssignToProject(project.id)}>
+                {project.title}
               </ContextMenuItem>
             ))}
           </ContextMenuSubmenu>

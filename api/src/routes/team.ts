@@ -116,13 +116,14 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
 
     // Get issues with sprint and assignee info (only visible issues)
     const issuesResult = await pool.query(
-      `SELECT i.id, i.title, i.sprint_id, i.properties->>'assignee_id' as assignee_id, i.properties->>'state' as state, i.ticket_number,
+      `SELECT i.id, i.title, da_sprint.related_id as sprint_id, i.properties->>'assignee_id' as assignee_id, i.properties->>'state' as state, i.ticket_number,
               s.properties->>'start_date' as sprint_start, s.properties->>'end_date' as sprint_end,
               p.id as program_id, p.title as program_name, p.properties->>'emoji' as program_emoji, p.properties->>'color' as program_color
        FROM documents i
-       JOIN documents s ON i.sprint_id = s.id
+       JOIN document_associations da_sprint ON da_sprint.document_id = i.id AND da_sprint.relationship_type = 'sprint'
+       JOIN documents s ON s.id = da_sprint.related_id
        JOIN documents p ON i.program_id = p.id
-       WHERE i.workspace_id = $1 AND i.document_type = 'issue' AND i.sprint_id IS NOT NULL AND i.properties->>'assignee_id' IS NOT NULL
+       WHERE i.workspace_id = $1 AND i.document_type = 'issue' AND i.properties->>'assignee_id' IS NOT NULL
          AND ${VISIBILITY_FILTER_SQL('i', '$2', '$3')}`,
       [workspaceId, userId, isAdmin]
     );
@@ -335,7 +336,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
     const issuesResult = await pool.query(
       `SELECT
          i.properties->>'assignee_id' as assignee_id,
-         i.project_id,
+         da_project.related_id as project_id,
          proj.title as project_name,
          proj.program_id,
          prog.title as program_name,
@@ -343,13 +344,13 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
          prog.properties->>'color' as program_color,
          s.properties->>'start_date' as sprint_start
        FROM documents i
-       JOIN documents s ON i.sprint_id = s.id
-       JOIN documents proj ON i.project_id = proj.id
+       JOIN document_associations da_sprint ON da_sprint.document_id = i.id AND da_sprint.relationship_type = 'sprint'
+       JOIN documents s ON s.id = da_sprint.related_id
+       JOIN document_associations da_project ON da_project.document_id = i.id AND da_project.relationship_type = 'project'
+       JOIN documents proj ON proj.id = da_project.related_id
        LEFT JOIN documents prog ON proj.program_id = prog.id
        WHERE i.workspace_id = $1
          AND i.document_type = 'issue'
-         AND i.sprint_id IS NOT NULL
-         AND i.project_id IS NOT NULL
          AND i.properties->>'assignee_id' IS NOT NULL
          AND ${VISIBILITY_FILTER_SQL('i', '$2', '$3')}`,
       [workspaceId, userId, isAdmin]
@@ -795,15 +796,15 @@ router.get('/accountability', authMiddleware, async (req: Request, res: Response
     const issuesResult = await pool.query(
       `SELECT
          i.properties->>'assignee_id' as assignee_id,
-         i.sprint_id,
+         da_sprint.related_id as sprint_id,
          COALESCE((i.properties->>'estimate')::numeric, 0) as estimate,
          i.properties->>'state' as state,
          s.properties->>'sprint_number' as sprint_number
        FROM documents i
-       JOIN documents s ON i.sprint_id = s.id
+       JOIN document_associations da_sprint ON da_sprint.document_id = i.id AND da_sprint.relationship_type = 'sprint'
+       JOIN documents s ON s.id = da_sprint.related_id
        WHERE i.workspace_id = $1
          AND i.document_type = 'issue'
-         AND i.sprint_id IS NOT NULL
          AND i.properties->>'assignee_id' IS NOT NULL`,
       [workspaceId]
     );
@@ -972,10 +973,10 @@ router.get('/people/:personId/sprint-metrics', authMiddleware, async (req: Reque
          i.properties->>'state' as state,
          s.properties->>'sprint_number' as sprint_number
        FROM documents i
-       JOIN documents s ON i.sprint_id = s.id
+       JOIN document_associations da_sprint ON da_sprint.document_id = i.id AND da_sprint.relationship_type = 'sprint'
+       JOIN documents s ON s.id = da_sprint.related_id
        WHERE i.workspace_id = $1
          AND i.document_type = 'issue'
-         AND i.sprint_id IS NOT NULL
          AND i.properties->>'assignee_id' = $2`,
       [workspaceId, targetUserId]
     );

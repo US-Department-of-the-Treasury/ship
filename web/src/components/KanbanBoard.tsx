@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import {
   DndContext,
   DragOverlay,
-  closestCorners,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -16,6 +16,7 @@ import {
   verticalListSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
+import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -46,12 +47,15 @@ interface KanbanBoardProps {
   onCheckboxClick?: (id: string, e: React.MouseEvent) => void;
   // Context menu props
   onContextMenu?: (event: ContextMenuEvent) => void;
+  // Disable drag-drop (for historical/read-only views)
+  disabled?: boolean;
 }
 
 const COLUMNS = [
   { id: 'backlog', title: 'Backlog', color: 'bg-gray-500' },
   { id: 'todo', title: 'Todo', color: 'bg-blue-500' },
   { id: 'in_progress', title: 'In Progress', color: 'bg-yellow-500' },
+  { id: 'in_review', title: 'In Review', color: 'bg-cyan-500' },
   { id: 'done', title: 'Done', color: 'bg-green-500' },
 ];
 
@@ -70,6 +74,7 @@ export function KanbanBoard({
   selectedIds = new Set(),
   onCheckboxClick,
   onContextMenu,
+  disabled = false,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -89,12 +94,15 @@ export function KanbanBoard({
   };
 
   const handleDragStart = (event: DragStartEvent) => {
+    if (disabled) return;
     setActiveId(event.active.id as string);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
+
+    if (disabled) return;
 
     if (!over) return;
 
@@ -125,7 +133,7 @@ export function KanbanBoard({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
@@ -169,10 +177,13 @@ function KanbanColumn({
   onCheckboxClick?: (id: string, e: React.MouseEvent) => void;
   onContextMenu?: (event: ContextMenuEvent) => void;
 }) {
-  const { setNodeRef } = useSortable({ id: column.id });
+  const { setNodeRef, isOver } = useDroppable({ id: column.id });
 
   return (
-    <div className="flex w-72 flex-shrink-0 flex-col rounded-lg bg-border/30">
+    <div className={cn(
+      "flex w-72 flex-shrink-0 flex-col rounded-lg bg-border/30",
+      isOver && "ring-2 ring-accent ring-inset"
+    )}>
       <div className="flex items-center gap-2 px-3 py-2">
         <span
           data-status-indicator
@@ -385,6 +396,13 @@ function ColumnStatusIcon({ state, color }: { state: string; color: string }) {
         <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
           <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
           <path d="M8 2 A6 6 0 1 1 2 8" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'in_review':
+      return (
+        <svg {...iconProps} viewBox="0 0 16 16" fill="none" stroke="currentColor">
+          <circle cx="8" cy="8" r="6" strokeWidth="1.5" />
+          <path d="M8 2 A6 6 0 1 1 8 14" fill="currentColor" stroke="none" />
         </svg>
       );
     case 'done':

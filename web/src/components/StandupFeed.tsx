@@ -5,6 +5,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useInvalidateStandupStatus } from '@/hooks/useStandupStatusQuery';
 
 interface Standup {
   id: string;
@@ -64,6 +65,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const { showToast } = useToast();
   const { user } = useAuth();
+  const invalidateStandupStatus = useInvalidateStandupStatus();
 
   // TipTap editor for creating new standups
   const createEditor = useEditor({
@@ -136,6 +138,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
         createEditor.commands.clearContent();
         setShowEditor(false);
         fetchStandups();
+        invalidateStandupStatus(); // Clear the "standup due" indicator
         showToast('Standup posted', 'success');
       } else {
         const data = await res.json().catch(() => ({}));

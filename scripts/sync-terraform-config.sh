@@ -27,22 +27,24 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Parse environment argument
 ENV="${1:-}"
-if [[ ! "$ENV" =~ ^(dev|prod)$ ]]; then
-  echo "Usage: $0 <dev|prod>"
+if [[ ! "$ENV" =~ ^(dev|shadow|prod)$ ]]; then
+  echo "Usage: $0 <dev|shadow|prod>"
   echo ""
   echo "Examples:"
   echo "  $0 dev     # Sync dev environment config"
+  echo "  $0 shadow  # Sync shadow environment config (UAT)"
   echo "  $0 prod    # Sync prod environment config"
   exit 1
 fi
 
 # Environment-specific paths
 # - prod uses existing terraform at root with original SSM path
-# - dev uses new modular structure
+# - dev/shadow use new modular structure
 if [ "$ENV" = "prod" ]; then
   TFVARS_FILE="$PROJECT_ROOT/terraform/terraform.tfvars"
   SSM_PREFIX="/ship/terraform-config"
 else
+  # dev and shadow both use the modular terraform structure
   TFVARS_FILE="$PROJECT_ROOT/terraform/environments/$ENV/terraform.tfvars"
   SSM_PREFIX="/ship/terraform-config/$ENV"
 fi

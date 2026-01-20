@@ -3,6 +3,33 @@
 // Document visibility for private/workspace documents
 export type DocumentVisibility = 'private' | 'workspace';
 
+// Association relationship types for belongs_to array
+export type BelongsToType = 'program' | 'project' | 'sprint' | 'parent';
+
+// BelongsTo association entry - unified format for all document relationships
+export interface BelongsTo {
+  id: string;
+  type: BelongsToType;
+  // Optional display fields populated by API
+  title?: string;
+  color?: string;
+}
+
+// Cascade warning for incomplete children when closing parent issue
+export interface IncompleteChild {
+  id: string;
+  title: string;
+  ticket_number: number;
+  state: string;
+}
+
+export interface CascadeWarning {
+  error: 'incomplete_children';
+  message: string;
+  incomplete_children: IncompleteChild[];
+  confirm_action: string;
+}
+
 // Document type enum matching PostgreSQL enum
 export type DocumentType =
   | 'wiki'

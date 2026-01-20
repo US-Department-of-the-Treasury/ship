@@ -40,6 +40,35 @@ export interface Project {
   converted_from_id?: string | null;
 }
 
+// Project issue type (subset of Issue for the list)
+export interface ProjectIssue {
+  id: string;
+  title: string;
+  ticket_number: number;
+  state: string;
+  priority: string;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+}
+
+// Project sprint type (subset of Sprint for the list)
+export interface ProjectSprint {
+  id: string;
+  name: string;
+  sprint_number: number;
+  start_date: string | null;
+  end_date: string | null;
+  status: 'planning' | 'active' | 'completed';
+  issue_count: number;
+  completed_count: number;
+  days_remaining: number | null;
+}
+
 // Query keys
 export const projectKeys = {
   all: ['projects'] as const,
@@ -47,6 +76,8 @@ export const projectKeys = {
   list: (filters?: Record<string, unknown>) => [...projectKeys.lists(), filters] as const,
   details: () => [...projectKeys.all, 'detail'] as const,
   detail: (id: string) => [...projectKeys.details(), id] as const,
+  issues: (id: string) => [...projectKeys.detail(id), 'issues'] as const,
+  sprints: (id: string) => [...projectKeys.detail(id), 'sprints'] as const,
 };
 
 // Fetch projects
@@ -69,6 +100,8 @@ interface CreateProjectData {
   ease?: number | null;
   color?: string;
   program_id?: string;
+  hypothesis?: string;
+  target_date?: string;
 }
 
 async function createProjectApi(data: CreateProjectData): Promise<Project> {
@@ -251,8 +284,11 @@ export function useDeleteProject() {
 
 // Options for creating a project
 export interface CreateProjectOptions {
+  title?: string;
   owner_id?: string | null;  // Optional - can be unassigned
   program_id?: string;
+  hypothesis?: string;
+  target_date?: string;
 }
 
 // Compatibility hook that matches the context interface
@@ -299,4 +335,46 @@ export function useProjects() {
     deleteProject,
     refreshProjects,
   };
+}
+
+// Fetch project issues
+async function fetchProjectIssues(projectId: string): Promise<ProjectIssue[]> {
+  const res = await apiGet(`/api/projects/${projectId}/issues`);
+  if (!res.ok) {
+    const error = new Error('Failed to fetch project issues') as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+// Hook to get project issues
+export function useProjectIssuesQuery(projectId: string | undefined) {
+  return useQuery({
+    queryKey: projectId ? projectKeys.issues(projectId) : ['disabled'],
+    queryFn: () => fetchProjectIssues(projectId!),
+    enabled: !!projectId,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+}
+
+// Fetch project sprints
+async function fetchProjectSprints(projectId: string): Promise<ProjectSprint[]> {
+  const res = await apiGet(`/api/projects/${projectId}/sprints`);
+  if (!res.ok) {
+    const error = new Error('Failed to fetch project sprints') as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+// Hook to get project sprints
+export function useProjectSprintsQuery(projectId: string | undefined) {
+  return useQuery({
+    queryKey: projectId ? projectKeys.sprints(projectId) : ['disabled'],
+    queryFn: () => fetchProjectSprints(projectId!),
+    enabled: !!projectId,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
 }

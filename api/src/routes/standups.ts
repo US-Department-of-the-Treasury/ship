@@ -7,6 +7,109 @@ import { authMiddleware } from '../middleware/auth.js';
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
+/**
+ * @swagger
+ * /standups/status:
+ *   get:
+ *     summary: Get standup due status for current user
+ *     tags: [Standups]
+ *     responses:
+ *       200:
+ *         description: Standup status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 due:
+ *                   type: boolean
+ *                   description: True if user has active sprint but hasn't posted today
+ *                 lastPosted:
+ *                   type: string
+ *                   format: date-time
+ *                   nullable: true
+ *                   description: Timestamp of last standup posted
+ */
+router.get('/status', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get workspace sprint_start_date to calculate current sprint number
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    if (workspaceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Workspace not found' });
+      return;
+    }
+
+    const rawStartDate = workspaceResult.rows[0].sprint_start_date;
+    const sprintDuration = 7;
+
+    // Calculate current sprint number
+    let workspaceStartDate: Date;
+    if (rawStartDate instanceof Date) {
+      workspaceStartDate = new Date(Date.UTC(rawStartDate.getFullYear(), rawStartDate.getMonth(), rawStartDate.getDate()));
+    } else if (typeof rawStartDate === 'string') {
+      workspaceStartDate = new Date(rawStartDate + 'T00:00:00Z');
+    } else {
+      workspaceStartDate = new Date();
+    }
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
+
+    // Check if user has any issues assigned to them in active sprints (current sprint number)
+    const activeSprintsResult = await pool.query(
+      `SELECT DISTINCT s.id as sprint_id
+       FROM documents i
+       JOIN document_associations da ON da.document_id = i.id AND da.relationship_type = 'sprint'
+       JOIN documents s ON s.id = da.related_id AND s.document_type = 'sprint'
+       WHERE i.workspace_id = $1
+         AND i.document_type = 'issue'
+         AND (i.properties->>'assignee_id')::uuid = $2
+         AND (s.properties->>'sprint_number')::int = $3`,
+      [workspaceId, userId, currentSprintNumber]
+    );
+
+    // If user has no issues assigned to active sprints, no standup is due
+    if (activeSprintsResult.rows.length === 0) {
+      res.json({ due: false, lastPosted: null });
+      return;
+    }
+
+    const activeSprints = activeSprintsResult.rows.map(r => r.sprint_id);
+
+    // Check if user posted a standup today for any active sprint
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+
+    const standupResult = await pool.query(
+      `SELECT MAX(created_at) as last_posted
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'standup'
+         AND (properties->>'author_id')::uuid = $2
+         AND parent_id = ANY($3)
+         AND created_at >= $4`,
+      [workspaceId, userId, activeSprints, todayStart.toISOString()]
+    );
+
+    const lastPosted = standupResult.rows[0]?.last_posted || null;
+    const due = !lastPosted;
+
+    res.json({ due, lastPosted });
+  } catch (err) {
+    console.error('Get standup status error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Schema for updating a standup
 const updateStandupSchema = z.object({
   content: z.record(z.unknown()).optional(),

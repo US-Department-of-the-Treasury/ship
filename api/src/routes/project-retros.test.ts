@@ -182,21 +182,41 @@ describe('Project Retros API', () => {
     })
 
     it('pre-fill includes issues categorized (completed/active/cancelled)', async () => {
-      // Create issues in various states
-      await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, project_id, created_by, visibility, properties)
-         VALUES ($1, 'issue', 'Done Issue', $2, $3, 'workspace', $4)`,
-        [testWorkspaceId, testProjectId, testUserId, JSON.stringify({ state: 'done' })]
+      // Create issues in various states and associate them with the project via junction table
+      const doneIssueResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility, properties)
+         VALUES ($1, 'issue', 'Done Issue', $2, 'workspace', $3)
+         RETURNING id`,
+        [testWorkspaceId, testUserId, JSON.stringify({ state: 'done' })]
       )
       await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, project_id, created_by, visibility, properties)
-         VALUES ($1, 'issue', 'Active Issue', $2, $3, 'workspace', $4)`,
-        [testWorkspaceId, testProjectId, testUserId, JSON.stringify({ state: 'in_progress' })]
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'project')`,
+        [doneIssueResult.rows[0].id, testProjectId]
+      )
+
+      const activeIssueResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility, properties)
+         VALUES ($1, 'issue', 'Active Issue', $2, 'workspace', $3)
+         RETURNING id`,
+        [testWorkspaceId, testUserId, JSON.stringify({ state: 'in_progress' })]
       )
       await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, project_id, created_by, visibility, properties)
-         VALUES ($1, 'issue', 'Cancelled Issue', $2, $3, 'workspace', $4)`,
-        [testWorkspaceId, testProjectId, testUserId, JSON.stringify({ state: 'cancelled' })]
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'project')`,
+        [activeIssueResult.rows[0].id, testProjectId]
+      )
+
+      const cancelledIssueResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility, properties)
+         VALUES ($1, 'issue', 'Cancelled Issue', $2, 'workspace', $3)
+         RETURNING id`,
+        [testWorkspaceId, testUserId, JSON.stringify({ state: 'cancelled' })]
+      )
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'project')`,
+        [cancelledIssueResult.rows[0].id, testProjectId]
       )
 
       const response = await request(app)

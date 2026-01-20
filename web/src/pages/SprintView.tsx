@@ -23,6 +23,7 @@ import { sprintStatusColors, priorityColors } from '@/lib/statusColors';
 import { TabBar, Tab } from '@/components/ui/TabBar';
 import { StandupFeed } from '@/components/StandupFeed';
 import { SprintReview } from '@/components/SprintReview';
+import { SprintReconciliation, ReconciliationDecision } from '@/components/SprintReconciliation';
 
 interface SprintApiResponse {
   id: string;
@@ -49,6 +50,7 @@ interface Sprint {
   status: 'planned' | 'active' | 'completed';
   issue_count: number;
   completed_count: number;
+  sprint_number: number;
 }
 
 // Compute sprint dates from sprint_number and workspace start date
@@ -278,6 +280,7 @@ export function SprintViewPage() {
           status,
           issue_count: sprintData.issue_count,
           completed_count: sprintData.completed_count,
+          sprint_number: sprintData.sprint_number,
         });
         setGoalText(sprintData.goal || '');
 
@@ -679,8 +682,26 @@ export function SprintViewPage() {
         /* Standups feed */
         <StandupFeed sprintId={sprint.id} />
       ) : (
-        /* Sprint review editor */
-        <SprintReview sprintId={sprint.id} />
+        /* Sprint review with reconciliation */
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Sprint reconciliation for incomplete issues */}
+          <div className="border-b border-border p-4">
+            <SprintReconciliation
+              sprintId={sprint.id}
+              sprintNumber={sprint.sprint_number}
+              programId={sprint.program_id}
+              onDecisionMade={(decision) => {
+                // Refresh sprint issues when decisions are made
+                // The SprintReconciliation handles its own query invalidation
+                console.log('Reconciliation decision:', decision);
+              }}
+            />
+          </div>
+          {/* Sprint review editor */}
+          <div className="flex-1 overflow-auto">
+            <SprintReview sprintId={sprint.id} />
+          </div>
+        </div>
       )}
 
       {/* Estimate Required Modal */}

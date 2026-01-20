@@ -58,6 +58,30 @@ const updateDocumentSchema = z.object({
   position: z.number().int().min(0).optional(),
   properties: z.record(z.unknown()).optional(),
   visibility: z.enum(['private', 'workspace']).optional(),
+  document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person']).optional(),
+  // Issue-specific fields (stored in properties but accepted at top level for convenience)
+  state: z.string().optional(),
+  priority: z.string().optional(),
+  estimate: z.number().nullable().optional(),
+  assignee_id: z.string().uuid().nullable().optional(),
+  source: z.enum(['internal', 'external']).optional(),
+  rejection_reason: z.string().nullable().optional(),
+  belongs_to: z.array(z.object({
+    id: z.string().uuid(),
+    type: z.enum(['program', 'project', 'sprint', 'parent']),
+  })).optional(),
+  confirm_orphan_children: z.boolean().optional(),
+  // Project-specific fields (stored in properties but accepted at top level)
+  impact: z.number().min(1).max(10).nullable().optional(),
+  confidence: z.number().min(1).max(10).nullable().optional(),
+  ease: z.number().min(1).max(10).nullable().optional(),
+  color: z.string().optional(),
+  owner_id: z.string().uuid().nullable().optional(),
+  // Sprint-specific fields (stored in properties but accepted at top level)
+  start_date: z.string().optional(),
+  end_date: z.string().optional(),
+  sprint_status: z.enum(['planning', 'active', 'completed']).optional(),
+  goal: z.string().optional(),
 });
 
 // List documents
@@ -107,6 +131,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
         // Flatten common properties for backwards compatibility
         state: props.state,
         priority: props.priority,
+        estimate: props.estimate,
         assignee_id: props.assignee_id,
         source: props.source,
         prefix: props.prefix,
@@ -226,11 +251,31 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const props = doc.properties || {};
 
+    // Get belongs_to associations from junction table (for issues and other document types)
+    let belongs_to: Array<{ id: string; type: string; title?: string; color?: string }> = [];
+    if (doc.document_type === 'issue' || doc.document_type === 'wiki') {
+      const assocResult = await pool.query(
+        `SELECT da.related_id as id, da.relationship_type as type,
+                d.title, (d.properties->>'color') as color
+         FROM document_associations da
+         LEFT JOIN documents d ON d.id = da.related_id
+         WHERE da.document_id = $1`,
+        [id]
+      );
+      belongs_to = assocResult.rows.map(row => ({
+        id: row.id,
+        type: row.type,
+        title: row.title || undefined,
+        color: row.color || undefined,
+      }));
+    }
+
     // Return with flattened properties for backwards compatibility
     res.json({
       ...doc,
       state: props.state,
       priority: props.priority,
+      estimate: props.estimate,
       assignee_id: props.assignee_id,
       source: props.source,
       prefix: props.prefix,
@@ -239,6 +284,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       end_date: props.end_date,
       sprint_status: props.sprint_status,
       goal: props.goal,
+      // Include belongs_to for issue documents
+      ...(doc.document_type === 'issue' && { belongs_to }),
     });
   } catch (err) {
     console.error('Get document error:', err);
@@ -375,14 +422,35 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       values.push(data.position);
     }
 
-    // Handle properties update - merge existing, data.properties, and extracted values
+    // Extract top-level issue/project/sprint fields that should be stored in properties
+    const topLevelProps: Record<string, unknown> = {};
+    if (data.state !== undefined) topLevelProps.state = data.state;
+    if (data.priority !== undefined) topLevelProps.priority = data.priority;
+    if (data.estimate !== undefined) topLevelProps.estimate = data.estimate;
+    if (data.assignee_id !== undefined) topLevelProps.assignee_id = data.assignee_id;
+    if (data.source !== undefined) topLevelProps.source = data.source;
+    if (data.rejection_reason !== undefined) topLevelProps.rejection_reason = data.rejection_reason;
+    if (data.impact !== undefined) topLevelProps.impact = data.impact;
+    if (data.confidence !== undefined) topLevelProps.confidence = data.confidence;
+    if (data.ease !== undefined) topLevelProps.ease = data.ease;
+    if (data.color !== undefined) topLevelProps.color = data.color;
+    if (data.owner_id !== undefined) topLevelProps.owner_id = data.owner_id;
+    if (data.start_date !== undefined) topLevelProps.start_date = data.start_date;
+    if (data.end_date !== undefined) topLevelProps.end_date = data.end_date;
+    if (data.sprint_status !== undefined) topLevelProps.sprint_status = data.sprint_status;
+    if (data.goal !== undefined) topLevelProps.goal = data.goal;
+
+    const hasTopLevelProps = Object.keys(topLevelProps).length > 0;
+
+    // Handle properties update - merge existing, data.properties, top-level fields, and extracted values
     // Content is source of truth: extracted values override any manually set hypothesis/success_criteria/vision/goals
-    if (data.properties !== undefined || contentUpdated) {
+    if (data.properties !== undefined || contentUpdated || hasTopLevelProps) {
       const currentProps = existing.properties || {};
       const dataProps = data.properties || {};
       let newProps = {
         ...currentProps,
         ...dataProps,
+        ...topLevelProps,
         // Extracted values always win (content is source of truth)
         ...(contentUpdated ? {
           hypothesis: extractedHypothesis,
@@ -426,12 +494,91 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       values.push(data.visibility);
     }
 
-    if (updates.length === 0) {
+    // Handle document_type change
+    if (data.document_type !== undefined && data.document_type !== existing.document_type) {
+      // Only the document creator can change its type
+      if (existing.created_by !== userId) {
+        res.status(403).json({ error: 'Only the document creator can change its type' });
+        return;
+      }
+
+      // Restrict certain type changes (can't change to/from program or person)
+      const restrictedTypes = ['program', 'person'];
+      if (restrictedTypes.includes(existing.document_type) || restrictedTypes.includes(data.document_type)) {
+        res.status(400).json({ error: 'Cannot change to or from program or person document types' });
+        return;
+      }
+
+      updates.push(`document_type = $${paramIndex++}`);
+      values.push(data.document_type);
+
+      // When changing to 'issue', assign a ticket number if not already present
+      if (data.document_type === 'issue' && !existing.ticket_number) {
+        // Get next ticket number for this workspace
+        const ticketResult = await pool.query(
+          `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
+           FROM documents
+           WHERE workspace_id = $1 AND document_type = 'issue'`,
+          [workspaceId]
+        );
+        const ticketNumber = ticketResult.rows[0].next_number;
+        updates.push(`ticket_number = $${paramIndex++}`);
+        values.push(ticketNumber);
+      }
+
+      // When changing from 'issue' to another type, preserve ticket_number for reference
+      // (don't clear it - it serves as a historical reference)
+    }
+
+    // Track if we have association updates (belongs_to)
+    const hasBelongsToUpdate = data.belongs_to !== undefined;
+
+    if (updates.length === 0 && !hasBelongsToUpdate) {
       res.status(400).json({ error: 'No fields to update' });
       return;
     }
 
-    updates.push(`updated_at = now()`);
+    // Handle belongs_to association updates
+    if (hasBelongsToUpdate) {
+      const newBelongsTo = data.belongs_to || [];
+
+      // Get current associations
+      const currentAssocs = await pool.query(
+        'SELECT related_id, relationship_type FROM document_associations WHERE document_id = $1',
+        [id]
+      );
+      const currentSet = new Set(currentAssocs.rows.map(r => `${r.relationship_type}:${r.related_id}`));
+      const newSet = new Set(newBelongsTo.map(bt => `${bt.type}:${bt.id}`));
+
+      // Remove associations that are no longer present
+      for (const row of currentAssocs.rows) {
+        const key = `${row.relationship_type}:${row.related_id}`;
+        if (!newSet.has(key)) {
+          await pool.query(
+            'DELETE FROM document_associations WHERE document_id = $1 AND related_id = $2 AND relationship_type = $3',
+            [id, row.related_id, row.relationship_type]
+          );
+        }
+      }
+
+      // Add new associations
+      for (const bt of newBelongsTo) {
+        const key = `${bt.type}:${bt.id}`;
+        if (!currentSet.has(key)) {
+          await pool.query(
+            'INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+            [id, bt.id, bt.type]
+          );
+        }
+      }
+    }
+
+    // If we only had belongs_to updates, still update the timestamp
+    if (updates.length === 0) {
+      updates.push(`updated_at = now()`);
+    } else {
+      updates.push(`updated_at = now()`);
+    }
 
     const result = await pool.query(
       `UPDATE documents SET ${updates.join(', ')} WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} RETURNING *`,
@@ -458,7 +605,23 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       });
     }
 
-    res.json(result.rows[0]);
+    // Flatten properties for backwards compatibility (match GET endpoint format)
+    const updatedDoc = result.rows[0];
+    const props = updatedDoc.properties || {};
+    res.json({
+      ...updatedDoc,
+      state: props.state,
+      priority: props.priority,
+      estimate: props.estimate,
+      assignee_id: props.assignee_id,
+      source: props.source,
+      prefix: props.prefix,
+      color: props.color,
+      start_date: props.start_date,
+      end_date: props.end_date,
+      sprint_status: props.sprint_status,
+      goal: props.goal,
+    });
   } catch (err) {
     console.error('Update document error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -647,14 +810,30 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
       newDoc = result.rows[0];
       newDocId = newDoc.id;
 
-      // Orphan any child issues that were linked to this project
+      // Remove 'project' associations from child issues pointing to this project
+      // (They become orphaned - their parent project is being converted to an issue)
       await client.query(
-        `UPDATE documents
-         SET project_id = NULL, updated_at = NOW()
-         WHERE project_id = $1 AND workspace_id = $2`,
-        [id, workspaceId]
+        `DELETE FROM document_associations
+         WHERE related_id = $1 AND relationship_type = 'project'`,
+        [id]
       );
     }
+
+    // Copy associations from original to new document (filtered by target type validity)
+    // According to the association validity matrix:
+    // - issue: ["parent", "project", "sprint", "program"]
+    // - project: ["program"]
+    // When converting issue->project, only 'program' associations are valid for projects
+    // When converting project->issue, only 'program' associations are carried over
+    const validTypesForTarget = target_type === 'project' ? ['program'] : ['program'];
+
+    await client.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata, created_at)
+       SELECT $1, related_id, relationship_type, metadata, NOW()
+       FROM document_associations
+       WHERE document_id = $2 AND relationship_type = ANY($3)`,
+      [newDocId, id, validTypesForTarget]
+    );
 
     // Archive original document with converted_to_id pointer
     await client.query(
@@ -783,6 +962,23 @@ router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Re
            archived_at = NOW(),
            updated_at = NOW()
        WHERE id = $2`,
+      [originalDoc.id, id]
+    );
+
+    // Copy associations from current document back to original document
+    // (restoring the associations as they were before conversion)
+    // First, clear any existing associations on the original (shouldn't be many since it was archived)
+    await client.query(
+      `DELETE FROM document_associations WHERE document_id = $1`,
+      [originalDoc.id]
+    );
+
+    // Copy all associations from the current (being archived) document to the restored original
+    await client.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata, created_at)
+       SELECT $1, related_id, relationship_type, metadata, NOW()
+       FROM document_associations
+       WHERE document_id = $2`,
       [originalDoc.id, id]
     );
 

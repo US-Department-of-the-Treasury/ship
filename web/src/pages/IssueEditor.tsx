@@ -6,14 +6,18 @@ import { useAuth } from '@/hooks/useAuth';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useDocuments } from '@/contexts/DocumentsContext';
 import { Combobox } from '@/components/ui/Combobox';
+import { LinkedCombobox } from '@/components/ui/LinkedCombobox';
 import { EditorSkeleton } from '@/components/ui/Skeleton';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import { useProgramsQuery } from '@/hooks/useProgramsQuery';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
-import { issueKeys } from '@/hooks/useIssuesQuery';
-import { projectKeys } from '@/hooks/useProjectsQuery';
+import { issueKeys, isCascadeWarningError, type IncompleteChild } from '@/hooks/useIssuesQuery';
+import { projectKeys, useProjectsQuery } from '@/hooks/useProjectsQuery';
+import { useDocumentContextQuery } from '@/hooks/useDocumentContextQuery';
+import { DocumentBreadcrumbs } from '@/components/ContextTreeNav';
 import { apiPost } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 interface TeamMember {
   id: string;
@@ -276,11 +280,20 @@ export function IssueEditorPage() {
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [isUndoing, setIsUndoing] = useState(false);
+  // Cascade warning state for closing parent with incomplete children
+  const [cascadeWarning, setCascadeWarning] = useState<{
+    open: boolean;
+    pendingState: string | null;
+    incompleteChildren: IncompleteChild[];
+  }>({ open: false, pendingState: null, incompleteChildren: [] });
 
-  // Use TanStack Query for programs and team members (supports offline via cache)
+  // Use TanStack Query for programs, projects, and team members (supports offline via cache)
   const { data: programsData = [], isLoading: programsLoading } = useProgramsQuery();
+  const { data: projectsData = [], isLoading: projectsLoading } = useProjectsQuery();
   // Use assignable members only - pending users can't be assigned to issues
   const { data: teamMembersData = [], isLoading: teamMembersLoading } = useAssignableMembersQuery();
+  // Get document context for breadcrumbs (ancestors + children)
+  const { data: documentContext } = useDocumentContextQuery(id);
 
   // Map programs to the format needed by combobox
   const programs: ProgramOption[] = programsData.map(p => ({
@@ -397,6 +410,39 @@ export function IssueEditorPage() {
     if (!id) return;
     await contextUpdateIssue(id, updates);
   }, [id, contextUpdateIssue]);
+
+  // Handle state change with cascade warning detection
+  const handleStateChange = useCallback(async (newState: string) => {
+    if (!id) return;
+    try {
+      await contextUpdateIssue(id, { state: newState });
+    } catch (error) {
+      if (isCascadeWarningError(error)) {
+        setCascadeWarning({
+          open: true,
+          pendingState: newState,
+          incompleteChildren: error.warning.incomplete_children,
+        });
+      } else {
+        throw error;
+      }
+    }
+  }, [id, contextUpdateIssue]);
+
+  // Confirm closing parent with incomplete children
+  const handleCascadeConfirm = useCallback(async () => {
+    if (!id || !cascadeWarning.pendingState) return;
+    await contextUpdateIssue(id, {
+      state: cascadeWarning.pendingState,
+      confirm_orphan_children: true,
+    } as Partial<Issue> & { confirm_orphan_children: boolean });
+    setCascadeWarning({ open: false, pendingState: null, incompleteChildren: [] });
+  }, [id, contextUpdateIssue, cascadeWarning.pendingState]);
+
+  // Cancel cascade warning
+  const handleCascadeCancel = useCallback(() => {
+    setCascadeWarning({ open: false, pendingState: null, incompleteChildren: [] });
+  }, []);
 
   // Accept triage issue - move to backlog
   const handleAccept = useCallback(async () => {
@@ -553,6 +599,7 @@ export function IssueEditorPage() {
     source: 'internal' as const,
     rejection_reason: null,
     converted_from_id: null,
+    belongs_to: [],
   } : null);
 
   if (!displayIssue || !user) {
@@ -562,6 +609,19 @@ export function IssueEditorPage() {
   const handleProgramChange = async (programId: string | null) => {
     await handleUpdateIssue({ program_id: programId, sprint_id: null } as Partial<Issue>);
     // Sprints will be fetched automatically via the useEffect when issue.program_id changes
+  };
+
+  // Extract project_id from belongs_to array
+  const projectAssociation = displayIssue.belongs_to?.find((bt: { type: string }) => bt.type === 'project');
+  const project_id = projectAssociation?.id ?? null;
+
+  const handleProjectChange = async (newProjectId: string | null) => {
+    // Preserve existing program and sprint associations when updating project
+    await handleUpdateIssue({
+      project_id: newProjectId,
+      program_id: displayIssue.program_id,
+      sprint_id: displayIssue.sprint_id,
+    } as Partial<Issue>);
   };
 
   // Breadcrumb label based on navigation context
@@ -583,6 +643,9 @@ export function IssueEditorPage() {
       onCreateSubDocument={handleCreateSubDocument}
       onNavigateToDocument={handleNavigateToDocument}
       onDocumentConverted={handleDocumentConverted}
+      breadcrumbs={documentContext?.breadcrumbs && documentContext.breadcrumbs.length > 1 ? (
+        <DocumentBreadcrumbs items={documentContext.breadcrumbs} />
+      ) : undefined}
       headerBadge={
         <span className="rounded bg-border px-2 py-0.5 text-xs font-mono font-medium text-muted whitespace-nowrap" data-testid="ticket-number">
           {displayIssue.display_id}
@@ -644,7 +707,7 @@ export function IssueEditorPage() {
           <PropertyRow label="Status">
               <select
                 value={displayIssue.state}
-                onChange={(e) => handleUpdateIssue({ state: e.target.value })}
+                onChange={(e) => handleStateChange(e.target.value)}
                 aria-label="Status"
                 className="w-full rounded bg-border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
               >
@@ -715,8 +778,8 @@ export function IssueEditorPage() {
             </PropertyRow>
 
             <PropertyRow label="Program">
-              <Combobox
-                options={programs.map((p) => ({ value: p.id, label: p.name, description: '' }))}
+              <LinkedCombobox
+                options={programs.map((p) => ({ value: p.id, label: p.name, description: '', href: `/programs/${p.id}` }))}
                 value={displayIssue.program_id}
                 onChange={handleProgramChange}
                 placeholder="No Program"
@@ -724,6 +787,19 @@ export function IssueEditorPage() {
                 searchPlaceholder="Search programs..."
                 emptyText="No programs found"
                 aria-label="Program"
+              />
+            </PropertyRow>
+
+            <PropertyRow label="Project">
+              <LinkedCombobox
+                options={projectsData.map((p) => ({ value: p.id, label: p.title, description: '', href: `/projects/${p.id}` }))}
+                value={project_id}
+                onChange={handleProjectChange}
+                placeholder="No Project"
+                clearLabel="No Project"
+                searchPlaceholder="Search projects..."
+                emptyText="No projects found"
+                aria-label="Project"
               />
             </PropertyRow>
 
@@ -745,7 +821,8 @@ export function IssueEditorPage() {
                       return;
                     }
                     setSprintError(null);
-                    handleUpdateIssue({ sprint_id: value });
+                    // Include program_id to preserve program association when updating sprint
+                    handleUpdateIssue({ sprint_id: value, program_id: displayIssue.program_id });
                   }}
                   placeholder="No Sprint"
                   clearLabel="No Sprint"
@@ -802,6 +879,31 @@ export function IssueEditorPage() {
       title={displayIssue.title}
       isConverting={isConverting}
     />
+    {/* Cascade Warning Dialog */}
+    <ConfirmDialog
+      open={cascadeWarning.open}
+      title="Incomplete Sub-Issues"
+      description={`This issue has ${cascadeWarning.incompleteChildren.length} incomplete sub-issue(s). Closing it will remove their parent relationship, making them top-level issues.`}
+      confirmLabel="Close Anyway"
+      cancelLabel="Keep Open"
+      variant="destructive"
+      onConfirm={handleCascadeConfirm}
+      onCancel={handleCascadeCancel}
+    >
+      <div className="max-h-32 overflow-y-auto">
+        <ul className="space-y-1 text-sm">
+          {cascadeWarning.incompleteChildren.map((child) => (
+            <li key={child.id} className="flex items-center gap-2 text-muted">
+              <span className="font-mono text-xs text-accent">#{child.ticket_number}</span>
+              <span className="truncate">{child.title}</span>
+              <span className="ml-auto rounded bg-border px-1.5 py-0.5 text-xs">
+                {child.state}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </ConfirmDialog>
     </>
   );
 }

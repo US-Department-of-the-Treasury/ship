@@ -1,0 +1,403 @@
+import { Router, Request, Response } from 'express';
+import { pool } from '../db/client.js';
+import { z } from 'zod';
+import { authMiddleware } from '../middleware/auth.js';
+
+type RouterType = ReturnType<typeof Router>;
+const router: RouterType = Router();
+
+// Validation schemas
+const createAssociationSchema = z.object({
+  related_id: z.string().uuid(),
+  relationship_type: z.enum(['parent', 'project', 'sprint', 'program']),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+// Check if user can access document
+async function canAccessDocument(
+  docId: string,
+  userId: string,
+  workspaceId: string
+): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT id FROM documents
+     WHERE id = $1 AND workspace_id = $2
+       AND (visibility = 'workspace' OR created_by = $3 OR
+            (SELECT role FROM workspace_memberships WHERE workspace_id = $2 AND user_id = $3) = 'admin')`,
+    [docId, workspaceId, userId]
+  );
+  return result.rows.length > 0;
+}
+
+// Valid relationship types
+const validTypes = ['parent', 'project', 'sprint', 'program'] as const;
+type RelationshipType = typeof validTypes[number];
+
+function isValidRelationshipType(value: unknown): value is RelationshipType {
+  return typeof value === 'string' && validTypes.includes(value as RelationshipType);
+}
+
+// GET /api/documents/:id/associations - List all associations for a document
+router.get('/:id/associations', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    // Normalize query param (could be string or string[])
+    const typeParam = Array.isArray(req.query.type) ? req.query.type[0] : req.query.type;
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+
+    // Check access
+    if (!(await canAccessDocument(id, userId, workspaceId))) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    let query = `
+      SELECT
+        da.id,
+        da.document_id,
+        da.related_id,
+        da.relationship_type,
+        da.created_at,
+        da.metadata,
+        d.title as related_title,
+        d.document_type as related_document_type
+      FROM document_associations da
+      JOIN documents d ON d.id = da.related_id
+      WHERE da.document_id = $1
+    `;
+    const params: string[] = [id];
+
+    // Filter by relationship type if provided
+    if (typeParam) {
+      if (!isValidRelationshipType(typeParam)) {
+        return res.status(400).json({ error: 'Invalid relationship type' });
+      }
+      query += ` AND da.relationship_type = $2`;
+      params.push(typeParam);
+    }
+
+    query += ` ORDER BY da.created_at DESC`;
+
+    const result = await pool.query(query, params);
+
+    return res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching associations:', error);
+    return res.status(500).json({ error: 'Failed to fetch associations' });
+  }
+});
+
+// POST /api/documents/:id/associations - Create a new association
+router.post('/:id/associations', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+
+    // Validate input
+    const parseResult = createAssociationSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: 'Invalid input', details: parseResult.error.errors });
+    }
+
+    const { related_id, relationship_type, metadata } = parseResult.data;
+
+    // Check access to source document
+    if (!(await canAccessDocument(id, userId, workspaceId))) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    // Check related document exists in same workspace
+    const relatedDoc = await pool.query(
+      'SELECT id FROM documents WHERE id = $1 AND workspace_id = $2',
+      [related_id, workspaceId]
+    );
+    if (relatedDoc.rows.length === 0) {
+      return res.status(400).json({ error: 'Related document not found' });
+    }
+
+    // Prevent self-reference
+    if (id === related_id) {
+      return res.status(400).json({ error: 'Cannot create self-referencing association' });
+    }
+
+    // Create association (ON CONFLICT handles duplicate check)
+    const result = await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (document_id, related_id, relationship_type) DO UPDATE SET
+         metadata = COALESCE($4, document_associations.metadata),
+         created_at = document_associations.created_at
+       RETURNING *`,
+      [id, related_id, relationship_type, metadata || {}]
+    );
+
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating association:', error);
+    return res.status(500).json({ error: 'Failed to create association' });
+  }
+});
+
+// DELETE /api/documents/:id/associations/:relatedId - Delete a specific association
+router.delete('/:id/associations/:relatedId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    const relatedId = String(req.params.relatedId);
+    // Normalize query param (could be string or string[])
+    const typeParam = Array.isArray(req.query.type) ? req.query.type[0] : req.query.type;
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+
+    // Check access
+    if (!(await canAccessDocument(id, userId, workspaceId))) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    // Build delete query
+    let query = `DELETE FROM document_associations WHERE document_id = $1 AND related_id = $2`;
+    const params: string[] = [id, relatedId];
+
+    // If type is specified, only delete that specific association type
+    if (typeParam) {
+      if (!isValidRelationshipType(typeParam)) {
+        return res.status(400).json({ error: 'Invalid relationship type' });
+      }
+      query += ` AND relationship_type = $3`;
+      params.push(typeParam);
+    }
+
+    query += ` RETURNING *`;
+
+    const result = await pool.query(query, params);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Association not found' });
+    }
+
+    return res.json({ deleted: result.rows.length, associations: result.rows });
+  } catch (error) {
+    console.error('Error deleting association:', error);
+    return res.status(500).json({ error: 'Failed to delete association' });
+  }
+});
+
+// GET /api/documents/:id/reverse-associations - Find documents that associate with this one
+router.get('/:id/reverse-associations', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    // Normalize query param (could be string or string[])
+    const typeParam = Array.isArray(req.query.type) ? req.query.type[0] : req.query.type;
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+
+    // Check access
+    if (!(await canAccessDocument(id, userId, workspaceId))) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    let query = `
+      SELECT
+        da.id,
+        da.document_id,
+        da.related_id,
+        da.relationship_type,
+        da.created_at,
+        da.metadata,
+        d.title as document_title,
+        d.document_type as document_document_type
+      FROM document_associations da
+      JOIN documents d ON d.id = da.document_id
+      WHERE da.related_id = $1
+        AND d.workspace_id = $2
+        AND d.archived_at IS NULL
+    `;
+    const params: string[] = [id, workspaceId];
+
+    if (typeParam) {
+      if (!isValidRelationshipType(typeParam)) {
+        return res.status(400).json({ error: 'Invalid relationship type' });
+      }
+      query += ` AND da.relationship_type = $3`;
+      params.push(typeParam);
+    }
+
+    query += ` ORDER BY da.created_at DESC`;
+
+    const result = await pool.query(query, params);
+
+    return res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching reverse associations:', error);
+    return res.status(500).json({ error: 'Failed to fetch reverse associations' });
+  }
+});
+
+// GET /api/documents/:id/context - Get full context tree (ancestors + children + siblings)
+router.get('/:id/context', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+
+    // Check access
+    if (!(await canAccessDocument(id, userId, workspaceId))) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    // Get the current document
+    // Programs are stored as documents with document_type = 'program', not a separate table
+    const currentDoc = await pool.query(
+      `SELECT d.id, d.title, d.document_type, d.ticket_number, d.program_id,
+              (SELECT title FROM documents WHERE id = d.program_id AND document_type = 'program') as program_name,
+              (SELECT properties->>'color' FROM documents WHERE id = d.program_id AND document_type = 'program') as program_color
+       FROM documents d WHERE d.id = $1`,
+      [id]
+    );
+
+    if (currentDoc.rows.length === 0) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    // Recursive CTE to get all ancestors (parent chain)
+    const ancestorsQuery = await pool.query(
+      `WITH RECURSIVE ancestors AS (
+        -- Base case: direct parent of current document
+        SELECT
+          d.id,
+          d.title,
+          d.document_type,
+          d.ticket_number,
+          1 as depth
+        FROM documents d
+        JOIN document_associations da ON da.related_id = d.id
+        WHERE da.document_id = $1
+          AND da.relationship_type = 'parent'
+          AND d.workspace_id = $2
+          AND d.archived_at IS NULL
+
+        UNION ALL
+
+        -- Recursive case: parent of each ancestor
+        SELECT
+          d.id,
+          d.title,
+          d.document_type,
+          d.ticket_number,
+          a.depth + 1
+        FROM documents d
+        JOIN document_associations da ON da.related_id = d.id
+        JOIN ancestors a ON da.document_id = a.id
+        WHERE da.relationship_type = 'parent'
+          AND d.workspace_id = $2
+          AND d.archived_at IS NULL
+      )
+      SELECT * FROM ancestors ORDER BY depth DESC`,
+      [id, workspaceId]
+    );
+
+    // Get children (documents that have this document as parent)
+    const childrenQuery = await pool.query(
+      `SELECT
+        d.id,
+        d.title,
+        d.document_type,
+        d.ticket_number,
+        (SELECT COUNT(*) FROM document_associations da2
+         WHERE da2.related_id = d.id AND da2.relationship_type = 'parent') as child_count
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
+       WHERE da.related_id = $1
+         AND da.relationship_type = 'parent'
+         AND d.workspace_id = $2
+         AND d.archived_at IS NULL
+       ORDER BY d.title`,
+      [id, workspaceId]
+    );
+
+    // Get belongs_to associations (project, sprint, program)
+    // Both programs and projects are documents, so color is in properties JSONB
+    const belongsToQuery = await pool.query(
+      `SELECT
+        da.relationship_type as type,
+        d.id,
+        d.title,
+        d.document_type,
+        d.properties->>'color' as color
+       FROM document_associations da
+       JOIN documents d ON d.id = da.related_id
+       WHERE da.document_id = $1
+         AND da.relationship_type IN ('project', 'sprint', 'program')
+         AND d.workspace_id = $2
+         AND d.archived_at IS NULL
+       ORDER BY
+         CASE da.relationship_type
+           WHEN 'program' THEN 1
+           WHEN 'project' THEN 2
+           WHEN 'sprint' THEN 3
+         END`,
+      [id, workspaceId]
+    );
+
+    // Build breadcrumb path: Program > Project > Sprint > Parent Issues > Current
+    const breadcrumbs: Array<{id: string; title: string; type: string; ticket_number?: number}> = [];
+
+    // Add program from belongs_to or document's program_id
+    const program = belongsToQuery.rows.find(b => b.type === 'program');
+    if (program) {
+      breadcrumbs.push({ id: program.id, title: program.title, type: 'program' });
+    } else if (currentDoc.rows[0].program_id) {
+      breadcrumbs.push({
+        id: currentDoc.rows[0].program_id,
+        title: currentDoc.rows[0].program_name || 'Unknown Program',
+        type: 'program'
+      });
+    }
+
+    // Add project from belongs_to
+    const project = belongsToQuery.rows.find(b => b.type === 'project');
+    if (project) {
+      breadcrumbs.push({ id: project.id, title: project.title, type: 'project' });
+    }
+
+    // Add sprint from belongs_to
+    const sprint = belongsToQuery.rows.find(b => b.type === 'sprint');
+    if (sprint) {
+      breadcrumbs.push({ id: sprint.id, title: sprint.title, type: 'sprint' });
+    }
+
+    // Add ancestors (parent issues, from root to immediate parent)
+    for (const ancestor of ancestorsQuery.rows) {
+      breadcrumbs.push({
+        id: ancestor.id,
+        title: ancestor.title || 'Untitled',
+        type: ancestor.document_type,
+        ticket_number: ancestor.ticket_number
+      });
+    }
+
+    // Add current document
+    breadcrumbs.push({
+      id: currentDoc.rows[0].id,
+      title: currentDoc.rows[0].title || 'Untitled',
+      type: currentDoc.rows[0].document_type,
+      ticket_number: currentDoc.rows[0].ticket_number
+    });
+
+    return res.json({
+      current: currentDoc.rows[0],
+      ancestors: ancestorsQuery.rows,
+      children: childrenQuery.rows.map(c => ({
+        ...c,
+        child_count: parseInt(c.child_count, 10)
+      })),
+      belongs_to: belongsToQuery.rows,
+      breadcrumbs
+    });
+  } catch (error) {
+    console.error('Error fetching document context:', error);
+    return res.status(500).json({ error: 'Failed to fetch document context' });
+  }
+});
+
+export default router;

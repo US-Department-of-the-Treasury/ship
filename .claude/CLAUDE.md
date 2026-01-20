@@ -106,6 +106,18 @@ Local dev uses `.env.local` for DB connection.
 
 **"Deploy" means deploy BOTH API and frontend.** Never deploy just one - they must stay in sync. See `/workflows:deploy` for full sequence and monitoring steps.
 
+### Shadow Environment (UAT)
+
+**Branch `feat/unified-document-model-v2`**: After completing work on this branch, ALWAYS deploy to shadow for user acceptance testing before merging to master.
+
+```bash
+# Deploy to shadow for UAT
+./scripts/deploy.sh shadow
+./scripts/deploy-web.sh shadow
+```
+
+Shadow environment is for pre-merge validation. Production (`prod`) is only deployed after PR merge to master.
+
 ## Philosophy Enforcement
 
 Use `/ship-philosophy-reviewer` to audit changes against Ship's core philosophy. Auto-triggers on schema changes, new components, or route additions. In autonomous contexts (ralph-loop), violations are fixed automatically.

@@ -68,6 +68,8 @@ const createProjectSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#6366f1'),
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
+  hypothesis: z.string().max(2000).optional().nullable(),
+  target_date: z.string().datetime().optional().nullable(),
 });
 
 const updateProjectSchema = z.object({
@@ -80,6 +82,8 @@ const updateProjectSchema = z.object({
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
   archived_at: z.string().datetime().optional().nullable(),
+  hypothesis: z.string().max(2000).optional().nullable(),
+  target_date: z.string().datetime().optional().nullable(),
 });
 
 // Schema for project retro
@@ -342,11 +346,13 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
               ELSE NULL
               END
             FROM documents issue
-            JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+            JOIN document_associations da_project ON da_project.document_id = issue.id
+              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
+            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
+              AND da_sprint.relationship_type = 'sprint'
+            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
             JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.project_id = d.id
-              AND issue.document_type = 'issue'
-              AND issue.sprint_id IS NOT NULL
+            WHERE issue.document_type = 'issue'
           ),
           'backlog'
         )
@@ -359,7 +365,9 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
              (d.properties->>'owner_id')::uuid as owner_id,
              u.name as owner_name, u.email as owner_email,
              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
-             (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
+             (SELECT COUNT(*) FROM documents i
+              JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
+              WHERE i.document_type = 'issue') as issue_count,
              (${inferredStatusSubquery}) as inferred_status
       FROM documents d
       LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
@@ -416,11 +424,13 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               ELSE NULL
               END
             FROM documents issue
-            JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+            JOIN document_associations da_project ON da_project.document_id = issue.id
+              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
+            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
+              AND da_sprint.relationship_type = 'sprint'
+            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
             JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.project_id = d.id
-              AND issue.document_type = 'issue'
-              AND issue.sprint_id IS NOT NULL
+            WHERE issue.document_type = 'issue'
           ),
           'backlog'
         )
@@ -433,7 +443,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
+               WHERE i.document_type = 'issue') as issue_count,
               (${inferredStatusSubquery}) as inferred_status
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
@@ -484,7 +496,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, impact, confidence, ease, owner_id, color, emoji, program_id } = parsed.data;
+    const { title, impact, confidence, ease, owner_id, color, emoji, program_id, hypothesis, target_date } = parsed.data;
 
     // Build properties JSONB
     const properties: Record<string, unknown> = {
@@ -496,6 +508,12 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     };
     if (emoji) {
       properties.emoji = emoji;
+    }
+    if (hypothesis) {
+      properties.hypothesis = hypothesis;
+    }
+    if (target_date) {
+      properties.target_date = target_date;
     }
 
     // Calculate completeness for new project (no linked issues yet)
@@ -621,6 +639,16 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    if (data.hypothesis !== undefined) {
+      newProps.hypothesis = data.hypothesis;
+      propsChanged = true;
+    }
+
+    if (data.target_date !== undefined) {
+      newProps.target_date = data.target_date;
+      propsChanged = true;
+    }
+
     if (propsChanged) {
       // Recalculate completeness when properties change
       const completeness = checkDocumentCompleteness('project', newProps, 0);
@@ -674,11 +702,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
               ELSE NULL
               END
             FROM documents issue
-            JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+            JOIN document_associations da_project ON da_project.document_id = issue.id
+              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
+            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
+              AND da_sprint.relationship_type = 'sprint'
+            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
             JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.project_id = d.id
-              AND issue.document_type = 'issue'
-              AND issue.sprint_id IS NOT NULL
+            WHERE issue.document_type = 'issue'
           ),
           'backlog'
         )
@@ -691,7 +721,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.project_id = d.id AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
+               WHERE i.document_type = 'issue') as issue_count,
               (${updateInferredStatusSubquery}) as inferred_status
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
@@ -786,11 +818,14 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
       [id]
     );
 
-    // Get issues for this project
+    // Get issues for this project via junction table
     const issuesResult = await pool.query(
-      `SELECT id, title, properties->>'state' as state
-       FROM documents
-       WHERE project_id = $1 AND document_type = 'issue'`,
+      `SELECT d.id, d.title, d.properties->>'state' as state
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
+         AND da.related_id = $1 AND da.relationship_type = 'project'
+       WHERE d.document_type = 'issue'
+         AND d.archived_at IS NULL AND d.deleted_at IS NULL`,
       [id]
     );
 
@@ -917,6 +952,318 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
     });
   } catch (err) {
     console.error('Create project retro error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================
+// Sprint Endpoints - Sprints under projects
+// ============================================
+
+// Schema for creating a sprint under a project
+const createProjectSprintSchema = z.object({
+  title: z.string().min(1).max(200).optional().default('Untitled'),
+  sprint_number: z.number().int().positive().optional(), // Auto-incremented if not provided
+  owner_id: z.string().uuid().optional(),
+  goal: z.string().max(500).optional(),
+  hypothesis: z.string().max(2000).optional(),
+  success_criteria: z.array(z.string().max(500)).max(20).optional(),
+  confidence: z.number().int().min(0).max(100).optional(),
+});
+
+// Helper to extract sprint from row (matches sprints.ts pattern)
+function extractSprintFromRow(row: any) {
+  const props = row.properties || {};
+  return {
+    id: row.id,
+    name: row.title,
+    sprint_number: props.sprint_number || 1,
+    owner: row.owner_id ? {
+      id: row.owner_id,
+      name: row.owner_name,
+      email: row.owner_email,
+    } : null,
+    project_id: row.project_id || null,
+    project_name: row.project_name || null,
+    program_id: row.program_id,
+    program_name: row.program_name,
+    program_prefix: row.program_prefix,
+    workspace_sprint_start_date: row.workspace_sprint_start_date,
+    issue_count: parseInt(row.issue_count) || 0,
+    completed_count: parseInt(row.completed_count) || 0,
+    started_count: parseInt(row.started_count) || 0,
+    goal: props.goal || null,
+    hypothesis: props.hypothesis || null,
+    success_criteria: props.success_criteria || null,
+    confidence: typeof props.confidence === 'number' ? props.confidence : null,
+  };
+}
+
+// GET /api/projects/:id/issues - List issues for a project
+router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify project exists and user can access it
+    const projectCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (projectCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // Get issues associated with this project via junction table
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.ticket_number,
+              d.created_at, d.updated_at,
+              d.started_at, d.completed_at, d.cancelled_at,
+              u.name as assignee_name
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
+         AND da.related_id = $1 AND da.relationship_type = 'project'
+       LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+       WHERE d.workspace_id = $2 AND d.document_type = 'issue'
+         AND d.archived_at IS NULL AND d.deleted_at IS NULL
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
+       ORDER BY
+         CASE d.properties->>'priority'
+           WHEN 'urgent' THEN 1
+           WHEN 'high' THEN 2
+           WHEN 'medium' THEN 3
+           WHEN 'low' THEN 4
+           ELSE 5
+         END,
+         d.updated_at DESC`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    // Transform rows to issue objects
+    const issues = result.rows.map(row => {
+      const props = row.properties || {};
+      return {
+        id: row.id,
+        title: row.title,
+        ticket_number: row.ticket_number,
+        state: props.state || 'backlog',
+        priority: props.priority || 'medium',
+        assignee_id: props.assignee_id || null,
+        assignee_name: row.assignee_name,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        started_at: row.started_at,
+        completed_at: row.completed_at,
+        cancelled_at: row.cancelled_at,
+      };
+    });
+
+    res.json(issues);
+  } catch (err) {
+    console.error('Get project issues error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/projects/:id/sprints - List sprints for a project
+router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify project exists and user can access it
+    const projectCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (projectCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // Get sprints associated with this project via junction table
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.program_id,
+              p.title as program_name, p.properties->>'prefix' as program_prefix,
+              w.sprint_start_date as workspace_sprint_start_date,
+              proj.id as project_id, proj.title as project_name,
+              u.id as owner_id, u.name as owner_name, u.email as owner_email,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
+       LEFT JOIN documents p ON d.program_id = p.id
+       LEFT JOIN documents proj ON proj.id = $1
+       JOIN workspaces w ON d.workspace_id = w.id
+       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       WHERE d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
+       ORDER BY (d.properties->>'sprint_number')::int DESC`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    res.json(result.rows.map(extractSprintFromRow));
+  } catch (err) {
+    console.error('Get project sprints error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/projects/:id/sprints - Create a sprint associated with a project
+router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = createProjectSprintSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify project exists, user can access it, and get workspace info
+    const projectCheck = await pool.query(
+      `SELECT d.id, d.program_id, w.sprint_start_date
+       FROM documents d
+       JOIN workspaces w ON d.workspace_id = w.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (projectCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    const project = projectCheck.rows[0];
+    const { title, owner_id, goal, hypothesis, success_criteria, confidence } = parsed.data;
+    let { sprint_number } = parsed.data;
+
+    // If sprint_number not provided, auto-increment based on project's existing sprints
+    if (!sprint_number) {
+      const maxSprintResult = await pool.query(
+        `SELECT MAX((d.properties->>'sprint_number')::int) as max_sprint
+         FROM documents d
+         JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
+         WHERE d.document_type = 'sprint'`,
+        [id]
+      );
+      sprint_number = (maxSprintResult.rows[0]?.max_sprint || 0) + 1;
+    }
+
+    // Check if sprint number already exists for this project
+    const existingCheck = await pool.query(
+      `SELECT d.id FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
+       WHERE d.document_type = 'sprint' AND (d.properties->>'sprint_number')::int = $2`,
+      [id, sprint_number]
+    );
+
+    if (existingCheck.rows.length > 0) {
+      res.status(400).json({ error: `Sprint ${sprint_number} already exists for this project` });
+      return;
+    }
+
+    // Verify owner exists in workspace (if provided)
+    let ownerData = null;
+    if (owner_id) {
+      const ownerCheck = await pool.query(
+        `SELECT u.id, u.name, u.email FROM users u
+         JOIN workspace_memberships wm ON wm.user_id = u.id
+         WHERE u.id = $1 AND wm.workspace_id = $2`,
+        [owner_id, workspaceId]
+      );
+
+      if (ownerCheck.rows.length === 0) {
+        res.status(400).json({ error: 'Owner not found in workspace' });
+        return;
+      }
+      ownerData = ownerCheck.rows[0];
+    }
+
+    // Build properties JSONB
+    const properties: Record<string, unknown> = { sprint_number };
+    if (owner_id) properties.owner_id = owner_id;
+    if (goal) properties.goal = goal;
+    if (hypothesis) {
+      properties.hypothesis = hypothesis;
+      properties.hypothesis_history = [{
+        hypothesis,
+        timestamp: new Date().toISOString(),
+        author_id: userId,
+      }];
+    }
+    if (success_criteria) properties.success_criteria = success_criteria;
+    if (confidence !== undefined) properties.confidence = confidence;
+
+    // Create the sprint document
+    // Use project's program_id for backward compatibility
+    const result = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by)
+       VALUES ($1, 'sprint', $2, $3, $4, $5)
+       RETURNING id, title, properties, program_id`,
+      [workspaceId, title, project.program_id, JSON.stringify(properties), userId]
+    );
+
+    const sprint = result.rows[0];
+
+    // Create association in junction table
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
+       VALUES ($1, $2, 'project', $3)
+       ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+      [sprint.id, id, JSON.stringify({ created_via: 'POST /api/projects/:id/sprints' })]
+    );
+
+    res.status(201).json({
+      id: sprint.id,
+      name: sprint.title,
+      sprint_number,
+      owner: ownerData ? {
+        id: ownerData.id,
+        name: ownerData.name,
+        email: ownerData.email,
+      } : null,
+      project_id: id,
+      program_id: project.program_id,
+      workspace_sprint_start_date: project.sprint_start_date,
+      issue_count: 0,
+      completed_count: 0,
+      started_count: 0,
+      goal: properties.goal || null,
+      hypothesis: properties.hypothesis || null,
+      success_criteria: properties.success_criteria || null,
+      confidence: properties.confidence ?? null,
+    });
+  } catch (err) {
+    console.error('Create project sprint error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

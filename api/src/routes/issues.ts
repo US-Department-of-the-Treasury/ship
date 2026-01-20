@@ -7,14 +7,19 @@ import { authMiddleware } from '../middleware/auth.js';
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
+// BelongsTo entry schema for associations
+const belongsToEntrySchema = z.object({
+  id: z.string().uuid(),
+  type: z.enum(['program', 'project', 'sprint', 'parent']),
+});
+
 // Validation schemas
 const createIssueSchema = z.object({
   title: z.string().min(1).max(500),
   state: z.enum(['triage', 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional().default('backlog'),
   priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().default('medium'),
   assignee_id: z.string().uuid().optional().nullable(),
-  program_id: z.string().uuid().optional().nullable(),
-  sprint_id: z.string().uuid().optional().nullable(),
+  belongs_to: z.array(belongsToEntrySchema).optional().default([]),
 });
 
 const updateIssueSchema = z.object({
@@ -22,9 +27,10 @@ const updateIssueSchema = z.object({
   state: z.enum(['triage', 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional(),
   priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional(),
   assignee_id: z.string().uuid().optional().nullable(),
-  program_id: z.string().uuid().optional().nullable(),
-  sprint_id: z.string().uuid().optional().nullable(),
+  belongs_to: z.array(belongsToEntrySchema).optional(),
   estimate: z.number().positive().nullable().optional(),
+  // Confirm closing parent with incomplete children (removes their parent association)
+  confirm_orphan_children: z.boolean().optional(),
   // Claude Code integration metadata
   claude_metadata: z.object({
     updated_by: z.literal('claude'),
@@ -53,8 +59,7 @@ const rejectIssueSchema = z.object({
 
 // Fields to track in document_history
 const TRACKED_FIELDS = [
-  'title', 'state', 'priority', 'assignee_id',
-  'program_id', 'sprint_id', 'estimate'
+  'title', 'state', 'priority', 'assignee_id', 'estimate', 'belongs_to'
 ];
 
 // Log a field change to document_history
@@ -96,7 +101,34 @@ function getTimestampUpdates(oldState: string | null, newState: string): Record<
   return updates;
 }
 
-// Helper to extract issue properties from row
+// BelongsTo type for association entries
+interface BelongsToEntry {
+  id: string;
+  type: 'program' | 'project' | 'sprint' | 'parent';
+  title?: string;
+  color?: string;
+}
+
+// Get belongs_to associations for a document from junction table
+async function getBelongsToAssociations(documentId: string): Promise<BelongsToEntry[]> {
+  const result = await pool.query(
+    `SELECT da.related_id as id, da.relationship_type as type,
+            d.title, d.properties->>'color' as color
+     FROM document_associations da
+     LEFT JOIN documents d ON da.related_id = d.id
+     WHERE da.document_id = $1
+     ORDER BY da.relationship_type, da.created_at`,
+    [documentId]
+  );
+  return result.rows.map(row => ({
+    id: row.id,
+    type: row.type,
+    title: row.title || undefined,
+    color: row.color || undefined,
+  }));
+}
+
+// Helper to extract issue properties from row (without belongs_to - added separately)
 function extractIssueFromRow(row: any) {
   const props = row.properties || {};
   return {
@@ -109,8 +141,6 @@ function extractIssueFromRow(row: any) {
     source: props.source || 'internal',
     rejection_reason: props.rejection_reason || null,
     ticket_number: row.ticket_number,
-    program_id: row.program_id,
-    sprint_id: row.sprint_id,
     content: row.content,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -122,10 +152,6 @@ function extractIssueFromRow(row: any) {
     converted_from_id: row.converted_from_id || null,
     assignee_name: row.assignee_name,
     assignee_archived: row.assignee_archived || false,
-    program_name: row.program_name,
-    program_prefix: row.program_prefix,
-    program_color: row.program_color,
-    sprint_name: row.sprint_name,
     created_by_name: row.created_by_name,
   };
 }
@@ -133,7 +159,7 @@ function extractIssueFromRow(row: any) {
 // List issues with filters
 router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const { state, priority, assignee_id, program_id, sprint_id, source } = req.query;
+    const { state, priority, assignee_id, program_id, sprint_id, source, parent_filter } = req.query;
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
@@ -142,21 +168,17 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
     let query = `
       SELECT d.id, d.title, d.properties, d.ticket_number,
-             d.program_id, d.sprint_id, d.content,
+             d.content,
              d.created_at, d.updated_at, d.created_by,
              d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
              d.converted_from_id,
              u.name as assignee_name,
-             CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
-             p.title as program_name,
-             p.properties->>'prefix' as program_prefix,
-             p.properties->>'color' as program_color
+             CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived
       FROM documents d
       LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
       LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
         AND person_doc.document_type = 'person'
         AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
-      LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
       WHERE d.workspace_id = $1 AND d.document_type = 'issue'
         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
     `;
@@ -192,14 +214,45 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
+    // Filter by program via junction table
     if (program_id) {
-      query += ` AND d.program_id = $${params.length + 1}`;
+      query += ` AND EXISTS (
+        SELECT 1 FROM document_associations da
+        WHERE da.document_id = d.id AND da.related_id = $${params.length + 1} AND da.relationship_type = 'program'
+      )`;
       params.push(program_id as string);
     }
 
+    // Filter by sprint via junction table
     if (sprint_id) {
-      query += ` AND d.sprint_id = $${params.length + 1}`;
+      query += ` AND EXISTS (
+        SELECT 1 FROM document_associations da
+        WHERE da.document_id = d.id AND da.related_id = $${params.length + 1} AND da.relationship_type = 'sprint'
+      )`;
       params.push(sprint_id as string);
+    }
+
+    // Filter by parent/sub-issue status
+    if (parent_filter) {
+      if (parent_filter === 'top_level') {
+        // Issues that have NO parent (not a sub-issue)
+        query += ` AND NOT EXISTS (
+          SELECT 1 FROM document_associations da
+          WHERE da.document_id = d.id AND da.relationship_type = 'parent'
+        )`;
+      } else if (parent_filter === 'has_children') {
+        // Issues that HAVE at least one child (sub-issue)
+        query += ` AND EXISTS (
+          SELECT 1 FROM document_associations da
+          WHERE da.related_id = d.id AND da.relationship_type = 'parent'
+        )`;
+      } else if (parent_filter === 'is_sub_issue') {
+        // Issues that ARE sub-issues (have a parent)
+        query += ` AND EXISTS (
+          SELECT 1 FROM document_associations da
+          WHERE da.document_id = d.id AND da.relationship_type = 'parent'
+        )`;
+      }
     }
 
     query += ` ORDER BY
@@ -214,14 +267,16 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
     const result = await pool.query(query, params);
 
-    // Extract and add display_id to each issue
-    const issues = result.rows.map(row => {
+    // Extract issues and add belongs_to associations
+    const issues = await Promise.all(result.rows.map(async row => {
       const issue = extractIssueFromRow(row);
+      const belongs_to = await getBelongsToAssociations(row.id);
       return {
         ...issue,
-        display_id: `#${issue.ticket_number}`
+        display_id: `#${issue.ticket_number}`,
+        belongs_to,
       };
-    });
+    }));
 
     res.json(issues);
   } catch (err) {
@@ -252,24 +307,18 @@ router.get('/by-ticket/:number', authMiddleware, async (req: Request, res: Respo
 
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.ticket_number,
-              d.program_id, d.sprint_id, d.content,
+              d.content,
               d.created_at, d.updated_at, d.created_by,
               d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
               d.converted_to_id, d.converted_from_id,
               u.name as assignee_name,
               CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
-              p.title as program_name,
-              p.properties->>'prefix' as program_prefix,
-              p.properties->>'color' as program_color,
-              s.title as sprint_name,
               creator.name as created_by_name
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
        LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
          AND person_doc.document_type = 'person'
          AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
-       LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
-       LEFT JOIN documents s ON d.sprint_id = s.id AND s.document_type = 'sprint'
        LEFT JOIN users creator ON d.created_by = creator.id
        WHERE d.ticket_number = $1 AND d.workspace_id = $2 AND d.document_type = 'issue'
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
@@ -302,12 +351,89 @@ router.get('/by-ticket/:number', authMiddleware, async (req: Request, res: Respo
     }
 
     const issue = extractIssueFromRow(row);
+    const belongs_to = await getBelongsToAssociations(row.id);
     res.json({
       ...issue,
-      display_id: `#${issue.ticket_number}`
+      display_id: `#${issue.ticket_number}`,
+      belongs_to,
     });
   } catch (err) {
     console.error('Get issue by ticket error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get sub-issues (children) of an issue
+router.get('/:id/children', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify parent issue exists and user can access it
+    const parentCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (parentCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    // Query junction table for sub-issues
+    // Sub-issues have document_id pointing to this issue's id via relationship_type='parent'
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.ticket_number,
+              d.content,
+              d.created_at, d.updated_at, d.created_by,
+              d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
+              d.converted_from_id,
+              u.name as assignee_name,
+              CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
+       LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
+       LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
+         AND person_doc.document_type = 'person'
+         AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
+       WHERE da.related_id = $1
+         AND da.relationship_type = 'parent'
+         AND d.workspace_id = $2
+         AND d.document_type = 'issue'
+         AND d.archived_at IS NULL
+         AND d.deleted_at IS NULL
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
+       ORDER BY
+         CASE d.properties->>'priority'
+           WHEN 'urgent' THEN 1
+           WHEN 'high' THEN 2
+           WHEN 'medium' THEN 3
+           WHEN 'low' THEN 4
+           ELSE 5
+         END,
+         d.updated_at DESC`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    const children = await Promise.all(result.rows.map(async row => {
+      const issue = extractIssueFromRow(row);
+      const belongs_to = await getBelongsToAssociations(row.id);
+      return {
+        ...issue,
+        display_id: `#${issue.ticket_number}`,
+        belongs_to,
+      };
+    }));
+
+    res.json(children);
+  } catch (err) {
+    console.error('Get issue children error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -324,24 +450,18 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.ticket_number,
-              d.program_id, d.sprint_id, d.content,
+              d.content,
               d.created_at, d.updated_at, d.created_by,
               d.started_at, d.completed_at, d.cancelled_at, d.reopened_at,
               d.converted_to_id, d.converted_from_id,
               u.name as assignee_name,
               CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
-              p.title as program_name,
-              p.properties->>'prefix' as program_prefix,
-              p.properties->>'color' as program_color,
-              s.title as sprint_name,
               creator.name as created_by_name
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
        LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
          AND person_doc.document_type = 'person'
          AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
-       LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
-       LEFT JOIN documents s ON d.sprint_id = s.id AND s.document_type = 'sprint'
        LEFT JOIN users creator ON d.created_by = creator.id
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'issue'
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
@@ -375,9 +495,11 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     const issue = extractIssueFromRow(row);
+    const belongs_to = await getBelongsToAssociations(row.id);
     res.json({
       ...issue,
-      display_id: `#${issue.ticket_number}`
+      display_id: `#${issue.ticket_number}`,
+      belongs_to,
     });
   } catch (err) {
     console.error('Get issue error:', err);
@@ -396,7 +518,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, state, priority, assignee_id, program_id, sprint_id } = parsed.data;
+    const { title, state, priority, assignee_id, belongs_to } = parsed.data;
 
     await client.query('BEGIN');
 
@@ -426,31 +548,36 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     };
 
     const result = await client.query(
-      `INSERT INTO documents (workspace_id, document_type, title, properties, program_id, sprint_id, ticket_number, created_by)
-       VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7)
+      `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number, created_by)
+       VALUES ($1, 'issue', $2, $3, $4, $5)
        RETURNING *`,
-      [req.workspaceId, title, JSON.stringify(properties), program_id || null, sprint_id || null, ticketNumber, req.userId]
+      [req.workspaceId, title, JSON.stringify(properties), ticketNumber, req.userId]
     );
 
-    // Get program prefix if assigned
-    let displayId = `#${ticketNumber}`;
-    let programPrefix = null;
-    if (program_id) {
-      const programResult = await client.query(
-        `SELECT properties->>'prefix' as prefix FROM documents WHERE id = $1 AND document_type = 'program'`,
-        [program_id]
+    const newIssueId = result.rows[0].id;
+
+    // Create associations from belongs_to array
+    for (const assoc of belongs_to) {
+      await client.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+        [newIssueId, assoc.id, assoc.type]
       );
-      if (programResult.rows[0]) {
-        programPrefix = programResult.rows[0].prefix;
-        displayId = `${programPrefix}-${ticketNumber}`;
-      }
     }
 
     await client.query('COMMIT');
 
+    // Get the belongs_to associations with display info
+    const belongsToResult = await getBelongsToAssociations(newIssueId);
+
     const row = result.rows[0];
-    const issue = extractIssueFromRow({ ...row, program_prefix: programPrefix });
-    res.status(201).json({ ...issue, display_id: displayId });
+    const issue = extractIssueFromRow(row);
+    res.status(201).json({
+      ...issue,
+      display_id: `#${ticketNumber}`,
+      belongs_to: belongsToResult,
+    });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Create issue error:', err);
@@ -478,7 +605,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     // Get full existing issue for history tracking (with visibility check)
     const existing = await pool.query(
-      `SELECT id, title, properties, program_id, sprint_id
+      `SELECT id, title, properties
        FROM documents
        WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
          AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
@@ -498,12 +625,64 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const data = parsed.data;
 
-    // Validate: estimate required when assigning to sprint
-    if (data.sprint_id !== undefined && data.sprint_id !== null) {
-      const effectiveEstimate = data.estimate !== undefined ? data.estimate : currentProps.estimate;
-      if (!effectiveEstimate) {
-        res.status(400).json({ error: 'Estimate is required before assigning to a sprint' });
+    // Validate: estimate required when assigning to a sprint via belongs_to
+    if (data.belongs_to) {
+      const hasSprintAssociation = data.belongs_to.some(bt => bt.type === 'sprint');
+      if (hasSprintAssociation) {
+        const effectiveEstimate = data.estimate !== undefined ? data.estimate : currentProps.estimate;
+        if (!effectiveEstimate) {
+          res.status(400).json({ error: 'Estimate is required before assigning to a sprint' });
+          return;
+        }
+      }
+    }
+
+    // Check for incomplete children when closing parent
+    const isClosingIssue = data.state && (data.state === 'done' || data.state === 'cancelled');
+    const wasNotClosed = currentProps.state !== 'done' && currentProps.state !== 'cancelled';
+
+    if (isClosingIssue && wasNotClosed) {
+      // Check if this issue has any children via junction table
+      const childrenResult = await pool.query(
+        `SELECT d.id, d.title, d.ticket_number, d.properties->>'state' as state
+         FROM documents d
+         JOIN document_associations da ON da.document_id = d.id
+         WHERE da.related_id = $1
+           AND da.relationship_type = 'parent'
+           AND d.workspace_id = $2
+           AND d.document_type = 'issue'`,
+        [id, workspaceId]
+      );
+
+      // Filter to incomplete children
+      const incompleteChildren = childrenResult.rows.filter(
+        child => child.state !== 'done' && child.state !== 'cancelled'
+      );
+
+      if (incompleteChildren.length > 0 && !data.confirm_orphan_children) {
+        // Return warning with incomplete children details
+        res.status(409).json({
+          error: 'incomplete_children',
+          message: `This issue has ${incompleteChildren.length} incomplete sub-issue(s). Closing it will remove their parent association.`,
+          incomplete_children: incompleteChildren.map(child => ({
+            id: child.id,
+            title: child.title,
+            ticket_number: child.ticket_number,
+            state: child.state,
+          })),
+          confirm_action: 'Set confirm_orphan_children: true to proceed',
+        });
         return;
+      }
+
+      // If confirmed, orphan the children by removing their parent associations
+      if (incompleteChildren.length > 0 && data.confirm_orphan_children) {
+        await pool.query(
+          `DELETE FROM document_associations
+           WHERE related_id = $1
+             AND relationship_type = 'parent'`,
+          [id]
+        );
       }
     }
 
@@ -557,69 +736,96 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    // Track the index in values array for properties (for later updates after carryover)
+    let propsValueIndex = -1;
     if (propsChanged) {
       updates.push(`properties = $${paramIndex++}`);
+      propsValueIndex = values.length;
       values.push(JSON.stringify(newProps));
     }
 
-    // Handle association updates (regular columns)
-    if (data.program_id !== undefined && data.program_id !== existingIssue.program_id) {
-      changes.push({ field: 'program_id', oldValue: existingIssue.program_id || null, newValue: data.program_id });
-      updates.push(`program_id = $${paramIndex++}`);
-      values.push(data.program_id);
-      // Clear sprint if program changes (sprint belongs to program)
-      if (data.sprint_id === undefined) {
-        updates.push(`sprint_id = NULL`);
-      }
-    }
-    if (data.sprint_id !== undefined && data.sprint_id !== existingIssue.sprint_id) {
-      changes.push({ field: 'sprint_id', oldValue: existingIssue.sprint_id || null, newValue: data.sprint_id });
-      updates.push(`sprint_id = $${paramIndex++}`);
-      values.push(data.sprint_id);
+    // Handle belongs_to association updates via junction table
+    let belongsToChanged = false;
+    let oldBelongsTo: BelongsToEntry[] = [];
+    let newBelongsTo: BelongsToEntry[] = [];
 
-      // Track carryover when moving from a completed sprint while issue is not done
-      if (existingIssue.sprint_id && data.sprint_id && currentProps.state !== 'done') {
-        // Check if the old sprint is completed (based on end date)
-        const oldSprintResult = await pool.query(
-          `SELECT properties->>'sprint_number' as sprint_number, w.sprint_start_date
-           FROM documents d
-           JOIN workspaces w ON d.workspace_id = w.id
-           WHERE d.id = $1 AND d.document_type = 'sprint'`,
-          [existingIssue.sprint_id]
-        );
+    if (data.belongs_to !== undefined) {
+      // Get existing associations for comparison
+      oldBelongsTo = await getBelongsToAssociations(id);
+      newBelongsTo = data.belongs_to;
 
-        if (oldSprintResult.rows[0]) {
-          const sprintNumber = parseInt(oldSprintResult.rows[0].sprint_number, 10);
-          const rawStartDate = oldSprintResult.rows[0].sprint_start_date;
-          const sprintDuration = 7; // 1-week sprints
+      // Compare to see if associations changed
+      const oldIds = oldBelongsTo.map(bt => `${bt.type}:${bt.id}`).sort().join(',');
+      const newIds = newBelongsTo.map(bt => `${bt.type}:${bt.id}`).sort().join(',');
 
-          let startDate: Date;
-          if (rawStartDate instanceof Date) {
-            startDate = new Date(Date.UTC(rawStartDate.getFullYear(), rawStartDate.getMonth(), rawStartDate.getDate()));
-          } else if (typeof rawStartDate === 'string') {
-            startDate = new Date(rawStartDate + 'T00:00:00Z');
-          } else {
-            startDate = new Date();
+      if (oldIds !== newIds) {
+        belongsToChanged = true;
+
+        // Track carryover when moving from a completed sprint while issue is not done
+        const oldSprintAssoc = oldBelongsTo.find(bt => bt.type === 'sprint');
+        const newSprintAssoc = newBelongsTo.find(bt => bt.type === 'sprint');
+
+        if (oldSprintAssoc && newSprintAssoc && oldSprintAssoc.id !== newSprintAssoc.id && currentProps.state !== 'done') {
+          // Check if the old sprint is completed (based on end date)
+          const oldSprintResult = await pool.query(
+            `SELECT properties->>'sprint_number' as sprint_number, w.sprint_start_date
+             FROM documents d
+             JOIN workspaces w ON d.workspace_id = w.id
+             WHERE d.id = $1 AND d.document_type = 'sprint'`,
+            [oldSprintAssoc.id]
+          );
+
+          if (oldSprintResult.rows[0]) {
+            const sprintNumber = parseInt(oldSprintResult.rows[0].sprint_number, 10);
+            const rawStartDate = oldSprintResult.rows[0].sprint_start_date;
+            const sprintDuration = 7; // 1-week sprints
+
+            let startDate: Date;
+            if (rawStartDate instanceof Date) {
+              startDate = new Date(Date.UTC(rawStartDate.getFullYear(), rawStartDate.getMonth(), rawStartDate.getDate()));
+            } else if (typeof rawStartDate === 'string') {
+              startDate = new Date(rawStartDate + 'T00:00:00Z');
+            } else {
+              startDate = new Date();
+            }
+
+            // Calculate sprint end date
+            const sprintEndDate = new Date(startDate);
+            sprintEndDate.setUTCDate(sprintEndDate.getUTCDate() + (sprintNumber * sprintDuration) - 1);
+
+            // If the old sprint has ended, mark this as a carryover
+            if (new Date() > sprintEndDate) {
+              newProps.carryover_from_sprint_id = oldSprintAssoc.id;
+              propsChanged = true;
+            }
           }
-
-          // Calculate sprint end date
-          const sprintEndDate = new Date(startDate);
-          sprintEndDate.setUTCDate(sprintEndDate.getUTCDate() + (sprintNumber * sprintDuration) - 1);
-
-          // If the old sprint has ended, mark this as a carryover
-          if (new Date() > sprintEndDate) {
-            newProps.carryover_from_sprint_id = existingIssue.sprint_id;
-            propsChanged = true;
-          }
+        } else if (oldSprintAssoc && !newSprintAssoc) {
+          // Removing from sprint clears carryover
+          delete newProps.carryover_from_sprint_id;
+          propsChanged = true;
         }
-      } else if (data.sprint_id === null) {
-        // Removing from sprint clears carryover
-        delete newProps.carryover_from_sprint_id;
-        propsChanged = true;
+
+        // Log belongs_to change
+        changes.push({
+          field: 'belongs_to',
+          oldValue: JSON.stringify(oldBelongsTo.map(bt => ({ id: bt.id, type: bt.type }))),
+          newValue: JSON.stringify(newBelongsTo.map(bt => ({ id: bt.id, type: bt.type }))),
+        });
       }
     }
 
-    if (updates.length === 0) {
+    // Re-check if properties changed (carryover may have been updated)
+    if (propsChanged && propsValueIndex === -1) {
+      // Properties weren't added yet, add now
+      updates.push(`properties = $${paramIndex++}`);
+      propsValueIndex = values.length;
+      values.push(JSON.stringify(newProps));
+    } else if (propsChanged && propsValueIndex >= 0) {
+      // Update the existing properties value at the tracked index
+      values[propsValueIndex] = JSON.stringify(newProps);
+    }
+
+    if (updates.length === 0 && !belongsToChanged) {
       res.status(400).json({ error: 'No fields to update' });
       return;
     }
@@ -630,18 +836,47 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.userId!, automatedBy);
     }
 
-    updates.push(`updated_at = now()`);
+    // If we have document updates, do the UPDATE
+    if (updates.length > 0) {
+      updates.push(`updated_at = now()`);
 
+      await pool.query(
+        `UPDATE documents SET ${updates.join(', ')} WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1}`,
+        [...values, id, req.workspaceId]
+      );
+    }
+
+    // Handle belongs_to association updates in junction table
+    if (belongsToChanged) {
+      // Delete all existing associations for this document
+      await pool.query(
+        `DELETE FROM document_associations WHERE document_id = $1`,
+        [id]
+      );
+
+      // Insert new associations
+      for (const assoc of newBelongsTo) {
+        await pool.query(
+          `INSERT INTO document_associations (document_id, related_id, relationship_type)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+          [id, assoc.id, assoc.type]
+        );
+      }
+    }
+
+    // Fetch the updated issue
     const result = await pool.query(
-      `UPDATE documents SET ${updates.join(', ')} WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} RETURNING *`,
-      [...values, id, req.workspaceId]
+      `SELECT * FROM documents WHERE id = $1 AND workspace_id = $2`,
+      [id, req.workspaceId]
     );
 
     const row = result.rows[0];
     const displayId = `#${row.ticket_number}`;
 
     const issue = extractIssueFromRow(row);
-    res.json({ ...issue, display_id: displayId });
+    const belongsTo = await getBelongsToAssociations(id);
+    res.json({ ...issue, display_id: displayId, belongs_to: belongsTo });
   } catch (err) {
     console.error('Update issue error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -763,6 +998,7 @@ const bulkUpdateSchema = z.object({
     state: z.enum(['triage', 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional(),
     sprint_id: z.string().uuid().nullable().optional(),
     assignee_id: z.string().uuid().nullable().optional(),
+    project_id: z.string().uuid().nullable().optional(),
   }).optional(),
 });
 
@@ -876,6 +1112,38 @@ router.post('/bulk', authMiddleware, async (req: Request, res: Response) => {
            RETURNING *`,
           values
         );
+
+        // Handle project_id via document_associations table
+        if (updates.project_id !== undefined) {
+          // Remove existing project associations for all updated issues
+          await client.query(
+            `DELETE FROM document_associations
+             WHERE document_id = ANY($1) AND relationship_type = 'project'`,
+            [validIds]
+          );
+
+          // Add new project associations if project_id is not null
+          if (updates.project_id !== null) {
+            // Verify the project exists and user has access
+            const projectCheck = await client.query(
+              `SELECT id FROM documents
+               WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+                 AND deleted_at IS NULL`,
+              [updates.project_id, workspaceId]
+            );
+
+            if (projectCheck.rows.length > 0) {
+              // Insert associations for all valid issues
+              const insertValues = validIds.map((_, i) => `($${i + 1}, $${validIds.length + 1}, 'project')`).join(', ');
+              await client.query(
+                `INSERT INTO document_associations (document_id, related_id, relationship_type)
+                 VALUES ${insertValues}
+                 ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+                [...validIds, updates.project_id]
+              );
+            }
+          }
+        }
         break;
 
       default:

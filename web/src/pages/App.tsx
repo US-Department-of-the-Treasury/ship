@@ -11,6 +11,7 @@ import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
 import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
+import { useStandupStatusQuery } from '@/hooks/useStandupStatusQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -22,8 +23,10 @@ import { useToast } from '@/components/ui/Toast';
 import { Tooltip, TooltipProvider } from '@/components/ui/Tooltip';
 import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
+import { ContextTreeNav } from '@/components/ContextTreeNav';
+import { ProjectSetupWizard, ProjectSetupData } from '@/components/ProjectSetupWizard';
 
-type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard';
+type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week';
 
 export function AppLayout() {
   const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
@@ -39,6 +42,7 @@ export function AppLayout() {
   });
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
+  const [projectSetupWizardOpen, setProjectSetupWizardOpen] = useState(false);
 
   // Session timeout handling
   const handleSessionTimeout = useCallback(() => {
@@ -53,6 +57,10 @@ export function AppLayout() {
     warningType,
     resetTimer: resetSessionTimer,
   } = useSessionTimeout(handleSessionTimeout);
+
+  // Check if user needs to post a standup today
+  const { data: standupStatus } = useStandupStatusQuery();
+  const standupDue = standupStatus?.due ?? false;
 
   // Accessibility: focus management on navigation
   useFocusOnNavigate();
@@ -77,6 +85,7 @@ export function AppLayout() {
   // Determine active mode from path
   const getActiveMode = (): Mode => {
     if (location.pathname.startsWith('/dashboard')) return 'dashboard';
+    if (location.pathname.startsWith('/my-week')) return 'my-week';
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
     if (location.pathname.startsWith('/projects')) return 'projects';
@@ -94,6 +103,7 @@ export function AppLayout() {
   const handleModeClick = (mode: Mode) => {
     switch (mode) {
       case 'dashboard': navigate('/dashboard'); break;
+      case 'my-week': navigate('/my-week'); break;
       case 'docs': navigate('/docs'); break;
       case 'issues': navigate('/issues'); break;
       case 'projects': navigate('/projects'); break;
@@ -118,11 +128,22 @@ export function AppLayout() {
     }
   };
 
-  const handleCreateProject = async () => {
-    // Projects require an owner_id - use current user as default owner
+  const handleCreateProject = () => {
+    // Open the project setup wizard instead of immediately creating
+    setProjectSetupWizardOpen(true);
+  };
+
+  const handleProjectSetupSubmit = async (data: ProjectSetupData) => {
     if (!user?.id) return;
-    const project = await createProject({ owner_id: user.id });
+    const project = await createProject({
+      owner_id: user.id,
+      title: data.title,
+      program_id: data.program_id,
+      hypothesis: data.hypothesis,
+      target_date: data.target_date ? new Date(data.target_date).toISOString() : undefined,
+    });
     if (project) {
+      setProjectSetupWizardOpen(false);
       navigate(`/projects/${project.id}`);
     }
   };
@@ -250,15 +271,22 @@ export function AppLayout() {
             />
             <RailIcon
               icon={<SprintsIcon />}
-              label="Sprints"
+              label={standupDue ? "Sprints (standup due)" : "Sprints"}
               active={activeMode === 'sprints'}
               onClick={() => handleModeClick('sprints')}
+              showBadge={standupDue}
             />
             <RailIcon
               icon={<IssuesIcon />}
               label="Issues"
               active={activeMode === 'issues'}
               onClick={() => handleModeClick('issues')}
+            />
+            <RailIcon
+              icon={<MyWeekIcon />}
+              label="My Week"
+              active={activeMode === 'my-week'}
+              onClick={() => handleModeClick('my-week')}
             />
             <RailIcon
               icon={<TeamIcon />}
@@ -312,6 +340,7 @@ export function AppLayout() {
             <div className="flex h-10 items-center justify-between border-b border-border px-3">
               <h2 className="text-sm font-medium text-foreground m-0">
                 {activeMode === 'dashboard' && 'Dashboard'}
+                {activeMode === 'my-week' && 'My Week'}
                 {activeMode === 'docs' && 'Docs'}
                 {activeMode === 'issues' && 'Issues'}
                 {activeMode === 'projects' && 'Projects'}
@@ -376,7 +405,7 @@ export function AppLayout() {
                 />
               )}
               {activeMode === 'issues' && (
-                <IssuesList
+                <IssuesSidebar
                   issues={issues}
                   activeId={location.pathname.split('/issues/')[1]}
                   onUpdateIssue={updateIssue}
@@ -409,6 +438,9 @@ export function AppLayout() {
               {activeMode === 'dashboard' && (
                 <DashboardSidebar />
               )}
+              {activeMode === 'my-week' && (
+                <div className="px-3 py-2 text-sm text-muted">Your sprint assignments</div>
+              )}
             </div>
 
           </div>
@@ -427,6 +459,13 @@ export function AppLayout() {
       {/* Command Palette (Cmd+K) */}
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
 
+      {/* Project Setup Wizard */}
+      <ProjectSetupWizard
+        open={projectSetupWizardOpen}
+        onCancel={() => setProjectSetupWizardOpen(false)}
+        onSubmit={handleProjectSetupSubmit}
+      />
+
       {/* Session Timeout Warning Modal */}
       <SessionTimeoutModal
         open={showTimeoutWarning}
@@ -439,18 +478,21 @@ export function AppLayout() {
   );
 }
 
-function RailIcon({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+function RailIcon({ icon, label, active, onClick, showBadge }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void; showBadge?: boolean }) {
   return (
     <Tooltip content={label} side="right">
       <button
         onClick={onClick}
         className={cn(
-          'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+          'relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
           active ? 'bg-border text-foreground' : 'text-muted hover:bg-border/50 hover:text-foreground'
         )}
         aria-label={label}
       >
         {icon}
+        {showBadge && (
+          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-orange-500" />
+        )}
       </button>
     </Tooltip>
   );
@@ -808,6 +850,47 @@ function ChevronIcon({ isOpen }: { isOpen: boolean }) {
         d="M9 5l7 7-7 7"
       />
     </svg>
+  );
+}
+
+// Wrapper that shows ContextTreeNav when viewing a specific issue
+function IssuesSidebar({
+  issues,
+  activeId,
+  onUpdateIssue,
+}: {
+  issues: Issue[];
+  activeId?: string;
+  onUpdateIssue: (id: string, updates: Partial<Issue>) => Promise<Issue | null>;
+}) {
+  // Show context tree when viewing a specific issue
+  const showContext = !!activeId;
+
+  return (
+    <div className="space-y-2">
+      {showContext && (
+        <ContextTreeNav documentId={activeId} documentType="issue" />
+      )}
+
+      {/* Separator between context and list */}
+      {showContext && (
+        <div className="border-t border-border mx-2" />
+      )}
+
+      {/* All Issues header */}
+      <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-muted uppercase tracking-wider">
+        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+        </svg>
+        All Issues
+      </div>
+
+      <IssuesList
+        issues={issues}
+        activeId={activeId}
+        onUpdateIssue={onUpdateIssue}
+      />
+    </div>
   );
 }
 
@@ -1264,35 +1347,67 @@ function SprintsList() {
 
   return (
     <ul className="space-y-0.5 px-2" data-testid="sprints-list">
-      {sprints.map((sprint) => (
-        <li key={sprint.id} data-testid="sprint-item">
-          <button
-            onClick={() => navigate(`/programs/${sprint.program_id}/sprints/${sprint.id}`)}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-              activeId === sprint.id
-                ? 'bg-border/50 text-foreground'
-                : 'text-muted hover:bg-border/30 hover:text-foreground'
-            )}
-          >
-            {/* Owner avatar */}
-            {sprint.owner ? (
-              <span
-                className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent/80 text-[10px] font-medium text-white"
-                title={sprint.owner.name}
+      {sprints.map((sprint) => {
+        const isEnded = sprint.days_remaining <= 0;
+        const isEndingSoon = !isEnded && sprint.days_remaining <= 2;
+        const showReviewIndicator = isEnded || isEndingSoon;
+        return (
+          <li key={sprint.id} data-testid="sprint-item">
+            <div
+              className={cn(
+                'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                activeId === sprint.id
+                  ? 'bg-border/50 text-foreground'
+                  : 'text-muted hover:bg-border/30 hover:text-foreground'
+              )}
+            >
+              {/* Owner avatar */}
+              <button
+                onClick={() => navigate(`/programs/${sprint.program_id}/sprints/${sprint.id}`)}
+                className="flex items-center gap-2 flex-1 min-w-0"
               >
-                {sprint.owner.name?.charAt(0).toUpperCase() || '?'}
-              </span>
-            ) : (
-              <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-border text-[10px] text-muted">
-                ?
-              </span>
-            )}
-            {/* Program name (sprint number is redundant since all active sprints are the same) */}
-            <span className="flex-1 truncate">{sprint.program_name || 'Untitled'}</span>
-          </button>
-        </li>
-      ))}
+                {sprint.owner ? (
+                  <span
+                    className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent/80 text-[10px] font-medium text-white"
+                    title={sprint.owner.name}
+                  >
+                    {sprint.owner.name?.charAt(0).toUpperCase() || '?'}
+                  </span>
+                ) : (
+                  <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-border text-[10px] text-muted">
+                    ?
+                  </span>
+                )}
+                {/* Program name (sprint number is redundant since all active sprints are the same) */}
+                <span className="flex-1 truncate">{sprint.program_name || 'Untitled'}</span>
+              </button>
+              {/* Sprint ended / Review due badge and quick action */}
+              {showReviewIndicator && (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <span className={cn(
+                    'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                    isEnded
+                      ? 'bg-red-500/20 text-red-400'
+                      : 'bg-amber-500/20 text-amber-400'
+                  )}>
+                    {isEnded ? 'Sprint ended' : 'Review due'}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/sprints/${sprint.id}/review`);
+                    }}
+                    className="hidden group-hover:inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/20"
+                    title="Go to sprint review"
+                  >
+                    Review
+                  </button>
+                </div>
+              )}
+            </div>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -1392,6 +1507,16 @@ function SprintsIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  );
+}
+
+function MyWeekIcon() {
+  // Calendar with week indicator (CalendarDays style)
+  return (
+    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" />
     </svg>
   );
 }

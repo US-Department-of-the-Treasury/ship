@@ -276,34 +276,47 @@ async function seed() {
 
     // Create sprints for each program (current-3 to current+3)
     // Each sprint gets assigned an owner from the team (rotating assignment)
-    const sprintsToCreate: Array<{ programId: string; number: number; ownerIdx: number }> = [];
+    // Sprints are distributed among the program's projects
+    const sprintsToCreate: Array<{ programId: string; projectId: string; number: number; ownerIdx: number }> = [];
     let ownerRotation = 0;
     for (const program of programs) {
+      // Get projects for this program to distribute sprints among them
+      const programProjects = projects.filter(p => p.programId === program.id);
+      let projectIdx = 0;
       for (let sprintNum = currentSprintNumber - 3; sprintNum <= currentSprintNumber + 3; sprintNum++) {
         if (sprintNum > 0) {
-          sprintsToCreate.push({ programId: program.id, number: sprintNum, ownerIdx: ownerRotation % allUsers.length });
+          // Round-robin assign sprints to projects within the program
+          const project = programProjects[projectIdx % programProjects.length]!;
+          sprintsToCreate.push({
+            programId: program.id,
+            projectId: project.id,
+            number: sprintNum,
+            ownerIdx: ownerRotation % allUsers.length
+          });
           ownerRotation++;
+          projectIdx++;
         }
       }
     }
 
-    const sprints: Array<{ id: string; programId: string; number: number }> = [];
+    const sprints: Array<{ id: string; programId: string; projectId: string; number: number }> = [];
     let sprintsCreated = 0;
 
     for (const sprint of sprintsToCreate) {
       const owner = allUsers[sprint.ownerIdx]!;
 
-      // Check for existing sprint by sprint_number (new model)
+      // Check for existing sprint by sprint_number and project (new model)
       const existingSprint = await pool.query(
         `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND program_id = $2 AND (properties->>'sprint_number')::int = $3`,
-        [workspaceId, sprint.programId, sprint.number]
+         AND project_id = $2 AND (properties->>'sprint_number')::int = $3`,
+        [workspaceId, sprint.projectId, sprint.number]
       );
 
       if (existingSprint.rows[0]) {
         sprints.push({
           id: existingSprint.rows[0].id,
           programId: sprint.programId,
+          projectId: sprint.projectId,
           number: sprint.number,
         });
       } else {
@@ -313,15 +326,17 @@ async function seed() {
           sprint_number: sprint.number,
           assignee_ids: [owner.id],
         };
+        // Sprints belong to projects (project_id), and inherit program context from the project
         const sprintResult = await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
+          `INSERT INTO documents (workspace_id, document_type, title, project_id, properties)
            VALUES ($1, 'sprint', $2, $3, $4)
            RETURNING id`,
-          [workspaceId, `Sprint ${sprint.number}`, sprint.programId, JSON.stringify(sprintProperties)]
+          [workspaceId, `Sprint ${sprint.number}`, sprint.projectId, JSON.stringify(sprintProperties)]
         );
         sprints.push({
           id: sprintResult.rows[0].id,
           programId: sprint.programId,
+          projectId: sprint.projectId,
           number: sprint.number,
         });
         sprintsCreated++;
@@ -512,6 +527,47 @@ async function seed() {
       console.log(`✅ Created ${issuesCreated} issues`);
     } else {
       console.log('ℹ️  All issues already exist');
+    }
+
+    // Sync sprint_id column to junction table (document_associations)
+    // The junction table is the canonical source for associations; this ensures
+    // newly seeded issues have their sprint relationships in both places
+    const sprintAssocResult = await pool.query(`
+      INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
+      SELECT
+        id AS document_id,
+        sprint_id AS related_id,
+        'sprint'::relationship_type AS relationship_type,
+        jsonb_build_object('migrated_from', 'seed_sprint_id', 'migrated_at', NOW())
+      FROM documents
+      WHERE sprint_id IS NOT NULL
+        AND workspace_id = $1
+        AND document_type = 'issue'
+      ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING
+    `, [workspaceId]);
+    if (sprintAssocResult.rowCount && sprintAssocResult.rowCount > 0) {
+      console.log(`✅ Created ${sprintAssocResult.rowCount} sprint associations in junction table`);
+    }
+
+    // Sync project associations to junction table (document_associations)
+    // Issues inherit project association from their sprint's project
+    const projectAssocResult = await pool.query(`
+      INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
+      SELECT
+        issue.id AS document_id,
+        sprint.project_id AS related_id,
+        'project'::relationship_type AS relationship_type,
+        jsonb_build_object('migrated_from', 'seed_sprint_project', 'migrated_at', NOW())
+      FROM documents issue
+      JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+      WHERE issue.sprint_id IS NOT NULL
+        AND sprint.project_id IS NOT NULL
+        AND issue.workspace_id = $1
+        AND issue.document_type = 'issue'
+      ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING
+    `, [workspaceId]);
+    if (projectAssocResult.rowCount && projectAssocResult.rowCount > 0) {
+      console.log(`✅ Created ${projectAssocResult.rowCount} project associations in junction table`);
     }
 
     // Create welcome/tutorial wiki document
