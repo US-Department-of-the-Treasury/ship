@@ -78,3 +78,39 @@ test.describe('Sprints - Issue Editor Integration', () => {
     await expect(page.getByRole('combobox').filter({ hasText: /Sprint \d+/ })).toBeVisible({ timeout: 5000 })
   })
 })
+
+test.describe('Sprint Planning Page', () => {
+  test.beforeEach(async ({ page }) => {
+    // Login before each test
+    await page.goto('/login')
+    await page.locator('#email').fill('dev@ship.local')
+    await page.locator('#password').fill('admin123')
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await expect(page).not.toHaveURL('/login', { timeout: 5000 })
+  })
+
+  test('Start Sprint button is visible on planning sprint', async ({ page }) => {
+    // Navigate to a program and go to Sprints tab
+    await page.goto('/programs')
+    await page.locator('tr[role="row"]', { hasText: /ship core/i }).first().click()
+    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    const programUrl = page.url()
+    const programId = programUrl.split('/programs/')[1]
+
+    // Create a new sprint via inline form
+    await page.goto(`/sprints/new/plan?program=${programId}`)
+
+    // Fill in the sprint name and create
+    await page.getByLabelText(/sprint name/i).fill('Test Planning Sprint')
+    await page.getByRole('button', { name: /create sprint/i }).click()
+
+    // Should redirect to the sprint plan page
+    await expect(page).toHaveURL(/\/sprints\/[a-f0-9-]+\/plan/, { timeout: 10000 })
+
+    // Should see "Start Sprint" button (since it's in planning status)
+    await expect(page.getByRole('button', { name: /start sprint/i })).toBeVisible({ timeout: 5000 })
+
+    // Status badge should show "Planning"
+    await expect(page.getByText('Planning')).toBeVisible({ timeout: 5000 })
+  })
+})

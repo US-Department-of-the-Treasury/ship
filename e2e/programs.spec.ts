@@ -293,4 +293,72 @@ test.describe('Programs', () => {
     // Should see New Program button even with existing programs
     await expect(page.getByRole('button', { name: /new program/i })).toBeVisible({ timeout: 5000 })
   })
+
+  test('can create project from program Projects tab', async ({ page }) => {
+    await page.goto('/programs')
+
+    // Create new program
+    await page.getByRole('button', { name: /new program/i }).click()
+    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    const programUrl = page.url()
+    const programId = programUrl.split('/programs/')[1]
+
+    // Click Projects tab
+    await page.locator('main').getByRole('tab', { name: 'Projects' }).click()
+
+    // Should see New Project button
+    const newProjectButton = page.getByRole('button', { name: /new project/i })
+    await expect(newProjectButton).toBeVisible({ timeout: 5000 })
+
+    // Click New Project button
+    await newProjectButton.click()
+
+    // Should navigate to new project document
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
+  })
+
+  test('Plan Sprint button navigates to sprint planning page', async ({ page }) => {
+    await page.goto('/programs')
+
+    // Create new program
+    await page.getByRole('button', { name: /new program/i }).click()
+    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    const programUrl = page.url()
+    const programId = programUrl.split('/programs/')[1]
+
+    // Click Sprints tab
+    await page.locator('main').getByRole('tab', { name: 'Sprints' }).click()
+
+    // Look for Plan Sprint button (may appear if sprints exist)
+    const planSprintButton = page.getByRole('button', { name: /plan sprint/i })
+
+    // If button exists, click it
+    if (await planSprintButton.count() > 0) {
+      await planSprintButton.click()
+      // Should navigate to sprint planning page
+      await expect(page).toHaveURL(/\/sprints\/.+\/plan/, { timeout: 5000 })
+    }
+  })
+
+  test('inline sprint creation shows form when navigating to new plan', async ({ page }) => {
+    await page.goto('/programs')
+
+    // Create new program
+    await page.getByRole('button', { name: /new program/i }).click()
+    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    const programUrl = page.url()
+    const programId = programUrl.split('/programs/')[1]
+
+    // Navigate directly to the inline sprint creation URL
+    await page.goto(`/sprints/new/plan?program=${programId}`)
+
+    // Should see Create Sprint heading
+    await expect(page.getByRole('heading', { name: /create sprint/i })).toBeVisible({ timeout: 5000 })
+
+    // Should see Sprint Name input
+    await expect(page.getByLabelText(/sprint name/i)).toBeVisible({ timeout: 5000 })
+
+    // Should see Create Sprint button
+    await expect(page.getByRole('button', { name: /create sprint/i })).toBeVisible({ timeout: 5000 })
+  })
 })

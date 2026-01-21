@@ -441,4 +441,62 @@ describe('Sprints API', () => {
       expect(res.body.action_items).toBeInstanceOf(Array)
     })
   })
+
+  describe('POST /api/sprints/:id/start', () => {
+    it('should start a planning sprint and capture scope snapshot', async () => {
+      // Create a sprint in planning status
+      const sprintResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
+         VALUES ($1, 'sprint', 'Sprint to Start', 'workspace', $2, $3, $4)
+         RETURNING id`,
+        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 50, status: 'planning' })]
+      )
+      const sprintId = sprintResult.rows[0].id
+
+      // Create an issue assigned to the sprint
+      await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, project_id, sprint_id, created_by)
+         VALUES ($1, 'issue', 'Issue for Snapshot', 'workspace', $2, $3, $4)`,
+        [testWorkspaceId, testProjectId, sprintId, testUserId]
+      )
+
+      const res = await request(app)
+        .post(`/api/sprints/${sprintId}/start`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+
+      expect(res.status).toBe(200)
+      expect(res.body.status).toBe('active')
+      expect(res.body.snapshot_issue_count).toBe(1)
+    })
+
+    it('should reject starting an already active sprint', async () => {
+      // Create a sprint that's already active
+      const sprintResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
+         VALUES ($1, 'sprint', 'Already Active Sprint', 'workspace', $2, $3, $4)
+         RETURNING id`,
+        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 51, status: 'active' })]
+      )
+      const sprintId = sprintResult.rows[0].id
+
+      const res = await request(app)
+        .post(`/api/sprints/${sprintId}/start`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('already active')
+    })
+
+    it('should return 404 for non-existent sprint', async () => {
+      const fakeId = crypto.randomUUID()
+      const res = await request(app)
+        .post(`/api/sprints/${fakeId}/start`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+
+      expect(res.status).toBe(404)
+    })
+  })
 })
