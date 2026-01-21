@@ -593,7 +593,7 @@ export function Editor({
       {/* Content area with optional sidebar */}
       <div className="flex flex-1 overflow-hidden">
         {/* Editor area - clickable to focus at end */}
-        <div className="flex flex-1 flex-col overflow-auto cursor-text">
+        <div className="flex flex-1 flex-col overflow-auto cursor-text pb-32">
           <div className="mx-auto max-w-3xl w-full py-8 pr-8 pl-12">
             {/* Breadcrumbs above title */}
             {breadcrumbs && (
@@ -669,7 +669,7 @@ export function Editor({
               </Tooltip>
             </div>
             {/* Sidebar content */}
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto pb-20">
               {sidebar}
             </div>
           </div>

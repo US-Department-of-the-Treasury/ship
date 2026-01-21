@@ -278,7 +278,7 @@ export function DocumentsPage() {
           </div>
         </div>
       ) : viewMode === 'tree' ? (
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-6 pb-20">
           <ul role="tree" aria-label="Documents" className="space-y-0.5">
             {documentTree.map((doc) => (
               <DocumentTreeItem
@@ -291,7 +291,7 @@ export function DocumentsPage() {
           </ul>
         </div>
       ) : (
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto pb-20">
           <SelectableList
             items={sortedDocuments}
             getItemId={(doc) => doc.id}

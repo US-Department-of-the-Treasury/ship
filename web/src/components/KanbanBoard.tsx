@@ -199,7 +199,7 @@ function KanbanColumn({
       </div>
       <ul
         ref={setNodeRef}
-        className="flex flex-1 flex-col gap-2 overflow-auto p-2 list-none m-0"
+        className="flex flex-1 flex-col gap-2 overflow-auto p-2 pb-20 list-none m-0"
         aria-label={`${column.title} issues`}
       >
         <SortableContext

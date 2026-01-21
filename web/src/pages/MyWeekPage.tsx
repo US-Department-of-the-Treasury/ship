@@ -192,7 +192,7 @@ export function MyWeekPage() {
   const isEndingSoon = !isHistorical && week && week.days_remaining <= 2;
 
   return (
-    <div className="h-full overflow-auto p-6">
+    <div className="h-full overflow-auto p-6 pb-20">
       <div className="mx-auto max-w-5xl space-y-6">
         {/* Sprint ending notice */}
         {isEndingSoon && (

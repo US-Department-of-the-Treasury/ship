@@ -343,7 +343,7 @@ export function UnifiedEditor({
           )}
         </div>
         {/* Type-specific sidebar */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto pb-20">
           {typeSpecificSidebar}
         </div>
       </div>

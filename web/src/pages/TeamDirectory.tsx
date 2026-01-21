@@ -123,7 +123,7 @@ export function TeamDirectoryPage() {
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 overflow-auto p-6 pb-20">
         <CardGrid
           items={people}
           loading={loading}

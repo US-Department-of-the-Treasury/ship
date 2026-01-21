@@ -405,7 +405,7 @@ export function ProjectsPage() {
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto pb-20">
         <SelectableList
           items={projects}
           renderRow={renderProjectRow}

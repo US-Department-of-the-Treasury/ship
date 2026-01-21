@@ -698,7 +698,7 @@ export function SprintViewPage() {
             />
           </div>
           {/* Sprint review editor */}
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-auto pb-20">
             <SprintReview sprintId={sprint.id} />
           </div>
         </div>
@@ -830,7 +830,7 @@ function DroppableColumn({
       <div
         ref={setNodeRef}
         className={cn(
-          'flex-1 overflow-auto p-4 space-y-2 transition-colors',
+          'flex-1 overflow-auto p-4 pb-20 space-y-2 transition-colors',
           isOver && 'bg-accent/10'
         )}
       >

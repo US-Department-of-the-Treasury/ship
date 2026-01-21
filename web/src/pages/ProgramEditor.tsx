@@ -518,7 +518,7 @@ export function ProgramEditorPage() {
         )}
 
         {activeTab === 'issues' && (
-          <div className="h-full overflow-auto">
+          <div className="h-full overflow-auto pb-20">
             {issuesLoading ? (
               <div className="flex h-full items-center justify-center">
                 <div className="text-muted">Loading issues...</div>
@@ -584,7 +584,7 @@ export function ProgramEditorPage() {
         )}
 
         {activeTab === 'projects' && (
-          <div className="h-full overflow-auto">
+          <div className="h-full overflow-auto pb-20">
             {projectsLoading ? (
               <div className="flex h-full items-center justify-center">
                 <div className="text-muted">Loading projects...</div>
@@ -604,7 +604,7 @@ export function ProgramEditorPage() {
         )}
 
         {activeTab === 'sprints' && (
-          <div className="h-full overflow-auto">
+          <div className="h-full overflow-auto pb-20">
             {sprintsLoading ? (
               <div className="flex h-full items-center justify-center">
                 <div className="text-muted">Loading sprints...</div>
@@ -1087,7 +1087,7 @@ function ProgramIssuesList({
       )}
 
       {/* Issues list using SelectableList */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto pb-20">
         <SelectableList
           items={issues}
           renderRow={renderIssueRow}
@@ -1475,7 +1475,7 @@ function SprintIssuesList({
           No issues in this sprint
         </div>
       ) : (
-        <div className="flex-1 overflow-auto -mx-4 px-4">
+        <div className="flex-1 overflow-auto pb-20 -mx-4 px-4">
           <div className="space-y-1">
             {issues.map((issue) => (
               <button
@@ -1611,7 +1611,7 @@ function SprintStandupsFeed({
           No standup updates yet
         </div>
       ) : (
-        <div className="flex-1 overflow-auto -mx-4 px-4">
+        <div className="flex-1 overflow-auto pb-20 -mx-4 px-4">
           <div className="space-y-4">
             {groupedStandups.map(({ label, standups: dateStandups }) => (
               <div key={label}>

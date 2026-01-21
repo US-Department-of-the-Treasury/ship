@@ -553,7 +553,7 @@ export function TeamModePage() {
         /* Assignments Grid - Single scroll container with sticky person column */
         <div
           ref={scrollContainerRef}
-          className="flex-1 overflow-auto"
+          className="flex-1 overflow-auto pb-20"
         >
           <div className="inline-flex min-w-full">
             {/* Sticky person column */}

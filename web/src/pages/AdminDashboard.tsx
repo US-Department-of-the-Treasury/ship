@@ -147,7 +147,7 @@ export function AdminDashboardPage() {
       </div>
 
       {/* Content */}
-      <main className="flex-1 overflow-auto p-6">
+      <main className="flex-1 overflow-auto p-6 pb-20">
         {loading ? (
           <div className="flex items-center justify-center h-32">
             <div className="text-muted">Loading...</div>

@@ -696,7 +696,7 @@ function ProjectIssuesList({
   }
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="h-full overflow-auto pb-20">
       <table className="w-full">
         <thead className="sticky top-0 bg-background border-b border-border">
           <tr>
@@ -1068,7 +1068,7 @@ function ProjectSprintsList({ sprints, loading, onSprintClick }: ProjectSprintsL
   };
 
   return (
-    <div className="h-full overflow-auto p-4">
+    <div className="h-full overflow-auto p-4 pb-20">
       <div className="space-y-2">
         {sprints.map((sprint) => (
           <div
