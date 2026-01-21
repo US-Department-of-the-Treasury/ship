@@ -25,6 +25,7 @@ import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { ContextTreeNav } from '@/components/ContextTreeNav';
 import { ProjectSetupWizard, ProjectSetupData } from '@/components/ProjectSetupWizard';
+import { SelectionPersistenceProvider } from '@/contexts/SelectionPersistenceContext';
 
 type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week';
 
@@ -159,6 +160,7 @@ export function AppLayout() {
 
   return (
     <TooltipProvider delayDuration={300}>
+    <SelectionPersistenceProvider>
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Skip link for keyboard/screen reader users - Section 508 compliance */}
       <a
@@ -474,6 +476,7 @@ export function AppLayout() {
         onStayLoggedIn={resetSessionTimer}
       />
     </div>
+    </SelectionPersistenceProvider>
     </TooltipProvider>
   );
 }

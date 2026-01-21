@@ -21,6 +21,7 @@ import { cn } from '@/lib/cn';
 import { FilterTabs, FilterTab } from '@/components/FilterTabs';
 import { apiPost } from '@/lib/api';
 import { ConversionDialog } from '@/components/dialogs/ConversionDialog';
+import { useSelectionPersistenceOptional } from '@/contexts/SelectionPersistenceContext';
 
 // Re-export Issue type for convenience
 export type { Issue } from '@/contexts/IssuesContext';
@@ -159,6 +160,8 @@ export interface IssuesListProps {
   hideHeader?: boolean;
   /** Additional toolbar content (rendered in toolbar) */
   toolbarContent?: React.ReactNode;
+  /** Key for persisting selection state across navigation (e.g., 'issues' or 'project:uuid'). When provided, selections survive navigation. */
+  selectionPersistenceKey?: string;
 }
 
 /**
@@ -204,6 +207,7 @@ export function IssuesList({
   headerContent,
   hideHeader = false,
   toolbarContent,
+  selectionPersistenceKey,
 }: IssuesListProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -305,11 +309,33 @@ export function IssuesList({
   const [convertingIssue, setConvertingIssue] = useState<Issue | null>(null);
   const [isConverting, setIsConverting] = useState(false);
 
+  // Selection persistence context (optional - only works when provider is present)
+  const selectionPersistence = useSelectionPersistenceOptional();
+
+  // Get initial selection from persistence context
+  const getInitialSelection = useCallback((): Set<string> => {
+    if (selectionPersistenceKey && selectionPersistence) {
+      const persisted = selectionPersistence.getSelection(selectionPersistenceKey);
+      return persisted.selectedIds;
+    }
+    return new Set();
+  }, [selectionPersistenceKey, selectionPersistence]);
+
   // Track selection state for BulkActionBar and global keyboard navigation
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(getInitialSelection);
   const selectionRef = useRef<UseSelectionReturn | null>(null);
   // Force re-render trigger for when selection ref updates (used by useGlobalListNavigation)
   const [, forceUpdate] = useState(0);
+
+  // Persist selection changes to context
+  useEffect(() => {
+    if (selectionPersistenceKey && selectionPersistence) {
+      selectionPersistence.setSelection(selectionPersistenceKey, {
+        selectedIds,
+        lastSelectedId: null, // We don't track lastSelectedId at this level yet
+      });
+    }
+  }, [selectedIds, selectionPersistenceKey, selectionPersistence]);
 
   // Sync state filter with external state (when not using URL sync)
   useEffect(() => {
@@ -449,9 +475,13 @@ export function IssuesList({
     setContextMenu(null);
   }, []);
 
-  // Clear selection when filter changes
+  // Clear selection when filter changes (but not on initial mount to preserve persisted selection)
+  const prevStateFilterRef = useRef(stateFilter);
   useEffect(() => {
-    clearSelection();
+    if (prevStateFilterRef.current !== stateFilter) {
+      clearSelection();
+      prevStateFilterRef.current = stateFilter;
+    }
   }, [stateFilter, clearSelection]);
 
   // Bulk action handlers
@@ -857,6 +887,7 @@ export function IssuesList({
             onSelectionChange={handleSelectionChange}
             onContextMenu={handleContextMenu}
             ariaLabel="Issues list"
+            initialSelectedIds={selectedIds}
           />
         </div>
       )}
