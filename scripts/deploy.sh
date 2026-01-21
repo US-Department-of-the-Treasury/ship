@@ -77,10 +77,20 @@ fi
 S3_BUCKET="${S3_BUCKET:-${DEPLOY_S3_BUCKET:-}}"
 
 if [ -z "$S3_BUCKET" ]; then
-  echo "ERROR: S3_BUCKET not found. Either:"
-  echo "  1. Run 'terraform apply' in terraform/environments/$ENV/ directory"
-  echo "  2. Set DEPLOY_S3_BUCKET environment variable"
-  exit 1
+  echo "S3 bucket not found in Terraform outputs. Running terraform apply..."
+  cd "$TF_DIR"
+
+  # Get state bucket from SSM for backend config
+  TF_STATE_BUCKET=$(aws ssm get-parameter --name /ship/terraform-state-bucket --query Parameter.Value --output text)
+  terraform init -upgrade -backend-config="bucket=$TF_STATE_BUCKET"
+  terraform apply -auto-approve
+  S3_BUCKET=$(terraform output -raw s3_bucket_name)
+  cd "$PROJECT_ROOT"
+
+  if [ -z "$S3_BUCKET" ]; then
+    echo "ERROR: S3_BUCKET still not found after terraform apply"
+    exit 1
+  fi
 fi
 
 echo "=== Ship API Deploy ==="
