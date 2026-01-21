@@ -22,6 +22,7 @@ import { ProgramsPage } from '@/pages/Programs';
 import { ProgramEditorPage } from '@/pages/ProgramEditor';
 // SprintEditorPage deprecated - using UnifiedDocumentPage via DocumentRedirect
 import { SprintViewPage } from '@/pages/SprintView';
+import { SprintPlanningPage } from '@/pages/SprintPlanningPage';
 import { SprintsPage } from '@/pages/Sprints';
 import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
@@ -183,7 +184,7 @@ function AppRoutes() {
         <Route path="my-week" element={<MyWeekPage />} />
         <Route path="docs" element={<DocumentsPage />} />
         <Route path="docs/:id" element={<DocumentEditorPage />} />
-        <Route path="documents/:id" element={<UnifiedDocumentPage />} />
+        <Route path="documents/:id/:tab?" element={<UnifiedDocumentPage />} />
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:id" element={<DocumentRedirect />} />
         <Route path="projects" element={<ProjectsPage />} />
@@ -198,6 +199,7 @@ function AppRoutes() {
         <Route path="sprints" element={<SprintsPage />} />
         <Route path="sprints/:id" element={<DocumentRedirect />} />
         <Route path="sprints/:id/view" element={<SprintViewPage />} />
+        <Route path="sprints/:id/plan" element={<SprintPlanningPage />} />
         <Route path="sprints/:id/planning" element={<SprintViewPage />} />
         <Route path="sprints/:id/standups" element={<SprintViewPage />} />
         <Route path="sprints/:id/review" element={<SprintViewPage />} />
