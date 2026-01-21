@@ -173,13 +173,14 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
       if (!invite) {
         // No invite = no access (CAIA users must be pre-invited)
+        // Use generic message to avoid revealing invite system details (Issue #349)
         console.log(`CAIA login rejected: No invite found for ${email}`);
         await logAuditEvent({
           action: 'auth.caia_login_failed',
           details: { reason: 'no_invite', email },
           req,
         });
-        res.redirect('/login?error=' + encodeURIComponent('No invitation found. Please contact an administrator to request access.'));
+        res.redirect('/login?error=' + encodeURIComponent('You are not an authorized user of Ship'));
         return;
       }
 
@@ -196,6 +197,90 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
         details: { email, role: invite.role },
         req,
       });
+    } else {
+      // Existing user - check for pending invites to other workspaces (Issue #349)
+      // This mirrors the password invite flow in invites.ts:172-226
+      const pendingInvites = await findAllPendingInvitesByEmail(email);
+
+      for (const invite of pendingInvites) {
+        // Check if user is already a member of this workspace
+        const existingMembership = await pool.query(
+          'SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+          [invite.workspace_id, user.id]
+        );
+
+        if (!existingMembership.rows[0]) {
+          // Add user to workspace
+          await pool.query(
+            `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+             VALUES ($1, $2, $3)`,
+            [invite.workspace_id, user.id, invite.role]
+          );
+
+          // Handle person document - check for existing one by EMAIL (not user_id)
+          // This handles orphaned person docs from deleted users
+          const existingPersonDoc = await pool.query(
+            `SELECT id FROM documents
+             WHERE workspace_id = $1
+               AND document_type = 'person'
+               AND LOWER(properties->>'email') = LOWER($2)
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [invite.workspace_id, email]
+          );
+
+          if (existingPersonDoc.rows[0]) {
+            // Update existing person doc with new user_id (reuse orphaned doc)
+            await pool.query(
+              `UPDATE documents
+               SET title = $1,
+                   properties = jsonb_set(
+                     jsonb_set(properties, '{user_id}', $2::jsonb),
+                     '{pending}', 'false'::jsonb
+                   ) - 'invite_id'
+               WHERE id = $3`,
+              [user.name, JSON.stringify(user.id), existingPersonDoc.rows[0].id]
+            );
+            console.log(`Reused existing person doc ${existingPersonDoc.rows[0].id} for ${email} in workspace ${invite.workspace_id}`);
+          } else {
+            // Try to update pending person doc created at invite time
+            const updateResult = await pool.query(
+              `UPDATE documents
+               SET title = $1,
+                   properties = (properties || $2::jsonb) - 'pending'
+               WHERE workspace_id = $3
+                 AND document_type = 'person'
+                 AND properties->>'invite_id' = $4
+               RETURNING id`,
+              [user.name, JSON.stringify({ user_id: user.id }), invite.workspace_id, invite.id]
+            );
+
+            // If no pending doc existed, create one
+            if (updateResult.rows.length === 0) {
+              await pool.query(
+                `INSERT INTO documents (workspace_id, document_type, title, properties)
+                 VALUES ($1, 'person', $2, $3)`,
+                [invite.workspace_id, user.name, JSON.stringify({ user_id: user.id, email })]
+              );
+            }
+          }
+
+          console.log(`CAIA login: Added existing user ${email} to workspace ${invite.workspace_name} via pending invite`);
+
+          await logAuditEvent({
+            workspaceId: invite.workspace_id,
+            actorUserId: user.id,
+            action: 'invite.accept_caia',
+            resourceType: 'invite',
+            resourceId: invite.id,
+            details: { email, role: invite.role, existingUser: true },
+            req,
+          });
+        }
+
+        // Mark invite as used (whether we added membership or user was already member)
+        await pool.query('UPDATE workspace_invites SET used_at = NOW() WHERE id = $1', [invite.id]);
+      }
     }
 
     // Update last_auth_provider to track which provider was used
@@ -387,7 +472,7 @@ interface PendingInvite {
 }
 
 /**
- * Find a pending invite matching email
+ * Find a pending invite matching email (returns first/most recent)
  */
 async function findPendingInviteByEmail(email: string): Promise<PendingInvite | null> {
   const result = await pool.query(
@@ -402,6 +487,24 @@ async function findPendingInviteByEmail(email: string): Promise<PendingInvite | 
     [email]
   );
   return result.rows[0] || null;
+}
+
+/**
+ * Find ALL pending invites matching email (for existing users with multiple invites)
+ * Issue #349: Existing users may have pending invites to other workspaces
+ */
+async function findAllPendingInvitesByEmail(email: string): Promise<PendingInvite[]> {
+  const result = await pool.query(
+    `SELECT wi.id, wi.workspace_id, w.name as workspace_name, wi.email, wi.role
+     FROM workspace_invites wi
+     JOIN workspaces w ON wi.workspace_id = w.id
+     WHERE wi.used_at IS NULL
+       AND wi.expires_at > NOW()
+       AND LOWER(wi.email) = LOWER($1)
+     ORDER BY wi.created_at DESC`,
+    [email]
+  );
+  return result.rows;
 }
 
 /**
@@ -435,12 +538,39 @@ async function createUserFromInvite(
     [invite.workspace_id, user.id, invite.role]
   );
 
-  // Create Person document for this user in this workspace (links via properties.user_id)
-  await pool.query(
-    `INSERT INTO documents (workspace_id, document_type, title, properties)
-     VALUES ($1, 'person', $2, $3)`,
-    [invite.workspace_id, user.name, JSON.stringify({ user_id: user.id, email })]
+  // Create or update Person document for this user in this workspace
+  // Check for existing person doc by email (may be orphaned from deleted user)
+  const existingPersonDoc = await pool.query(
+    `SELECT id FROM documents
+     WHERE workspace_id = $1
+       AND document_type = 'person'
+       AND LOWER(properties->>'email') = LOWER($2)
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [invite.workspace_id, email]
   );
+
+  if (existingPersonDoc.rows[0]) {
+    // Update existing person doc with new user_id (reuse orphaned doc)
+    await pool.query(
+      `UPDATE documents
+       SET title = $1,
+           properties = jsonb_set(
+             jsonb_set(properties, '{user_id}', $2::jsonb),
+             '{pending}', 'false'::jsonb
+           ) - 'invite_id'
+       WHERE id = $3`,
+      [user.name, JSON.stringify(user.id), existingPersonDoc.rows[0].id]
+    );
+    console.log(`Updated existing person doc ${existingPersonDoc.rows[0].id} for ${email}`);
+  } else {
+    // Create new person doc
+    await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, properties)
+       VALUES ($1, 'person', $2, $3)`,
+      [invite.workspace_id, user.name, JSON.stringify({ user_id: user.id, email })]
+    );
+  }
 
   // Mark invite as used
   await pool.query('UPDATE workspace_invites SET used_at = NOW() WHERE id = $1', [invite.id]);
