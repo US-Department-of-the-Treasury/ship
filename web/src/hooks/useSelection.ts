@@ -6,6 +6,8 @@ export interface UseSelectionOptions<T> {
   onSelectionChange?: (selectedIds: Set<string>) => void;
   /** Optional hovered ID - used as anchor for Shift+Arrow when nothing is selected */
   hoveredId?: string | null;
+  /** Initial selected IDs - for restoring selection after navigation */
+  initialSelectedIds?: Set<string>;
 }
 
 export interface UseSelectionReturn {
@@ -41,8 +43,9 @@ export function useSelection<T>({
   getItemId,
   onSelectionChange,
   hoveredId,
+  initialSelectedIds,
 }: UseSelectionOptions<T>): UseSelectionReturn {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => initialSelectedIds || new Set());
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
 
