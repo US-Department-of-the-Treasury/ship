@@ -29,7 +29,7 @@ import { PersonEditorPage } from '@/pages/PersonEditor';
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
 import { ProjectsPage } from '@/pages/Projects';
-// ProjectEditorPage deprecated - using UnifiedDocumentPage via DocumentRedirect
+import { ProjectEditorPage } from '@/pages/ProjectEditor';
 import { DashboardPage } from '@/pages/Dashboard';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
@@ -187,7 +187,7 @@ function AppRoutes() {
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:id" element={<DocumentRedirect />} />
         <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/:id" element={<DocumentRedirect />} />
+        <Route path="projects/:id" element={<ProjectEditorPage />} />
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />
         <Route path="programs/:id/issues" element={<ProgramEditorPage />} />

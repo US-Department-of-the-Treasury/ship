@@ -623,9 +623,24 @@ export function IssuesList({
     setContextMenu({ x: e.clientX, y: e.clientY, selection });
   }, []);
 
+  // Determine if create functionality should be enabled
+  // Either external callback is provided OR component is self-fetching with context
+  const canCreateIssue = Boolean(onCreateIssue || shouldSelfFetch);
+
+  // DEBUG: Remove after fixing
+  console.log('[IssuesList] canCreateIssue debug:', {
+    canCreateIssue,
+    onCreateIssue: !!onCreateIssue,
+    shouldSelfFetch,
+    lockedProgramId,
+    lockedProjectId,
+    lockedSprintId,
+    showCreateButton
+  });
+
   // Global keyboard shortcuts
   useEffect(() => {
-    if (!onCreateIssue) return;
+    if (!canCreateIssue) return;
 
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -642,7 +657,7 @@ export function IssuesList({
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleCreateIssue, onCreateIssue]);
+  }, [handleCreateIssue, canCreateIssue]);
 
   // Render function for issue rows
   const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => (
@@ -653,7 +668,7 @@ export function IssuesList({
   const defaultEmptyState = useMemo(() => (
     <div className="text-center">
       <p className="text-muted">No issues found</p>
-      {onCreateIssue && (
+      {canCreateIssue && (
         <button
           onClick={handleCreateIssue}
           className="mt-2 text-sm text-accent hover:underline"
@@ -662,7 +677,7 @@ export function IssuesList({
         </button>
       )}
     </div>
-  ), [handleCreateIssue, onCreateIssue]);
+  ), [handleCreateIssue, canCreateIssue]);
 
   if (loading) {
     return <IssuesListSkeleton />;
@@ -745,7 +760,7 @@ export function IssuesList({
             hiddenCount={hiddenCount}
             showColumnPicker={viewMode === 'list'}
             filterContent={combinedFilterContent}
-            createButton={showCreateButton && onCreateIssue ? {
+            createButton={showCreateButton && canCreateIssue ? {
               label: createButtonLabel,
               onClick: handleCreateIssue
             } : undefined}
