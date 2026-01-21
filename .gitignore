@@ -68,6 +68,8 @@ terraform/terraform.tfstate.backup
 terraform/*.tfplan
 terraform/tfplan
 terraform/terraform.tfvars
+terraform/environments/*/terraform.tfvars
+terraform/environments/*/.terraform.lock.hcl
 terraform/bootstrap/.terraform/
 terraform/bootstrap/.terraform.lock.hcl
 terraform/bootstrap/terraform.tfstate
