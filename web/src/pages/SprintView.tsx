@@ -47,14 +47,14 @@ interface Sprint {
   goal: string | null;
   start_date: string;
   end_date: string;
-  status: 'planned' | 'active' | 'completed';
+  status: 'planning' | 'active' | 'completed';
   issue_count: number;
   completed_count: number;
   sprint_number: number;
 }
 
 // Compute sprint dates from sprint_number and workspace start date
-function computeSprintDates(sprintNumber: number, workspaceStartDate: string): { startDate: string; endDate: string; status: 'planned' | 'active' | 'completed' } {
+function computeSprintDates(sprintNumber: number, workspaceStartDate: string): { startDate: string; endDate: string; status: 'planning' | 'active' | 'completed' } {
   const baseDate = new Date(workspaceStartDate);
   const sprintDuration = 7; // 1 week
 
@@ -66,7 +66,7 @@ function computeSprintDates(sprintNumber: number, workspaceStartDate: string): {
   endDate.setDate(endDate.getDate() + sprintDuration - 1);
 
   const now = new Date();
-  let status: 'planned' | 'active' | 'completed' = 'planned';
+  let status: 'planning' | 'active' | 'completed' = 'planning';
   if (now >= startDate && now <= endDate) {
     status = 'active';
   } else if (now > endDate) {
@@ -522,7 +522,7 @@ export function SprintViewPage() {
             >
               Retrospective
             </button>
-            {sprint.status === 'planned' && (
+            {sprint.status === 'planning' && (
               <button
                 onClick={() => updateSprintStatus('active')}
                 className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 transition-colors"
@@ -1028,7 +1028,7 @@ function SprintProgressGraph({
   endDate: string;
   scopeHours: number;
   completedHours: number;
-  status: 'planned' | 'active' | 'completed';
+  status: 'planning' | 'active' | 'completed';
   originalScope?: number;
   scopeChanges?: Array<{
     timestamp: string;
@@ -1075,7 +1075,7 @@ function SprintProgressGraph({
 
   // Status indicator
   const statusColor = {
-    planned: '#9CA3AF', // gray
+    planning: '#9CA3AF', // gray
     active: '#3B82F6', // blue
     completed: '#22C55E', // green
   }[status];

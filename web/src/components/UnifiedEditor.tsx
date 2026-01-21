@@ -76,7 +76,7 @@ interface SprintDocument extends BaseDocument {
   document_type: 'sprint';
   start_date: string;
   end_date: string;
-  status: 'planned' | 'active' | 'completed';
+  status: 'planning' | 'active' | 'completed';
   program_id: string | null;
   program_name?: string;
   issue_count?: number;

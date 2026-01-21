@@ -978,6 +978,7 @@ function extractSprintFromRow(row: any) {
     id: row.id,
     name: row.title,
     sprint_number: props.sprint_number || 1,
+    status: props.status || 'planning',  // Default to 'planning' for sprints without status
     owner: row.owner_id ? {
       id: row.owner_id,
       name: row.owner_name,
@@ -1223,13 +1224,38 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     if (success_criteria) properties.success_criteria = success_criteria;
     if (confidence !== undefined) properties.confidence = confidence;
 
+    // Default TipTap content for new sprints with Hypothesis and Success Criteria headings
+    const defaultContent = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 2 },
+          content: [{ type: 'text', text: 'Hypothesis' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'What do we believe will happen? What are we trying to learn or prove?' }]
+        },
+        {
+          type: 'heading',
+          attrs: { level: 2 },
+          content: [{ type: 'text', text: 'Success Criteria' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'How will we know if the hypothesis is validated? What metrics or outcomes will we measure?' }]
+        }
+      ]
+    };
+
     // Create the sprint document
     // Use project's program_id for backward compatibility
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by)
-       VALUES ($1, 'sprint', $2, $3, $4, $5)
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by, content)
+       VALUES ($1, 'sprint', $2, $3, $4, $5, $6)
        RETURNING id, title, properties, program_id`,
-      [workspaceId, title, project.program_id, JSON.stringify(properties), userId]
+      [workspaceId, title, project.program_id, JSON.stringify(properties), userId, JSON.stringify(defaultContent)]
     );
 
     const sprint = result.rows[0];

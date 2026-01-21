@@ -20,6 +20,7 @@ import { issueKeys } from '@/hooks/useIssuesQuery';
 import { projectKeys, useProjectSprintsQuery, ProjectSprint } from '@/hooks/useProjectsQuery';
 import { apiPost } from '@/lib/api';
 import { ConversionDialog } from '@/components/dialogs/ConversionDialog';
+import { PlanSprintDropdown } from '@/components/PlanSprintDropdown';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -266,6 +267,38 @@ export function ProjectEditorPage() {
           ]}
           activeTab={activeTab}
           onTabChange={(tabId) => setActiveTab(tabId as 'details' | 'issues' | 'sprints' | 'retro')}
+          rightContent={activeTab === 'sprints' ? (
+            <PlanSprintDropdown
+              sprints={projectSprints.filter(s => s.status === 'planning' || !s.status)}
+              onSelectSprint={(sprintId) => navigate(`/sprints/${sprintId}/plan`)}
+              onCreateNew={async () => {
+                // Create a new sprint linked to this project
+                try {
+                  const today = new Date().toISOString().split('T')[0];
+                  const twoWeeksLater = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                  const res = await fetch(`${API_URL}/api/sprints`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                      title: `Sprint ${projectSprints.length + 1}`,
+                      start_date: today,
+                      end_date: twoWeeksLater,
+                      project_id: displayProject.id,
+                      program_id: displayProject.program_id,
+                      status: 'planning',
+                    }),
+                  });
+                  if (res.ok) {
+                    const sprint = await res.json();
+                    navigate(`/sprints/${sprint.id}/plan`);
+                  }
+                } catch (err) {
+                  console.error('Failed to create sprint:', err);
+                }
+              }}
+            />
+          ) : undefined}
         />
       </div>
 
@@ -385,10 +418,10 @@ function ProjectSprintsList({ sprints, loading, onSprintClick }: ProjectSprintsL
       case 'active':
         return 'bg-green-500/20 text-green-300';
       case 'completed':
-        return 'bg-blue-500/20 text-blue-300';
+        return 'bg-gray-500/20 text-gray-300';
       case 'planning':
       default:
-        return 'bg-gray-500/20 text-gray-300';
+        return 'bg-blue-500/20 text-blue-300';
     }
   };
 

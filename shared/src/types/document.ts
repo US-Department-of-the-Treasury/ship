@@ -106,6 +106,7 @@ export interface HypothesisHistoryEntry {
 export interface SprintProperties {
   sprint_number: number;  // References implicit 1-week window, dates computed from this
   owner_id: string;       // REQUIRED - person accountable for this sprint
+  status?: 'planning' | 'active' | 'completed';  // Sprint workflow status (default: 'planning')
   // Hypothesis tracking (for Ship-Claude integration)
   hypothesis?: string | null;           // Current hypothesis statement
   success_criteria?: string[] | null;   // Array of measurable success criteria

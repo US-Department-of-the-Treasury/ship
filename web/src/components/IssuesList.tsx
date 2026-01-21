@@ -5,11 +5,12 @@ import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components
 import { BulkActionBar } from '@/components/BulkActionBar';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
 import { Issue } from '@/contexts/IssuesContext';
-import { useBulkUpdateIssues, useIssuesQuery, useCreateIssue, issueKeys, getProgramId, getProgramTitle, getProjectId, getProjectTitle, getSprintId, getSprintTitle } from '@/hooks/useIssuesQuery';
+import { useBulkUpdateIssues, useIssuesQuery, useCreateIssue, useUpdateIssue, issueKeys, getProgramId, getProgramTitle, getProjectId, getProjectTitle, getSprintId, getSprintTitle } from '@/hooks/useIssuesQuery';
 import type { BelongsTo } from '@ship/shared';
 import { projectKeys, useProjectsQuery } from '@/hooks/useProjectsQuery';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
+import { useSprintsQuery } from '@/hooks/useSprintsQuery';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { useListFilters, ViewMode } from '@/hooks/useListFilters';
 import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
@@ -22,6 +23,7 @@ import { FilterTabs, FilterTab } from '@/components/FilterTabs';
 import { apiPost } from '@/lib/api';
 import { ConversionDialog } from '@/components/dialogs/ConversionDialog';
 import { useSelectionPersistenceOptional } from '@/contexts/SelectionPersistenceContext';
+import { InlineSprintSelector } from '@/components/InlineSprintSelector';
 
 // Re-export Issue type for convenience
 export type { Issue } from '@/contexts/IssuesContext';
@@ -33,6 +35,7 @@ export const ALL_COLUMNS: ColumnDefinition[] = [
   { key: 'status', label: 'Status', hideable: true },
   { key: 'source', label: 'Source', hideable: true },
   { key: 'program', label: 'Program', hideable: true },
+  { key: 'sprint', label: 'Sprint', hideable: true },
   { key: 'priority', label: 'Priority', hideable: true },
   { key: 'assignee', label: 'Assignee', hideable: true },
   { key: 'updated', label: 'Updated', hideable: true },
@@ -162,6 +165,8 @@ export interface IssuesListProps {
   toolbarContent?: React.ReactNode;
   /** Key for persisting selection state across navigation (e.g., 'issues' or 'project:uuid'). When provided, selections survive navigation. */
   selectionPersistenceKey?: string;
+  /** Enable inline sprint assignment dropdown in the sprint column. Requires lockedProgramId to fetch available sprints. */
+  enableInlineSprintAssignment?: boolean;
 }
 
 /**
@@ -208,14 +213,23 @@ export function IssuesList({
   hideHeader = false,
   toolbarContent,
   selectionPersistenceKey,
+  enableInlineSprintAssignment = false,
 }: IssuesListProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const bulkUpdate = useBulkUpdateIssues();
+  const updateIssueMutation = useUpdateIssue();
   const { data: teamMembers = [] } = useAssignableMembersQuery();
   const { data: projects = [] } = useProjectsQuery();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+
+  // Fetch sprints when program context is available (for bulk actions and inline assignment)
+  const { data: sprintsData } = useSprintsQuery(lockedProgramId);
+  const availableSprints = useMemo(() => {
+    if (!sprintsData?.sprints) return [];
+    return sprintsData.sprints.map(s => ({ id: s.id, name: s.name }));
+  }, [sprintsData]);
 
   // Determine if we should self-fetch based on locked filters
   const shouldSelfFetch = Boolean(lockedProgramId || lockedProjectId || lockedSprintId);
@@ -668,9 +682,12 @@ export function IssuesList({
           timestamp: Date.now(),
         });
 
+        const sprintName = sprintId
+          ? availableSprints.find(s => s.id === sprintId)?.name || 'sprint'
+          : 'No Sprint';
         const message = movingOutOfView
           ? `${count} issue${count === 1 ? '' : 's'} moved out of this view`
-          : `${count} issue${count === 1 ? '' : 's'} moved`;
+          : `${count} issue${count === 1 ? '' : 's'} assigned to ${sprintName}`;
         showToast(message, movingOutOfView ? 'info' : 'success', 5000, {
           label: 'Undo',
           onClick: executeUndo,
@@ -679,7 +696,7 @@ export function IssuesList({
       onError: () => showToast('Failed to move issues', 'error'),
     });
     clearSelection();
-  }, [selectedIds, issues, bulkUpdate, showToast, clearSelection, lockedSprintId, setUndoWithTimeout, executeUndo]);
+  }, [selectedIds, issues, bulkUpdate, showToast, clearSelection, lockedSprintId, setUndoWithTimeout, executeUndo, availableSprints]);
 
   const handleBulkChangeStatus = useCallback((status: string) => {
     const ids = Array.from(selectedIds);
@@ -922,10 +939,34 @@ export function IssuesList({
     return () => window.removeEventListener('keydown', handler);
   }, [handleCreateIssue, canCreateIssue, executeUndo]);
 
+  // Handler for inline sprint assignment changes
+  const handleInlineSprintChange = useCallback((issueId: string, sprintId: string | null) => {
+    updateIssueMutation.mutate(
+      { id: issueId, updates: { sprint_id: sprintId } as Partial<Issue> },
+      {
+        onSuccess: () => {
+          const sprintName = sprintId
+            ? availableSprints.find(s => s.id === sprintId)?.name || 'sprint'
+            : 'No Sprint';
+          showToast(`Issue moved to ${sprintName}`, 'success');
+        },
+        onError: () => {
+          showToast('Failed to update sprint', 'error');
+        },
+      }
+    );
+  }, [updateIssueMutation, availableSprints, showToast]);
+
   // Render function for issue rows
   const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => (
-    <IssueRowContent issue={issue} isSelected={isSelected} visibleColumns={visibleColumns} />
-  ), [visibleColumns]);
+    <IssueRowContent
+      issue={issue}
+      isSelected={isSelected}
+      visibleColumns={visibleColumns}
+      sprints={enableInlineSprintAssignment ? availableSprints : undefined}
+      onSprintChange={enableInlineSprintAssignment ? handleInlineSprintChange : undefined}
+    />
+  ), [visibleColumns, enableInlineSprintAssignment, availableSprints, handleInlineSprintChange]);
 
   // Default empty state
   const defaultEmptyState = useMemo(() => (
@@ -1042,6 +1083,7 @@ export function IssuesList({
           onMoveToSprint={handleBulkMoveToSprint}
           onAssign={handleBulkAssign}
           onAssignProject={handleBulkAssignProject}
+          sprints={availableSprints}
           teamMembers={teamMembers}
           projects={projects}
           loading={bulkUpdate.isPending}
@@ -1143,9 +1185,11 @@ interface IssueRowContentProps {
   issue: Issue;
   isSelected: boolean;
   visibleColumns: Set<string>;
+  sprints?: { id: string; name: string }[];
+  onSprintChange?: (issueId: string, sprintId: string | null) => void;
 }
 
-function IssueRowContent({ issue, visibleColumns }: IssueRowContentProps) {
+function IssueRowContent({ issue, visibleColumns, sprints, onSprintChange }: IssueRowContentProps) {
   return (
     <>
       {visibleColumns.has('id') && (
@@ -1171,6 +1215,19 @@ function IssueRowContent({ issue, visibleColumns }: IssueRowContentProps) {
       {visibleColumns.has('program') && (
         <td className="px-4 py-3 text-sm text-muted" role="gridcell">
           {getProgramTitle(issue) || '—'}
+        </td>
+      )}
+      {visibleColumns.has('sprint') && (
+        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+          {sprints && onSprintChange ? (
+            <InlineSprintSelector
+              value={getSprintId(issue)}
+              sprints={sprints}
+              onChange={(sprintId) => onSprintChange(issue.id, sprintId)}
+            />
+          ) : (
+            getSprintTitle(issue) || '—'
+          )}
         </td>
       )}
       {visibleColumns.has('priority') && (

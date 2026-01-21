@@ -10,6 +10,7 @@ import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
 import { useToast } from '@/components/ui/Toast';
 import { StandupFeed } from '@/components/StandupFeed';
+import { PlanSprintDropdown } from '@/components/PlanSprintDropdown';
 
 interface Program {
   id: string;
@@ -26,6 +27,7 @@ interface Sprint {
   id: string;
   name: string;
   sprint_number: number;
+  status?: 'planning' | 'active' | 'completed';
   owner: { id: string; name: string; email: string } | null;
   issue_count: number;
   completed_count: number;
@@ -298,12 +300,43 @@ export function ProgramViewPage() {
     }
     if (activeTab === 'sprints') {
       return (
-        <button
-          onClick={() => setShowCreateSprintModal(true)}
-          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
-        >
-          New Sprint
-        </button>
+        <div className="flex items-center gap-2">
+          <PlanSprintDropdown
+            sprints={sprints.filter(s => s.status === 'planning' || !s.status)}
+            onSelectSprint={(sprintId) => navigate(`/sprints/${sprintId}/plan`)}
+            onCreateNew={async () => {
+              // Create a new sprint with planning status
+              try {
+                const today = new Date().toISOString().split('T')[0];
+                const twoWeeksLater = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                const res = await fetch(`${API_URL}/api/sprints`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'include',
+                  body: JSON.stringify({
+                    title: `Sprint ${sprints.length + 1}`,
+                    start_date: today,
+                    end_date: twoWeeksLater,
+                    program_id: id,
+                    status: 'planning',
+                  }),
+                });
+                if (res.ok) {
+                  const sprint = await res.json();
+                  navigate(`/sprints/${sprint.id}/plan`);
+                }
+              } catch (err) {
+                console.error('Failed to create sprint:', err);
+              }
+            }}
+          />
+          <button
+            onClick={() => setShowCreateSprintModal(true)}
+            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
+          >
+            New Sprint
+          </button>
+        </div>
       );
     }
     return null;
@@ -545,6 +578,16 @@ function SprintsList({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h3 className="font-medium text-foreground">{sprint.name}</h3>
+                {/* Sprint status badge */}
+                {sprint.status && (
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                    sprint.status === 'planning' ? 'bg-blue-500/20 text-blue-400' :
+                    sprint.status === 'active' ? 'bg-green-500/20 text-green-400' :
+                    'bg-gray-500/20 text-gray-400'
+                  }`}>
+                    {sprint.status === 'planning' ? 'Planning' : sprint.status === 'active' ? 'Active' : 'Completed'}
+                  </span>
+                )}
                 {sprint.owner && (
                   <span className="text-sm text-muted">{sprint.owner.name}</span>
                 )}
@@ -734,7 +777,7 @@ function SprintDetailView({
     endDate.setDate(endDate.getDate() + sprintDuration - 1);
 
     const now = new Date();
-    let status: 'planned' | 'active' | 'completed' = 'planned';
+    let status: 'planning' | 'active' | 'completed' = 'planning';
     if (now >= startDate && now <= endDate) {
       status = 'active';
     } else if (now > endDate) {
@@ -879,7 +922,7 @@ function SprintProgressGraph({
   endDate: string;
   scopeHours: number;
   completedHours: number;
-  status: 'planned' | 'active' | 'completed';
+  status: 'planning' | 'active' | 'completed';
 }) {
   const start = new Date(startDate).getTime();
   const end = new Date(endDate).getTime();
@@ -910,7 +953,7 @@ function SprintProgressGraph({
     new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   const statusColor = {
-    planned: '#9CA3AF',
+    planning: '#9CA3AF',
     active: '#3B82F6',
     completed: '#22C55E',
   }[status];

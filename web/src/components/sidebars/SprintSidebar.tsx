@@ -2,9 +2,9 @@ import { useNavigate } from 'react-router-dom';
 import { PropertyRow } from '@/components/ui/PropertyRow';
 
 const STATUS_OPTIONS = [
-  { value: 'planned', label: 'Planned', color: 'bg-gray-500' },
-  { value: 'active', label: 'Active', color: 'bg-blue-500' },
-  { value: 'completed', label: 'Completed', color: 'bg-green-500' },
+  { value: 'planning', label: 'Planning', color: 'bg-blue-500' },
+  { value: 'active', label: 'Active', color: 'bg-green-500' },
+  { value: 'completed', label: 'Completed', color: 'bg-gray-500' },
 ];
 
 interface Sprint {
@@ -13,7 +13,7 @@ interface Sprint {
   name?: string;   // Used in legacy sprint API
   start_date: string;
   end_date: string;
-  status: 'planned' | 'active' | 'completed';
+  status: 'planning' | 'active' | 'completed';
   program_id: string | null;
   program_name?: string;
   issue_count?: number;

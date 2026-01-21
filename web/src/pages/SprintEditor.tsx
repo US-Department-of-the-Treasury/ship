@@ -14,7 +14,7 @@ interface Sprint {
   name: string;
   start_date: string;
   end_date: string;
-  status: 'planned' | 'active' | 'completed';
+  status: 'planning' | 'active' | 'completed';
   program_id: string | null;
   program_name?: string;
   program_prefix?: string;

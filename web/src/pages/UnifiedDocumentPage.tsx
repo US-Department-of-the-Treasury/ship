@@ -29,14 +29,11 @@ import {
  * Document types with tabs (projects, programs) get a tabbed interface.
  */
 export function UnifiedDocumentPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id, tab: urlTab } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { showToast } = useToast();
-
-  // Active tab state - dynamically determined by document type
-  const [activeTab, setActiveTab] = useState<string>('');
 
   // Fetch the document by ID
   const { data: document, isLoading, error } = useQuery<DocumentResponse>({
@@ -59,11 +56,13 @@ export function UnifiedDocumentPage() {
   const tabConfig = document ? getTabsForDocumentType(document.document_type) : [];
   const hasTabs = document ? documentTypeHasTabs(document.document_type) : false;
 
-  // Set initial tab if not set
-  if (hasTabs && tabConfig.length > 0 && !activeTab) {
-    // Use setTimeout to avoid setting state during render
-    setTimeout(() => setActiveTab(tabConfig[0].id), 0);
-  }
+  // Derive activeTab from URL - if valid tab in URL, use it; otherwise default to first tab
+  const activeTab = useMemo(() => {
+    if (urlTab && tabConfig.some(t => t.id === urlTab)) {
+      return urlTab;
+    }
+    return tabConfig[0]?.id || '';
+  }, [urlTab, tabConfig]);
 
   // Fetch team members for sidebar data
   const { data: teamMembersData = [] } = useAssignableMembersQuery();
@@ -341,7 +340,7 @@ export function UnifiedDocumentPage() {
       ...(document.document_type === 'sprint' && {
         start_date: (document.start_date as string) || '',
         end_date: (document.end_date as string) || '',
-        status: ((document.status as string) || 'planned') as 'planned' | 'active' | 'completed',
+        status: ((document.status as string) || 'planning') as 'planning' | 'active' | 'completed',
         program_id: document.program_id as string | undefined,
         hypothesis: (document.hypothesis as string) || '',
       }),
@@ -395,7 +394,14 @@ export function UnifiedDocumentPage() {
           <TabBar
             tabs={tabs}
             activeTab={activeTab || tabs[0]?.id}
-            onTabChange={setActiveTab}
+            onTabChange={(tab) => {
+              // Navigate to new URL - first tab gets clean URL, others get tab suffix
+              if (tab === tabConfig[0]?.id) {
+                navigate(`/documents/${id}`);
+              } else {
+                navigate(`/documents/${id}/${tab}`);
+              }
+            }}
           />
         </div>
 

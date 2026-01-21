@@ -11,6 +11,7 @@ export interface Sprint {
   id: string;
   name: string;
   sprint_number: number;
+  status: 'planning' | 'active' | 'completed';
   owner: SprintOwner | null;
   issue_count: number;
   completed_count: number;
@@ -157,6 +158,7 @@ export function useCreateSprint() {
         id: `temp-${crypto.randomUUID()}`,
         name: newSprint.title,
         sprint_number: newSprint.sprint_number,
+        status: 'planning',
         owner: null,
         issue_count: 0,
         completed_count: 0,

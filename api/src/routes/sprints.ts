@@ -34,6 +34,7 @@ const updateSprintSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   owner_id: z.string().uuid().optional(),
   sprint_number: z.number().int().positive().optional(),
+  status: z.enum(['planning', 'active', 'completed']).optional(),
 });
 
 // Separate schema for hypothesis updates (append mode)
@@ -51,6 +52,7 @@ function extractSprintFromRow(row: any) {
     id: row.id,
     name: row.title,
     sprint_number: props.sprint_number || 1,
+    status: props.status || 'planning',  // Default to 'planning' for sprints without status
     owner: row.owner_id ? {
       id: row.owner_id,
       name: row.owner_name,
@@ -756,11 +758,36 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       properties.confidence = confidence;
     }
 
+    // Default TipTap content for new sprints with Hypothesis and Success Criteria headings
+    const defaultContent = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 2 },
+          content: [{ type: 'text', text: 'Hypothesis' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'What do we believe will happen? What are we trying to learn or prove?' }]
+        },
+        {
+          type: 'heading',
+          attrs: { level: 2 },
+          content: [{ type: 'text', text: 'Success Criteria' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'How will we know if the hypothesis is validated? What metrics or outcomes will we measure?' }]
+        }
+      ]
+    };
+
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by)
-       VALUES ($1, 'sprint', $2, $3, $4, $5)
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by, content)
+       VALUES ($1, 'sprint', $2, $3, $4, $5, $6)
        RETURNING id, title, properties, program_id`,
-      [workspaceId, title, program_id || null, JSON.stringify(properties), userId]
+      [workspaceId, title, program_id || null, JSON.stringify(properties), userId, JSON.stringify(defaultContent)]
     );
 
     res.status(201).json({
@@ -897,6 +924,12 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    // Handle status update
+    if (data.status !== undefined) {
+      newProps.status = data.status;
+      propsChanged = true;
+    }
+
     if (propsChanged) {
       updates.push(`properties = $${paramIndex++}`);
       values.push(JSON.stringify(newProps));
@@ -939,6 +972,94 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     res.json(extractSprintFromRow(result.rows[0]));
   } catch (err) {
     console.error('Update sprint error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Start sprint - manually activate a planning sprint with scope snapshot
+// POST /api/sprints/:id/start
+router.post('/:id/start', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists and user can access it
+    const existing = await pool.query(
+      `SELECT d.id, d.properties, d.program_id, w.sprint_start_date
+       FROM documents d
+       JOIN workspaces w ON d.workspace_id = w.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (existing.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    const currentProps = existing.rows[0].properties || {};
+    const currentStatus = currentProps.status || 'planning';
+
+    // Only allow starting a sprint that's in planning status
+    if (currentStatus !== 'planning') {
+      res.status(400).json({
+        error: `Cannot start sprint: sprint is already ${currentStatus}`,
+      });
+      return;
+    }
+
+    // Take the scope snapshot
+    const sprintId = id as string;
+    const plannedIssueIds = await takeSprintSnapshot(sprintId);
+    const snapshotTakenAt = new Date().toISOString();
+
+    // Update sprint properties with snapshot and active status
+    const newProps = {
+      ...currentProps,
+      status: 'active',
+      planned_issue_ids: plannedIssueIds,
+      snapshot_taken_at: snapshotTakenAt,
+    };
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now() WHERE id = $2`,
+      [JSON.stringify(newProps), id]
+    );
+
+    // Re-query to get full sprint with owner info
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, d.program_id,
+              p.title as program_name, p.properties->>'prefix' as program_prefix,
+              w.sprint_start_date as workspace_sprint_start_date,
+              u.id as owner_id, u.name as owner_name, u.email as owner_email,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
+       FROM documents d
+       LEFT JOIN documents p ON d.program_id = p.id
+       JOIN workspaces w ON d.workspace_id = w.id
+       LEFT JOIN users u ON (d.properties->'assignee_ids'->>0)::uuid = u.id
+       WHERE d.id = $1 AND d.document_type = 'sprint'`,
+      [id]
+    );
+
+    const sprint = extractSprintFromRow(result.rows[0]);
+
+    res.json({
+      ...sprint,
+      snapshot_issue_count: plannedIssueIds.length,
+    });
+  } catch (err) {
+    console.error('Start sprint error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -531,6 +531,7 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
         id: row.id,
         name: row.name,
         sprint_number: props.sprint_number || 1,
+        status: props.status || 'planning',  // Default to 'planning' for sprints without status
         owner: row.owner_id ? {
           id: row.owner_id,
           name: row.owner_name,
