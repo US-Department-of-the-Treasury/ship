@@ -345,7 +345,7 @@ export function IssuesList({
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
     const count = ids.length;
-    bulkUpdate.mutate({ ids, action: 'update', updates: { sprint_id: sprintId } }, {
+    bulkUpdate.mutate({ ids, action: 'update', updates: { belongs_to: sprintId ? [{ id: sprintId, type: 'sprint' as const }] : [] } }, {
       onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} moved`, 'success'),
       onError: () => showToast('Failed to move issues', 'error'),
     });
@@ -384,7 +384,7 @@ export function IssuesList({
     const count = ids.length;
     const project = projectId ? projects.find(p => p.id === projectId) : null;
     const projectName = project?.title || 'No Project';
-    bulkUpdate.mutate({ ids, action: 'update', updates: { project_id: projectId } }, {
+    bulkUpdate.mutate({ ids, action: 'update', updates: { belongs_to: projectId ? [{ id: projectId, type: 'project' as const }] : [] } }, {
       onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} assigned to ${projectName}`, 'success'),
       onError: () => showToast('Failed to assign issues to project', 'error'),
     });

@@ -279,7 +279,7 @@ export function ProgramEditorPage() {
 
   const createIssue = async () => {
     if (!id) return;
-    const issue = await contextCreateIssue({ program_id: id });
+    const issue = await contextCreateIssue({ belongs_to: [{ id, type: 'program' }] });
     if (issue) {
       navigate(`/issues/${issue.id}`, { state: { from: 'program', programId: id, programName: program?.name } });
     }
@@ -290,7 +290,7 @@ export function ProgramEditorPage() {
     if (!id) return;
     try {
       const res = await apiPost('/api/issues', {
-        program_id: id,
+        belongs_to: [{ id, type: 'program' }],
         title: data.title,
         properties: {
           estimate: data.estimate,

@@ -133,15 +133,13 @@ async function fetchIssues(filters?: IssueFilters): Promise<Issue[]> {
 // Create issue
 interface CreateIssueData {
   title?: string;
-  program_id?: string;
+  belongs_to?: BelongsTo[];
 }
 
 async function createIssueApi(data: CreateIssueData): Promise<Issue> {
-  // Convert program_id to belongs_to format
-  const apiData: Record<string, unknown> = { title: 'Untitled' };
-  if (data.title) apiData.title = data.title;
-  if (data.program_id) {
-    apiData.belongs_to = [{ id: data.program_id, type: 'program' }];
+  const apiData: Record<string, unknown> = { title: data.title ?? 'Untitled' };
+  if (data.belongs_to && data.belongs_to.length > 0) {
+    apiData.belongs_to = data.belongs_to;
   }
 
   const res = await apiPost('/api/issues', apiData);
@@ -193,10 +191,8 @@ export function useCreateIssue() {
       await queryClient.cancelQueries({ queryKey: issueKeys.lists() });
       const previousIssues = queryClient.getQueryData<Issue[]>(issueKeys.lists());
 
-      // Build belongs_to for optimistic issue
-      const belongs_to: BelongsTo[] = newIssue?.program_id
-        ? [{ id: newIssue.program_id, type: 'program' }]
-        : [];
+      // Use belongs_to directly from input
+      const belongs_to: BelongsTo[] = newIssue?.belongs_to || [];
 
       const optimisticIssue: Issue = {
         id: `temp-${crypto.randomUUID()}`,
@@ -257,28 +253,8 @@ export function useUpdateIssue() {
         (old) => old?.map(i => {
           if (i.id !== id) return i;
 
-          // Build updated belongs_to array
-          let newBelongsTo = [...(i.belongs_to || [])];
-          // Handle legacy program_id/sprint_id fields for backward compatibility
-          const legacyUpdates = updates as { program_id?: string | null; sprint_id?: string | null };
-          if ('program_id' in updates) {
-            newBelongsTo = newBelongsTo.filter(a => a.type !== 'program');
-            if (legacyUpdates.program_id) {
-              newBelongsTo.push({ id: legacyUpdates.program_id, type: 'program' });
-            }
-          }
-          if ('sprint_id' in updates) {
-            newBelongsTo = newBelongsTo.filter(a => a.type !== 'sprint');
-            if (legacyUpdates.sprint_id) {
-              newBelongsTo.push({ id: legacyUpdates.sprint_id, type: 'sprint' });
-            }
-          }
-          if ('project_id' in updates) {
-            newBelongsTo = newBelongsTo.filter(a => a.type !== 'project');
-            if ((updates as { project_id?: string | null }).project_id) {
-              newBelongsTo.push({ id: (updates as { project_id: string }).project_id, type: 'project' });
-            }
-          }
+          // Merge belongs_to: if updates contains belongs_to, use it; otherwise keep existing
+          const newBelongsTo = updates.belongs_to ?? i.belongs_to ?? [];
 
           return { ...i, ...updates, belongs_to: newBelongsTo };
         }) || []
@@ -309,9 +285,8 @@ interface BulkUpdateRequest {
   action: 'archive' | 'delete' | 'restore' | 'update';
   updates?: {
     state?: string;
-    sprint_id?: string | null;
     assignee_id?: string | null;
-    project_id?: string | null;
+    belongs_to?: BelongsTo[];
   };
 }
 
@@ -369,7 +344,7 @@ export function useBulkUpdateIssues() {
 
 // Options for creating an issue
 export interface CreateIssueOptions {
-  program_id?: string;
+  belongs_to?: BelongsTo[];
 }
 
 // Compatibility hook that matches the old useIssues interface
