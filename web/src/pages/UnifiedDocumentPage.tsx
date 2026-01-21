@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UnifiedEditor } from '@/components/UnifiedEditor';
@@ -11,55 +11,22 @@ import { useDocumentConversion } from '@/hooks/useDocumentConversion';
 import { apiGet, apiPatch, apiDelete, apiPost } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 import { issueKeys } from '@/hooks/useIssuesQuery';
-import { projectKeys } from '@/hooks/useProjectsQuery';
-
-interface DocumentResponse extends Record<string, unknown> {
-  id: string;
-  title: string;
-  document_type: string;
-  properties?: Record<string, unknown>;
-  workspace_id?: string;
-  created_at?: string;
-  updated_at?: string;
-  created_by?: string | null;
-  converted_to_id?: string | null;
-  converted_from_id?: string | null;
-  // Flattened properties from API
-  state?: string;
-  priority?: string;
-  assignee_id?: string | null;
-  assignee_name?: string | null;
-  estimate?: number | null;
-  source?: 'internal' | 'external';
-  program_id?: string | null;
-  sprint_id?: string | null;
-  color?: string;
-  impact?: number;
-  confidence?: number;
-  ease?: number;
-  owner_id?: string | null;
-  owner?: { id: string; name: string; email: string } | null;
-  start_date?: string;
-  end_date?: string;
-  status?: string;
-  hypothesis?: string;
-  visibility?: 'private' | 'workspace';
-  parent_id?: string | null;
-  ticket_number?: number;
-  // Multi-parent associations (junction table)
-  belongs_to?: Array<{
-    id: string;
-    type: 'program' | 'project' | 'sprint' | 'parent';
-    title?: string;
-    color?: string;
-  }>;
-}
+import { projectKeys, useProjectSprintsQuery } from '@/hooks/useProjectsQuery';
+import { TabBar } from '@/components/ui/TabBar';
+import {
+  getTabsForDocumentType,
+  documentTypeHasTabs,
+  resolveTabLabels,
+  type DocumentResponse,
+  type TabCounts,
+} from '@/lib/document-tabs';
 
 /**
  * UnifiedDocumentPage - Renders any document type via /documents/:id route
  *
  * This page fetches a document by ID regardless of type and renders it
  * using the UnifiedEditor component with the appropriate sidebar data.
+ * Document types with tabs (projects, programs) get a tabbed interface.
  */
 export function UnifiedDocumentPage() {
   const { id } = useParams<{ id: string }>();
@@ -67,6 +34,9 @@ export function UnifiedDocumentPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { showToast } = useToast();
+
+  // Active tab state - dynamically determined by document type
+  const [activeTab, setActiveTab] = useState<string>('');
 
   // Fetch the document by ID
   const { data: document, isLoading, error } = useQuery<DocumentResponse>({
@@ -84,6 +54,16 @@ export function UnifiedDocumentPage() {
     enabled: !!id,
     retry: false,
   });
+
+  // Set default active tab when document loads
+  const tabConfig = document ? getTabsForDocumentType(document.document_type) : [];
+  const hasTabs = document ? documentTypeHasTabs(document.document_type) : false;
+
+  // Set initial tab if not set
+  if (hasTabs && tabConfig.length > 0 && !activeTab) {
+    // Use setTimeout to avoid setting state during render
+    setTimeout(() => setActiveTab(tabConfig[0].id), 0);
+  }
 
   // Fetch team members for sidebar data
   const { data: teamMembersData = [] } = useAssignableMembersQuery();
@@ -111,13 +91,34 @@ export function UnifiedDocumentPage() {
     color: p.color,
   })), [projectsData]);
 
+  // Fetch counts for tabs (project sprints, etc.)
+  const isProject = document?.document_type === 'project';
+  const isProgram = document?.document_type === 'program';
+  const { data: projectSprints = [] } = useProjectSprintsQuery(isProject ? id : undefined);
+
+  // Compute tab counts based on document type
+  const tabCounts: TabCounts = useMemo(() => {
+    if (isProject) {
+      const issueCount = (document as { issue_count?: number })?.issue_count ?? 0;
+      return {
+        issues: issueCount,
+        sprints: projectSprints.length,
+      };
+    }
+    if (isProgram) {
+      // For programs, counts will be loaded by the tab components themselves
+      return {};
+    }
+    return {};
+  }, [document, isProject, isProgram, projectSprints.length]);
+
   // Handler for when associations change (invalidate document query to refetch)
   const handleAssociationChange = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['document', id] });
   }, [queryClient, id]);
 
   // Document conversion (issue <-> project)
-  const { convert, undoConversion, isConverting } = useDocumentConversion({
+  const { convert, isConverting } = useDocumentConversion({
     navigateAfterConvert: true,
   });
 
@@ -192,12 +193,11 @@ export function UnifiedDocumentPage() {
   }, [document, id, navigate, queryClient, showToast]);
 
   // Handle WebSocket notification that document was converted
-  const handleDocumentConverted = useCallback((newDocId: string, _newDocType: 'issue' | 'project') => {
-    // Navigate to the converted document
+  const handleDocumentConverted = useCallback((newDocId: string) => {
     navigate(`/documents/${newDocId}`, { replace: true });
   }, [navigate]);
 
-  // Update mutation - pass documentId as variable to avoid stale closure issues after navigation
+  // Update mutation
   const updateMutation = useMutation({
     mutationFn: async ({ documentId, updates }: { documentId: string; updates: Partial<DocumentResponse> }) => {
       const response = await apiPatch(`/api/documents/${documentId}`, updates);
@@ -218,7 +218,7 @@ export function UnifiedDocumentPage() {
     },
   });
 
-  // Delete mutation - pass documentId as variable to avoid stale closure issues
+  // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (documentId: string) => {
       const response = await apiDelete(`/api/documents/${documentId}`);
@@ -306,43 +306,48 @@ export function UnifiedDocumentPage() {
       document_type: document.document_type as UnifiedDocument['document_type'],
       created_at: document.created_at,
       updated_at: document.updated_at,
-      created_by: document.created_by,
+      created_by: document.created_by as string | undefined,
       properties: document.properties,
       // Spread flattened properties based on type
       ...(document.document_type === 'issue' && {
-        state: document.state || 'backlog',
-        priority: document.priority || 'medium',
-        estimate: document.estimate,
-        assignee_id: document.assignee_id,
-        assignee_name: document.assignee_name,
-        program_id: document.program_id,
-        sprint_id: document.sprint_id,
-        source: document.source,
-        converted_from_id: document.converted_from_id,
-        display_id: document.ticket_number ? `#${document.ticket_number}` : undefined,
-        belongs_to: document.belongs_to,
+        state: (document.state as string) || 'backlog',
+        priority: (document.priority as string) || 'medium',
+        estimate: document.estimate as number | undefined,
+        assignee_id: document.assignee_id as string | undefined,
+        assignee_name: document.assignee_name as string | undefined,
+        program_id: document.program_id as string | undefined,
+        sprint_id: document.sprint_id as string | undefined,
+        source: document.source as 'internal' | 'external' | undefined,
+        converted_from_id: document.converted_from_id as string | undefined,
+        display_id: (document.ticket_number as number) ? `#${document.ticket_number}` : undefined,
+        belongs_to: document.belongs_to as Array<{
+          id: string;
+          type: 'program' | 'project' | 'sprint' | 'parent';
+          title?: string;
+          color?: string;
+        }> | undefined,
       }),
       ...(document.document_type === 'project' && {
-        impact: document.impact ?? 5,
-        confidence: document.confidence ?? 5,
-        ease: document.ease ?? 5,
-        color: document.color || '#3b82f6',
+        impact: (document.impact as number) ?? 5,
+        confidence: (document.confidence as number) ?? 5,
+        ease: (document.ease as number) ?? 5,
+        color: (document.color as string) || '#3b82f6',
         emoji: null,
-        program_id: document.program_id,
-        owner: document.owner,
-        owner_id: document.owner_id,
-        converted_from_id: document.converted_from_id,
+        program_id: document.program_id as string | undefined,
+        owner: document.owner as { id: string; name: string; email: string } | null,
+        owner_id: document.owner_id as string | undefined,
+        converted_from_id: document.converted_from_id as string | undefined,
       }),
       ...(document.document_type === 'sprint' && {
-        start_date: document.start_date || '',
-        end_date: document.end_date || '',
-        status: (document.status as 'planned' | 'active' | 'completed') || 'planned',
-        program_id: document.program_id,
-        hypothesis: document.hypothesis || '',
+        start_date: (document.start_date as string) || '',
+        end_date: (document.end_date as string) || '',
+        status: ((document.status as string) || 'planned') as 'planned' | 'active' | 'completed',
+        program_id: document.program_id as string | undefined,
+        hypothesis: (document.hypothesis as string) || '',
       }),
       ...(document.document_type === 'wiki' && {
-        parent_id: document.parent_id,
-        visibility: document.visibility,
+        parent_id: document.parent_id as string | undefined,
+        visibility: document.visibility as 'private' | 'workspace' | undefined,
       }),
     } as UnifiedDocument;
   }, [document]);
@@ -377,6 +382,42 @@ export function UnifiedDocumentPage() {
     return null;
   }
 
+  // Documents with tabs get a tabbed interface
+  if (hasTabs && tabConfig.length > 0) {
+    const tabs = resolveTabLabels(tabConfig, document, tabCounts);
+    const currentTabConfig = tabConfig.find(t => t.id === activeTab) || tabConfig[0];
+    const TabComponent = currentTabConfig?.component;
+
+    return (
+      <div className="flex h-full flex-col">
+        {/* Tab bar */}
+        <div className="border-b border-border px-4">
+          <TabBar
+            tabs={tabs}
+            activeTab={activeTab || tabs[0]?.id}
+            onTabChange={setActiveTab}
+          />
+        </div>
+
+        {/* Content area with lazy-loaded tab component */}
+        <div className="flex-1 overflow-hidden">
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center">
+                <div className="text-muted">Loading...</div>
+              </div>
+            }
+          >
+            {TabComponent && (
+              <TabComponent documentId={id!} document={document} />
+            )}
+          </Suspense>
+        </div>
+      </div>
+    );
+  }
+
+  // Non-tabbed documents render directly in editor
   return (
     <UnifiedEditor
       document={unifiedDocument}
