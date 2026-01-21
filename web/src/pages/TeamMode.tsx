@@ -651,8 +651,8 @@ export function TeamModePage() {
                   {/* Sprint header */}
                   <div
                     className={cn(
-                      'flex h-10 w-[140px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10',
-                      sprint.isCurrent ? 'bg-accent/10' : 'bg-background'
+                      'flex h-10 w-[180px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background',
+                      sprint.isCurrent && 'ring-1 ring-inset ring-accent/30'
                     )}
                   >
                     <span className={cn(
@@ -676,7 +676,7 @@ export function TeamModePage() {
                         {/* Program header spacer row for this sprint column */}
                         <div
                           className={cn(
-                            "h-8 w-[140px] border-b border-r border-border bg-border/30",
+                            "h-8 w-[180px] border-b border-r border-border bg-border/30",
                             sprint.isCurrent && "bg-accent/5"
                           )}
                         />
@@ -816,7 +816,7 @@ function SprintCell({
   return (
     <div
       className={cn(
-        'flex h-12 w-[140px] items-center justify-start border-b border-r border-border px-1',
+        'flex h-12 w-[180px] items-center justify-start border-b border-r border-border px-1',
         isCurrent && 'bg-accent/5',
         loading && 'animate-pulse',
         isPending && 'border-dashed'
