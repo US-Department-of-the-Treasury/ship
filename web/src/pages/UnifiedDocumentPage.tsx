@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, Suspense } from 'react';
+import { useCallback, useMemo, useEffect, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UnifiedEditor } from '@/components/UnifiedEditor';
@@ -63,6 +63,18 @@ export function UnifiedDocumentPage() {
     }
     return tabConfig[0]?.id || '';
   }, [urlTab, tabConfig]);
+
+  // Redirect to clean URL if tab is invalid (prevents broken bookmarks and typos)
+  useEffect(() => {
+    if (!document || !id) return;
+
+    // If URL has a tab but it's not valid for this document type, redirect to base URL
+    const isValidTab = tabConfig.some(t => t.id === urlTab);
+    if (urlTab && !isValidTab) {
+      console.warn(`Invalid tab "${urlTab}" for document type "${document.document_type}", redirecting to base URL`);
+      navigate(`/documents/${id}`, { replace: true });
+    }
+  }, [document, id, urlTab, tabConfig, navigate]);
 
   // Fetch team members for sidebar data
   const { data: teamMembersData = [] } = useAssignableMembersQuery();
