@@ -117,7 +117,9 @@ function isSprintActive(sprintNumber: number, workspaceStartDate: Date | string)
 // Take a snapshot of current issues in the sprint
 async function takeSprintSnapshot(sprintId: string): Promise<string[]> {
   const result = await pool.query(
-    `SELECT id FROM documents WHERE sprint_id = $1 AND document_type = 'issue'`,
+    `SELECT d.id FROM documents d
+     JOIN document_associations da ON da.document_id = d.id
+     WHERE da.related_id = $1 AND da.relationship_type = 'sprint' AND d.document_type = 'issue'`,
     [sprintId]
   );
   return result.rows.map(row => row.id);
@@ -175,13 +177,13 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               $5::timestamp as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
               (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
-              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
-              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
-              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
+              (SELECT COUNT(*) > 0 FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        LEFT JOIN users u ON (d.properties->'assignee_ids'->>0)::uuid = u.id
@@ -254,7 +256,7 @@ router.get('/my-action-items', authMiddleware, async (req: Request, res: Respons
               p.title as program_name,
               (d.properties->>'sprint_number')::int as sprint_number,
               (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
-              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro
+              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.properties->>'sprint_id' = d.id::text AND rt.document_type = 'sprint_review' AND rt.properties->>'outcome' IS NOT NULL) as has_retro
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        WHERE d.workspace_id = $1
@@ -578,13 +580,13 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
               (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
-              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
-              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
-              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
+              (SELECT COUNT(*) > 0 FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
        LEFT JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
@@ -921,13 +923,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
               (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
-              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
-              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
-              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
+              (SELECT COUNT(*) > 0 FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
@@ -966,9 +968,9 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Remove sprint_id from issues
+    // Remove sprint associations from issues
     await pool.query(
-      `UPDATE documents SET sprint_id = NULL WHERE sprint_id = $1`,
+      `DELETE FROM document_associations WHERE related_id = $1 AND relationship_type = 'sprint'`,
       [id]
     );
 
@@ -1061,13 +1063,13 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
-              (SELECT COUNT(*) FROM documents i WHERE i.sprint_id = d.id AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i JOIN document_associations da ON da.document_id = i.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
               (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
-              (SELECT COUNT(*) > 0 FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
-              (SELECT rt.properties->>'outcome' FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
-              (SELECT rt.id FROM documents rt WHERE rt.sprint_id = d.id AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
+              (SELECT COUNT(*) > 0 FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL) as has_retro,
+              (SELECT rt.properties->>'outcome' FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_outcome,
+              (SELECT rt.id FROM documents rt JOIN document_associations da ON da.document_id = rt.id WHERE da.related_id = d.id AND da.relationship_type = 'sprint' AND rt.properties->>'outcome' IS NOT NULL LIMIT 1) as retro_id
        FROM documents d
        JOIN documents p ON d.program_id = p.id
        JOIN workspaces w ON d.workspace_id = w.id
@@ -1113,11 +1115,12 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
               u.name as assignee_name,
               CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived
        FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
        LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
        LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
          AND person_doc.document_type = 'person'
          AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
-       WHERE d.sprint_id = $1 AND d.document_type = 'issue'
+       WHERE da.related_id = $1 AND da.relationship_type = 'sprint' AND d.document_type = 'issue'
          AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY
          CASE d.properties->>'priority'
@@ -1227,7 +1230,8 @@ router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Respo
     const issuesResult = await pool.query(
       `SELECT d.id, COALESCE((d.properties->>'estimate')::numeric, 0) as estimate
        FROM documents d
-       WHERE d.sprint_id = $1 AND d.document_type = 'issue'`,
+       JOIN document_associations da ON da.document_id = d.id
+       WHERE da.related_id = $1 AND da.relationship_type = 'sprint' AND d.document_type = 'issue'`,
       [id]
     );
 
@@ -1773,9 +1777,10 @@ router.get('/:id/review', authMiddleware, async (req: Request, res: Response) =>
     // No existing review - generate pre-filled draft
     // Get issues for this sprint
     const issuesResult = await pool.query(
-      `SELECT id, title, properties, ticket_number
-       FROM documents
-       WHERE sprint_id = $1 AND document_type = 'issue'`,
+      `SELECT d.id, d.title, d.properties, d.ticket_number
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
+       WHERE da.related_id = $1 AND da.relationship_type = 'sprint' AND d.document_type = 'issue'`,
       [id]
     );
 
