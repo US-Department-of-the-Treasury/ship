@@ -63,6 +63,11 @@ export function getSprintId(issue: Issue): string | null {
   return getAssociationId(issue, 'sprint');
 }
 
+// Helper to get project ID from belongs_to
+export function getProjectId(issue: Issue): string | null {
+  return getAssociationId(issue, 'project');
+}
+
 // Helper to get association title by type (e.g., program name)
 export function getAssociationTitle(issue: Issue, type: BelongsToType): string | null {
   const association = issue.belongs_to?.find(a => a.type === type);
@@ -72,6 +77,16 @@ export function getAssociationTitle(issue: Issue, type: BelongsToType): string |
 // Helper to get program title from belongs_to
 export function getProgramTitle(issue: Issue): string | null {
   return getAssociationTitle(issue, 'program');
+}
+
+// Helper to get project title from belongs_to
+export function getProjectTitle(issue: Issue): string | null {
+  return getAssociationTitle(issue, 'project');
+}
+
+// Helper to get sprint title from belongs_to
+export function getSprintTitle(issue: Issue): string | null {
+  return getAssociationTitle(issue, 'sprint');
 }
 
 // Filter interface for locked context
@@ -173,11 +188,18 @@ async function updateIssueApi(id: string, updates: Partial<Issue>): Promise<Issu
 }
 
 // Hook to get issues with optional filters
-export function useIssuesQuery(filters?: IssueFilters) {
+export interface UseIssuesQueryOptions {
+  /** Whether the query should execute. Default: true */
+  enabled?: boolean;
+}
+
+export function useIssuesQuery(filters?: IssueFilters, options?: UseIssuesQueryOptions) {
+  const { enabled = true } = options ?? {};
   return useQuery({
     queryKey: issueKeys.list(filters),
     queryFn: () => fetchIssues(filters),
     staleTime: 1000 * 60 * 5, // 5 minutes
+    enabled,
   });
 }
 

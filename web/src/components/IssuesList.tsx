@@ -5,7 +5,8 @@ import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components
 import { BulkActionBar } from '@/components/BulkActionBar';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
 import { Issue } from '@/contexts/IssuesContext';
-import { useBulkUpdateIssues, issueKeys, getProgramId, getProgramTitle } from '@/hooks/useIssuesQuery';
+import { useBulkUpdateIssues, useIssuesQuery, useCreateIssue, issueKeys, getProgramId, getProgramTitle, getProjectId, getProjectTitle, getSprintId, getSprintTitle } from '@/hooks/useIssuesQuery';
+import type { BelongsTo } from '@ship/shared';
 import { projectKeys, useProjectsQuery } from '@/hooks/useProjectsQuery';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
@@ -95,8 +96,8 @@ export const DEFAULT_FILTER_TABS: FilterTab[] = [
 ];
 
 export interface IssuesListProps {
-  /** Issues to display */
-  issues: Issue[];
+  /** Issues to display. Optional when using locked filters (will self-fetch). */
+  issues?: Issue[];
   /** Whether data is loading */
   loading?: boolean;
   /** Callback to update an issue */
@@ -115,6 +116,23 @@ export interface IssuesListProps {
   onStateFilterChange?: (filter: string) => void;
   /** Whether to show program filter dropdown */
   showProgramFilter?: boolean;
+  /** Whether to show project filter dropdown (default: true) */
+  showProjectFilter?: boolean;
+  /** Whether to show sprint filter dropdown (default: true) */
+  showSprintFilter?: boolean;
+  /** Locked program filter - cannot be changed by user, triggers self-fetch */
+  lockedProgramId?: string;
+  /** Locked project filter - cannot be changed by user, triggers self-fetch */
+  lockedProjectId?: string;
+  /** Locked sprint filter - cannot be changed by user, triggers self-fetch */
+  lockedSprintId?: string;
+  /** Context to inherit when creating new issues (derived from locked filters if not provided) */
+  inheritedContext?: {
+    programId?: string;
+    projectId?: string;
+    sprintId?: string;
+    assigneeId?: string;
+  };
   /** Whether to show the create button */
   showCreateButton?: boolean;
   /** Label for the create button */
@@ -155,8 +173,8 @@ export interface IssuesListProps {
  * - Promote to project action
  */
 export function IssuesList({
-  issues,
-  loading = false,
+  issues: issuesProp,
+  loading: loadingProp = false,
   onUpdateIssue,
   onCreateIssue,
   onRefreshIssues,
@@ -165,6 +183,12 @@ export function IssuesList({
   initialStateFilter = '',
   onStateFilterChange,
   showProgramFilter = false,
+  showProjectFilter = true,
+  showSprintFilter = true,
+  lockedProgramId,
+  lockedProjectId,
+  lockedSprintId,
+  inheritedContext,
   showCreateButton = true,
   createButtonLabel = 'New Issue',
   viewModes = ['list', 'kanban'],
@@ -185,6 +209,64 @@ export function IssuesList({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
+  // Determine if we should self-fetch based on locked filters
+  const shouldSelfFetch = Boolean(lockedProgramId || lockedProjectId || lockedSprintId);
+
+  // Self-fetch issues when using locked filters
+  const { data: fetchedIssues, isLoading: isFetchingIssues } = useIssuesQuery(
+    shouldSelfFetch ? {
+      programId: lockedProgramId,
+      projectId: lockedProjectId,
+      sprintId: lockedSprintId,
+    } : {},
+    { enabled: shouldSelfFetch }
+  );
+
+  // Internal create issue mutation for self-fetching mode
+  const createIssueMutation = useCreateIssue();
+
+  // Compute effective context for issue creation (from inheritedContext or locked filters)
+  const effectiveContext = useMemo(() => {
+    // Prefer explicit inheritedContext over locked filters
+    const projectId = inheritedContext?.projectId ?? lockedProjectId;
+    const sprintId = inheritedContext?.sprintId ?? lockedSprintId;
+    let programId = inheritedContext?.programId ?? lockedProgramId;
+
+    // Infer program from project if project is set and program isn't
+    if (projectId && !programId) {
+      const project = projects.find(p => p.id === projectId);
+      if (project?.program_id) {
+        programId = project.program_id;
+      }
+    }
+
+    return {
+      programId,
+      projectId,
+      sprintId,
+      assigneeId: inheritedContext?.assigneeId,
+    };
+  }, [inheritedContext, lockedProgramId, lockedProjectId, lockedSprintId, projects]);
+
+  // Build belongs_to array from effective context
+  const buildBelongsTo = useCallback((): BelongsTo[] => {
+    const belongs_to: BelongsTo[] = [];
+    if (effectiveContext.programId) {
+      belongs_to.push({ id: effectiveContext.programId, type: 'program' });
+    }
+    if (effectiveContext.projectId) {
+      belongs_to.push({ id: effectiveContext.projectId, type: 'project' });
+    }
+    if (effectiveContext.sprintId) {
+      belongs_to.push({ id: effectiveContext.sprintId, type: 'sprint' });
+    }
+    return belongs_to;
+  }, [effectiveContext]);
+
+  // Use fetched issues when self-fetching, otherwise use the prop
+  const issues = shouldSelfFetch ? (fetchedIssues ?? []) : (issuesProp ?? []);
+  const loading = shouldSelfFetch ? isFetchingIssues : loadingProp;
+
   // Use shared hooks for list state management
   const { sortBy, setSortBy, viewMode, setViewMode } = useListFilters({
     sortOptions: SORT_OPTIONS,
@@ -200,6 +282,8 @@ export function IssuesList({
 
   const [stateFilter, setStateFilter] = useState(initialStateFilter);
   const [programFilter, setProgramFilter] = useState<string | null>(null);
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const [sprintFilter, setSprintFilter] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
 
   // Conversion state
@@ -232,13 +316,53 @@ export function IssuesList({
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [issues]);
 
-  // Filter issues based on state filter AND program filter
+  // Compute unique projects from issues for the filter dropdown
+  const projectOptions = useMemo(() => {
+    const projectMap = new Map<string, string>();
+    issues.forEach(issue => {
+      const projectId = getProjectId(issue);
+      const projectName = getProjectTitle(issue);
+      if (projectId && projectName) {
+        projectMap.set(projectId, projectName);
+      }
+    });
+    return Array.from(projectMap.entries())
+      .map(([id, name]) => ({ value: id, label: name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [issues]);
+
+  // Compute unique sprints from issues for the filter dropdown
+  const sprintOptions = useMemo(() => {
+    const sprintMap = new Map<string, string>();
+    issues.forEach(issue => {
+      const sprintId = getSprintId(issue);
+      const sprintName = getSprintTitle(issue);
+      if (sprintId && sprintName) {
+        sprintMap.set(sprintId, sprintName);
+      }
+    });
+    return Array.from(sprintMap.entries())
+      .map(([id, name]) => ({ value: id, label: name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [issues]);
+
+  // Filter issues based on state filter AND program/project/sprint filters
   const filteredIssues = useMemo(() => {
     let result = issues;
 
     // Apply program filter
     if (programFilter) {
       result = result.filter(issue => getProgramId(issue) === programFilter);
+    }
+
+    // Apply project filter
+    if (projectFilter) {
+      result = result.filter(issue => getProjectId(issue) === projectFilter);
+    }
+
+    // Apply sprint filter
+    if (sprintFilter) {
+      result = result.filter(issue => getSprintId(issue) === sprintFilter);
     }
 
     // Apply state filter
@@ -248,15 +372,25 @@ export function IssuesList({
     }
 
     return result;
-  }, [issues, stateFilter, programFilter]);
+  }, [issues, stateFilter, programFilter, projectFilter, sprintFilter]);
 
   const handleCreateIssue = useCallback(async () => {
+    // When self-fetching with context, use internal creation
+    if (shouldSelfFetch) {
+      const belongs_to = buildBelongsTo();
+      const issue = await createIssueMutation.mutateAsync({ belongs_to });
+      if (issue) {
+        navigate(`/issues/${issue.id}`);
+      }
+      return;
+    }
+    // Otherwise, use external callback
     if (!onCreateIssue) return;
     const issue = await onCreateIssue();
     if (issue) {
       navigate(`/issues/${issue.id}`);
     }
-  }, [onCreateIssue, navigate]);
+  }, [shouldSelfFetch, buildBelongsTo, createIssueMutation, onCreateIssue, navigate]);
 
   const handleFilterChange = useCallback((newFilter: string) => {
     setStateFilter(newFilter);
@@ -534,8 +668,8 @@ export function IssuesList({
     return <IssuesListSkeleton />;
   }
 
-  // Program filter for toolbar
-  const programFilterContent = showProgramFilter && programOptions.length > 0 ? (
+  // Program filter for toolbar (hidden when locked)
+  const programFilterContent = showProgramFilter && !lockedProgramId && programOptions.length > 0 ? (
     <div className="w-40">
       <Combobox
         options={programOptions}
@@ -547,6 +681,48 @@ export function IssuesList({
         allowClear={true}
         clearLabel="All Programs"
       />
+    </div>
+  ) : null;
+
+  // Project filter for toolbar (hidden when locked)
+  const projectFilterContent = showProjectFilter && !lockedProjectId && projectOptions.length > 0 ? (
+    <div className="w-40">
+      <Combobox
+        options={projectOptions}
+        value={projectFilter}
+        onChange={setProjectFilter}
+        placeholder="All Projects"
+        aria-label="Filter issues by project"
+        id={`${storageKeyPrefix}-project-filter`}
+        allowClear={true}
+        clearLabel="All Projects"
+      />
+    </div>
+  ) : null;
+
+  // Sprint filter for toolbar (hidden when locked)
+  const sprintFilterContent = showSprintFilter && !lockedSprintId && sprintOptions.length > 0 ? (
+    <div className="w-40">
+      <Combobox
+        options={sprintOptions}
+        value={sprintFilter}
+        onChange={setSprintFilter}
+        placeholder="All Sprints"
+        aria-label="Filter issues by sprint"
+        id={`${storageKeyPrefix}-sprint-filter`}
+        allowClear={true}
+        clearLabel="All Sprints"
+      />
+    </div>
+  ) : null;
+
+  // Combine all filter content
+  const combinedFilterContent = (programFilterContent || projectFilterContent || sprintFilterContent || toolbarContent) ? (
+    <div className="flex items-center gap-2">
+      {programFilterContent}
+      {projectFilterContent}
+      {sprintFilterContent}
+      {toolbarContent}
     </div>
   ) : null;
 
@@ -568,7 +744,7 @@ export function IssuesList({
             onToggleColumn={toggleColumn}
             hiddenCount={hiddenCount}
             showColumnPicker={viewMode === 'list'}
-            filterContent={programFilterContent || toolbarContent}
+            filterContent={combinedFilterContent}
             createButton={showCreateButton && onCreateIssue ? {
               label: createButtonLabel,
               onClick: handleCreateIssue
