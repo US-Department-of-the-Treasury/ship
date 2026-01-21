@@ -15,6 +15,23 @@ resource "aws_wafv2_ip_set" "bad_ips" {
   }
 }
 
+# Regex pattern set for static file exemptions (used by AntiDDoS rule)
+resource "aws_wafv2_regex_pattern_set" "static_files" {
+  count       = var.cloudfront_waf_web_acl_id == "" ? 1 : 0
+  name        = "${var.project_name}-${var.environment}-static-files"
+  description = "Static file extensions exempt from DDoS challenges"
+  scope       = "CLOUDFRONT"
+
+  regular_expression {
+    regex_string = "\\/api\\/|\\.(acc|avi|css|gif|ico|jpe?g|js|json|mp[34]|ogg|otf|pdf|png|tiff?|ttf|webm|webp|woff2?|xml)$"
+  }
+
+  tags = {
+    Name        = "${var.project_name}-static-files"
+    Environment = var.environment
+  }
+}
+
 resource "aws_wafv2_web_acl" "cloudfront" {
   count       = var.cloudfront_waf_web_acl_id == "" ? 1 : 0
   name        = "${var.project_name}-${var.environment}-cloudfront-waf"
@@ -25,10 +42,57 @@ resource "aws_wafv2_web_acl" "cloudfront" {
     allow {}
   }
 
+  # Rule 0: AWS Anti-DDoS Rule Set (Challenge mode with static file exemptions)
+  # Note: AWSManagedRulesAntiDDoSRuleSet detailed config (Challenge sensitivity,
+  # exempt URIs, SensitivityToBlock) is configured in AWS Console as Terraform
+  # provider doesn't yet support aws_managed_rules_anti_ddos_rule_set config block.
+  # The scope_down_statement excludes static files from DDoS checks.
+  rule {
+    name     = "AWSManagedRulesAntiDDoSRuleSet"
+    priority = 0
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        vendor_name = "AWS"
+        name        = "AWSManagedRulesAntiDDoSRuleSet"
+
+        # Exclude static files from DDoS protection rules
+        scope_down_statement {
+          not_statement {
+            statement {
+              regex_pattern_set_reference_statement {
+                arn = aws_wafv2_regex_pattern_set.static_files[0].arn
+
+                field_to_match {
+                  uri_path {}
+                }
+
+                text_transformation {
+                  priority = 0
+                  type     = "NONE"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      sampled_requests_enabled   = true
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${var.project_name}-AWSAntiDDoS"
+    }
+  }
+
   # Rule 1: Rate limiting - 300 requests per 5 minutes per IP
   rule {
     name     = "RateBasedRule-IP-300"
-    priority = 0
+    priority = 1
 
     action {
       count {} # Count mode - monitor before blocking
@@ -51,7 +115,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
   # Rule 2: AWS IP Reputation List
   rule {
     name     = "AWSManagedRulesAmazonIpReputationList"
-    priority = 1
+    priority = 2
 
     override_action {
       none {}
@@ -74,7 +138,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
   # Rule 3: AWS Common Rule Set (OWASP Top 10)
   rule {
     name     = "AWSManagedRulesCommonRuleSet"
-    priority = 2
+    priority = 3
 
     override_action {
       none {}
@@ -97,7 +161,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
   # Rule 4: AWS Known Bad Inputs
   rule {
     name     = "AWSManagedRulesKnownBadInputsRuleSet"
-    priority = 3
+    priority = 4
 
     override_action {
       none {}
@@ -120,7 +184,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
   # Rule 5: AWS SQL Injection Rules
   rule {
     name     = "AWSManagedRulesSQLiRuleSet"
-    priority = 4
+    priority = 5
 
     override_action {
       none {}
@@ -143,7 +207,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
   # Rule 6: Custom Bad IPs block list
   rule {
     name     = "BadIPs"
-    priority = 5
+    priority = 6
 
     action {
       block {}
@@ -165,7 +229,7 @@ resource "aws_wafv2_web_acl" "cloudfront" {
   # Rule 7: AWS Bot Control (Common level, count mode for most categories)
   rule {
     name     = "AWSManagedRulesBotControlRuleSet"
-    priority = 6
+    priority = 7
 
     override_action {
       none {}
@@ -190,6 +254,12 @@ resource "aws_wafv2_web_acl" "cloudfront" {
           }
         }
         rule_action_override {
+          name = "CategoryAI"
+          action_to_use {
+            count {}
+          }
+        }
+        rule_action_override {
           name = "CategoryArchiver"
           action_to_use {
             count {}
@@ -197,6 +267,12 @@ resource "aws_wafv2_web_acl" "cloudfront" {
         }
         rule_action_override {
           name = "CategoryContentFetcher"
+          action_to_use {
+            count {}
+          }
+        }
+        rule_action_override {
+          name = "CategoryEmailClient"
           action_to_use {
             count {}
           }
