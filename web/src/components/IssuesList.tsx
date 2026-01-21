@@ -5,7 +5,7 @@ import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components
 import { BulkActionBar } from '@/components/BulkActionBar';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
 import { Issue } from '@/contexts/IssuesContext';
-import { useBulkUpdateIssues, issueKeys } from '@/hooks/useIssuesQuery';
+import { useBulkUpdateIssues, issueKeys, getProgramId, getProgramTitle } from '@/hooks/useIssuesQuery';
 import { projectKeys, useProjectsQuery } from '@/hooks/useProjectsQuery';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
@@ -221,8 +221,10 @@ export function IssuesList({
   const programOptions = useMemo(() => {
     const programMap = new Map<string, string>();
     issues.forEach(issue => {
-      if (issue.program_id && issue.program_name) {
-        programMap.set(issue.program_id, issue.program_name);
+      const programId = getProgramId(issue);
+      const programName = getProgramTitle(issue);
+      if (programId && programName) {
+        programMap.set(programId, programName);
       }
     });
     return Array.from(programMap.entries())
@@ -236,7 +238,7 @@ export function IssuesList({
 
     // Apply program filter
     if (programFilter) {
-      result = result.filter(issue => issue.program_id === programFilter);
+      result = result.filter(issue => getProgramId(issue) === programFilter);
     }
 
     // Apply state filter
@@ -713,7 +715,7 @@ function IssueRowContent({ issue, visibleColumns }: IssueRowContentProps) {
       )}
       {visibleColumns.has('program') && (
         <td className="px-4 py-3 text-sm text-muted" role="gridcell">
-          {issue.program_name || '—'}
+          {getProgramTitle(issue) || '—'}
         </td>
       )}
       {visibleColumns.has('priority') && (

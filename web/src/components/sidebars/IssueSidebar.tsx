@@ -17,8 +17,6 @@ interface Issue {
   assignee_id: string | null;
   assignee_name?: string | null;
   assignee_archived?: boolean;
-  program_id: string | null;
-  sprint_id: string | null;
   source?: 'internal' | 'external';
   rejection_reason?: string | null;
   converted_from_id?: string | null;
@@ -178,9 +176,9 @@ export function IssueSidebar({
 
   // Fetch sprints when issue's program changes
   useEffect(() => {
-    // Get program from belongs_to or legacy program_id
+    // Get program from belongs_to
     const programAssoc = belongsTo.find(bt => bt.type === 'program');
-    const programId = programAssoc?.id || issue.program_id;
+    const programId = programAssoc?.id;
 
     if (!programId) {
       setSprints([]);
@@ -208,7 +206,7 @@ export function IssueSidebar({
       });
 
     return () => { cancelled = true; };
-  }, [belongsTo, issue.program_id]);
+  }, [belongsTo]);
 
   // Add association via junction table API
   const handleAddAssociation = useCallback(async (relatedId: string, type: BelongsToType) => {
@@ -266,9 +264,9 @@ export function IssueSidebar({
     }
   };
 
-  // Get current program/sprint from belongs_to for legacy display
-  const currentProgramId = belongsTo.find(bt => bt.type === 'program')?.id || issue.program_id;
-  const currentSprintId = belongsTo.find(bt => bt.type === 'sprint')?.id || issue.sprint_id;
+  // Get current program/sprint from belongs_to
+  const currentProgramId = belongsTo.find(bt => bt.type === 'program')?.id ?? null;
+  const currentSprintId = belongsTo.find(bt => bt.type === 'sprint')?.id ?? null;
 
   return (
     <div className="space-y-4 p-4">

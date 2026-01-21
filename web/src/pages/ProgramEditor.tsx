@@ -23,7 +23,7 @@ import { ContextMenu, ContextMenuItem, ContextMenuSubmenu, ContextMenuSeparator 
 import { useToast } from '@/components/ui/Toast';
 import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { issueKeys } from '@/hooks/useIssuesQuery';
+import { issueKeys, getSprintId, Issue } from '@/hooks/useIssuesQuery';
 import { projectKeys, useProjectsQuery, Project as ProjectFromQuery } from '@/hooks/useProjectsQuery';
 import { ConversionDialog } from '@/components/dialogs/ConversionDialog';
 
@@ -85,18 +85,7 @@ const PROGRAM_COLORS = [
   '#3b82f6', // Blue
 ];
 
-interface Issue {
-  id: string;
-  title: string;
-  state: string;
-  priority: string;
-  ticket_number: number;
-  assignee_id: string | null;
-  assignee_name: string | null;
-  assignee_archived?: boolean;
-  display_id: string;
-  sprint_id: string | null;
-}
+// Issue type imported from useIssuesQuery
 
 type SprintFilter = 'all' | 'backlog' | 'active' | 'upcoming' | 'completed' | string;
 
@@ -359,29 +348,30 @@ export function ProgramEditorPage() {
 
   // Filter issues based on sprint filter
   const filteredIssues = issues.filter(issue => {
+    const issueSprintId = getSprintId(issue);
     if (sprintFilter === 'all') return true;
-    if (sprintFilter === 'backlog') return !issue.sprint_id;
+    if (sprintFilter === 'backlog') return !issueSprintId;
     if (sprintFilter === 'active' && workspaceSprintStartDate) {
       // Find active sprint
       const activeSprint = sprints.find(s => computeSprintStatus(s.sprint_number, workspaceSprintStartDate) === 'active');
-      return activeSprint && issue.sprint_id === activeSprint.id;
+      return activeSprint && issueSprintId === activeSprint.id;
     }
     if (sprintFilter === 'upcoming' && workspaceSprintStartDate) {
       // Find upcoming sprints
       const upcomingSprintIds = sprints
         .filter(s => computeSprintStatus(s.sprint_number, workspaceSprintStartDate) === 'upcoming')
         .map(s => s.id);
-      return issue.sprint_id && upcomingSprintIds.includes(issue.sprint_id);
+      return issueSprintId && upcomingSprintIds.includes(issueSprintId);
     }
     if (sprintFilter === 'completed' && workspaceSprintStartDate) {
       // Find completed sprints
       const completedSprintIds = sprints
         .filter(s => computeSprintStatus(s.sprint_number, workspaceSprintStartDate) === 'completed')
         .map(s => s.id);
-      return issue.sprint_id && completedSprintIds.includes(issue.sprint_id);
+      return issueSprintId && completedSprintIds.includes(issueSprintId);
     }
     // Specific sprint ID
-    return issue.sprint_id === sprintFilter;
+    return issueSprintId === sprintFilter;
   });
 
   // Get sprint filter label for dropdown
@@ -1006,7 +996,7 @@ function ProgramIssuesList({
 
   // Render function for issue rows
   const renderIssueRow = useCallback((issue: Issue, _props: RowRenderProps) => {
-    const sprint = sprints.find(s => s.id === issue.sprint_id);
+    const sprint = sprints.find(s => s.id === getSprintId(issue));
     return (
       <>
         <td className="px-4 py-3 text-sm font-mono text-muted" role="gridcell">
