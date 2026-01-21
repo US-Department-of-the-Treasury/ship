@@ -1205,6 +1205,158 @@ router.post('/:id/accept', authMiddleware, async (req: Request, res: Response) =
   }
 });
 
+// ============== ITERATION ENDPOINTS ==============
+// Iterations track Claude's work progress on individual issues
+
+// Validation schemas for iterations
+const createIterationSchema = z.object({
+  status: z.enum(['pass', 'fail', 'in_progress']),
+  what_attempted: z.string().max(5000).optional(),
+  blockers_encountered: z.string().max(5000).optional(),
+});
+
+const listIterationsSchema = z.object({
+  status: z.enum(['pass', 'fail', 'in_progress']).optional(),
+});
+
+// Create iteration entry - POST /api/issues/:id/iterations
+router.post('/:id/iterations', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id: issueId } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = createIterationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify issue exists and user can access it
+    const issueCheck = await pool.query(
+      `SELECT id, title FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [issueId, workspaceId, userId, isAdmin]
+    );
+
+    if (issueCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    const { status, what_attempted, blockers_encountered } = parsed.data;
+
+    const result = await pool.query(
+      `INSERT INTO issue_iterations
+       (issue_id, workspace_id, status, what_attempted, blockers_encountered, author_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [issueId, workspaceId, status, what_attempted || null, blockers_encountered || null, userId]
+    );
+
+    // Get author info
+    const authorResult = await pool.query(
+      'SELECT id, name, email FROM users WHERE id = $1',
+      [userId]
+    );
+
+    const iteration = result.rows[0];
+    const author = authorResult.rows[0];
+
+    res.status(201).json({
+      id: iteration.id,
+      issue_id: iteration.issue_id,
+      status: iteration.status,
+      what_attempted: iteration.what_attempted,
+      blockers_encountered: iteration.blockers_encountered,
+      author: {
+        id: author.id,
+        name: author.name,
+        email: author.email,
+      },
+      created_at: iteration.created_at,
+      updated_at: iteration.updated_at,
+    });
+  } catch (err) {
+    console.error('Create iteration error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get issue iterations - GET /api/issues/:id/iterations
+router.get('/:id/iterations', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id: issueId } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Parse and validate query params
+    const queryParsed = listIterationsSchema.safeParse(req.query);
+    const queryParams = queryParsed.success ? queryParsed.data : {};
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify issue exists and user can access it
+    const issueCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [issueId, workspaceId, userId, isAdmin]
+    );
+
+    if (issueCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    // Build query with optional filters
+    let query = `
+      SELECT i.*, u.name as author_name, u.email as author_email
+      FROM issue_iterations i
+      JOIN users u ON i.author_id = u.id
+      WHERE i.issue_id = $1 AND i.workspace_id = $2
+    `;
+    const params: unknown[] = [issueId, workspaceId];
+    let paramIndex = 3;
+
+    // Filter by status
+    if (queryParams.status) {
+      query += ` AND i.status = $${paramIndex++}`;
+      params.push(queryParams.status);
+    }
+
+    // Sort by timestamp descending (most recent first)
+    query += ' ORDER BY i.created_at DESC';
+
+    const result = await pool.query(query, params);
+
+    const iterations = result.rows.map(row => ({
+      id: row.id,
+      issue_id: row.issue_id,
+      status: row.status,
+      what_attempted: row.what_attempted,
+      blockers_encountered: row.blockers_encountered,
+      author: {
+        id: row.author_id,
+        name: row.author_name,
+        email: row.author_email,
+      },
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+
+    res.json(iterations);
+  } catch (err) {
+    console.error('Get iterations error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Reject issue (move from triage to cancelled with reason)
 router.post('/:id/reject', authMiddleware, async (req: Request, res: Response) => {
   try {
