@@ -309,6 +309,7 @@ export function ProjectEditorPage() {
             showProgramFilter={false}
             showProjectFilter={false}
             enableKeyboardNavigation={false}
+            urlParamPrefix="issues"
             inheritedContext={{
               projectId: displayProject.id,
               programId: displayProject.program_id || undefined,

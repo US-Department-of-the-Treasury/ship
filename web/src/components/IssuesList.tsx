@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { BulkActionBar } from '@/components/BulkActionBar';
@@ -114,6 +114,8 @@ export interface IssuesListProps {
   initialStateFilter?: string;
   /** Called when state filter changes */
   onStateFilterChange?: (filter: string) => void;
+  /** URL parameter name for state filter sync (e.g., 'state' or 'issues_state'). When provided, syncs filter to URL. */
+  urlParamPrefix?: string;
   /** Whether to show program filter dropdown */
   showProgramFilter?: boolean;
   /** Whether to show project filter dropdown (default: true) */
@@ -182,6 +184,7 @@ export function IssuesList({
   filterTabs = DEFAULT_FILTER_TABS,
   initialStateFilter = '',
   onStateFilterChange,
+  urlParamPrefix,
   showProgramFilter = false,
   showProjectFilter = true,
   showSprintFilter = true,
@@ -203,6 +206,7 @@ export function IssuesList({
   toolbarContent,
 }: IssuesListProps) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const bulkUpdate = useBulkUpdateIssues();
   const { data: teamMembers = [] } = useAssignableMembersQuery();
   const { data: projects = [] } = useProjectsQuery();
@@ -280,7 +284,18 @@ export function IssuesList({
     defaultVisible: defaultColumns,
   });
 
-  const [stateFilter, setStateFilter] = useState(initialStateFilter);
+  // URL param name for state filter (if URL sync is enabled)
+  const stateUrlParam = urlParamPrefix ? `${urlParamPrefix}_state` : null;
+
+  // Initialize state from URL if URL sync is enabled, otherwise use prop
+  const getInitialStateFilter = () => {
+    if (stateUrlParam) {
+      return searchParams.get(stateUrlParam) ?? initialStateFilter;
+    }
+    return initialStateFilter;
+  };
+
+  const [stateFilter, setStateFilter] = useState(getInitialStateFilter);
   const [programFilter, setProgramFilter] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [sprintFilter, setSprintFilter] = useState<string | null>(null);
@@ -296,10 +311,22 @@ export function IssuesList({
   // Force re-render trigger for when selection ref updates (used by useGlobalListNavigation)
   const [, forceUpdate] = useState(0);
 
-  // Sync state filter with external state
+  // Sync state filter with external state (when not using URL sync)
   useEffect(() => {
-    setStateFilter(initialStateFilter);
-  }, [initialStateFilter]);
+    if (!stateUrlParam) {
+      setStateFilter(initialStateFilter);
+    }
+  }, [initialStateFilter, stateUrlParam]);
+
+  // Sync state filter from URL (when using URL sync)
+  useEffect(() => {
+    if (stateUrlParam) {
+      const urlValue = searchParams.get(stateUrlParam) ?? '';
+      if (urlValue !== stateFilter) {
+        setStateFilter(urlValue);
+      }
+    }
+  }, [searchParams, stateUrlParam, stateFilter]);
 
   // Compute unique programs from issues for the filter dropdown
   const programOptions = useMemo(() => {
@@ -394,8 +421,20 @@ export function IssuesList({
 
   const handleFilterChange = useCallback((newFilter: string) => {
     setStateFilter(newFilter);
+    // Update URL if URL sync is enabled
+    if (stateUrlParam) {
+      setSearchParams((prev) => {
+        if (newFilter) {
+          prev.set(stateUrlParam, newFilter);
+        } else {
+          prev.delete(stateUrlParam);
+        }
+        return prev;
+      });
+    }
+    // Call external callback if provided
     onStateFilterChange?.(newFilter);
-  }, [onStateFilterChange]);
+  }, [onStateFilterChange, stateUrlParam, setSearchParams]);
 
   const handleUpdateIssue = useCallback(async (id: string, updates: { state: string }) => {
     if (onUpdateIssue) {
@@ -479,12 +518,20 @@ export function IssuesList({
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
     const count = ids.length;
+    // Check if moving issues out of the current locked sprint context
+    const movingOutOfView = lockedSprintId && sprintId !== lockedSprintId;
     bulkUpdate.mutate({ ids, action: 'update', updates: { belongs_to: sprintId ? [{ id: sprintId, type: 'sprint' as const }] : [] } }, {
-      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} moved`, 'success'),
+      onSuccess: () => {
+        if (movingOutOfView) {
+          showToast(`${count} issue${count === 1 ? '' : 's'} moved out of this view`, 'info');
+        } else {
+          showToast(`${count} issue${count === 1 ? '' : 's'} moved`, 'success');
+        }
+      },
       onError: () => showToast('Failed to move issues', 'error'),
     });
     clearSelection();
-  }, [selectedIds, bulkUpdate, showToast, clearSelection]);
+  }, [selectedIds, bulkUpdate, showToast, clearSelection, lockedSprintId]);
 
   const handleBulkChangeStatus = useCallback((status: string) => {
     const ids = Array.from(selectedIds);
@@ -518,12 +565,20 @@ export function IssuesList({
     const count = ids.length;
     const project = projectId ? projects.find(p => p.id === projectId) : null;
     const projectName = project?.title || 'No Project';
+    // Check if moving issues out of the current locked context
+    const movingOutOfView = lockedProjectId && projectId !== lockedProjectId;
     bulkUpdate.mutate({ ids, action: 'update', updates: { belongs_to: projectId ? [{ id: projectId, type: 'project' as const }] : [] } }, {
-      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} assigned to ${projectName}`, 'success'),
+      onSuccess: () => {
+        if (movingOutOfView) {
+          showToast(`${count} issue${count === 1 ? '' : 's'} moved out of this view`, 'info');
+        } else {
+          showToast(`${count} issue${count === 1 ? '' : 's'} assigned to ${projectName}`, 'success');
+        }
+      },
       onError: () => showToast('Failed to assign issues to project', 'error'),
     });
     clearSelection();
-  }, [selectedIds, projects, bulkUpdate, showToast, clearSelection]);
+  }, [selectedIds, projects, bulkUpdate, showToast, clearSelection, lockedProjectId]);
 
   // Handle promote to project
   const handlePromoteToProject = useCallback((issue: Issue) => {
@@ -626,17 +681,6 @@ export function IssuesList({
   // Determine if create functionality should be enabled
   // Either external callback is provided OR component is self-fetching with context
   const canCreateIssue = Boolean(onCreateIssue || shouldSelfFetch);
-
-  // DEBUG: Remove after fixing
-  console.log('[IssuesList] canCreateIssue debug:', {
-    canCreateIssue,
-    onCreateIssue: !!onCreateIssue,
-    shouldSelfFetch,
-    lockedProgramId,
-    lockedProjectId,
-    lockedSprintId,
-    showCreateButton
-  });
 
   // Global keyboard shortcuts
   useEffect(() => {
