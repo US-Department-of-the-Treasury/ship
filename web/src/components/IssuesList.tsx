@@ -520,7 +520,7 @@ export function IssuesList({
     const count = ids.length;
     // Check if moving issues out of the current locked sprint context
     const movingOutOfView = lockedSprintId && sprintId !== lockedSprintId;
-    bulkUpdate.mutate({ ids, action: 'update', updates: { belongs_to: sprintId ? [{ id: sprintId, type: 'sprint' as const }] : [] } }, {
+    bulkUpdate.mutate({ ids, action: 'update', updates: { sprint_id: sprintId } }, {
       onSuccess: () => {
         if (movingOutOfView) {
           showToast(`${count} issue${count === 1 ? '' : 's'} moved out of this view`, 'info');
@@ -567,7 +567,7 @@ export function IssuesList({
     const projectName = project?.title || 'No Project';
     // Check if moving issues out of the current locked context
     const movingOutOfView = lockedProjectId && projectId !== lockedProjectId;
-    bulkUpdate.mutate({ ids, action: 'update', updates: { belongs_to: projectId ? [{ id: projectId, type: 'project' as const }] : [] } }, {
+    bulkUpdate.mutate({ ids, action: 'update', updates: { project_id: projectId } }, {
       onSuccess: () => {
         if (movingOutOfView) {
           showToast(`${count} issue${count === 1 ? '' : 's'} moved out of this view`, 'info');

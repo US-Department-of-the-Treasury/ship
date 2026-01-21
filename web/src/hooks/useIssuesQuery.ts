@@ -308,7 +308,8 @@ interface BulkUpdateRequest {
   updates?: {
     state?: string;
     assignee_id?: string | null;
-    belongs_to?: BelongsTo[];
+    sprint_id?: string | null;
+    project_id?: string | null;
   };
 }
 
@@ -345,7 +346,32 @@ export function useBulkUpdateIssues() {
         }
 
         if (action === 'update' && updates) {
-          return old.map(i => ids.includes(i.id) ? { ...i, ...updates } : i);
+          return old.map(i => {
+            if (!ids.includes(i.id)) return i;
+
+            // Start with existing belongs_to
+            let newBelongsTo = [...(i.belongs_to || [])];
+
+            // Handle project_id update: update or add project association
+            if ('project_id' in updates) {
+              newBelongsTo = newBelongsTo.filter(a => a.type !== 'project');
+              if (updates.project_id) {
+                newBelongsTo.push({ id: updates.project_id, type: 'project' });
+              }
+            }
+
+            // Handle sprint_id update: update or add sprint association
+            if ('sprint_id' in updates) {
+              newBelongsTo = newBelongsTo.filter(a => a.type !== 'sprint');
+              if (updates.sprint_id) {
+                newBelongsTo.push({ id: updates.sprint_id, type: 'sprint' });
+              }
+            }
+
+            // Apply state and assignee_id updates directly
+            const { project_id: _p, sprint_id: _s, ...directUpdates } = updates;
+            return { ...i, ...directUpdates, belongs_to: newBelongsTo };
+          });
         }
 
         return old;
