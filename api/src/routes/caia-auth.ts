@@ -18,6 +18,7 @@ import {
   getAuthorizationUrl,
   handleCallback,
 } from '../services/caia.js';
+import { linkUserToWorkspaceViaInvite } from '../services/invite-acceptance.js';
 import {
   generateSecureSessionId,
   storeOAuthState,
@@ -198,73 +199,13 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
         req,
       });
     } else {
-      // Existing user - check for pending invites to other workspaces (Issue #349)
-      // This mirrors the password invite flow in invites.ts:172-226
+      // Existing user - process any pending invites to other workspaces
       const pendingInvites = await findAllPendingInvitesByEmail(email);
 
       for (const invite of pendingInvites) {
-        // Check if user is already a member of this workspace
-        const existingMembership = await pool.query(
-          'SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
-          [invite.workspace_id, user.id]
-        );
+        const { isNewMembership } = await linkUserToWorkspaceViaInvite(user, invite);
 
-        if (!existingMembership.rows[0]) {
-          // Add user to workspace
-          await pool.query(
-            `INSERT INTO workspace_memberships (workspace_id, user_id, role)
-             VALUES ($1, $2, $3)`,
-            [invite.workspace_id, user.id, invite.role]
-          );
-
-          // Handle person document - check for existing one by EMAIL (not user_id)
-          // This handles orphaned person docs from deleted users
-          const existingPersonDoc = await pool.query(
-            `SELECT id FROM documents
-             WHERE workspace_id = $1
-               AND document_type = 'person'
-               AND LOWER(properties->>'email') = LOWER($2)
-             ORDER BY created_at DESC
-             LIMIT 1`,
-            [invite.workspace_id, email]
-          );
-
-          if (existingPersonDoc.rows[0]) {
-            // Update existing person doc with new user_id (reuse orphaned doc)
-            await pool.query(
-              `UPDATE documents
-               SET title = $1,
-                   properties = jsonb_set(
-                     jsonb_set(properties, '{user_id}', $2::jsonb),
-                     '{pending}', 'false'::jsonb
-                   ) - 'invite_id'
-               WHERE id = $3`,
-              [user.name, JSON.stringify(user.id), existingPersonDoc.rows[0].id]
-            );
-            console.log(`Reused existing person doc ${existingPersonDoc.rows[0].id} for ${email} in workspace ${invite.workspace_id}`);
-          } else {
-            // Try to update pending person doc created at invite time
-            const updateResult = await pool.query(
-              `UPDATE documents
-               SET title = $1,
-                   properties = (properties || $2::jsonb) - 'pending'
-               WHERE workspace_id = $3
-                 AND document_type = 'person'
-                 AND properties->>'invite_id' = $4
-               RETURNING id`,
-              [user.name, JSON.stringify({ user_id: user.id }), invite.workspace_id, invite.id]
-            );
-
-            // If no pending doc existed, create one
-            if (updateResult.rows.length === 0) {
-              await pool.query(
-                `INSERT INTO documents (workspace_id, document_type, title, properties)
-                 VALUES ($1, 'person', $2, $3)`,
-                [invite.workspace_id, user.name, JSON.stringify({ user_id: user.id, email })]
-              );
-            }
-          }
-
+        if (isNewMembership) {
           console.log(`CAIA login: Added existing user ${email} to workspace ${invite.workspace_name} via pending invite`);
 
           await logAuditEvent({
@@ -277,9 +218,6 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
             req,
           });
         }
-
-        // Mark invite as used (whether we added membership or user was already member)
-        await pool.query('UPDATE workspace_invites SET used_at = NOW() WHERE id = $1', [invite.id]);
       }
     }
 
@@ -531,49 +469,8 @@ async function createUserFromInvite(
   );
   const user = userResult.rows[0];
 
-  // Create workspace membership with invited role
-  await pool.query(
-    `INSERT INTO workspace_memberships (workspace_id, user_id, role)
-     VALUES ($1, $2, $3)`,
-    [invite.workspace_id, user.id, invite.role]
-  );
-
-  // Create or update Person document for this user in this workspace
-  // Check for existing person doc by email (may be orphaned from deleted user)
-  const existingPersonDoc = await pool.query(
-    `SELECT id FROM documents
-     WHERE workspace_id = $1
-       AND document_type = 'person'
-       AND LOWER(properties->>'email') = LOWER($2)
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    [invite.workspace_id, email]
-  );
-
-  if (existingPersonDoc.rows[0]) {
-    // Update existing person doc with new user_id (reuse orphaned doc)
-    await pool.query(
-      `UPDATE documents
-       SET title = $1,
-           properties = jsonb_set(
-             jsonb_set(properties, '{user_id}', $2::jsonb),
-             '{pending}', 'false'::jsonb
-           ) - 'invite_id'
-       WHERE id = $3`,
-      [user.name, JSON.stringify(user.id), existingPersonDoc.rows[0].id]
-    );
-    console.log(`Updated existing person doc ${existingPersonDoc.rows[0].id} for ${email}`);
-  } else {
-    // Create new person doc
-    await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, properties)
-       VALUES ($1, 'person', $2, $3)`,
-      [invite.workspace_id, user.name, JSON.stringify({ user_id: user.id, email })]
-    );
-  }
-
-  // Mark invite as used
-  await pool.query('UPDATE workspace_invites SET used_at = NOW() WHERE id = $1', [invite.id]);
+  // Use shared service for membership + person doc + invite marking
+  await linkUserToWorkspaceViaInvite(user, invite);
 
   console.log(`Created CAIA user from invite: ${email} -> workspace ${invite.workspace_name}`);
   return user;
