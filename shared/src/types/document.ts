@@ -167,8 +167,8 @@ export interface Document {
   parent_id?: string | null;
   position: number;
   program_id?: string | null;
-  project_id?: string | null;
-  sprint_id?: string | null;
+  // Note: project_id and sprint_id removed - use belongs_to array instead
+  // Legacy columns still exist in database for migration compatibility
   properties: Record<string, unknown>;
   ticket_number?: number | null;
   archived_at?: Date | null;
@@ -249,8 +249,7 @@ export interface CreateDocumentInput {
   parent_id?: string | null;
   position?: number;
   program_id?: string | null;
-  project_id?: string | null;
-  sprint_id?: string | null;
+  // Note: project_id and sprint_id removed - use belongs_to array instead
   properties?: Record<string, unknown>;
   visibility?: DocumentVisibility;
 }
@@ -261,8 +260,7 @@ export interface UpdateDocumentInput {
   parent_id?: string | null;
   position?: number;
   program_id?: string | null;
-  project_id?: string | null;
-  sprint_id?: string | null;
+  // Note: project_id and sprint_id removed - use belongs_to array instead
   properties?: Record<string, unknown>;
   archived_at?: Date | null;
   visibility?: DocumentVisibility;
