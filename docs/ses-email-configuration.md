@@ -76,6 +76,22 @@ terraform/
 - **Prod** has its own VPC → has its own VPC endpoint
 - Each environment's IAM policy references the appropriate endpoint ID
 
+### Consolidated Deployment Script
+
+Use `deploy-all.sh` for one-command deployment:
+
+```bash
+./scripts/deploy-all.sh <dev|shadow|prod>
+```
+
+This script:
+1. Checks if shared SES infrastructure exists → deploys if missing
+2. Checks if environment infrastructure exists → deploys if missing
+3. Initializes terraform and deploys API to Elastic Beanstalk
+4. Deploys frontend to CloudFront/S3
+
+The script is idempotent and safe to run multiple times.
+
 ## IAM Configuration
 
 ### Dedicated IAM Role
@@ -165,10 +181,10 @@ All SES API calls must traverse a VPC endpoint (PrivateLink), ensuring email sen
 
 | Setting | Value |
 |---------|-------|
-| Service name | `com.amazonaws.us-east-1.email` |
+| Service name | `com.amazonaws.us-east-1.email-smtp` |
 | VPC | Ship VPC |
 | Subnets | Private subnets where API runs |
-| Security group | Allow HTTPS (443) from application SG |
+| Security group | Allow HTTPS (443) from VPC CIDR |
 | Private DNS | Enabled |
 
 With private DNS enabled, the AWS SDK automatically routes SES API calls through the endpoint.
