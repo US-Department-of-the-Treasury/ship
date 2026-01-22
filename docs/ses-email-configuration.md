@@ -1,109 +1,99 @@
-# SES Email Configuration for Ship
+# AWS SES Email Configuration Guide
 
-This document describes the AWS SES configuration for sending workspace invitation emails from Ship.
+A secure, production-ready pattern for sending transactional emails from AWS applications using SES with VPC isolation and email authentication.
 
-## Overview
+## Why This Pattern?
 
-Ship sends transactional emails (workspace invitations) via AWS SES. The configuration enforces:
-- Least-privilege IAM permissions
-- Network isolation via VPC endpoint
-- Email authentication (DKIM/SPF/DMARC compliance)
+Sending email from applications requires addressing three concerns:
+
+1. **Network Security**: Email API calls should not traverse the public internet
+2. **Authorization**: Only specific application roles should send email, and only from approved addresses
+3. **Email Authentication**: Emails must pass SPF, DKIM, and DMARC checks to avoid spam folders
+
+This guide provides a reusable pattern that addresses all three concerns using:
+- **VPC Endpoints** (PrivateLink) for network isolation
+- **IAM Policies** with sender address and VPC endpoint conditions
+- **Easy DKIM** for automatic email signing
+- **DMARC inheritance** from parent domains (especially important for government)
+
+---
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        Ship VPC                              │
+│                      Application VPC                         │
 │  ┌─────────────┐     ┌──────────────────┐     ┌──────────┐  │
-│  │  Ship API   │────▶│  SES VPC Endpoint │────▶│ AWS SES  │  │
+│  │    API      │────▶│  SES VPC Endpoint │────▶│ AWS SES  │  │
 │  │  (ECS/EC2)  │     │  (PrivateLink)    │     │          │  │
 │  └─────────────┘     └──────────────────┘     └──────────┘  │
 │         │                                           │        │
 │         ▼                                           ▼        │
 │  IAM Role with                              Verified Domain  │
-│  SES Send Policy                      ship.awsdev.treasury.gov│
+│  SES Send Policy                           (your-domain.gov) │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Terraform Infrastructure
+**Traffic flow:**
+1. Application calls SES SDK (SendEmail/SendRawEmail)
+2. SDK routes through VPC endpoint (private connection, no internet)
+3. IAM policy validates: correct sender address + request came from VPC endpoint
+4. SES sends email with DKIM signature
 
-### Module Structure
+---
 
-```
-terraform/
-├── shared/
-│   └── ses/                    # Shared SES domain & DKIM (run once)
-│       ├── main.tf             # SES domain identity, DKIM, Route53 records
-│       ├── variables.tf
-│       └── outputs.tf
-├── modules/
-│   ├── ses/                    # Per-environment SES config
-│   │   ├── main.tf             # SSM parameters, IAM policy
-│   │   └── variables.tf
-│   └── ses-vpc-endpoint/       # Per-VPC SES endpoint
-│       ├── main.tf             # VPC endpoint, security group, SSM param
-│       └── variables.tf
-└── environments/
-    ├── dev/                    # Creates VPC endpoint for shared VPC
-    ├── shadow/                 # Reads VPC endpoint ID from SSM (shares with dev)
-    └── prod/                   # Creates VPC endpoint for prod VPC
-```
+## Configuration Components
 
-### Deployment Order
+### 1. SES Domain Identity
 
-1. **Shared SES (once)**: `terraform/shared/ses`
-   - Creates SES domain identity with Easy DKIM
-   - Publishes DKIM CNAME records to Route53
-   - Stores domain ARN in SSM: `/ship/ses/domain-arn`
+Verify your sending domain in SES. This enables:
+- Sending from any address `*@your-domain.com`
+- DKIM signing with your domain
+- DMARC alignment with your domain
 
-2. **Dev environment**: `terraform/environments/dev`
-   - Creates VPC endpoint for shared dev VPC
-   - Stores endpoint ID in SSM: `/infra/dev/ses-vpc-endpoint-id`
-   - Creates IAM policy and SSM parameters for dev
+**Best Practice**: Use a single domain identity shared across environments (dev, staging, prod). Differentiate environments using sender address prefixes.
 
-3. **Shadow environment**: `terraform/environments/shadow`
-   - Reads VPC endpoint ID from `/infra/dev/ses-vpc-endpoint-id` (shares endpoint with dev)
-   - Creates IAM policy and SSM parameters for shadow
+| Environment | From Address | Example |
+|-------------|--------------|---------|
+| Production | `noreply@your-domain.com` | Clean address for real users |
+| Staging | `noreply-staging@your-domain.com` | Clearly marked as non-production |
+| Development | `noreply-dev@your-domain.com` | Easy filtering in test inboxes |
 
-4. **Prod environment**: `terraform/environments/prod`
-   - Creates VPC endpoint for prod VPC
-   - Stores endpoint ID in SSM: `/infra/prod/ses-vpc-endpoint-id`
-   - Creates IAM policy and SSM parameters for prod
+**Why shared domain?**
+- Only one domain verification required
+- Only 3 DKIM records (not 3 per environment)
+- Consistent DMARC alignment
+- IAM policy can explicitly list all approved addresses (no wildcards)
 
-### VPC Endpoint Strategy
+---
 
-- **Dev + Shadow** share a VPC → share one VPC endpoint
-- **Prod** has its own VPC → has its own VPC endpoint
-- Each environment's IAM policy references the appropriate endpoint ID
+### 2. VPC Endpoint
 
-### Consolidated Deployment Script
+Create a VPC endpoint for SES so API calls never leave the private network.
 
-Use `deploy-all.sh` for one-command deployment:
+| Setting | Value |
+|---------|-------|
+| Service name | `com.amazonaws.{region}.email-smtp` |
+| VPC | Your application VPC |
+| Subnets | Private subnets where API runs |
+| Security group | Allow HTTPS (443) from VPC CIDR |
+| Private DNS | **Enabled** |
 
-```bash
-./scripts/deploy-all.sh <dev|shadow|prod>
-```
+With private DNS enabled, the AWS SDK automatically routes SES calls through the endpoint—no code changes required.
 
-This script:
-1. Checks if shared SES infrastructure exists → deploys if missing
-2. Checks if environment infrastructure exists → deploys if missing
-3. Initializes terraform and deploys API to Elastic Beanstalk
-4. Deploys frontend to CloudFront/S3
+**Multi-environment strategy:**
+- Environments sharing a VPC share the endpoint
+- Environments with separate VPCs need their own endpoints
+- Store endpoint IDs in SSM for IAM policy reference
 
-The script is idempotent and safe to run multiple times.
+---
 
-## IAM Configuration
+### 3. IAM Policy
 
-### Dedicated IAM Role
-
-Create a dedicated IAM role/principal for SES sending and attach a least-privilege IAM policy scoped to the SES identity ARN.
-
-### IAM Policy
-
-The policy authorizes `ses:SendEmail` and `ses:SendRawEmail` only for:
-- The verified SES identity
-- Explicitly approved From addresses (one per environment)
-- Requests originating from the SES VPC endpoint
+The IAM policy is the enforcement point. It should:
+1. **Allow** SES actions only for your verified identity
+2. **Allow** only from explicitly approved sender addresses
+3. **Deny** any request not originating from the VPC endpoint
 
 ```json
 {
@@ -116,15 +106,15 @@ The policy authorizes `ses:SendEmail` and `ses:SendRawEmail` only for:
         "ses:SendEmail",
         "ses:SendRawEmail"
       ],
-      "Resource": "arn:aws:ses:us-east-1:ACCOUNT_ID:identity/ship.awsdev.treasury.gov",
+      "Resource": "arn:aws:ses:{region}:{account-id}:identity/{your-domain.com}",
       "Condition": {
         "StringEquals": {
           "ses:FromAddress": [
-            "noreply@ship.awsdev.treasury.gov",
-            "noreply-dev@ship.awsdev.treasury.gov",
-            "noreply-shadow@ship.awsdev.treasury.gov"
+            "noreply@your-domain.com",
+            "noreply-staging@your-domain.com",
+            "noreply-dev@your-domain.com"
           ],
-          "aws:SourceVpce": "vpce-PLACEHOLDER"
+          "aws:SourceVpce": "{vpce-id}"
         }
       }
     },
@@ -138,7 +128,7 @@ The policy authorizes `ses:SendEmail` and `ses:SendRawEmail` only for:
       "Resource": "*",
       "Condition": {
         "StringNotEqualsIfExists": {
-          "aws:SourceVpce": "vpce-PLACEHOLDER"
+          "aws:SourceVpce": "{vpce-id}"
         }
       }
     }
@@ -146,199 +136,247 @@ The policy authorizes `ses:SendEmail` and `ses:SendRawEmail` only for:
 }
 ```
 
-**Configuration Values:**
+**Key points:**
+- `StringEquals` with an array acts as implicit OR (any listed address is allowed)
+- The explicit `Deny` statement blocks requests from outside the VPC endpoint
+- No wildcards in sender addresses—each must be explicitly approved
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| Region | `us-east-1` | AWS region where SES identity is verified |
-| Account | `ACCOUNT_ID` | AWS account ID (replace with actual) |
-| Domain | `ship.awsdev.treasury.gov` | Verified SES domain identity |
-| VPCE | `vpce-PLACEHOLDER` | VPC endpoint ID (replace after creation) |
+---
 
-**Difference from template:** The template uses a single `ses:FromAddress` value. We use an array of three explicit addresses (one per environment) because all environments share the same SES domain identity. The `StringEquals` condition with an array acts as an implicit OR—any of the three addresses is permitted.
+### 4. DKIM Configuration (Easy DKIM)
 
-### Why Three Explicit Addresses?
+Easy DKIM automatically signs every email with a 2048-bit key managed by SES.
 
-A single SES domain identity (`ship.awsdev.treasury.gov`) is shared across all environments:
+**Setup:**
+1. Enable Easy DKIM when verifying your domain in SES
+2. SES generates 3 CNAME records
+3. Add these records to your DNS (Route53 or other)
 
-| Environment | From Address | Purpose |
-|-------------|--------------|---------|
-| prod | `noreply@ship.awsdev.treasury.gov` | Production emails |
-| shadow | `noreply-shadow@ship.awsdev.treasury.gov` | UAT/staging emails |
-| dev | `noreply-dev@ship.awsdev.treasury.gov` | Development emails |
+**DNS records format:**
 
-This approach:
-- Requires only one domain verification in SES
-- Requires only 3 DKIM CNAME records (not 9)
-- Allows email filtering by environment prefix
-- Prevents wildcards in IAM policy (more secure)
+| Name | Type | Value |
+|------|------|-------|
+| `{token1}._domainkey.your-domain.com` | CNAME | `{token1}.dkim.amazonses.com` |
+| `{token2}._domainkey.your-domain.com` | CNAME | `{token2}.dkim.amazonses.com` |
+| `{token3}._domainkey.your-domain.com` | CNAME | `{token3}.dkim.amazonses.com` |
 
-## SES VPC Endpoint
+SES generates the actual token values during domain verification.
 
-All SES API calls must traverse a VPC endpoint (PrivateLink), ensuring email sending traffic never touches the public internet.
+---
 
-### Endpoint Configuration
+### 5. SPF Configuration
+
+SPF is handled automatically by SES. By default:
+- MAIL FROM: `{unique-id}@{region}.amazonses.com`
+- SPF passes because the MAIL FROM domain matches SES's servers
+
+**Optional: Custom MAIL FROM**
+
+For stricter SPF alignment (MAIL FROM matches your domain), add these DNS records:
+
+| Name | Type | Value |
+|------|------|-------|
+| `mail.your-domain.com` | MX | `10 feedback-smtp.{region}.amazonses.com` |
+| `mail.your-domain.com` | TXT | `"v=spf1 include:amazonses.com ~all"` |
+
+This is optional—default SES SPF is sufficient for most use cases.
+
+---
+
+### 6. DMARC Configuration
+
+DMARC determines what happens when emails fail authentication. The key decision: **inherit from parent domain or create your own policy?**
+
+**For government domains (.gov):** Most .gov domains have strict DMARC policies (`p=reject`). Creating a subdomain DMARC record with `p=none` would **weaken** security. Instead, inherit the parent policy.
+
+**For other domains:** If your parent domain has no DMARC or a weak policy, consider adding:
+```
+_dmarc.your-domain.com  TXT  "v=DMARC1; p=quarantine; rua=mailto:dmarc@your-domain.com"
+```
+
+**DMARC alignment requirements:**
+- SPF alignment: MAIL FROM domain matches From header domain
+- DKIM alignment: DKIM `d=` domain matches From header domain
+
+With Easy DKIM configured for your sending domain, DKIM alignment passes automatically, satisfying DMARC.
+
+---
+
+## Terraform Module Structure
+
+Organize infrastructure as reusable modules:
+
+```
+terraform/
+├── shared/
+│   └── ses/                    # One-time: domain identity + DKIM
+│       ├── main.tf             # SES domain, DKIM, Route53 records
+│       └── outputs.tf          # domain_arn → SSM
+├── modules/
+│   ├── ses/                    # Per-environment: SSM params, IAM policy
+│   │   └── main.tf
+│   └── ses-vpc-endpoint/       # Per-VPC: endpoint + security group
+│       └── main.tf
+└── environments/
+    ├── dev/                    # Uses ses + ses-vpc-endpoint modules
+    ├── staging/                # May share VPC endpoint with dev
+    └── prod/                   # Own VPC endpoint
+```
+
+**Deployment order:**
+1. Deploy `shared/ses` once (creates domain identity, publishes DKIM records)
+2. Deploy each environment (creates VPC endpoints, IAM policies)
+
+---
+
+## Runtime Configuration (SSM Parameters)
+
+Store email configuration in SSM Parameter Store for runtime loading:
+
+```
+/{app}/{env}/ses/from-email   # e.g., noreply-dev@your-domain.com
+/{app}/{env}/ses/from-name    # e.g., Your App (Dev)
+/{app}/{env}/app-url          # e.g., https://dev.your-app.com
+```
+
+The application loads these based on `ENVIRONMENT` variable.
+
+---
+
+## Validation Checklist
+
+Before go-live, verify:
+
+### Email Authentication
+Send a test email and check headers:
+```
+Authentication-Results: ...
+  dkim=pass header.d=your-domain.com;
+  spf=pass ...;
+  dmarc=pass (p=REJECT ...) header.from=your-domain.com
+```
+
+### VPC Endpoint Enforcement
+Attempt to send email from outside the VPC (e.g., your laptop). Expect:
+```
+AccessDeniedException: User: arn:aws:sts::{account}:assumed-role/...
+is not authorized to perform: ses:SendEmail on resource:
+arn:aws:ses:{region}:{account}:identity/your-domain.com
+with an explicit deny in an identity-based policy
+```
+
+### GRC Documentation
+Collect these artifacts:
+- Screenshot of SES domain verification (Verified status)
+- Screenshot of Easy DKIM status (Successful)
+- Route53 DKIM CNAME records
+- IAM policy document attached to API execution role
+
+---
+
+## Example: Ship Application
+
+Ship is a Treasury.gov application that uses this pattern for workspace invitation emails.
+
+### Domain Configuration
 
 | Setting | Value |
 |---------|-------|
-| Service name | `com.amazonaws.us-east-1.email-smtp` |
-| VPC | Ship VPC |
-| Subnets | Private subnets where API runs |
-| Security group | Allow HTTPS (443) from VPC CIDR |
-| Private DNS | Enabled |
+| Domain | `ship.awsdev.treasury.gov` |
+| Region | `us-east-1` |
+| Parent DMARC | `p=reject` (inherited from treasury.gov) |
 
-With private DNS enabled, the AWS SDK automatically routes SES API calls through the endpoint.
+### Environment Addresses
 
-## DKIM Configuration (Easy DKIM)
+| Environment | From Address | From Name |
+|-------------|--------------|-----------|
+| prod | `noreply@ship.awsdev.treasury.gov` | Ship |
+| shadow | `noreply-shadow@ship.awsdev.treasury.gov` | Ship (Shadow) |
+| dev | `noreply-dev@ship.awsdev.treasury.gov` | Ship (Dev) |
 
-Easy DKIM automatically adds a 2048-bit DKIM signature to every email sent from the verified identity. The keys are auto-generated by SES.
+### SSM Parameters
 
-### Setup Steps
+```
+/ship/dev/ses/from-email     = noreply-dev@ship.awsdev.treasury.gov
+/ship/dev/ses/from-name      = Ship (Dev)
+/ship/dev/app-url            = https://dev.ship.awsdev.treasury.gov
 
-1. Verify domain `ship.awsdev.treasury.gov` in SES console
-2. Enable Easy DKIM during verification
-3. SES provides 3 CNAME records for DKIM
-4. Publish CNAME records in Route53
+/ship/shadow/ses/from-email  = noreply-shadow@ship.awsdev.treasury.gov
+/ship/shadow/ses/from-name   = Ship (Shadow)
+/ship/shadow/app-url         = https://shadow.ship.awsdev.treasury.gov
 
-### DKIM DNS Records
+/ship/prod/ses/from-email    = noreply@ship.awsdev.treasury.gov
+/ship/prod/ses/from-name     = Ship
+/ship/prod/app-url           = https://ship.awsdev.treasury.gov
+```
 
-SES generates three CNAME records in this format:
+### VPC Endpoint Strategy
 
-| Name | Type | Value |
-|------|------|-------|
-| `{token1}._domainkey.ship.awsdev.treasury.gov` | CNAME | `{token1}.dkim.amazonses.com` |
-| `{token2}._domainkey.ship.awsdev.treasury.gov` | CNAME | `{token2}.dkim.amazonses.com` |
-| `{token3}._domainkey.ship.awsdev.treasury.gov` | CNAME | `{token3}.dkim.amazonses.com` |
+- **Dev + Shadow** share a VPC → share one VPC endpoint at `/infra/dev/ses-vpc-endpoint-id`
+- **Prod** has its own VPC → own endpoint at `/infra/prod/ses-vpc-endpoint-id`
 
-The actual token values are generated when you verify the domain in SES.
+### IAM Policy (Ship-specific)
 
-## SPF Configuration
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowSesSendFromApprovedAddresses",
+      "Effect": "Allow",
+      "Action": ["ses:SendEmail", "ses:SendRawEmail"],
+      "Resource": "arn:aws:ses:us-east-1:ACCOUNT_ID:identity/ship.awsdev.treasury.gov",
+      "Condition": {
+        "StringEquals": {
+          "ses:FromAddress": [
+            "noreply@ship.awsdev.treasury.gov",
+            "noreply-dev@ship.awsdev.treasury.gov",
+            "noreply-shadow@ship.awsdev.treasury.gov"
+          ],
+          "aws:SourceVpce": "vpce-XXXXXXXXX"
+        }
+      }
+    },
+    {
+      "Sid": "DenySesSendIfNotFromVpce",
+      "Effect": "Deny",
+      "Action": ["ses:SendEmail", "ses:SendRawEmail"],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEqualsIfExists": {
+          "aws:SourceVpce": "vpce-XXXXXXXXX"
+        }
+      }
+    }
+  ]
+}
+```
 
-SPF is implicitly handled by SES by default. Amazon SES uses a subdomain of `amazonses.com` as the default MAIL FROM domain, and SPF authentication passes because the MAIL FROM domain matches the sending application (SES).
+### DMARC Decision
 
-### Default Behavior (No Configuration Required)
-
-With the default MAIL FROM domain, SPF works automatically:
-- MAIL FROM: `{unique-id}@us-east-1.amazonses.com`
-- SPF check passes against `amazonses.com` SPF record
-
-### Custom MAIL FROM Domain (Optional)
-
-For stricter SPF alignment where the MAIL FROM domain matches our sending domain, configure a custom MAIL FROM subdomain:
-
-| Name | Type | Value |
-|------|------|-------|
-| `mail.ship.awsdev.treasury.gov` | MX | `10 feedback-smtp.us-east-1.amazonses.com` |
-| `mail.ship.awsdev.treasury.gov` | TXT | `"v=spf1 include:amazonses.com ~all"` |
-
-Reference: [AWS SES Custom MAIL FROM Documentation](https://docs.aws.amazon.com/ses/latest/dg/mail-from.html)
-
-**Note:** Custom MAIL FROM is optional and marked as low priority. The default SES MAIL FROM provides adequate SPF authentication for most use cases.
-
-## DMARC Configuration
-
-### Important: No Subdomain DMARC Record
-
-**Difference from template:** The template suggests creating a subdomain DMARC record with `p=none`. We explicitly do NOT create a subdomain DMARC record.
-
-**Reason:** Treasury.gov has a strict DMARC policy:
-
+Ship does **not** create a subdomain DMARC record. Treasury.gov's policy:
 ```
 v=DMARC1; p=reject; fo=1; rua=mailto:reports@dmarc.cyber.dhs.gov,mailto:reports@treasury.gov
 ```
 
-Key points:
-- `p=reject` means emails failing DMARC are rejected
-- This policy applies to all subdomains (including `ship.awsdev.treasury.gov`) unless overridden
-- Creating a subdomain DMARC record with `p=none` would **weaken** the inherited policy
-- We inherit `p=reject` to maintain the strictest security posture
+Creating a subdomain record would weaken this inherited `p=reject` policy. Instead, Ship relies on DKIM alignment to pass DMARC.
 
-### DMARC Alignment
+### Deployment
 
-For DMARC to pass, emails must pass either:
-- **SPF alignment**: MAIL FROM domain aligns with From header domain
-- **DKIM alignment**: DKIM `d=` domain aligns with From header domain
-
-With Easy DKIM configured for `ship.awsdev.treasury.gov`, DKIM alignment passes because:
-- From header: `noreply@ship.awsdev.treasury.gov`
-- DKIM signature: `d=ship.awsdev.treasury.gov`
-
-This ensures DMARC passes via DKIM alignment, satisfying the inherited `p=reject` policy.
-
-## SSM Parameters
-
-Email configuration is loaded at runtime from SSM Parameter Store:
-
-### Parameter Paths by Environment
-
-**Development (`/ship/dev/`):**
-```
-/ship/dev/ses/from-email  = noreply-dev@ship.awsdev.treasury.gov
-/ship/dev/ses/from-name   = Ship (Dev)
-/ship/dev/app-url         = https://dev.ship.awsdev.treasury.gov
+Ship uses a consolidated deployment script:
+```bash
+./scripts/deploy-all.sh <dev|shadow|prod>
 ```
 
-**Shadow/UAT (`/ship/shadow/`):**
-```
-/ship/shadow/ses/from-email  = noreply-shadow@ship.awsdev.treasury.gov
-/ship/shadow/ses/from-name   = Ship (Shadow)
-/ship/shadow/app-url         = https://shadow.ship.awsdev.treasury.gov
-```
+This script:
+1. Checks if shared SES infrastructure exists → deploys if missing
+2. Checks if environment infrastructure exists → deploys if missing
+3. Initializes terraform and deploys API
+4. Deploys frontend
 
-**Production (`/ship/prod/`):**
-```
-/ship/prod/ses/from-email  = noreply@ship.awsdev.treasury.gov
-/ship/prod/ses/from-name   = Ship
-/ship/prod/app-url         = https://ship.awsdev.treasury.gov
-```
+The script is idempotent and safe to run multiple times.
 
-The API determines which parameters to load based on the `ENVIRONMENT` environment variable.
-
-## Validation and Evidence (GRC Artifact)
-
-Upon completion, produce an artifact for GRC demonstrating:
-
-### 1. Successful Email Delivery
-
-Test email headers showing:
-- `dkim=pass` (header.d=ship.awsdev.treasury.gov)
-- `spf=pass` or `spf=softpass`
-- `dmarc=pass`
-
-Example Authentication-Results header:
-```
-Authentication-Results: mx.google.com;
-  dkim=pass header.d=ship.awsdev.treasury.gov;
-  spf=pass (google.com: domain of bounce@us-east-1.amazonses.com designates ... as permitted sender);
-  dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=ship.awsdev.treasury.gov
-```
-
-### 2. VPC Endpoint Enforcement
-
-Evidence that SES send attempts originating outside the VPC endpoint are denied:
-
-```
-AccessDeniedException: User: arn:aws:sts::ACCOUNT_ID:assumed-role/ShipApiRole/...
-is not authorized to perform: ses:SendEmail on resource:
-arn:aws:ses:us-east-1:ACCOUNT_ID:identity/ship.awsdev.treasury.gov
-with an explicit deny in an identity-based policy
-```
-
-### 3. Supporting Documentation
-
-- Screenshot of SES domain verification status (Verified)
-- Screenshot of Easy DKIM status (Successful)
-- Route53 DKIM CNAME records
-- IAM policy attached to API execution role
-
-## Summary of Differences from Template
-
-| Aspect | Template | Our Configuration | Reason |
-|--------|----------|-------------------|--------|
-| From Address | Single address | Three explicit addresses | Single SES domain shared across environments |
-| IAM Condition | `StringEquals` with string | `StringEquals` with array | Multiple addresses, implicit OR |
-| DMARC Record | Create with `p=none` | Do not create | Inherit `p=reject` from treasury.gov |
-| Custom MAIL FROM | Implied required | Optional (low priority) | Default SES SPF is sufficient |
+---
 
 ## References
 
