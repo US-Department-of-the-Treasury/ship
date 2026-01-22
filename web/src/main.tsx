@@ -13,6 +13,7 @@ import { ProgramsProvider } from '@/contexts/ProgramsContext';
 import { IssuesProvider } from '@/contexts/IssuesContext';
 import { ProjectsProvider } from '@/contexts/ProjectsContext';
 import { ArchivedPersonsProvider } from '@/contexts/ArchivedPersonsContext';
+import { CurrentDocumentProvider } from '@/contexts/CurrentDocumentContext';
 import { LoginPage } from '@/pages/Login';
 import { AppLayout } from '@/pages/App';
 import { DocumentsPage } from '@/pages/Documents';
@@ -165,17 +166,19 @@ function AppRoutes() {
         path="/"
         element={
           <ProtectedRoute>
-            <ArchivedPersonsProvider>
-              <DocumentsProvider>
-                <ProgramsProvider>
-                  <ProjectsProvider>
-                    <IssuesProvider>
-                      <AppLayout />
-                    </IssuesProvider>
-                  </ProjectsProvider>
-                </ProgramsProvider>
-              </DocumentsProvider>
-            </ArchivedPersonsProvider>
+            <CurrentDocumentProvider>
+              <ArchivedPersonsProvider>
+                <DocumentsProvider>
+                  <ProgramsProvider>
+                    <ProjectsProvider>
+                      <IssuesProvider>
+                        <AppLayout />
+                      </IssuesProvider>
+                    </ProjectsProvider>
+                  </ProgramsProvider>
+                </DocumentsProvider>
+              </ArchivedPersonsProvider>
+            </CurrentDocumentProvider>
           </ProtectedRoute>
         }
       >

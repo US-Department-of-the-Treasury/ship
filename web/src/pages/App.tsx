@@ -7,6 +7,7 @@ import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useProjects, Project } from '@/contexts/ProjectsContext';
+import { useCurrentDocumentType } from '@/contexts/CurrentDocumentContext';
 import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
@@ -83,10 +84,23 @@ export function AppLayout() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Determine active mode from path
+  // Get current document type for /documents/:id routes
+  const currentDocumentType = useCurrentDocumentType();
+
+  // Determine active mode from path or document type
   const getActiveMode = (): Mode => {
     if (location.pathname.startsWith('/dashboard')) return 'dashboard';
     if (location.pathname.startsWith('/my-week')) return 'my-week';
+    // For /documents/:id routes, use document type from context
+    if (location.pathname.startsWith('/documents/')) {
+      if (currentDocumentType === 'wiki') return 'docs';
+      if (currentDocumentType === 'issue') return 'issues';
+      if (currentDocumentType === 'project') return 'projects';
+      if (currentDocumentType === 'program') return 'programs';
+      if (currentDocumentType === 'sprint') return 'sprints';
+      // Default to docs while loading or for unknown types
+      return 'docs';
+    }
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
     if (location.pathname.startsWith('/projects')) return 'projects';
