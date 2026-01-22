@@ -178,7 +178,7 @@ export function ProjectsPage() {
     // Create project without owner (unassigned) - owner can be set later
     const project = await createProject({});
     if (project) {
-      navigate(`/projects/${project.id}`);
+      navigate(`/documents/${project.id}`);
     }
   }, [createProject, navigate, user, showToast]);
 
@@ -411,7 +411,7 @@ export function ProjectsPage() {
           renderRow={renderProjectRow}
           columns={columns}
           emptyState={emptyState}
-          onItemClick={(project) => navigate(`/projects/${project.id}`)}
+          onItemClick={(project) => navigate(`/documents/${project.id}`)}
           onSelectionChange={handleSelectionChange}
           onContextMenu={handleContextMenu}
           ariaLabel="Projects list"

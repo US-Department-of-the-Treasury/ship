@@ -91,7 +91,7 @@ export function ProgramsPage() {
     try {
       const program = await createProgram();
       if (program) {
-        navigate(`/programs/${program.id}`);
+        navigate(`/documents/${program.id}`);
       }
     } catch (err) {
       console.error('Failed to create program:', err);
@@ -203,7 +203,7 @@ export function ProgramsPage() {
           renderRow={renderProgramRow}
           columns={columns}
           emptyState={emptyState}
-          onItemClick={(program) => navigate(`/programs/${program.id}`)}
+          onItemClick={(program) => navigate(`/documents/${program.id}`)}
           selectable={true}
           onSelectionChange={handleSelectionChange}
           onContextMenu={handleContextMenu}
