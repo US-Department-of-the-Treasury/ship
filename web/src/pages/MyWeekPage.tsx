@@ -434,14 +434,14 @@ function IssueGroup({ group }: { group: SprintGroup }) {
       <div className="flex items-center justify-between border-b border-border bg-background/50 px-4 py-3">
         <div className="flex items-center gap-3">
           <Link
-            to={`/programs/${group.program.id}`}
+            to={`/documents/${group.program.id}`}
             className="text-sm font-medium text-muted hover:text-foreground transition-colors"
           >
             {group.program.name}
           </Link>
           <span className="text-muted">/</span>
           <Link
-            to={`/sprints/${group.sprint.id}`}
+            to={`/documents/${group.sprint.id}`}
             className="font-medium text-foreground hover:text-accent transition-colors"
           >
             {group.sprint.name}
@@ -465,7 +465,7 @@ function IssueGroup({ group }: { group: SprintGroup }) {
 function IssueRow({ issue }: { issue: Issue }) {
   return (
     <Link
-      to={`/issues/${issue.id}`}
+      to={`/documents/${issue.id}`}
       className="flex items-center gap-3 px-4 py-3 hover:bg-background/80 transition-colors"
     >
       {/* State indicator */}
