@@ -191,7 +191,7 @@ function AppRoutes() {
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:id" element={<DocumentRedirect />} />
         <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/:id" element={<ProjectEditorPage />} />
+        <Route path="projects/:id" element={<DocumentRedirect />} />
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:id" element={<ProgramEditorPage />} />
         <Route path="programs/:id/issues" element={<ProgramEditorPage />} />
