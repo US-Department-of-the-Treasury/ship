@@ -224,6 +224,18 @@ fi
 # -----------------------------------------------------------------------------
 log_step "Step 3: API Deployment"
 
+# Ensure terraform is initialized (needed for deploy.sh to read outputs)
+log_step "Ensuring terraform is initialized..."
+cd "$TF_DIR"
+STATE_BUCKET=$(aws ssm get-parameter --name /ship/terraform-state-bucket --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+if [ -n "$STATE_BUCKET" ]; then
+  terraform init -backend-config="bucket=$STATE_BUCKET" -input=false > /dev/null 2>&1 || true
+else
+  terraform init -input=false > /dev/null 2>&1 || true
+fi
+cd "$PROJECT_ROOT"
+log_success "Terraform initialized"
+
 echo ""
 read -p "Deploy API to Elastic Beanstalk? (y/n) " -n 1 -r
 echo
