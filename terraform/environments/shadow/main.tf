@@ -118,3 +118,27 @@ module "ssm" {
   app_domain_name        = var.app_domain_name
   eb_instance_role_name  = module.elastic_beanstalk.instance_role_name
 }
+
+# SES VPC Endpoint ID (read from SSM - created by dev environment)
+# Shadow shares the VPC with dev, so it uses the same VPC endpoint.
+data "aws_ssm_parameter" "ses_vpc_endpoint_id" {
+  name = "/infra/dev/ses-vpc-endpoint-id"
+}
+
+# SES Email Configuration
+# Prerequisites:
+# 1. Run terraform/shared/ses first to create shared SES resources
+# 2. Apply dev environment first to create the VPC endpoint
+module "ses" {
+  source = "../../modules/ses"
+
+  project_name = var.project_name
+  environment  = var.environment
+  aws_region   = var.aws_region
+
+  eb_instance_role_name = module.elastic_beanstalk.instance_role_name
+  ses_from_email        = var.ses_from_email
+  ses_from_name         = var.ses_from_name
+  app_url               = "https://${var.app_domain_name}"
+  ses_vpc_endpoint_id   = data.aws_ssm_parameter.ses_vpc_endpoint_id.value
+}

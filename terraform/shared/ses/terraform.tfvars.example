@@ -1,0 +1,17 @@
+# =============================================================================
+# Shared SES Infrastructure - terraform.tfvars.example
+# =============================================================================
+# Copy this to terraform.tfvars and fill in your values.
+# Run this ONCE before deploying environment-specific infrastructure.
+# =============================================================================
+
+aws_region      = "us-east-1"
+ses_domain      = "ship.awsdev.treasury.gov"
+route53_zone_id = "Z0264966N8H7T352LP6P"  # Replace with your zone ID
+
+# Approved From addresses (all environments share this domain)
+ses_approved_from_addresses = [
+  "noreply@ship.awsdev.treasury.gov",
+  "noreply-dev@ship.awsdev.treasury.gov",
+  "noreply-shadow@ship.awsdev.treasury.gov"
+]

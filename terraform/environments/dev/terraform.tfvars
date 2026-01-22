@@ -9,3 +9,7 @@ environment = "dev"
 app_domain_name = "dev.ship.awsdev.treasury.gov"
 route53_zone_id = "Z0264966N8H7T352LP6P"
 eb_environment_cname = "ship-api-dev.eba-quvxaryh.us-east-1.elasticbeanstalk.com"
+
+# SES Email Configuration
+ses_from_email = "noreply-dev@ship.awsdev.treasury.gov"
+ses_from_name  = "Ship (Dev)"

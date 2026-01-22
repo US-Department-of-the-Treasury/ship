@@ -88,3 +88,19 @@ variable "snapshot_identifier" {
   type        = string
   default     = ""
 }
+
+# =============================================================================
+# SES Email Configuration
+# =============================================================================
+
+variable "ses_from_email" {
+  description = "From email address for this environment"
+  type        = string
+  default     = ""
+}
+
+variable "ses_from_name" {
+  description = "From display name for this environment"
+  type        = string
+  default     = "Ship"
+}

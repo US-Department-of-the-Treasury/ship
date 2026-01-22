@@ -60,3 +60,11 @@ aurora_max_capacity = 2
 
 # Snapshot identifier (leave empty for fresh database)
 snapshot_identifier = ""
+
+# =============================================================================
+# SES Email Configuration
+# =============================================================================
+# Prerequisites: Run terraform/shared/ses first to create shared SES resources
+
+ses_from_email = "noreply-shadow@ship.awsdev.treasury.gov"
+ses_from_name  = "Ship (Shadow)"
