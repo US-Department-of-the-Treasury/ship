@@ -55,6 +55,17 @@ function DocumentRedirect() {
   return <Navigate to={`/documents/${id}`} replace />;
 }
 
+/**
+ * Redirect component for /programs/:id/* routes to /documents/:id/*
+ * Preserves the tab portion of the path (issues, projects, sprints)
+ */
+function ProgramTabRedirect() {
+  const { id, '*': splat } = useParams<{ id: string; '*': string }>();
+  const tab = splat || '';
+  const targetPath = tab ? `/documents/${id}/${tab}` : `/documents/${id}`;
+  return <Navigate to={targetPath} replace />;
+}
+
 function PlaceholderPage({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center">
@@ -193,12 +204,8 @@ function AppRoutes() {
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:id" element={<DocumentRedirect />} />
         <Route path="programs" element={<ProgramsPage />} />
-        <Route path="programs/:id" element={<ProgramEditorPage />} />
-        <Route path="programs/:id/issues" element={<ProgramEditorPage />} />
-        <Route path="programs/:id/projects" element={<ProgramEditorPage />} />
-        <Route path="programs/:id/sprints" element={<ProgramEditorPage />} />
-        <Route path="programs/:id/sprints/:sprintId" element={<ProgramEditorPage />} />
         <Route path="programs/:programId/sprints/:id" element={<DocumentRedirect />} />
+        <Route path="programs/:id/*" element={<ProgramTabRedirect />} />
         <Route path="sprints" element={<SprintsPage />} />
         <Route path="sprints/:id" element={<DocumentRedirect />} />
         <Route path="sprints/:id/view" element={<SprintViewPage />} />
