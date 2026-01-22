@@ -14,9 +14,9 @@ export default function ProgramSprintsTab({ documentId }: DocumentTabProps) {
   return (
     <SprintList
       lockedProgramId={documentId}
-      onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
+      onSprintClick={(sprintId) => navigate(`/documents/${sprintId}`)}
       showPlanButton={true}
-      onPlanSprint={() => navigate(`/sprints/new/plan?program=${documentId}`)}
+      onPlanSprint={() => navigate(`/documents/new?type=sprint&program=${documentId}`)}
       emptyMessage="No sprints in this program"
       emptyHint="Create sprints using the Plan Sprint button"
     />

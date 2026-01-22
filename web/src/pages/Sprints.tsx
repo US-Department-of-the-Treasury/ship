@@ -89,7 +89,7 @@ export function SprintsPage() {
                 <SprintRow
                   key={sprint.id}
                   sprint={sprint}
-                  onClick={() => navigate(`/programs/${sprint.program_id}/sprints/${sprint.id}`)}
+                  onClick={() => navigate(`/documents/${sprint.id}`)}
                 />
               ))}
             </tbody>

@@ -149,7 +149,7 @@ export function AppLayout() {
   const handleCreateIssue = async () => {
     const issue = await createIssue();
     if (issue) {
-      navigate(`/issues/${issue.id}`);
+      navigate(`/documents/${issue.id}`);
     }
   };
 
@@ -176,7 +176,7 @@ export function AppLayout() {
     });
     if (project) {
       setProjectSetupWizardOpen(false);
-      navigate(`/projects/${project.id}`);
+      navigate(`/documents/${project.id}`);
     }
   };
 
@@ -1397,7 +1397,7 @@ function SprintsList() {
             >
               {/* Owner avatar */}
               <button
-                onClick={() => navigate(`/programs/${sprint.program_id}/sprints/${sprint.id}`)}
+                onClick={() => navigate(`/documents/${sprint.id}`)}
                 className="flex items-center gap-2 flex-1 min-w-0"
               >
                 {sprint.owner ? (
@@ -1429,7 +1429,7 @@ function SprintsList() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigate(`/sprints/${sprint.id}/review`);
+                      navigate(`/documents/${sprint.id}/review`);
                     }}
                     className="hidden group-hover:inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/20"
                     title="Go to sprint review"

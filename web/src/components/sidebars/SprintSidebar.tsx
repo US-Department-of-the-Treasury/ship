@@ -104,7 +104,7 @@ export function SprintSidebar({ sprint, onUpdate, highlightedFields = [] }: Spri
       {sprint.program_name && sprint.program_id && (
         <PropertyRow label="Program">
           <button
-            onClick={() => navigate(`/programs/${sprint.program_id}`)}
+            onClick={() => navigate(`/documents/${sprint.program_id}`)}
             className="w-full rounded bg-border/50 px-2 py-1.5 text-left text-sm text-foreground hover:bg-border transition-colors"
           >
             {sprint.program_name}
@@ -114,7 +114,7 @@ export function SprintSidebar({ sprint, onUpdate, highlightedFields = [] }: Spri
 
       <div className="border-t border-border pt-4">
         <button
-          onClick={() => navigate(`/sprints/${sprint.id}/view`)}
+          onClick={() => navigate(`/documents/${sprint.id}`)}
           className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
         >
           Plan Sprint

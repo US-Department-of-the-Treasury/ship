@@ -75,7 +75,7 @@ export function SprintList({
     if (onSprintClick) {
       onSprintClick(sprintId);
     } else {
-      navigate(`/sprints/${sprintId}/view`);
+      navigate(`/documents/${sprintId}`);
     }
   };
 
