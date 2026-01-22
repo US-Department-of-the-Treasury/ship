@@ -33,7 +33,8 @@ export interface SprintIssue {
 
 export interface SprintDetailViewProps {
   sprintId: string;
-  programId: string;
+  programId?: string;
+  projectId?: string;
   onIssueClick: (id: string) => void;
   onBack: () => void;
 }
@@ -44,7 +45,6 @@ export interface SprintDetailViewProps {
  */
 export function SprintDetailView({
   sprintId,
-  programId,
   onIssueClick,
   onBack,
 }: SprintDetailViewProps) {

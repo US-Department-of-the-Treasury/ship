@@ -16,21 +16,21 @@ import { ArchivedPersonsProvider } from '@/contexts/ArchivedPersonsContext';
 import { LoginPage } from '@/pages/Login';
 import { AppLayout } from '@/pages/App';
 import { DocumentsPage } from '@/pages/Documents';
-import { DocumentEditorPage } from '@/pages/DocumentEditor';
+// DocumentEditorPage deprecated - using UnifiedDocumentPage via DocumentRedirect
 import { IssuesPage } from '@/pages/Issues';
 import { ProgramsPage } from '@/pages/Programs';
-import { ProgramEditorPage } from '@/pages/ProgramEditor';
+// ProgramEditorPage deprecated - using UnifiedDocumentPage via DocumentRedirect
 // SprintEditorPage deprecated - using UnifiedDocumentPage via DocumentRedirect
-import { SprintViewPage } from '@/pages/SprintView';
+// SprintViewPage deprecated - using UnifiedDocumentPage via DocumentRedirect
 import { SprintPlanningPage } from '@/pages/SprintPlanningPage';
 import { SprintsPage } from '@/pages/Sprints';
 import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
-import { PersonEditorPage } from '@/pages/PersonEditor';
+// PersonEditorPage deprecated - using UnifiedDocumentPage via DocumentRedirect
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
 import { ProjectsPage } from '@/pages/Projects';
-import { ProjectEditorPage } from '@/pages/ProjectEditor';
+// ProjectEditorPage deprecated - using UnifiedDocumentPage via DocumentRedirect
 import { DashboardPage } from '@/pages/Dashboard';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
@@ -52,6 +52,24 @@ import './index.css';
 function DocumentRedirect() {
   const { id } = useParams<{ id: string }>();
   return <Navigate to={`/documents/${id}`} replace />;
+}
+
+/**
+ * Redirect component for routes with optional tab parameter
+ * e.g., /programs/:id/issues → /documents/:id/issues
+ */
+function DocumentRedirectWithTab({ tab }: { tab: string }) {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/documents/${id}/${tab}`} replace />;
+}
+
+/**
+ * Redirect component for nested sprint routes within programs/projects
+ * e.g., /programs/:id/sprints/:sprintId → /documents/:id/sprints/:sprintId
+ */
+function ProgramSprintRedirect() {
+  const { id, sprintId } = useParams<{ id: string; sprintId: string }>();
+  return <Navigate to={`/documents/${id}/sprints/${sprintId}`} replace />;
 }
 
 function PlaceholderPage({ title, subtitle }: { title: string; subtitle: string }) {
@@ -183,30 +201,36 @@ function AppRoutes() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="my-week" element={<MyWeekPage />} />
         <Route path="docs" element={<DocumentsPage />} />
-        <Route path="docs/:id" element={<DocumentEditorPage />} />
+        {/* Legacy wiki route redirects to /documents/:id */}
+        <Route path="docs/:id" element={<DocumentRedirect />} />
         <Route path="documents/:id/*" element={<UnifiedDocumentPage />} />
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:id" element={<DocumentRedirect />} />
         <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/:id" element={<ProjectEditorPage />} />
+        {/* Legacy project routes redirect to /documents/:id */}
+        <Route path="projects/:id" element={<DocumentRedirect />} />
+        <Route path="projects/:id/issues" element={<DocumentRedirectWithTab tab="issues" />} />
+        <Route path="projects/:id/sprints" element={<DocumentRedirectWithTab tab="sprints" />} />
         <Route path="programs" element={<ProgramsPage />} />
-        <Route path="programs/:id" element={<ProgramEditorPage />} />
-        <Route path="programs/:id/issues" element={<ProgramEditorPage />} />
-        <Route path="programs/:id/projects" element={<ProgramEditorPage />} />
-        <Route path="programs/:id/sprints" element={<ProgramEditorPage />} />
-        <Route path="programs/:id/sprints/:sprintId" element={<ProgramEditorPage />} />
-        <Route path="programs/:programId/sprints/:id" element={<DocumentRedirect />} />
+        {/* Legacy program routes redirect to /documents/:id */}
+        <Route path="programs/:id" element={<DocumentRedirect />} />
+        <Route path="programs/:id/issues" element={<DocumentRedirectWithTab tab="issues" />} />
+        <Route path="programs/:id/projects" element={<DocumentRedirectWithTab tab="projects" />} />
+        <Route path="programs/:id/sprints" element={<DocumentRedirectWithTab tab="sprints" />} />
+        <Route path="programs/:id/sprints/:sprintId" element={<ProgramSprintRedirect />} />
         <Route path="sprints" element={<SprintsPage />} />
+        {/* Sprint routes - redirect legacy views to /documents/:id, keep planning workflow */}
         <Route path="sprints/:id" element={<DocumentRedirect />} />
-        <Route path="sprints/:id/view" element={<SprintViewPage />} />
+        <Route path="sprints/:id/view" element={<DocumentRedirect />} />
         <Route path="sprints/:id/plan/:tab?" element={<SprintPlanningPage />} />
-        <Route path="sprints/:id/planning" element={<SprintViewPage />} />
-        <Route path="sprints/:id/standups" element={<SprintViewPage />} />
-        <Route path="sprints/:id/review" element={<SprintViewPage />} />
+        <Route path="sprints/:id/planning" element={<DocumentRedirect />} />
+        <Route path="sprints/:id/standups" element={<DocumentRedirect />} />
+        <Route path="sprints/:id/review" element={<DocumentRedirect />} />
         <Route path="team" element={<Navigate to="/team/allocation" replace />} />
         <Route path="team/allocation" element={<TeamModePage />} />
         <Route path="team/directory" element={<TeamDirectoryPage />} />
-        <Route path="team/:id" element={<PersonEditorPage />} />
+        {/* Legacy team profile route redirects to /documents/:id */}
+        <Route path="team/:id" element={<DocumentRedirect />} />
         <Route path="feedback/:id" element={<FeedbackEditorPage />} />
         <Route path="settings" element={<WorkspaceSettingsPage />} />
         <Route path="settings/conversions" element={<ConvertedDocumentsPage />} />

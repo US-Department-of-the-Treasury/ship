@@ -8,6 +8,7 @@ import { SprintSidebar } from '@/components/sidebars/SprintSidebar';
 import { IssuesList, DEFAULT_FILTER_TABS } from '@/components/IssuesList';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
+import { apiPost, apiGet, apiPatch } from '@/lib/api';
 
 interface Sprint {
   id: string;
@@ -23,8 +24,6 @@ interface Sprint {
   is_complete: boolean | null;
   missing_fields: string[];
 }
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 type PlanningTab = 'overview' | 'issues';
 
@@ -77,7 +76,7 @@ export function SprintPlanningPage() {
 
     async function fetchSprint() {
       try {
-        const res = await fetch(`${API_URL}/api/sprints/${id}`, { credentials: 'include' });
+        const res = await apiGet(`/api/sprints/${id}`);
 
         if (cancelled) return;
 
@@ -103,12 +102,7 @@ export function SprintPlanningPage() {
   const updateSprint = useCallback(async (updates: Partial<Sprint>) => {
     if (!id) return;
     try {
-      const res = await fetch(`${API_URL}/api/sprints/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(updates),
-      });
+      const res = await apiPatch(`/api/sprints/${id}`, updates);
       if (res.ok) {
         const data = await res.json();
         setSprint(data);
@@ -139,10 +133,7 @@ export function SprintPlanningPage() {
     if (!id) return;
     setIsStarting(true);
     try {
-      const res = await fetch(`${API_URL}/api/sprints/${id}/start`, {
-        method: 'POST',
-        credentials: 'include',
-      });
+      const res = await apiPost(`/api/sprints/${id}/start`);
       if (res.ok) {
         const data = await res.json();
         setSprint(data);
@@ -353,7 +344,7 @@ function CreateSprintForm({ programId, projectId, onCreated, onCancel }: CreateS
 
     async function fetchNextNumber() {
       try {
-        const res = await fetch(`${API_URL}/api/programs/${programId}/sprints`, { credentials: 'include' });
+        const res = await apiGet(`/api/programs/${programId}/sprints`);
         if (res.ok) {
           const data = await res.json();
           const maxNumber = data.sprints?.reduce((max: number, s: { sprint_number: number }) =>
@@ -378,15 +369,10 @@ function CreateSprintForm({ programId, projectId, onCreated, onCancel }: CreateS
     setError(null);
 
     try {
-      const res = await fetch(`${API_URL}/api/sprints`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          program_id: programId,
-          title: title.trim(),
-          sprint_number: nextSprintNumber || 1,
-        }),
+      const res = await apiPost('/api/sprints', {
+        program_id: programId,
+        title: title.trim(),
+        sprint_number: nextSprintNumber || 1,
       });
 
       if (res.ok) {
