@@ -820,6 +820,17 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       [workspaceId, title, program_id || null, JSON.stringify(properties), userId, JSON.stringify(defaultContent)]
     );
 
+    const sprintId = result.rows[0].id;
+
+    // Create document_association to link sprint to program (required for queries that join via associations)
+    if (program_id) {
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [sprintId, program_id]
+      );
+    }
+
     res.status(201).json({
       id: result.rows[0].id,
       name: result.rows[0].title,
