@@ -136,7 +136,7 @@ export function DocumentsPage() {
     try {
       const doc = await createDocument(parentId);
       if (doc) {
-        navigate(`/docs/${doc.id}`);
+        navigate(`/documents/${doc.id}`);
       }
     } finally {
       setCreating(false);
@@ -297,7 +297,7 @@ export function DocumentsPage() {
             getItemId={(doc) => doc.id}
             renderRow={(doc, props) => renderDocumentRow(doc, props)}
             columns={columns}
-            onItemClick={(doc) => navigate(`/docs/${doc.id}`)}
+            onItemClick={(doc) => navigate(`/documents/${doc.id}`)}
             selectable={true}
             onSelectionChange={(ids) => setSelectedIds(ids)}
             onContextMenu={handleContextMenu}

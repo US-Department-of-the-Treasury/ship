@@ -21,9 +21,7 @@ import { DocumentEditorPage } from '@/pages/DocumentEditor';
 import { IssuesPage } from '@/pages/Issues';
 import { ProgramsPage } from '@/pages/Programs';
 import { ProgramEditorPage } from '@/pages/ProgramEditor';
-// SprintEditorPage deprecated - using UnifiedDocumentPage via DocumentRedirect
-import { SprintViewPage } from '@/pages/SprintView';
-import { SprintPlanningPage } from '@/pages/SprintPlanningPage';
+// SprintViewPage, SprintPlanningPage deprecated - using UnifiedDocumentPage via SprintTabRedirect
 import { SprintsPage } from '@/pages/Sprints';
 import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
@@ -63,6 +61,21 @@ function ProgramTabRedirect() {
   const { id, '*': splat } = useParams<{ id: string; '*': string }>();
   const tab = splat || '';
   const targetPath = tab ? `/documents/${id}/${tab}` : `/documents/${id}`;
+  return <Navigate to={targetPath} replace />;
+}
+
+/**
+ * Redirect component for /sprints/:id/* routes to /documents/:id/*
+ * Maps old sprint sub-routes to new unified document tab routes
+ */
+function SprintTabRedirect({ tab }: { tab?: string }) {
+  const { id } = useParams<{ id: string }>();
+  // Map 'planning' to 'plan' for consistency
+  const mappedTab = tab === 'planning' ? 'plan' : tab;
+  // 'view' maps to root (overview tab)
+  const targetPath = mappedTab && mappedTab !== 'view'
+    ? `/documents/${id}/${mappedTab}`
+    : `/documents/${id}`;
   return <Navigate to={targetPath} replace />;
 }
 
@@ -208,11 +221,11 @@ function AppRoutes() {
         <Route path="programs/:id/*" element={<ProgramTabRedirect />} />
         <Route path="sprints" element={<SprintsPage />} />
         <Route path="sprints/:id" element={<DocumentRedirect />} />
-        <Route path="sprints/:id/view" element={<SprintViewPage />} />
-        <Route path="sprints/:id/plan/:tab?" element={<SprintPlanningPage />} />
-        <Route path="sprints/:id/planning" element={<SprintViewPage />} />
-        <Route path="sprints/:id/standups" element={<SprintViewPage />} />
-        <Route path="sprints/:id/review" element={<SprintViewPage />} />
+        <Route path="sprints/:id/view" element={<SprintTabRedirect tab="view" />} />
+        <Route path="sprints/:id/plan" element={<SprintTabRedirect tab="plan" />} />
+        <Route path="sprints/:id/planning" element={<SprintTabRedirect tab="planning" />} />
+        <Route path="sprints/:id/standups" element={<SprintTabRedirect tab="standups" />} />
+        <Route path="sprints/:id/review" element={<SprintTabRedirect tab="review" />} />
         <Route path="team" element={<Navigate to="/team/allocation" replace />} />
         <Route path="team/allocation" element={<TeamModePage />} />
         <Route path="team/directory" element={<TeamDirectoryPage />} />
