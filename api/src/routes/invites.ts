@@ -162,9 +162,9 @@ router.post('/:token/accept', async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check if user already exists
+    // Check if user already exists (case-insensitive email match)
     const existingUserResult = await pool.query(
-      'SELECT id, name FROM users WHERE email = $1',
+      'SELECT id, name FROM users WHERE LOWER(email) = LOWER($1)',
       [invite.email]
     );
     let user = existingUserResult.rows[0];

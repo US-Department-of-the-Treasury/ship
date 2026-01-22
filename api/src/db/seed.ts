@@ -81,7 +81,7 @@ async function seed() {
 
     for (const member of teamMembers) {
       const existingUser = await pool.query(
-        'SELECT id FROM users WHERE email = $1',
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1)',
         [member.email]
       );
 
