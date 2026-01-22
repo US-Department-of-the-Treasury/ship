@@ -57,6 +57,11 @@ const ProgramIssuesTab = React.lazy(() => import('@/components/document-tabs/Pro
 const ProgramProjectsTab = React.lazy(() => import('@/components/document-tabs/ProgramProjectsTab'));
 const ProgramSprintsTab = React.lazy(() => import('@/components/document-tabs/ProgramSprintsTab'));
 
+const SprintOverviewTab = React.lazy(() => import('@/components/document-tabs/SprintOverviewTab'));
+const SprintPlanningTab = React.lazy(() => import('@/components/document-tabs/SprintPlanningTab'));
+const SprintReviewTab = React.lazy(() => import('@/components/document-tabs/SprintReviewTab'));
+const SprintStandupsTab = React.lazy(() => import('@/components/document-tabs/SprintStandupsTab'));
+
 /**
  * Tab configurations for each document type.
  *
@@ -110,8 +115,30 @@ export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
     },
   ],
 
+  sprint: [
+    {
+      id: 'overview',
+      label: 'Overview',
+      component: SprintOverviewTab,
+    },
+    {
+      id: 'plan',
+      label: 'Plan',
+      component: SprintPlanningTab,
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      component: SprintReviewTab,
+    },
+    {
+      id: 'standups',
+      label: 'Standups',
+      component: SprintStandupsTab,
+    },
+  ],
+
   // Document types without tabs - render directly in editor
-  sprint: [],
   issue: [],
   wiki: [],
 };
