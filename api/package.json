@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.962.0",
+    "@aws-sdk/client-ses": "^3.972.0",
     "@aws-sdk/client-ssm": "^3.958.0",
     "@ship/shared": "workspace:*",
     "@types/cookie": "^1.0.0",

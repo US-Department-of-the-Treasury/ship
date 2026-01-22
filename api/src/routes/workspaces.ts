@@ -4,6 +4,7 @@ import { pool } from '../db/client.js';
 import { authMiddleware, workspaceAdminMiddleware } from '../middleware/auth.js';
 import { ERROR_CODES, HTTP_STATUS } from '@ship/shared';
 import { logAuditEvent } from '../services/audit.js';
+import { sendInviteEmail } from '../services/email.js';
 
 const router: RouterType = Router();
 
@@ -928,6 +929,32 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
       })]
     );
 
+    // Send invite email (fire-and-forget - don't block response)
+    let emailSent = false;
+    if (email) {
+      // Get workspace name and inviter name for the email
+      const [workspaceResult, inviterResult] = await Promise.all([
+        pool.query('SELECT name FROM workspaces WHERE id = $1', [workspaceId]),
+        pool.query('SELECT name FROM users WHERE id = $1', [req.userId]),
+      ]);
+      const workspaceName = workspaceResult.rows[0]?.name || 'Unknown Workspace';
+      const inviterName = inviterResult.rows[0]?.name || 'A team member';
+
+      // Fire-and-forget: start sending but don't await
+      sendInviteEmail(email, workspaceName, inviterName, token)
+        .then((sent) => {
+          if (sent) {
+            console.log(`[Invite] Email sent to ${email} for workspace ${workspaceName}`);
+          } else {
+            console.error(`[Invite] Failed to send email to ${email}`);
+          }
+        })
+        .catch((err) => {
+          console.error(`[Invite] Error sending email to ${email}:`, err);
+        });
+      emailSent = true; // We attempted to send (actual result logged async)
+    }
+
     await logAuditEvent({
       workspaceId,
       actorUserId: req.userId!,
@@ -950,6 +977,7 @@ router.post('/:id/invites', authMiddleware, workspaceAdminMiddleware, async (req
           expiresAt: result.rows[0].expires_at,
           createdAt: result.rows[0].created_at,
         },
+        emailSent, // true if email invite was attempted (actual result logged async)
       },
     });
   } catch (error) {
