@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/Toast';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { projectKeys, useProjectSprintsQuery } from '@/hooks/useProjectsQuery';
 import { TabBar } from '@/components/ui/TabBar';
+import { useCurrentDocument } from '@/contexts/CurrentDocumentContext';
 import {
   getTabsForDocumentType,
   documentTypeHasTabs,
@@ -34,6 +35,7 @@ export function UnifiedDocumentPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { showToast } = useToast();
+  const { setCurrentDocument, clearCurrentDocument } = useCurrentDocument();
 
   // Fetch the document by ID
   const { data: document, isLoading, error } = useQuery<DocumentResponse>({
@@ -51,6 +53,16 @@ export function UnifiedDocumentPage() {
     enabled: !!id,
     retry: false,
   });
+
+  // Sync current document context for rail highlighting
+  useEffect(() => {
+    if (document && id) {
+      setCurrentDocument(id, document.document_type as 'wiki' | 'issue' | 'project' | 'program' | 'sprint' | 'person');
+    }
+    return () => {
+      clearCurrentDocument();
+    };
+  }, [document, id, setCurrentDocument, clearCurrentDocument]);
 
   // Set default active tab when document loads
   const tabConfig = document ? getTabsForDocumentType(document.document_type) : [];
