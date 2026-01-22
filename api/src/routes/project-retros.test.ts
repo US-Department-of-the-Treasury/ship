@@ -164,11 +164,19 @@ describe('Project Retros API', () => {
     })
 
     it('pre-fill includes sprints list associated with project', async () => {
-      // Create a sprint linked to the project
+      // Create a sprint linked to the project via document_associations
+      const sprintResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility)
+         VALUES ($1, 'sprint', 'Sprint 1', $2, 'workspace')
+         RETURNING id`,
+        [testWorkspaceId, testUserId]
+      )
+      const sprintId = sprintResult.rows[0].id
+      // Create project association for the sprint
       await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, project_id, parent_id, program_id, created_by, visibility)
-         VALUES ($1, 'sprint', 'Sprint 1', $2, $3, $3, $4, 'workspace')`,
-        [testWorkspaceId, testProjectId, testProgramId, testUserId]
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'project')`,
+        [sprintId, testProjectId]
       )
 
       const response = await request(app)

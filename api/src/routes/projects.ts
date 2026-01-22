@@ -360,17 +360,20 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     `;
 
     let query = `
-      SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+      SELECT d.id, d.title, d.properties, prog_da.related_id as program_id, d.archived_at, d.created_at, d.updated_at,
              d.converted_from_id,
              (d.properties->>'owner_id')::uuid as owner_id,
              u.name as owner_name, u.email as owner_email,
-             (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
+             (SELECT COUNT(*) FROM documents s
+              JOIN document_associations da ON da.document_id = s.id AND da.related_id = d.id AND da.relationship_type = 'project'
+              WHERE s.document_type = 'sprint') as sprint_count,
              (SELECT COUNT(*) FROM documents i
               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
               WHERE i.document_type = 'issue') as issue_count,
              (${inferredStatusSubquery}) as inferred_status
       FROM documents d
       LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
+      LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
       WHERE d.workspace_id = $1 AND d.document_type = 'project'
         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
     `;
@@ -438,17 +441,20 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     `;
 
     const result = await pool.query(
-      `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+      `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id, d.archived_at, d.created_at, d.updated_at,
               d.converted_to_id, d.converted_from_id,
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
+              (SELECT COUNT(*) FROM documents s
+               JOIN document_associations da ON da.document_id = s.id AND da.related_id = d.id AND da.relationship_type = 'project'
+               WHERE s.document_type = 'sprint') as sprint_count,
               (SELECT COUNT(*) FROM documents i
                JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
                WHERE i.document_type = 'issue') as issue_count,
               (${inferredStatusSubquery}) as inferred_status
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'project'
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
@@ -599,11 +605,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       values.push(data.title);
     }
 
-    // Handle program_id update (regular column)
-    if (data.program_id !== undefined) {
-      updates.push(`program_id = $${paramIndex++}`);
-      values.push(data.program_id);
-    }
+    // Note: program_id is handled via document_associations after main update
 
     // Handle properties updates
     const newProps = { ...currentProps };
@@ -665,18 +667,38 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       values.push(data.archived_at);
     }
 
-    if (updates.length === 0) {
+    if (updates.length === 0 && data.program_id === undefined) {
       res.status(400).json({ error: 'No fields to update' });
       return;
     }
 
-    updates.push(`updated_at = now()`);
+    if (updates.length > 0) {
+      updates.push(`updated_at = now()`);
 
-    await pool.query(
-      `UPDATE documents SET ${updates.join(', ')}
-       WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'project'`,
-      [...values, id, req.workspaceId]
-    );
+      await pool.query(
+        `UPDATE documents SET ${updates.join(', ')}
+         WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'project'`,
+        [...values, id, req.workspaceId]
+      );
+    }
+
+    // Handle program_id update via document_associations
+    if (data.program_id !== undefined) {
+      // First delete any existing program association
+      await pool.query(
+        `DELETE FROM document_associations WHERE document_id = $1 AND relationship_type = 'program'`,
+        [id]
+      );
+      // If program_id is not null, create new association
+      if (data.program_id) {
+        await pool.query(
+          `INSERT INTO document_associations (document_id, related_id, relationship_type)
+           VALUES ($1, $2, 'program')
+           ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+          [id, data.program_id]
+        );
+      }
+    }
 
     // Re-query to get full project with owner info and inferred status
     const updateInferredStatusSubquery = `
@@ -716,17 +738,20 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     `;
 
     const result = await pool.query(
-      `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+      `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id, d.archived_at, d.created_at, d.updated_at,
               d.converted_from_id,
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
+              (SELECT COUNT(*) FROM documents s
+               JOIN document_associations da ON da.document_id = s.id AND da.related_id = d.id AND da.relationship_type = 'project'
+               WHERE s.document_type = 'sprint') as sprint_count,
               (SELECT COUNT(*) FROM documents i
                JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
                WHERE i.document_type = 'issue') as issue_count,
               (${updateInferredStatusSubquery}) as inferred_status
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
        WHERE d.id = $1 AND d.document_type = 'project'`,
       [id]
     );
@@ -761,9 +786,9 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Remove project_id from child documents first
+    // Remove project associations from child documents via junction table
     await pool.query(
-      `UPDATE documents SET project_id = NULL WHERE project_id = $1`,
+      `DELETE FROM document_associations WHERE related_id = $1 AND relationship_type = 'project'`,
       [id]
     );
 
@@ -809,12 +834,13 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
     // Check if retro has been filled (has hypothesis_validated set)
     const hasRetro = props.hypothesis_validated !== undefined && props.hypothesis_validated !== null;
 
-    // Get sprints for this project
+    // Get sprints for this project via junction table
     const sprintsResult = await pool.query(
-      `SELECT id, title, properties->>'sprint_number' as sprint_number
-       FROM documents
-       WHERE project_id = $1 AND document_type = 'sprint'
-       ORDER BY (properties->>'sprint_number')::int ASC`,
+      `SELECT d.id, d.title, d.properties->>'sprint_number' as sprint_number
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
+       WHERE d.document_type = 'sprint'
+       ORDER BY (d.properties->>'sprint_number')::int ASC`,
       [id]
     );
 
@@ -1099,7 +1125,7 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
 
     // Get sprints associated with this project via junction table
     const result = await pool.query(
-      `SELECT d.id, d.title, d.properties, d.program_id,
+      `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               w.sprint_start_date as workspace_sprint_start_date,
               proj.id as project_id, proj.title as project_name,
@@ -1115,7 +1141,8 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
                WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
        FROM documents d
        JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
-       LEFT JOIN documents p ON d.program_id = p.id
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id
        LEFT JOIN documents proj ON proj.id = $1
        JOIN workspaces w ON d.workspace_id = w.id
        LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
@@ -1150,9 +1177,10 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
 
     // Verify project exists, user can access it, and get workspace info
     const projectCheck = await pool.query(
-      `SELECT d.id, d.program_id, w.sprint_start_date
+      `SELECT d.id, prog_da.related_id as program_id, w.sprint_start_date
        FROM documents d
        JOIN workspaces w ON d.workspace_id = w.id
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'project'
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]

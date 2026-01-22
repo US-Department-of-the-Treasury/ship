@@ -114,19 +114,29 @@ describe('Sprint Reviews API', () => {
   })
 
   beforeEach(async () => {
-    // Clean up sprints and reviews before each test
+    // Clean up associations first, then documents
+    await pool.query(
+      `DELETE FROM document_associations WHERE document_id IN (SELECT id FROM documents WHERE workspace_id = $1 AND document_type IN ('sprint', 'sprint_review', 'issue'))`,
+      [testWorkspaceId]
+    )
     await pool.query(
       `DELETE FROM documents WHERE workspace_id = $1 AND document_type IN ('sprint', 'sprint_review', 'issue')`,
       [testWorkspaceId]
     )
     // Create fresh sprint
     const sprintResult = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, created_by, parent_id, program_id, visibility, properties)
-       VALUES ($1, 'sprint', 'Test Sprint', $2, $3, $3, 'workspace', $4)
+      `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility, properties)
+       VALUES ($1, 'sprint', 'Test Sprint', $2, 'workspace', $3)
        RETURNING id`,
-      [testWorkspaceId, testUserId, testProgramId, JSON.stringify({ hypothesis: 'Test hypothesis for sprint' })]
+      [testWorkspaceId, testUserId, JSON.stringify({ hypothesis: 'Test hypothesis for sprint' })]
     )
     testSprintId = sprintResult.rows[0].id
+    // Create program association for sprint
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type)
+       VALUES ($1, $2, 'program')`,
+      [testSprintId, testProgramId]
+    )
   })
 
   describe('GET /api/sprints/:id/review', () => {

@@ -59,8 +59,12 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       SELECT d.id, d.title, d.properties, d.archived_at, d.created_at, d.updated_at,
              COALESCE((d.properties->>'owner_id')::uuid, d.created_by) as owner_id,
              u.name as owner_name, u.email as owner_email,
-             (SELECT COUNT(*) FROM documents i WHERE i.program_id = d.id AND i.document_type = 'issue') as issue_count,
-             (SELECT COUNT(*) FROM documents s WHERE s.program_id = d.id AND s.document_type = 'sprint') as sprint_count
+             (SELECT COUNT(*) FROM documents i
+              JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'program'
+              WHERE i.document_type = 'issue') as issue_count,
+             (SELECT COUNT(*) FROM documents s
+              JOIN document_associations da ON da.document_id = s.id AND da.related_id = d.id AND da.relationship_type = 'program'
+              WHERE s.document_type = 'sprint') as sprint_count
       FROM documents d
       LEFT JOIN users u ON u.id = COALESCE((d.properties->>'owner_id')::uuid, d.created_by)
       WHERE d.workspace_id = $1 AND d.document_type = 'program'
@@ -97,8 +101,12 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       `SELECT d.id, d.title, d.properties, d.archived_at, d.created_at, d.updated_at,
               COALESCE((d.properties->>'owner_id')::uuid, d.created_by) as owner_id,
               u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents i WHERE i.program_id = d.id AND i.document_type = 'issue') as issue_count,
-              (SELECT COUNT(*) FROM documents s WHERE s.program_id = d.id AND s.document_type = 'sprint') as sprint_count
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'program'
+               WHERE i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents s
+               JOIN document_associations da ON da.document_id = s.id AND da.related_id = d.id AND da.relationship_type = 'program'
+               WHERE s.document_type = 'sprint') as sprint_count
        FROM documents d
        LEFT JOIN users u ON u.id = COALESCE((d.properties->>'owner_id')::uuid, d.created_by)
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'program'
@@ -293,9 +301,9 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Remove program_id from child documents first
+    // Remove associations to this program
     await pool.query(
-      `UPDATE documents SET program_id = NULL WHERE program_id = $1`,
+      `DELETE FROM document_associations WHERE related_id = $1 AND relationship_type = 'program'`,
       [id]
     );
 
@@ -335,18 +343,21 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
       return;
     }
 
-    // Also filter the issues by visibility
+    // Also filter the issues by visibility - join via document_associations
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, d.ticket_number,
-              d.sprint_id, d.created_at, d.updated_at, d.created_by,
+              d.created_at, d.updated_at, d.created_by,
               u.name as assignee_name,
-              CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived
+              CASE WHEN person_doc.archived_at IS NOT NULL THEN true ELSE false END as assignee_archived,
+              sprint_da.related_id as sprint_id
        FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'program'
+       LEFT JOIN document_associations sprint_da ON sprint_da.document_id = d.id AND sprint_da.relationship_type = 'sprint'
        LEFT JOIN users u ON (d.properties->>'assignee_id')::uuid = u.id
        LEFT JOIN documents person_doc ON person_doc.workspace_id = d.workspace_id
          AND person_doc.document_type = 'person'
          AND person_doc.properties->>'user_id' = d.properties->>'assignee_id'
-       WHERE d.program_id = $1 AND d.document_type = 'issue'
+       WHERE d.document_type = 'issue'
          AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY
          CASE d.properties->>'priority'
@@ -411,18 +422,21 @@ router.get('/:id/projects', authMiddleware, async (req: Request, res: Response) 
       return;
     }
 
-    // Fetch projects belonging to this program
+    // Fetch projects belonging to this program via document_associations
     const result = await pool.query(
-      `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+      `SELECT d.id, d.title, d.properties, $1::uuid as program_id, d.archived_at, d.created_at, d.updated_at,
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
+              (SELECT COUNT(*) FROM documents s
+               JOIN document_associations sda ON sda.document_id = s.id AND sda.related_id = d.id AND sda.relationship_type = 'project'
+               WHERE s.document_type = 'sprint') as sprint_count,
               (SELECT COUNT(*) FROM documents i
-               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
+               JOIN document_associations ida ON ida.document_id = i.id AND ida.related_id = d.id AND ida.relationship_type = 'project'
                WHERE i.document_type = 'issue') as issue_count
        FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'program'
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
-       WHERE d.program_id = $1 AND d.document_type = 'project'
+       WHERE d.document_type = 'project'
          AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
          AND d.archived_at IS NULL
        ORDER BY
@@ -495,30 +509,31 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
 
     const sprintStartDate = programCheck.rows[0].sprint_start_date;
 
-    // Also filter sprints by visibility
+    // Also filter sprints by visibility - join via document_associations
     // Include subqueries for sprint_plan and sprint_retro existence
     const result = await pool.query(
       `SELECT d.id, d.title as name, d.properties,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
-               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'sprint'
+               JOIN document_associations ida ON ida.document_id = i.id AND ida.related_id = d.id AND ida.relationship_type = 'sprint'
                WHERE i.document_type = 'issue') as issue_count,
               (SELECT COUNT(*) FROM documents i
-               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'sprint'
+               JOIN document_associations ida ON ida.document_id = i.id AND ida.related_id = d.id AND ida.relationship_type = 'sprint'
                WHERE i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
               (SELECT COUNT(*) FROM documents i
-               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'sprint'
+               JOIN document_associations ida ON ida.document_id = i.id AND ida.related_id = d.id AND ida.relationship_type = 'sprint'
                WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
               (SELECT COALESCE(SUM((i.properties->>'estimate')::numeric), 0) FROM documents i
-               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'sprint'
+               JOIN document_associations ida ON ida.document_id = i.id AND ida.related_id = d.id AND ida.relationship_type = 'sprint'
                WHERE i.document_type = 'issue') as total_estimate_hours,
               (SELECT COUNT(*) > 0 FROM documents p WHERE p.parent_id = d.id AND p.document_type = 'sprint_plan') as has_plan,
               (SELECT COUNT(*) > 0 FROM documents r WHERE r.parent_id = d.id AND r.document_type = 'sprint_retro') as has_retro,
               (SELECT created_at FROM documents p WHERE p.parent_id = d.id AND p.document_type = 'sprint_plan' LIMIT 1) as plan_created_at,
               (SELECT created_at FROM documents r WHERE r.parent_id = d.id AND r.document_type = 'sprint_retro' LIMIT 1) as retro_created_at
        FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'program'
        LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
-       WHERE d.program_id = $1 AND d.document_type = 'sprint'
+       WHERE d.document_type = 'sprint'
          AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
        ORDER BY (d.properties->>'sprint_number')::int ASC`,
       [id, userId, isAdmin]

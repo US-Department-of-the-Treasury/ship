@@ -30,8 +30,14 @@ import {
  * Document types with tabs (projects, programs) get a tabbed interface.
  */
 export function UnifiedDocumentPage() {
-  const { id, tab: urlTab } = useParams<{ id: string; tab?: string }>();
+  const { id, '*': wildcardPath } = useParams<{ id: string; '*'?: string }>();
   const navigate = useNavigate();
+
+  // Parse wildcard path into tab and nested path
+  // Example: /documents/abc/sprints/xyz -> wildcardPath = "sprints/xyz" -> tab = "sprints", nestedPath = "xyz"
+  const pathSegments = wildcardPath ? wildcardPath.split('/').filter(Boolean) : [];
+  const urlTab = pathSegments[0] || undefined;
+  const nestedPath = pathSegments.length > 1 ? pathSegments.slice(1).join('/') : undefined;
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -450,7 +456,7 @@ export function UnifiedDocumentPage() {
             }
           >
             {TabComponent && (
-              <TabComponent documentId={id!} document={document} />
+              <TabComponent documentId={id!} document={document} nestedPath={nestedPath} />
             )}
           </Suspense>
         </div>
