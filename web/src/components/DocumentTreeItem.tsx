@@ -102,7 +102,7 @@ export function DocumentTreeItem({
 
         {/* Main navigation link - uses <a> for accessibility and proper href detection */}
         <Link
-          to={`/docs/${document.id}`}
+          to={`/documents/${document.id}`}
           className="flex-1 truncate text-left cursor-pointer"
           aria-current={isActive ? 'page' : undefined}
         >

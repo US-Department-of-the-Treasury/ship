@@ -156,7 +156,7 @@ export function AppLayout() {
   const handleCreateDocument = async () => {
     const doc = await createDocument();
     if (doc) {
-      navigate(`/docs/${doc.id}`);
+      navigate(`/documents/${doc.id}`);
     }
   };
 
@@ -694,14 +694,14 @@ function DocumentTreeItem({
     closeContextMenu();
     const newDoc = await createDocument(document.id);
     if (newDoc) {
-      navigate(`/docs/${newDoc.id}`);
+      navigate(`/documents/${newDoc.id}`);
     }
   }, [createDocument, document.id, navigate, closeContextMenu]);
 
   const handleRename = useCallback(() => {
     closeContextMenu();
     // Navigate to document and focus title (the title becomes editable when you click it)
-    navigate(`/docs/${document.id}`);
+    navigate(`/documents/${document.id}`);
   }, [document.id, navigate, closeContextMenu]);
 
   const handleChangeVisibility = useCallback(async (visibility: string) => {
@@ -782,7 +782,7 @@ function DocumentTreeItem({
         )}
         {/* Main navigation link */}
         <Link
-          to={`/docs/${document.id}`}
+          to={`/documents/${document.id}`}
           className="flex-1 truncate text-left cursor-pointer flex items-center gap-1"
           aria-current={isActive ? 'page' : undefined}
         >
