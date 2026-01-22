@@ -14,7 +14,7 @@ export default function ProjectSprintsTab({ documentId }: DocumentTabProps) {
   return (
     <SprintList
       lockedProjectId={documentId}
-      onSprintClick={(sprintId) => navigate(`/sprints/${sprintId}/view`)}
+      onSprintClick={(sprintId) => navigate(`/documents/${sprintId}`)}
       emptyMessage="No sprints in this project"
       emptyHint="Link sprints to this project from the sprint editor"
     />

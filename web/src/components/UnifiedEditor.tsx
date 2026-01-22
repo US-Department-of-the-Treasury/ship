@@ -238,7 +238,7 @@ export function UnifiedEditor({
     if (onNavigateToDocument) {
       onNavigateToDocument(docId);
     } else {
-      navigate(`/docs/${docId}`);
+      navigate(`/documents/${docId}`);
     }
   }, [navigate, onNavigateToDocument]);
 

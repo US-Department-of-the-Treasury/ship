@@ -275,7 +275,7 @@ export function ProjectsPage() {
           queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
         ]);
         showToast(`Project converted to issue: ${convertingProject.title}`, 'success');
-        navigate(`/issues/${data.id}`, { replace: true });
+        navigate(`/documents/${data.id}`, { replace: true });
       } else {
         const error = await res.json();
         showToast(error.error || 'Failed to convert project to issue', 'error');

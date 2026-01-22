@@ -158,7 +158,7 @@ export function DashboardPage() {
           <div className="mx-auto max-w-6xl">
             {overdueItems.length === 1 ? (
               <Link
-                to={`/programs/${overdueItems[0].program_id}/sprints/${overdueItems[0].sprint_id}`}
+                to={`/documents/${overdueItems[0].sprint_id}`}
                 className="flex items-center gap-2 hover:underline"
               >
                 <span className="font-medium">
@@ -175,7 +175,7 @@ export function DashboardPage() {
                   {overdueItems.map(item => (
                     <Link
                       key={item.id}
-                      to={`/programs/${item.program_id}/sprints/${item.sprint_id}`}
+                      to={`/documents/${item.sprint_id}`}
                       className="text-sm hover:underline text-red-100"
                     >
                       {item.program_name} Sprint {item.sprint_number} ({item.type}) →
@@ -290,7 +290,7 @@ export function DashboardPage() {
                       View team overview
                     </Link>
                     <Link
-                      to="/issues/new"
+                      to="/documents/new?type=issue"
                       className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
                     >
                       Create a new issue
@@ -418,7 +418,7 @@ function SprintCard({ sprint }: { sprint: ActiveSprint }) {
 
   return (
     <Link
-      to={`/programs/${sprint.program_id}/sprints/${sprint.id}`}
+      to={`/documents/${sprint.id}`}
       className="block rounded-md border border-border bg-background p-3 hover:border-accent/50 transition-colors"
     >
       <div className="flex items-center justify-between mb-2">
@@ -462,7 +462,7 @@ function SprintCard({ sprint }: { sprint: ActiveSprint }) {
 function ProjectCard({ project }: { project: Project }) {
   return (
     <Link
-      to={`/projects/${project.id}`}
+      to={`/documents/${project.id}`}
       className="flex items-center justify-between rounded-md border border-border bg-background p-3 hover:border-accent/50 transition-colors"
     >
       <div className="flex items-center gap-3">
@@ -550,7 +550,7 @@ function ActionItemCard({ item }: { item: ActionItem }) {
 
   return (
     <Link
-      to={`/programs/${item.program_id}/sprints/${item.sprint_id}`}
+      to={`/documents/${item.sprint_id}`}
       className={cn(
         'block rounded-md border p-3 hover:border-accent/50 transition-colors',
         urgencyStyles[item.urgency]

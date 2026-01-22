@@ -133,7 +133,7 @@ export function MyWeekPage() {
 
   // Handle issue click from kanban
   const handleIssueClick = useCallback((issueId: string) => {
-    navigate(`/issues/${issueId}`);
+    navigate(`/documents/${issueId}`);
   }, [navigate]);
 
   // Generate week options for the picker (current week + past 12 weeks)

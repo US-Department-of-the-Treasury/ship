@@ -52,7 +52,7 @@ export function PersonEditorPage() {
 
   // Navigate to document (for slash commands and mentions)
   const handleNavigateToDocument = useCallback((docId: string) => {
-    navigate(`/docs/${docId}`);
+    navigate(`/documents/${docId}`);
   }, [navigate]);
   const [sprintMetrics, setSprintMetrics] = useState<SprintMetricsResponse | null>(null);
   const [metricsVisible, setMetricsVisible] = useState(false);

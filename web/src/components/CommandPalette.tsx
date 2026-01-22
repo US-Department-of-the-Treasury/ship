@@ -125,7 +125,7 @@ export function CommandPalette({ open, onOpenChange, currentDocument, onConvertD
 
       if (res.ok) {
         const issue = await res.json();
-        navigate(`/issues/${issue.id}`);
+        navigate(`/documents/${issue.id}`);
       }
     } catch (err) {
       console.error('Failed to create issue:', err);
@@ -143,7 +143,7 @@ export function CommandPalette({ open, onOpenChange, currentDocument, onConvertD
 
       if (res.ok) {
         const doc = await res.json();
-        navigate(`/docs/${doc.id}`);
+        navigate(`/documents/${doc.id}`);
       }
     } catch (err) {
       console.error('Failed to create document:', err);

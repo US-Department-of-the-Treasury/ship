@@ -545,7 +545,7 @@ export function IssuesList({
       const belongs_to = buildBelongsTo();
       const issue = await createIssueMutation.mutateAsync({ belongs_to });
       if (issue) {
-        navigate(`/issues/${issue.id}`);
+        navigate(`/documents/${issue.id}`);
       }
       return;
     }
@@ -553,7 +553,7 @@ export function IssuesList({
     if (!onCreateIssue) return;
     const issue = await onCreateIssue();
     if (issue) {
-      navigate(`/issues/${issue.id}`);
+      navigate(`/documents/${issue.id}`);
     }
   }, [shouldSelfFetch, buildBelongsTo, createIssueMutation, onCreateIssue, navigate]);
 
@@ -830,7 +830,7 @@ export function IssuesList({
           queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
         ]);
         showToast(`Issue promoted to project: ${convertingIssue.title}`, 'success');
-        navigate(`/projects/${data.id}`, { replace: true });
+        navigate(`/documents/${data.id}`, { replace: true });
       } else {
         const error = await res.json();
         showToast(error.error || 'Failed to convert issue to project', 'error');
@@ -858,7 +858,7 @@ export function IssuesList({
     selectionRef: selectionRef,
     enabled: enableKeyboardNavigation && viewMode === 'list',
     onEnter: useCallback((focusedId: string) => {
-      navigate(`/issues/${focusedId}`);
+      navigate(`/documents/${focusedId}`);
     }, [navigate]),
   });
 
@@ -1102,7 +1102,7 @@ export function IssuesList({
         <KanbanBoard
           issues={filteredIssues}
           onUpdateIssue={handleUpdateIssue}
-          onIssueClick={(id) => navigate(`/issues/${id}`)}
+          onIssueClick={(id) => navigate(`/documents/${id}`)}
           selectedIds={selectedIds}
           onCheckboxClick={handleKanbanCheckboxClick}
           onContextMenu={handleKanbanContextMenu}
@@ -1114,7 +1114,7 @@ export function IssuesList({
             renderRow={renderIssueRow}
             columns={columns}
             emptyState={emptyState || defaultEmptyState}
-            onItemClick={(issue) => navigate(`/issues/${issue.id}`)}
+            onItemClick={(issue) => navigate(`/documents/${issue.id}`)}
             onSelectionChange={handleSelectionChange}
             onContextMenu={handleContextMenu}
             ariaLabel="Issues list"

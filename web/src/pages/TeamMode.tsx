@@ -708,7 +708,7 @@ export function TeamModePage() {
                                   assignment || null
                                 );
                               }}
-                              onNavigate={(projectId) => navigate(`/projects/${projectId}`)}
+                              onNavigate={(projectId) => navigate(`/documents/${projectId}`)}
                             />
                           );
                         })}
