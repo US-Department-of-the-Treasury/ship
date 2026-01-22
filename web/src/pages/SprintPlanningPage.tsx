@@ -37,9 +37,9 @@ type PlanningTab = 'overview' | 'issues';
  * - Create flow: When id is 'new', shows inline create form
  */
 export function SprintPlanningPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { showToast } = useToast();
   const [sprint, setSprint] = useState<Sprint | null>(null);
@@ -51,21 +51,17 @@ export function SprintPlanningPage() {
   const programId = searchParams.get('program');
   const projectId = searchParams.get('project');
 
-  // Get active tab from URL, default to 'overview'
-  const tabParam = searchParams.get('tab');
+  // Get active tab from URL route param, default to 'overview'
   const activeTab: PlanningTab = tabParam === 'issues' ? 'issues' : 'overview';
 
-  // Update tab in URL when changed
+  // Update tab in URL when changed using route segments
   const setActiveTab = useCallback((tab: PlanningTab) => {
-    setSearchParams(prev => {
-      if (tab === 'overview') {
-        prev.delete('tab');
-      } else {
-        prev.set('tab', tab);
-      }
-      return prev;
-    }, { replace: true });
-  }, [setSearchParams]);
+    if (tab === 'overview') {
+      navigate(`/sprints/${id}/plan`, { replace: true });
+    } else {
+      navigate(`/sprints/${id}/plan/${tab}`, { replace: true });
+    }
+  }, [id, navigate]);
 
   // Fetch sprint data (skip in create mode)
   useEffect(() => {

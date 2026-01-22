@@ -199,7 +199,7 @@ function AppRoutes() {
         <Route path="sprints" element={<SprintsPage />} />
         <Route path="sprints/:id" element={<DocumentRedirect />} />
         <Route path="sprints/:id/view" element={<SprintViewPage />} />
-        <Route path="sprints/:id/plan" element={<SprintPlanningPage />} />
+        <Route path="sprints/:id/plan/:tab?" element={<SprintPlanningPage />} />
         <Route path="sprints/:id/planning" element={<SprintViewPage />} />
         <Route path="sprints/:id/standups" element={<SprintViewPage />} />
         <Route path="sprints/:id/review" element={<SprintViewPage />} />
