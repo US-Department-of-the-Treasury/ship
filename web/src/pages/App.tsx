@@ -7,7 +7,7 @@ import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useProjects, Project } from '@/contexts/ProjectsContext';
-import { useCurrentDocumentType } from '@/contexts/CurrentDocumentContext';
+import { useCurrentDocumentType, useCurrentDocument } from '@/contexts/CurrentDocumentContext';
 import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
@@ -84,8 +84,8 @@ export function AppLayout() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Get current document type for /documents/:id routes
-  const currentDocumentType = useCurrentDocumentType();
+  // Get current document type and ID for /documents/:id routes
+  const { currentDocumentType, currentDocumentId } = useCurrentDocument();
 
   // Determine active mode from path or document type
   const getActiveMode = (): Mode => {
@@ -114,6 +114,23 @@ export function AppLayout() {
   };
 
   const activeMode = getActiveMode();
+
+  // Get the active document ID from URL - works for /documents/:id and legacy routes
+  const getActiveDocumentId = (): string | undefined => {
+    // For unified /documents/:id route
+    if (location.pathname.startsWith('/documents/')) {
+      const parts = location.pathname.split('/documents/')[1];
+      return parts?.split('/')[0]; // Handle /documents/:id/:tab
+    }
+    // Legacy routes
+    if (location.pathname.startsWith('/docs/')) return location.pathname.split('/docs/')[1];
+    if (location.pathname.startsWith('/issues/')) return location.pathname.split('/issues/')[1];
+    if (location.pathname.startsWith('/projects/')) return location.pathname.split('/projects/')[1];
+    if (location.pathname.startsWith('/programs/')) return location.pathname.split('/programs/')[1]?.split('/')[0];
+    return undefined;
+  };
+
+  const activeDocumentId = getActiveDocumentId();
 
   const handleModeClick = (mode: Mode) => {
     switch (mode) {
@@ -416,29 +433,29 @@ export function AppLayout() {
               {activeMode === 'docs' && (
                 <DocumentsTree
                   documents={documents}
-                  activeId={location.pathname.split('/docs/')[1]}
-                  onSelect={(id) => navigate(`/docs/${id}`)}
+                  activeId={activeDocumentId}
+                  onSelect={(id) => navigate(`/documents/${id}`)}
                 />
               )}
               {activeMode === 'issues' && (
                 <IssuesSidebar
                   issues={issues}
-                  activeId={location.pathname.split('/issues/')[1]}
+                  activeId={activeDocumentId}
                   onUpdateIssue={updateIssue}
                 />
               )}
               {activeMode === 'projects' && (
                 <ProjectsList
                   projects={projects}
-                  activeId={location.pathname.split('/projects/')[1]}
+                  activeId={activeDocumentId}
                   onUpdateProject={updateProject}
                 />
               )}
               {activeMode === 'programs' && (
                 <ProgramsList
                   programs={programs}
-                  activeId={location.pathname.split('/programs/')[1]}
-                  onSelect={(id) => navigate(`/programs/${id}`)}
+                  activeId={activeDocumentId}
+                  onSelect={(id) => navigate(`/documents/${id}`)}
                   onUpdateProgram={updateProgram}
                 />
               )}
@@ -968,7 +985,7 @@ function IssuesList({
         {issues.map((issue) => (
           <li key={issue.id} data-testid="issue-item" className="group relative">
             <Link
-              to={`/issues/${issue.id}`}
+              to={`/documents/${issue.id}`}
               onContextMenu={(e) => handleContextMenu(e, issue)}
               className={cn(
                 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
@@ -1083,7 +1100,7 @@ function ProjectsList({
         {projects.map((project) => (
           <li key={project.id} data-testid="project-item" className="group relative">
             <Link
-              to={`/projects/${project.id}`}
+              to={`/documents/${project.id}`}
               onContextMenu={(e) => handleContextMenu(e, project)}
               className={cn(
                 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
