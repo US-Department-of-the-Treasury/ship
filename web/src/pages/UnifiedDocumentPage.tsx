@@ -283,6 +283,17 @@ export function UnifiedDocumentPage() {
     }
   }, [document, navigate]);
 
+  // Compute back label based on document type
+  const backLabel = useMemo(() => {
+    switch (document?.document_type) {
+      case 'issue': return 'Back to issues';
+      case 'project': return 'Back to projects';
+      case 'sprint': return 'Back to sprints';
+      case 'program': return 'Back to programs';
+      default: return 'Back to docs';
+    }
+  }, [document?.document_type]);
+
   // Build sidebar data based on document type
   const sidebarData: SidebarData = useMemo(() => {
     if (!document) return {};
@@ -456,7 +467,7 @@ export function UnifiedDocumentPage() {
       onTypeChange={handleTypeChange}
       onDocumentConverted={handleDocumentConverted}
       onBack={handleBack}
-      backLabel="Back to documents"
+      backLabel={backLabel}
       onDelete={handleDelete}
       showTypeSelector={true}
     />
