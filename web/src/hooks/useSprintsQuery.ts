@@ -36,6 +36,8 @@ export const sprintKeys = {
   all: ['sprints'] as const,
   lists: () => [...sprintKeys.all, 'list'] as const,
   list: (programId: string) => [...sprintKeys.lists(), programId] as const,
+  projectLists: () => [...sprintKeys.all, 'projectList'] as const,
+  projectList: (projectId: string) => [...sprintKeys.projectLists(), projectId] as const,
   active: () => [...sprintKeys.all, 'active'] as const,
   details: () => [...sprintKeys.all, 'detail'] as const,
   detail: (id: string) => [...sprintKeys.details(), id] as const,
@@ -379,6 +381,64 @@ export function useSprints(programId: string | undefined) {
     createSprint,
     updateSprint,
     deleteSprint,
+    refreshSprints,
+  };
+}
+
+// Extended sprint type for project sprints (includes program info)
+export interface ProjectSprint extends Sprint {
+  program_id?: string;
+  program_name?: string;
+  program_prefix?: string;
+  project_id?: string;
+  project_name?: string;
+  workspace_sprint_start_date: string;
+}
+
+// Fetch sprints for a project
+async function fetchProjectSprints(projectId: string): Promise<ProjectSprint[]> {
+  const res = await apiGet(`/api/projects/${projectId}/sprints`);
+  if (!res.ok) {
+    const error = new Error('Failed to fetch project sprints') as Error & { status: number };
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+// Hook to get sprints for a project
+export function useProjectSprintsQuery(projectId: string | undefined) {
+  return useQuery({
+    queryKey: projectId ? sprintKeys.projectList(projectId) : sprintKeys.projectLists(),
+    queryFn: () => {
+      if (!projectId) {
+        return [];
+      }
+      return fetchProjectSprints(projectId);
+    },
+    enabled: !!projectId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+// Compatibility hook for project sprints that matches useSprints interface
+export function useProjectSprints(projectId: string | undefined) {
+  const { data, isLoading: loading, refetch } = useProjectSprintsQuery(projectId);
+
+  const sprints: Sprint[] = data ?? [];
+  // Get workspace sprint start date from first sprint or default to now
+  const workspaceSprintStartDate = data?.[0]?.workspace_sprint_start_date
+    ? new Date(data[0].workspace_sprint_start_date)
+    : new Date();
+
+  const refreshSprints = async (): Promise<void> => {
+    await refetch();
+  };
+
+  return {
+    sprints,
+    loading,
+    workspaceSprintStartDate,
     refreshSprints,
   };
 }

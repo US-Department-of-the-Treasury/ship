@@ -16,6 +16,25 @@ const __dirname = dirname(__filename);
 config({ path: join(__dirname, '../../.env.local') });
 config({ path: join(__dirname, '../../.env') });
 
+/**
+ * Helper to create document associations in the junction table
+ * This replaces the legacy program_id, project_id, sprint_id columns
+ */
+async function createAssociation(
+  pool: pg.Pool,
+  documentId: string,
+  relatedId: string,
+  relationshipType: 'program' | 'project' | 'sprint',
+  metadata?: Record<string, unknown>
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+    [documentId, relatedId, relationshipType, JSON.stringify(metadata || { created_via: 'seed' })]
+  );
+}
+
 async function seed() {
   // Load secrets from SSM in production (must happen before Pool creation)
   await loadProductionSecrets();
@@ -211,10 +230,38 @@ async function seed() {
     }
 
     // Create projects for each program
+    // Each project has ICE scores (Impact, Confidence, Ease) for prioritization (1-5 scale)
     const projectTemplates = [
-      { name: 'Core Features', color: '#6366f1', emoji: '🚀' },
-      { name: 'Bug Fixes', color: '#ef4444', emoji: '🐛' },
-      { name: 'Performance', color: '#22c55e', emoji: '⚡' },
+      {
+        name: 'Core Features',
+        color: '#6366f1',
+        emoji: '🚀',
+        impact: 5,
+        confidence: 4,
+        ease: 3,
+        hypothesis: 'Building core features will establish the product foundation and attract early adopters.',
+        monetary_impact_expected: 50000,
+      },
+      {
+        name: 'Bug Fixes',
+        color: '#ef4444',
+        emoji: '🐛',
+        impact: 4,
+        confidence: 5,
+        ease: 4,
+        hypothesis: 'Fixing bugs will improve user retention and reduce support costs.',
+        monetary_impact_expected: 15000,
+      },
+      {
+        name: 'Performance',
+        color: '#22c55e',
+        emoji: '⚡',
+        impact: 4,
+        confidence: 3,
+        ease: 2,
+        hypothesis: 'Performance improvements will increase user satisfaction and enable scale.',
+        monetary_impact_expected: 25000,
+      },
     ];
 
     const projects: Array<{ id: string; programId: string; title: string }> = [];
@@ -224,10 +271,12 @@ async function seed() {
       for (const template of projectTemplates) {
         const projectTitle = `${program.name} - ${template.name}`;
 
-        // Check if project already exists
+        // Check if project already exists (via junction table association to program)
         const existingProject = await pool.query(
-          `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'project'
-           AND title = $2 AND program_id = $3`,
+          `SELECT d.id FROM documents d
+           JOIN document_associations da ON da.document_id = d.id
+             AND da.related_id = $3 AND da.relationship_type = 'program'
+           WHERE d.workspace_id = $1 AND d.document_type = 'project' AND d.title = $2`,
           [workspaceId, projectTitle, program.id]
         );
 
@@ -238,18 +287,40 @@ async function seed() {
             title: projectTitle,
           });
         } else {
+          // Assign owner rotating through team members
+          const ownerIdx = (programs.indexOf(program) * projectTemplates.length + projectTemplates.indexOf(template)) % allUsers.length;
+          const owner = allUsers[ownerIdx]!;
+
+          // Calculate target date (2-4 weeks from now based on project type)
+          const targetDate = new Date();
+          targetDate.setDate(targetDate.getDate() + (projectTemplates.indexOf(template) + 2) * 7);
+
           const projectProperties = {
             color: template.color,
             emoji: template.emoji,
+            owner_id: owner.id,
+            // ICE scores (1-5 scale)
+            impact: template.impact,
+            confidence: template.confidence,
+            ease: template.ease,
+            hypothesis: template.hypothesis,
+            monetary_impact_expected: template.monetary_impact_expected,
+            target_date: targetDate.toISOString().split('T')[0],
           };
+          // Create project document without legacy program_id column
           const projectResult = await pool.query(
-            `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
-             VALUES ($1, 'project', $2, $3, $4)
+            `INSERT INTO documents (workspace_id, document_type, title, properties)
+             VALUES ($1, 'project', $2, $3)
              RETURNING id`,
-            [workspaceId, projectTitle, program.id, JSON.stringify(projectProperties)]
+            [workspaceId, projectTitle, JSON.stringify(projectProperties)]
           );
+          const projectId = projectResult.rows[0].id;
+
+          // Create association to program via junction table
+          await createAssociation(pool, projectId, program.id, 'program');
+
           projects.push({
-            id: projectResult.rows[0].id,
+            id: projectId,
             programId: program.id,
             title: projectTitle,
           });
@@ -305,10 +376,13 @@ async function seed() {
     for (const sprint of sprintsToCreate) {
       const owner = allUsers[sprint.ownerIdx]!;
 
-      // Check for existing sprint by sprint_number and project (new model)
+      // Check for existing sprint by sprint_number and project (via junction table)
       const existingSprint = await pool.query(
-        `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND project_id = $2 AND (properties->>'sprint_number')::int = $3`,
+        `SELECT d.id FROM documents d
+         JOIN document_associations da ON da.document_id = d.id
+           AND da.related_id = $2 AND da.relationship_type = 'project'
+         WHERE d.workspace_id = $1 AND d.document_type = 'sprint'
+           AND (d.properties->>'sprint_number')::int = $3`,
         [workspaceId, sprint.projectId, sprint.number]
       );
 
@@ -320,21 +394,69 @@ async function seed() {
           number: sprint.number,
         });
       } else {
-        // New sprint properties: only sprint_number and assignee_ids
+        // Sprint properties with full planning details
         // Dates and status are computed at runtime from sprint_number + workspace.sprint_start_date
+        // Confidence is 0-100 scale (different from project ICE scores which are 1-10)
+        const sprintGoals = [
+          'Complete core feature implementation and initial testing',
+          'Deliver bug fixes and stability improvements',
+          'Optimize performance and reduce technical debt',
+          'Build out user-facing features with accessibility',
+          'Finalize integrations and prepare for release',
+          'Focus on documentation and developer experience',
+          'Ship incremental improvements based on feedback',
+        ];
+        const sprintHypotheses = [
+          'If we complete these features, we will unblock the next milestone.',
+          'Fixing these issues will reduce user-reported problems by 50%.',
+          'Performance gains will improve user engagement metrics.',
+          'New features will increase user activation rate.',
+          'These changes will enable the team to move faster.',
+          'Better docs will reduce onboarding time for new developers.',
+          'Incremental shipping will maintain momentum and user trust.',
+        ];
+        const sprintSuccessCriteria = [
+          'All planned stories marked done, tests passing',
+          'Bug count reduced by at least 10, no P0 issues remaining',
+          'Load time under 2 seconds, memory usage stable',
+          'Feature flags enabled for 100% of users',
+          'All integrations passing health checks',
+          'README and API docs up to date',
+          'User feedback incorporated in next sprint planning',
+        ];
+
+        // Calculate confidence based on sprint timing (future sprints have lower confidence)
+        const sprintOffset = sprint.number - currentSprintNumber;
+        let baseConfidence = 80;
+        if (sprintOffset < 0) baseConfidence = 95; // Past sprints - high confidence (actual results)
+        else if (sprintOffset === 0) baseConfidence = 75; // Current sprint - medium-high
+        else if (sprintOffset === 1) baseConfidence = 60; // Next sprint - medium
+        else baseConfidence = 40; // Future sprints - lower confidence
+
         const sprintProperties = {
           sprint_number: sprint.number,
-          assignee_ids: [owner.id],
+          owner_id: owner.id,
+          assignee_ids: [owner.id, allUsers[(sprint.ownerIdx + 1) % allUsers.length]!.id], // Owner + one other
+          goal: sprintGoals[sprint.number % sprintGoals.length],
+          hypothesis: sprintHypotheses[sprint.number % sprintHypotheses.length],
+          success_criteria: sprintSuccessCriteria[sprint.number % sprintSuccessCriteria.length],
+          confidence: baseConfidence + (Math.random() * 10 - 5), // Add some variance
         };
-        // Sprints belong to projects (project_id), and inherit program context from the project
+        // Create sprint document without legacy project_id and program_id columns
         const sprintResult = await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, project_id, properties)
-           VALUES ($1, 'sprint', $2, $3, $4)
+          `INSERT INTO documents (workspace_id, document_type, title, properties)
+           VALUES ($1, 'sprint', $2, $3)
            RETURNING id`,
-          [workspaceId, `Sprint ${sprint.number}`, sprint.projectId, JSON.stringify(sprintProperties)]
+          [workspaceId, `Sprint ${sprint.number}`, JSON.stringify(sprintProperties)]
         );
+        const sprintId = sprintResult.rows[0].id;
+
+        // Create associations via junction table (sprint belongs to project AND program)
+        await createAssociation(pool, sprintId, sprint.projectId, 'project');
+        await createAssociation(pool, sprintId, sprint.programId, 'program');
+
         sprints.push({
-          id: sprintResult.rows[0].id,
+          id: sprintId,
           programId: sprint.programId,
           projectId: sprint.projectId,
           number: sprint.number,
@@ -354,7 +476,7 @@ async function seed() {
 
     // Comprehensive issue templates for Ship Core covering all sprint/state combinations
     // This gives us realistic data to test all views
-    // estimate_hours added for sprint planning features (progress graph, accountability)
+    // estimate added for sprint planning features (progress graph, accountability)
     const shipCoreIssues = [
       // Sprint -3 (completed, older history): All done
       { title: 'Initial project setup', state: 'done', sprintOffset: -3, priority: 'high', estimate: 8 },
@@ -401,31 +523,50 @@ async function seed() {
 
       // Sprint +3 (upcoming): Empty - no issues assigned
 
-      // Backlog (no sprint): Ideas for future (no estimates - tests estimate required modal)
-      { title: 'Add dark mode support', state: 'backlog', sprintOffset: null, priority: 'low', estimate: null },
-      { title: 'Implement keyboard shortcuts', state: 'backlog', sprintOffset: null, priority: 'low', estimate: null },
-      { title: 'Create mobile app', state: 'backlog', sprintOffset: null, priority: 'low', estimate: null },
-      { title: 'Add AI-powered suggestions', state: 'backlog', sprintOffset: null, priority: 'low', estimate: null },
-      { title: 'Build integration with Slack', state: 'backlog', sprintOffset: null, priority: 'medium', estimate: null },
+      // Backlog (no sprint): Ideas for future
+      { title: 'Add dark mode support', state: 'backlog', sprintOffset: null, priority: 'low', estimate: 4 },
+      { title: 'Implement keyboard shortcuts', state: 'backlog', sprintOffset: null, priority: 'low', estimate: 3 },
+      { title: 'Create mobile app', state: 'backlog', sprintOffset: null, priority: 'low', estimate: 40 },
+      { title: 'Add AI-powered suggestions', state: 'backlog', sprintOffset: null, priority: 'low', estimate: 16 },
+      { title: 'Build integration with Slack', state: 'backlog', sprintOffset: null, priority: 'medium', estimate: 8 },
     ];
 
-    // Generic issues for other programs (less comprehensive)
+    // Generic issues for other programs - expanded for better testing
     const genericIssueTemplates = [
-      { title: 'Set up project structure', state: 'done', estimate: 4 },
-      { title: 'Create initial documentation', state: 'done', estimate: 3 },
-      { title: 'Implement core features', state: 'in_progress', estimate: 8 },
-      { title: 'Add unit tests', state: 'todo', estimate: 4 },
-      { title: 'Performance optimization', state: 'backlog', estimate: 6 },
+      // Completed issues (past sprints)
+      { title: 'Set up project structure', state: 'done', estimate: 4, sprintOffset: -2, priority: 'high' },
+      { title: 'Create initial documentation', state: 'done', estimate: 3, sprintOffset: -2, priority: 'medium' },
+      { title: 'Define coding standards', state: 'done', estimate: 2, sprintOffset: -2, priority: 'low' },
+      { title: 'Configure CI/CD pipeline', state: 'done', estimate: 6, sprintOffset: -1, priority: 'high' },
+      { title: 'Set up staging environment', state: 'done', estimate: 4, sprintOffset: -1, priority: 'medium' },
+      // Current sprint - mix of states
+      { title: 'Implement core features', state: 'done', estimate: 8, sprintOffset: 0, priority: 'high' },
+      { title: 'Add input validation', state: 'done', estimate: 4, sprintOffset: 0, priority: 'high' },
+      { title: 'Create error handling', state: 'in_progress', estimate: 5, sprintOffset: 0, priority: 'high' },
+      { title: 'Build user interface', state: 'in_progress', estimate: 6, sprintOffset: 0, priority: 'medium' },
+      { title: 'Add unit tests', state: 'todo', estimate: 4, sprintOffset: 0, priority: 'medium' },
+      { title: 'Write integration tests', state: 'todo', estimate: 5, sprintOffset: 0, priority: 'low' },
+      // Upcoming sprint
+      { title: 'Performance optimization', state: 'todo', estimate: 6, sprintOffset: 1, priority: 'medium' },
+      { title: 'Add caching layer', state: 'todo', estimate: 4, sprintOffset: 1, priority: 'medium' },
+      { title: 'Security audit fixes', state: 'todo', estimate: 8, sprintOffset: 1, priority: 'high' },
+      // Backlog
+      { title: 'Implement analytics', state: 'backlog', estimate: 6, sprintOffset: null, priority: 'low' },
+      { title: 'Add export functionality', state: 'backlog', estimate: 4, sprintOffset: null, priority: 'low' },
+      { title: 'Create admin dashboard', state: 'backlog', estimate: 10, sprintOffset: null, priority: 'medium' },
     ];
 
     let issuesCreated = 0;
 
-    // Get existing max ticket numbers per program
+    // Get existing max ticket numbers per program (via junction table)
     const maxTickets: Record<string, number> = {};
     for (const program of programs) {
       const maxResult = await pool.query(
-        `SELECT COALESCE(MAX(ticket_number), 0) as max_ticket
-         FROM documents WHERE workspace_id = $1 AND program_id = $2 AND document_type = 'issue'`,
+        `SELECT COALESCE(MAX(d.ticket_number), 0) as max_ticket
+         FROM documents d
+         JOIN document_associations da ON da.document_id = d.id
+           AND da.related_id = $2 AND da.relationship_type = 'program'
+         WHERE d.workspace_id = $1 AND d.document_type = 'issue'`,
         [workspaceId, program.id]
       );
       maxTickets[program.id] = maxResult.rows[0].max_ticket;
@@ -446,9 +587,12 @@ async function seed() {
         sprintId = sprint?.id || null;
       }
 
-      // Check if issue already exists
+      // Check if issue already exists (via junction table association to program)
       const existingIssue = await pool.query(
-        `SELECT id FROM documents WHERE workspace_id = $1 AND program_id = $2 AND title = $3 AND document_type = 'issue'`,
+        `SELECT d.id FROM documents d
+         JOIN document_associations da ON da.document_id = d.id
+           AND da.related_id = $2 AND da.relationship_type = 'program'
+         WHERE d.workspace_id = $1 AND d.title = $3 AND d.document_type = 'issue'`,
         [workspaceId, shipCoreProgram.id, issue.title]
       );
 
@@ -462,15 +606,37 @@ async function seed() {
           feedback_status: null,
           rejection_reason: null,
         };
-        // Add estimate_hours if provided (backlog items have null to test estimate modal)
+        // Add estimate if provided
         if (issue.estimate !== null) {
-          issueProperties.estimate_hours = issue.estimate;
+          issueProperties.estimate = issue.estimate;
         }
-        await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number)
-           VALUES ($1, 'issue', $2, $3, $4, $5, $6)`,
-          [workspaceId, issue.title, shipCoreProgram.id, sprintId, JSON.stringify(issueProperties), maxTickets[shipCoreProgram.id]]
+        // Create issue document without legacy program_id and sprint_id columns
+        const issueResult = await pool.query(
+          `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number)
+           VALUES ($1, 'issue', $2, $3, $4)
+           RETURNING id`,
+          [workspaceId, issue.title, JSON.stringify(issueProperties), maxTickets[shipCoreProgram.id]]
         );
+        const issueId = issueResult.rows[0].id;
+
+        // Create associations via junction table
+        await createAssociation(pool, issueId, shipCoreProgram.id, 'program');
+        if (sprintId) {
+          await createAssociation(pool, issueId, sprintId, 'sprint');
+          // Also associate with the project that the sprint belongs to
+          const sprintData = sprints.find(s => s.id === sprintId);
+          if (sprintData?.projectId) {
+            await createAssociation(pool, issueId, sprintData.projectId, 'project');
+          }
+        } else {
+          // For backlog issues without sprints, assign to a random project in the program
+          const programProjects = projects.filter(p => p.programId === shipCoreProgram.id);
+          if (programProjects.length > 0) {
+            const randomProject = programProjects[issuesCreated % programProjects.length]!;
+            await createAssociation(pool, issueId, randomProject.id, 'project');
+          }
+        }
+
         issuesCreated++;
       }
     }
@@ -482,23 +648,22 @@ async function seed() {
         const template = genericIssueTemplates[i]!;
         const assignee = allUsers[(i + otherPrograms.indexOf(program)) % allUsers.length]!;
 
-        // Assign to appropriate sprint based on state
+        // Find the sprint based on offset (same pattern as Ship Core issues)
         let sprintId: string | null = null;
-        if (template.state === 'done') {
-          const pastSprint = sprints.find(
-            s => s.programId === program.id && s.number === currentSprintNumber - 1
+        if (template.sprintOffset !== null) {
+          const targetSprintNumber = currentSprintNumber + template.sprintOffset;
+          const sprint = sprints.find(
+            s => s.programId === program.id && s.number === targetSprintNumber
           );
-          sprintId = pastSprint?.id || null;
-        } else if (template.state === 'in_progress' || template.state === 'todo') {
-          const currentSprint = sprints.find(
-            s => s.programId === program.id && s.number === currentSprintNumber
-          );
-          sprintId = currentSprint?.id || null;
+          sprintId = sprint?.id || null;
         }
 
-        // Check if issue already exists
+        // Check if issue already exists (via junction table association to program)
         const existingIssue = await pool.query(
-          `SELECT id FROM documents WHERE workspace_id = $1 AND program_id = $2 AND title = $3 AND document_type = 'issue'`,
+          `SELECT d.id FROM documents d
+           JOIN document_associations da ON da.document_id = d.id
+             AND da.related_id = $2 AND da.relationship_type = 'program'
+           WHERE d.workspace_id = $1 AND d.title = $3 AND d.document_type = 'issue'`,
           [workspaceId, program.id, template.title]
         );
 
@@ -506,18 +671,40 @@ async function seed() {
           maxTickets[program.id]!++;
           const issueProperties = {
             state: template.state,
-            priority: 'medium',
+            priority: template.priority,
             source: 'internal',
             assignee_id: assignee.id,
             feedback_status: null,
             rejection_reason: null,
-            estimate_hours: template.estimate,
+            estimate: template.estimate,
           };
-          await pool.query(
-            `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number)
-             VALUES ($1, 'issue', $2, $3, $4, $5, $6)`,
-            [workspaceId, template.title, program.id, sprintId, JSON.stringify(issueProperties), maxTickets[program.id]]
+          // Create issue document without legacy program_id and sprint_id columns
+          const issueResult = await pool.query(
+            `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number)
+             VALUES ($1, 'issue', $2, $3, $4)
+             RETURNING id`,
+            [workspaceId, template.title, JSON.stringify(issueProperties), maxTickets[program.id]]
           );
+          const issueId = issueResult.rows[0].id;
+
+          // Create associations via junction table
+          await createAssociation(pool, issueId, program.id, 'program');
+          if (sprintId) {
+            await createAssociation(pool, issueId, sprintId, 'sprint');
+            // Also associate with the project that the sprint belongs to
+            const sprintData = sprints.find(s => s.id === sprintId);
+            if (sprintData?.projectId) {
+              await createAssociation(pool, issueId, sprintData.projectId, 'project');
+            }
+          } else {
+            // For backlog issues without sprints, assign to a random project in the program
+            const programProjects = projects.filter(p => p.programId === program.id);
+            if (programProjects.length > 0) {
+              const randomProject = programProjects[issuesCreated % programProjects.length]!;
+              await createAssociation(pool, issueId, randomProject.id, 'project');
+            }
+          }
+
           issuesCreated++;
         }
       }
@@ -527,47 +714,6 @@ async function seed() {
       console.log(`✅ Created ${issuesCreated} issues`);
     } else {
       console.log('ℹ️  All issues already exist');
-    }
-
-    // Sync sprint_id column to junction table (document_associations)
-    // The junction table is the canonical source for associations; this ensures
-    // newly seeded issues have their sprint relationships in both places
-    const sprintAssocResult = await pool.query(`
-      INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
-      SELECT
-        id AS document_id,
-        sprint_id AS related_id,
-        'sprint'::relationship_type AS relationship_type,
-        jsonb_build_object('migrated_from', 'seed_sprint_id', 'migrated_at', NOW())
-      FROM documents
-      WHERE sprint_id IS NOT NULL
-        AND workspace_id = $1
-        AND document_type = 'issue'
-      ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING
-    `, [workspaceId]);
-    if (sprintAssocResult.rowCount && sprintAssocResult.rowCount > 0) {
-      console.log(`✅ Created ${sprintAssocResult.rowCount} sprint associations in junction table`);
-    }
-
-    // Sync project associations to junction table (document_associations)
-    // Issues inherit project association from their sprint's project
-    const projectAssocResult = await pool.query(`
-      INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
-      SELECT
-        issue.id AS document_id,
-        sprint.project_id AS related_id,
-        'project'::relationship_type AS relationship_type,
-        jsonb_build_object('migrated_from', 'seed_sprint_project', 'migrated_at', NOW())
-      FROM documents issue
-      JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
-      WHERE issue.sprint_id IS NOT NULL
-        AND sprint.project_id IS NOT NULL
-        AND issue.workspace_id = $1
-        AND issue.document_type = 'issue'
-      ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING
-    `, [workspaceId]);
-    if (projectAssocResult.rowCount && projectAssocResult.rowCount > 0) {
-      console.log(`✅ Created ${projectAssocResult.rowCount} project associations in junction table`);
     }
 
     // Create welcome/tutorial wiki document
@@ -661,9 +807,12 @@ async function seed() {
     // Add standups to current and recent sprints
     for (const sprint of shipCoreSprints) {
       if (sprint.number >= currentSprintNumber - 1 && sprint.number <= currentSprintNumber) {
-        // Check if standups already exist for this sprint
+        // Check if standups already exist for this sprint (via junction table)
         const existingStandups = await pool.query(
-          `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'standup' AND sprint_id = $2`,
+          `SELECT d.id FROM documents d
+           JOIN document_associations da ON da.document_id = d.id
+             AND da.related_id = $2 AND da.relationship_type = 'sprint'
+           WHERE d.workspace_id = $1 AND d.document_type = 'standup'`,
           [workspaceId, sprint.id]
         );
 
@@ -709,11 +858,18 @@ async function seed() {
             const daysAgo = i; // Stagger the standups over recent days
             const properties = { author_id: author.id };
 
-            await pool.query(
-              `INSERT INTO documents (workspace_id, document_type, title, parent_id, content, created_by, properties, created_at)
-               VALUES ($1, 'standup', $2, $3, $4, $5, $6, NOW() - INTERVAL '${daysAgo} days')`,
-              [workspaceId, `Standup - ${author.name}`, sprint.id, JSON.stringify(message.content), author.id, JSON.stringify(properties)]
+            // Create standup document without legacy sprint_id column
+            const standupResult = await pool.query(
+              `INSERT INTO documents (workspace_id, document_type, title, content, created_by, properties, created_at)
+               VALUES ($1, 'standup', $2, $3, $4, $5, NOW() - INTERVAL '${daysAgo} days')
+               RETURNING id`,
+              [workspaceId, `Standup - ${author.name}`, JSON.stringify(message.content), author.id, JSON.stringify(properties)]
             );
+            const standupId = standupResult.rows[0].id;
+
+            // Create association to sprint via junction table
+            await createAssociation(pool, standupId, sprint.id, 'sprint');
+
             standupsCreated++;
           }
         }
@@ -732,8 +888,12 @@ async function seed() {
     for (const sprint of shipCoreSprints) {
       // Only add reviews to completed sprints (before current)
       if (sprint.number < currentSprintNumber && sprint.number >= currentSprintNumber - 2) {
+        // Check if review exists (via junction table)
         const existingReview = await pool.query(
-          `SELECT id FROM documents WHERE workspace_id = $1 AND document_type = 'sprint_review' AND sprint_id = $2`,
+          `SELECT d.id FROM documents d
+           JOIN document_associations da ON da.document_id = d.id
+             AND da.related_id = $2 AND da.relationship_type = 'sprint'
+           WHERE d.workspace_id = $1 AND d.document_type = 'sprint_review'`,
           [workspaceId, sprint.id]
         );
 
@@ -755,11 +915,18 @@ async function seed() {
           };
 
           const owner = allUsers[sprint.number % allUsers.length]!;
-          await pool.query(
-            `INSERT INTO documents (workspace_id, document_type, title, sprint_id, content, created_by)
-             VALUES ($1, 'sprint_review', $2, $3, $4, $5)`,
-            [workspaceId, `Sprint ${sprint.number} Review`, sprint.id, JSON.stringify(reviewContent), owner.id]
+          // Create sprint review document without legacy sprint_id column
+          const reviewResult = await pool.query(
+            `INSERT INTO documents (workspace_id, document_type, title, content, created_by)
+             VALUES ($1, 'sprint_review', $2, $3, $4)
+             RETURNING id`,
+            [workspaceId, `Sprint ${sprint.number} Review`, JSON.stringify(reviewContent), owner.id]
           );
+          const reviewId = reviewResult.rows[0].id;
+
+          // Create association to sprint via junction table
+          await createAssociation(pool, reviewId, sprint.id, 'sprint');
+
           sprintReviewsCreated++;
         }
       }
