@@ -186,7 +186,7 @@ function AppRoutes() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="my-week" element={<MyWeekPage />} />
         <Route path="docs" element={<DocumentsPage />} />
-        <Route path="docs/:id" element={<DocumentEditorPage />} />
+        <Route path="docs/:id" element={<DocumentRedirect />} />
         <Route path="documents/:id/:tab?" element={<UnifiedDocumentPage />} />
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/:id" element={<DocumentRedirect />} />
