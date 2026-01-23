@@ -206,7 +206,7 @@ export function SprintDetailView({
             viewModes={['list', 'kanban']}
             initialViewMode="list"
             filterTabs={null}
-            showCreateButton={false}
+            showCreateButton={true}
             inheritedContext={{
               programId,
               projectId,
