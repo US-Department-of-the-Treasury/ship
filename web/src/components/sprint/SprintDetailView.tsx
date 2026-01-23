@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { issueStatusColors } from '@/lib/statusColors';
 import { StandupFeed } from '@/components/StandupFeed';
@@ -154,6 +155,16 @@ export function SprintDetailView({
               <p className="text-sm text-muted">{sprint.owner.name}</p>
             )}
           </div>
+          <Link
+            to={`/documents/${sprintId}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted hover:text-foreground hover:bg-border/50 rounded-md transition-colors"
+            title="Open sprint document"
+          >
+            <span>Open</span>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </Link>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex-1 h-2 rounded-full bg-border overflow-hidden">
