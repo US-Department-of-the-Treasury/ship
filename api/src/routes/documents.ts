@@ -291,9 +291,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
-    // Get belongs_to associations from junction table (for issues and other document types)
+    // Get belongs_to associations from junction table (for issues, wikis, and sprints)
     let belongs_to: Array<{ id: string; type: string; title?: string; color?: string }> = [];
-    if (doc.document_type === 'issue' || doc.document_type === 'wiki') {
+    if (doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint') {
       const assocResult = await pool.query(
         `SELECT da.related_id as id, da.relationship_type as type,
                 d.title, (d.properties->>'color') as color
@@ -337,8 +337,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       status: props.status,
       goal: props.goal,
       hypothesis: props.hypothesis,
-      // Include belongs_to for issue documents
-      ...(doc.document_type === 'issue' && { belongs_to }),
+      // Include belongs_to for issue, wiki, and sprint documents
+      ...((doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint') && { belongs_to }),
     });
   } catch (err) {
     console.error('Get document error:', err);
