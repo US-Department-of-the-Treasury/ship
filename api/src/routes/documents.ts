@@ -50,6 +50,10 @@ const createDocumentSchema = z.object({
   properties: z.record(z.unknown()).optional(),
   visibility: z.enum(['private', 'workspace']).optional(),
   content: z.any().optional(),
+  belongs_to: z.array(z.object({
+    id: z.string().uuid(),
+    type: z.enum(['program', 'project', 'sprint', 'parent']),
+  })).optional(),
 });
 
 const updateDocumentSchema = z.object({
@@ -449,6 +453,7 @@ router.patch('/:id/content', authMiddleware, async (req: Request, res: Response)
 
 // Create document
 router.post('/', authMiddleware, async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
     const parsed = createDocumentSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -456,12 +461,12 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, document_type, parent_id, program_id, sprint_id, properties, content } = parsed.data;
+    const { title, document_type, parent_id, program_id, sprint_id, properties, content, belongs_to } = parsed.data;
     let { visibility } = parsed.data;
 
     // If parent_id is provided and visibility is not specified, inherit from parent
     if (parent_id && !visibility) {
-      const parentResult = await pool.query(
+      const parentResult = await client.query(
         'SELECT visibility FROM documents WHERE id = $1 AND workspace_id = $2',
         [parent_id, req.workspaceId]
       );
@@ -473,17 +478,38 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     // Default to 'workspace' visibility if not specified
     visibility = visibility || 'workspace';
 
-    const result = await pool.query(
+    await client.query('BEGIN');
+
+    const result = await client.query(
       `INSERT INTO documents (workspace_id, document_type, title, parent_id, program_id, sprint_id, properties, created_by, visibility, content)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [req.workspaceId, document_type, title, parent_id || null, program_id || null, sprint_id || null, JSON.stringify(properties || {}), req.userId, visibility, content ? JSON.stringify(content) : null]
     );
 
-    res.status(201).json(result.rows[0]);
+    const newDoc = result.rows[0];
+
+    // Handle belongs_to associations (creates document_associations records)
+    if (belongs_to && belongs_to.length > 0) {
+      for (const assoc of belongs_to) {
+        await client.query(
+          `INSERT INTO document_associations (document_id, related_id, relationship_type)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+          [newDoc.id, assoc.id, assoc.type]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+
+    res.status(201).json(newDoc);
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Create document error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
