@@ -118,7 +118,6 @@ export default function ProjectSprintsTab({ documentId, document, nestedPath }: 
           <SprintDetailView
             sprintId={selectedSprintId}
             projectId={documentId}
-            onIssueClick={(issueId) => navigate(`/documents/${issueId}`)}
             onBack={() => navigate(`/documents/${documentId}/sprints`)}
           />
         ) : (

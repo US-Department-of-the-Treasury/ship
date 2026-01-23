@@ -101,7 +101,6 @@ export default function ProgramSprintsTab({ documentId, nestedPath }: DocumentTa
           <SprintDetailView
             sprintId={selectedSprintId}
             programId={documentId}
-            onIssueClick={(issueId) => navigate(`/documents/${issueId}`)}
             onBack={() => navigate(`/documents/${documentId}/sprints`)}
           />
         ) : (
