@@ -50,6 +50,10 @@ const createDocumentSchema = z.object({
   properties: z.record(z.unknown()).optional(),
   visibility: z.enum(['private', 'workspace']).optional(),
   content: z.any().optional(),
+  belongs_to: z.array(z.object({
+    id: z.string().uuid(),
+    type: z.enum(['program', 'project', 'sprint', 'parent']),
+  })).optional(),
 });
 
 const updateDocumentSchema = z.object({
@@ -84,7 +88,7 @@ const updateDocumentSchema = z.object({
   // Sprint-specific fields (stored in properties but accepted at top level)
   start_date: z.string().optional(),
   end_date: z.string().optional(),
-  sprint_status: z.enum(['planning', 'active', 'completed']).optional(),
+  status: z.enum(['planning', 'active', 'completed']).optional(),
   goal: z.string().optional(),
 });
 
@@ -272,6 +276,21 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
+    // Get owner details for sprints (owner stored in assignee_ids[0], consistent with sprints API)
+    // Return user_id as id so Combobox can match correctly
+    if (doc.document_type === 'sprint' && Array.isArray(props.assignee_ids) && props.assignee_ids[0]) {
+      const ownerResult = await pool.query(
+        `SELECT u.id::text as id, d.title as name, COALESCE(d.properties->>'email', u.email) as email
+         FROM users u
+         LEFT JOIN documents d ON (d.properties->>'user_id')::uuid = u.id AND d.document_type = 'person' AND d.workspace_id = $2
+         WHERE u.id = $1`,
+        [props.assignee_ids[0], workspaceId]
+      );
+      if (ownerResult.rows.length > 0) {
+        owner = ownerResult.rows[0];
+      }
+    }
+
     // Get belongs_to associations from junction table (for issues and other document types)
     let belongs_to: Array<{ id: string; type: string; title?: string; color?: string }> = [];
     if (doc.document_type === 'issue' || doc.document_type === 'wiki') {
@@ -304,7 +323,10 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       impact: props.impact,
       confidence: props.confidence,
       ease: props.ease,
-      owner_id: props.owner_id,
+      // For sprints, owner is stored in assignee_ids[0] (consistent with sprints API)
+      owner_id: doc.document_type === 'sprint' && Array.isArray(props.assignee_ids)
+        ? props.assignee_ids[0] || null
+        : props.owner_id,
       owner,
       // Generic properties
       prefix: props.prefix,
@@ -312,7 +334,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Sprint properties
       start_date: props.start_date,
       end_date: props.end_date,
-      sprint_status: props.sprint_status,
+      status: props.status,
       goal: props.goal,
       hypothesis: props.hypothesis,
       // Include belongs_to for issue documents
@@ -449,6 +471,7 @@ router.patch('/:id/content', authMiddleware, async (req: Request, res: Response)
 
 // Create document
 router.post('/', authMiddleware, async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
     const parsed = createDocumentSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -456,12 +479,12 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, document_type, parent_id, program_id, sprint_id, properties, content } = parsed.data;
+    const { title, document_type, parent_id, program_id, sprint_id, properties, content, belongs_to } = parsed.data;
     let { visibility } = parsed.data;
 
     // If parent_id is provided and visibility is not specified, inherit from parent
     if (parent_id && !visibility) {
-      const parentResult = await pool.query(
+      const parentResult = await client.query(
         'SELECT visibility FROM documents WHERE id = $1 AND workspace_id = $2',
         [parent_id, req.workspaceId]
       );
@@ -473,17 +496,38 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     // Default to 'workspace' visibility if not specified
     visibility = visibility || 'workspace';
 
-    const result = await pool.query(
+    await client.query('BEGIN');
+
+    const result = await client.query(
       `INSERT INTO documents (workspace_id, document_type, title, parent_id, program_id, sprint_id, properties, created_by, visibility, content)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [req.workspaceId, document_type, title, parent_id || null, program_id || null, sprint_id || null, JSON.stringify(properties || {}), req.userId, visibility, content ? JSON.stringify(content) : null]
     );
 
-    res.status(201).json(result.rows[0]);
+    const newDoc = result.rows[0];
+
+    // Handle belongs_to associations (creates document_associations records)
+    if (belongs_to && belongs_to.length > 0) {
+      for (const assoc of belongs_to) {
+        await client.query(
+          `INSERT INTO document_associations (document_id, related_id, relationship_type)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+          [newDoc.id, assoc.id, assoc.type]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+
+    res.status(201).json(newDoc);
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Create document error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -597,9 +641,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.ease !== undefined) topLevelProps.ease = data.ease;
     if (data.color !== undefined) topLevelProps.color = data.color;
     if (data.owner_id !== undefined) topLevelProps.owner_id = data.owner_id;
+    // For sprints, also store owner in assignee_ids array (sprints API reads from assignee_ids[0])
+    if (data.owner_id !== undefined && existing.document_type === 'sprint') {
+      topLevelProps.assignee_ids = data.owner_id ? [data.owner_id] : [];
+    }
     if (data.start_date !== undefined) topLevelProps.start_date = data.start_date;
     if (data.end_date !== undefined) topLevelProps.end_date = data.end_date;
-    if (data.sprint_status !== undefined) topLevelProps.sprint_status = data.sprint_status;
+    if (data.status !== undefined) topLevelProps.status = data.status;
     if (data.goal !== undefined) topLevelProps.goal = data.goal;
 
     const hasTopLevelProps = Object.keys(topLevelProps).length > 0;
@@ -812,7 +860,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Sprint properties
       start_date: props.start_date,
       end_date: props.end_date,
-      sprint_status: props.sprint_status,
+      status: props.status,
       goal: props.goal,
       hypothesis: props.hypothesis,
     });

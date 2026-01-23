@@ -78,6 +78,8 @@ interface SprintDocument extends BaseDocument {
   issue_count?: number;
   completed_count?: number;
   hypothesis?: string;
+  owner?: { id: string; name: string; email: string } | null;
+  owner_id?: string | null;
 }
 
 // Union type for all documents
@@ -115,7 +117,8 @@ interface ProjectPanelProps {
 
 // Props for sprint panel
 interface SprintPanelProps {
-  // Sprint panel doesn't need extra data currently
+  people?: Array<{ id: string; user_id: string; name: string }>;
+  existingSprints?: Array<{ owner?: { id: string; name: string; email: string } | null }>;
 }
 
 // Combined props type that includes all panel-specific props
@@ -204,11 +207,14 @@ export function PropertiesPanel({
       }
 
       case 'sprint': {
+        const sprintProps = panelProps as SprintPanelProps;
         return (
           <SprintSidebar
             sprint={document as SprintDocument}
             onUpdate={onUpdate as (updates: Partial<SprintDocument>) => Promise<void>}
             highlightedFields={highlightedFields}
+            people={sprintProps.people}
+            existingSprints={sprintProps.existingSprints}
           />
         );
       }
