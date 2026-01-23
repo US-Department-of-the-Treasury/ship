@@ -88,7 +88,7 @@ const updateDocumentSchema = z.object({
   // Sprint-specific fields (stored in properties but accepted at top level)
   start_date: z.string().optional(),
   end_date: z.string().optional(),
-  sprint_status: z.enum(['planning', 'active', 'completed']).optional(),
+  status: z.enum(['planning', 'active', 'completed']).optional(),
   goal: z.string().optional(),
 });
 
@@ -334,7 +334,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Sprint properties
       start_date: props.start_date,
       end_date: props.end_date,
-      sprint_status: props.sprint_status,
+      status: props.status,
       goal: props.goal,
       hypothesis: props.hypothesis,
       // Include belongs_to for issue documents
@@ -647,7 +647,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
     if (data.start_date !== undefined) topLevelProps.start_date = data.start_date;
     if (data.end_date !== undefined) topLevelProps.end_date = data.end_date;
-    if (data.sprint_status !== undefined) topLevelProps.sprint_status = data.sprint_status;
+    if (data.status !== undefined) topLevelProps.status = data.status;
     if (data.goal !== undefined) topLevelProps.goal = data.goal;
 
     const hasTopLevelProps = Object.keys(topLevelProps).length > 0;
@@ -860,7 +860,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Sprint properties
       start_date: props.start_date,
       end_date: props.end_date,
-      sprint_status: props.sprint_status,
+      status: props.status,
       goal: props.goal,
       hypothesis: props.hypothesis,
     });
