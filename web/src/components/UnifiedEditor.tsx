@@ -115,7 +115,8 @@ interface ProjectSidebarData {
 }
 
 interface SprintSidebarData {
-  // Sprint sidebar doesn't need extra data currently
+  people?: Array<{ id: string; user_id: string; name: string }>;
+  existingSprints?: Array<{ owner?: { id: string; name: string; email: string } | null }>;
 }
 
 export type SidebarData = WikiSidebarData | IssueSidebarData | ProjectSidebarData | SprintSidebarData;
@@ -287,8 +288,13 @@ export function UnifiedEditor({
           isUndoing: projectData.isUndoing,
         } as ProjectPanelProps;
       }
-      case 'sprint':
-        return {} as SprintPanelProps;
+      case 'sprint': {
+        const sprintData = sidebarData as SprintSidebarData;
+        return {
+          people: sprintData.people || [],
+          existingSprints: sprintData.existingSprints || [],
+        } as SprintPanelProps;
+      }
       default:
         return {};
     }

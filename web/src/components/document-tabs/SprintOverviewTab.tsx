@@ -4,6 +4,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { UnifiedEditor } from '@/components/UnifiedEditor';
 import type { UnifiedDocument, SidebarData } from '@/components/UnifiedEditor';
 import { useAuth } from '@/hooks/useAuth';
+import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
+import { useActiveSprintsQuery } from '@/hooks/useSprintsQuery';
 import { apiPatch, apiDelete } from '@/lib/api';
 import type { DocumentTabProps } from '@/lib/document-tabs';
 
@@ -17,6 +19,21 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+
+  // Fetch team members for owner selection
+  const { data: teamMembersData = [] } = useAssignableMembersQuery();
+  const people = useMemo(() => teamMembersData.map(m => ({
+    id: m.id,
+    user_id: m.user_id,
+    name: m.name,
+  })), [teamMembersData]);
+
+  // Fetch active sprints for availability calculation
+  const { data: activeSprintsData } = useActiveSprintsQuery();
+  const existingSprints = useMemo(() =>
+    (activeSprintsData?.sprints ?? []).map(s => ({ owner: s.owner })),
+    [activeSprintsData]
+  );
 
   // Update mutation
   const updateMutation = useMutation({
@@ -68,8 +85,11 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
     await deleteMutation.mutateAsync();
   }, [deleteMutation]);
 
-  // Build sidebar data (sprints don't have complex sidebar needs)
-  const sidebarData: SidebarData = useMemo(() => ({}), []);
+  // Build sidebar data with people and existing sprints for owner selection
+  const sidebarData: SidebarData = useMemo(() => ({
+    people,
+    existingSprints,
+  }), [people, existingSprints]);
 
   // Transform to UnifiedDocument format
   const unifiedDocument: UnifiedDocument = useMemo(() => ({
@@ -85,6 +105,7 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
     status: ((document.sprint_status as string) || 'planning') as 'planning' | 'active' | 'completed',
     program_id: document.program_id as string | undefined,
     hypothesis: (document.hypothesis as string) || '',
+    owner_id: document.owner_id as string | null | undefined,
   }), [document]);
 
   if (!user) return null;
