@@ -35,10 +35,16 @@ import os from 'os';
  * - etc.
  */
 async function getWorkerPort(workerIndex: number): Promise<number> {
-  const BASE_PORT = 50000;
+  const BASE_PORT = 10000;
+  const MAX_PORT = 65535;
   const PORTS_PER_WORKER = 100;
-  const startPort = BASE_PORT + workerIndex * PORTS_PER_WORKER;
-  const endPort = startPort + PORTS_PER_WORKER - 1;
+  const AVAILABLE_RANGE = MAX_PORT - BASE_PORT; // 55535 ports available
+  const MAX_WORKERS = Math.floor(AVAILABLE_RANGE / PORTS_PER_WORKER); // 555 workers max
+
+  // Wrap worker index to stay within valid port range
+  const wrappedIndex = workerIndex % MAX_WORKERS;
+  const startPort = BASE_PORT + wrappedIndex * PORTS_PER_WORKER;
+  const endPort = Math.min(startPort + PORTS_PER_WORKER - 1, MAX_PORT);
 
   return getPort({ port: portNumbers(startPort, endPort) });
 }

@@ -164,7 +164,7 @@ test.describe('Bulk Selection - List View', () => {
       await titleCell.click();
 
       // Should navigate to issue detail
-      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
     });
 
     test('selected row shows background highlight', async ({ page }) => {
@@ -980,7 +980,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await page.keyboard.press('Enter');
 
       // Should navigate to some issue detail page (any issue page is valid)
-      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
     });
   });
 
@@ -1033,7 +1033,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await page.keyboard.press('j');
       await expect(rows.nth(0)).toHaveClass(/ring-2/, { timeout: 3000 });
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
 
       // Wait for editor to be ready
       const editor = page.locator('[contenteditable="true"]').first();
@@ -1046,7 +1046,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await page.keyboard.press('j');
 
       // The editor should contain 'j' (or at least not cause navigation)
-      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/);
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/);
     });
   });
 
@@ -1122,7 +1122,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await programRow.click();
 
       // Wait for program page to load
-      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 });
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
 
       // Click on Issues tab
       const issuesTab = page.getByRole('tab', { name: 'Issues' });
@@ -1144,7 +1144,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await issueRows.first().click();
 
       // Should navigate to issue page
-      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
 
       // Should show breadcrumb with program name (aria-label contains "Back to")
       const backButton = page.locator('button[aria-label*="Back to"]');
@@ -1162,7 +1162,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       const programRow = page.locator('tbody tr').first();
       await expect(programRow).toBeVisible();
       await programRow.click();
-      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 });
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
 
       // Get the program URL for comparison
       const programUrl = page.url();
@@ -1183,7 +1183,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
 
       // Navigate to an issue
       await issueRows.first().click();
-      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
 
       // Move focus out of the editor (Escape is ignored when editor has focus)
       // Click on the back button area to move focus out of the contenteditable
@@ -1207,7 +1207,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       const programRow = page.locator('tbody tr').first();
       await expect(programRow).toBeVisible();
       await programRow.click();
-      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 });
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
 
       const programUrl = page.url();
 
@@ -1227,7 +1227,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
 
       // Navigate to an issue
       await issueRows.first().click();
-      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
 
       // Find and click the back button/breadcrumb (aria-label contains "Back to")
       const backButton = page.locator('button[aria-label*="Back to"]');
@@ -1259,7 +1259,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
 
       // Navigate directly to issue via URL (no navigation context)
       await page.goto(`/issues/${issueId}`);
-      await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 });
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
 
       // Should show generic "Back to documents" instead of program name (aria-label)
       const backButton = page.locator('button[aria-label="Back to documents"]');

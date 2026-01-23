@@ -19,7 +19,7 @@ async function login(page: Page) {
 async function createNewDocument(page: Page) {
   await page.goto('/docs')
   await page.getByRole('button', { name: 'New Document', exact: true }).click()
-  await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+  await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
   return page.url()
 }
@@ -340,7 +340,7 @@ test.describe('Backlinks', () => {
     // Create Document Q in second tab
     await page2.goto('/docs')
     await page2.getByRole('button', { name: 'New Document', exact: true }).click()
-    await expect(page2).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+    await expect(page2).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
     await expect(page2.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
 
     const titleInput2 = page2.getByPlaceholder('Untitled')
@@ -444,7 +444,7 @@ test.describe('Backlinks', () => {
     for (let i = 1; i <= 2; i++) {
       await page.goto('/docs')
       await page.getByRole('button', { name: 'New Document', exact: true }).click()
-      await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
       await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
 
       const titleInput = page.getByPlaceholder('Untitled')

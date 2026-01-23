@@ -61,7 +61,7 @@ test('check aria-expanded elements', async ({ page }) => {
   }
 
   // Find a child document link
-  const childDoc = expandableItem.locator('a[href*="/docs/"]').first();
+  const childDoc = expandableItem.locator('a[href*="/documents/"]').first();
   console.log('Child doc count:', await childDoc.count());
 
   if (await childDoc.count() > 0) {
