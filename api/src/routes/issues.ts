@@ -1035,11 +1035,7 @@ router.post('/bulk', authMiddleware, async (req: Request, res: Response) => {
           paramIdx++;
         }
 
-        if (updates.sprint_id !== undefined) {
-          setClauses.push(`sprint_id = $${paramIdx}`);
-          values.push(updates.sprint_id);
-          paramIdx++;
-        }
+        // Note: sprint_id is handled via document_associations table (see below)
 
         if (updates.assignee_id !== undefined) {
           // Update assignee_id in properties JSONB
@@ -1082,6 +1078,38 @@ router.post('/bulk', authMiddleware, async (req: Request, res: Response) => {
                  VALUES ${insertValues}
                  ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
                 [...validIds, updates.project_id]
+              );
+            }
+          }
+        }
+
+        // Handle sprint_id via document_associations table
+        if (updates.sprint_id !== undefined) {
+          // Remove existing sprint associations for all updated issues
+          await client.query(
+            `DELETE FROM document_associations
+             WHERE document_id = ANY($1) AND relationship_type = 'sprint'`,
+            [validIds]
+          );
+
+          // Add new sprint associations if sprint_id is not null
+          if (updates.sprint_id !== null) {
+            // Verify the sprint exists and user has access
+            const sprintCheck = await client.query(
+              `SELECT id FROM documents
+               WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint'
+                 AND deleted_at IS NULL`,
+              [updates.sprint_id, workspaceId]
+            );
+
+            if (sprintCheck.rows.length > 0) {
+              // Insert associations for all valid issues
+              const insertValues = validIds.map((_, i) => `($${i + 1}, $${validIds.length + 1}, 'sprint')`).join(', ');
+              await client.query(
+                `INSERT INTO document_associations (document_id, related_id, relationship_type)
+                 VALUES ${insertValues}
+                 ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+                [...validIds, updates.sprint_id]
               );
             }
           }

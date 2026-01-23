@@ -87,12 +87,13 @@ router.get('/my-work', authMiddleware, async (req: Request, res: Response) => {
     // 1. Get issues assigned to current user (not done/cancelled)
     const issuesResult = await pool.query(
       `SELECT d.id, d.title, d.properties, d.ticket_number,
-              d.sprint_id,
+              sprint_assoc.related_id as sprint_id,
               sprint.title as sprint_name,
               (sprint.properties->>'sprint_number')::int as sprint_number,
               p.title as program_name
        FROM documents d
-       LEFT JOIN documents sprint ON sprint.id = d.sprint_id AND sprint.document_type = 'sprint'
+       LEFT JOIN document_associations sprint_assoc ON sprint_assoc.document_id = d.id AND sprint_assoc.relationship_type = 'sprint'
+       LEFT JOIN documents sprint ON sprint.id = sprint_assoc.related_id AND sprint.document_type = 'sprint'
        LEFT JOIN documents p ON d.program_id = p.id
        WHERE d.workspace_id = $1
          AND d.document_type = 'issue'
@@ -167,11 +168,12 @@ router.get('/my-work', authMiddleware, async (req: Request, res: Response) => {
                       ELSE NULL
                       END
                     FROM documents issue
-                    JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+                    JOIN document_associations sprint_assoc ON sprint_assoc.document_id = issue.id AND sprint_assoc.relationship_type = 'sprint'
+                    JOIN documents sprint ON sprint.id = sprint_assoc.related_id AND sprint.document_type = 'sprint'
+                    JOIN document_associations proj_assoc ON proj_assoc.document_id = issue.id AND proj_assoc.relationship_type = 'project'
                     JOIN workspaces w ON w.id = d.workspace_id
-                    WHERE issue.project_id = d.id
+                    WHERE proj_assoc.related_id = d.id
                       AND issue.document_type = 'issue'
-                      AND issue.sprint_id IS NOT NULL
                   ),
                   'backlog'
                 )

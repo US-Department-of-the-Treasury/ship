@@ -104,7 +104,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
     let query = `
       SELECT id, workspace_id, document_type, title, parent_id, position,
-             program_id, project_id, sprint_id, ticket_number, properties,
+             program_id, ticket_number, properties,
              created_at, updated_at, created_by, visibility
       FROM documents
       WHERE workspace_id = $1
@@ -499,10 +499,10 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     await client.query('BEGIN');
 
     const result = await client.query(
-      `INSERT INTO documents (workspace_id, document_type, title, parent_id, program_id, sprint_id, properties, created_by, visibility, content)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO documents (workspace_id, document_type, title, parent_id, program_id, properties, created_by, visibility, content)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [req.workspaceId, document_type, title, parent_id || null, program_id || null, sprint_id || null, JSON.stringify(properties || {}), req.userId, visibility, content ? JSON.stringify(content) : null]
+      [req.workspaceId, document_type, title, parent_id || null, program_id || null, JSON.stringify(properties || {}), req.userId, visibility, content ? JSON.stringify(content) : null]
     );
 
     const newDoc = result.rows[0];
@@ -517,6 +517,16 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
           [newDoc.id, assoc.id, assoc.type]
         );
       }
+    }
+
+    // Handle sprint_id via document_associations (backward compatibility)
+    if (sprint_id) {
+      await client.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'sprint')
+         ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+        [newDoc.id, sprint_id]
+      );
     }
 
     await client.query('COMMIT');
@@ -619,10 +629,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       updates.push(`program_id = $${paramIndex++}`);
       values.push(data.program_id);
     }
-    if (data.sprint_id !== undefined) {
-      updates.push(`sprint_id = $${paramIndex++}`);
-      values.push(data.sprint_id);
-    }
+    // Note: sprint_id is handled via document_associations table (see below)
     if (data.position !== undefined) {
       updates.push(`position = $${paramIndex++}`);
       values.push(data.position);
@@ -674,10 +681,12 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       if (existing.document_type === 'project' || existing.document_type === 'sprint') {
         let linkedIssuesCount = 0;
 
-        // For sprints, count linked issues
+        // For sprints, count linked issues via document_associations
         if (existing.document_type === 'sprint') {
           const issueCountResult = await pool.query(
-            'SELECT COUNT(*) as count FROM documents WHERE sprint_id = $1 AND document_type = $2',
+            `SELECT COUNT(*) as count FROM documents d
+             JOIN document_associations da ON da.document_id = d.id
+             WHERE da.related_id = $1 AND da.relationship_type = 'sprint' AND d.document_type = $2`,
             [id, 'issue']
           );
           linkedIssuesCount = parseInt(issueCountResult.rows[0]?.count || '0', 10);
@@ -778,6 +787,31 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
           await pool.query(
             'INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
             [id, bt.id, bt.type]
+          );
+        }
+      }
+    }
+
+    // Handle sprint_id via document_associations (when passed directly, not via belongs_to)
+    if (data.sprint_id !== undefined && !hasBelongsToUpdate) {
+      // Remove existing sprint association
+      await pool.query(
+        `DELETE FROM document_associations WHERE document_id = $1 AND relationship_type = 'sprint'`,
+        [id]
+      );
+
+      // Add new sprint association if sprint_id is not null
+      if (data.sprint_id !== null) {
+        // Verify the sprint exists
+        const sprintCheck = await pool.query(
+          `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint' AND deleted_at IS NULL`,
+          [data.sprint_id, workspaceId]
+        );
+
+        if (sprintCheck.rows.length > 0) {
+          await pool.query(
+            `INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, 'sprint') ON CONFLICT DO NOTHING`,
+            [id, data.sprint_id]
           );
         }
       }

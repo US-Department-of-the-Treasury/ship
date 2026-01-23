@@ -1766,9 +1766,9 @@ test.describe('Bulk Actions - Move to Sprint', () => {
     // Use dispatchEvent to bypass z-index issues with stacking context
     await menu.getByRole('menuitem', { name: 'No Sprint' }).dispatchEvent('click');
 
-    // Verify success toast
+    // Verify success toast (toast says "assigned to" not "moved to")
     const toast = page.getByRole('alert');
-    await expect(toast).toContainText(/moved/i);
+    await expect(toast).toContainText(/assigned/i);
   });
 
   test('can move to "No Sprint" to unassign', async ({ page }) => {

@@ -28,7 +28,7 @@ async function navigateToSprintPlanningView(page: Page) {
   // Navigate to a program's Sprints tab and click "Plan Sprint" to go to SprintView
   await page.goto('/programs')
   await page.getByRole('row', { name: /Ship Core/i }).click()
-  await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+  await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
   // Click Sprints tab
   await page.getByRole('tab', { name: 'Sprints' }).click()

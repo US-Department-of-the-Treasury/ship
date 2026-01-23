@@ -442,14 +442,14 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
       ? sprintIds['SHIP'][currentSprintNumber + issue.sprintOffset] || null
       : null;
 
-    await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number, created_by)
-       VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7)`,
+    const issueResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, ticket_number, created_by)
+       VALUES ($1, 'issue', $2, $3, $4, $5, $6)
+       RETURNING id`,
       [
         workspaceId,
         issue.title,
         programIds['SHIP'],
-        sprintId,
         JSON.stringify({
           state: issue.state,
           priority: issue.priority,
@@ -461,24 +461,43 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
         userId,
       ]
     );
+
+    // Create sprint association via document_associations
+    if (sprintId) {
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'sprint')`,
+        [issueResult.rows[0].id, sprintId]
+      );
+    }
   }
 
   // Create a few issues for other programs too (with estimates for capacity testing)
   for (const prog of programs.filter(p => p.key !== 'SHIP')) {
     ticketNumber++;
-    await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, sprint_id, properties, ticket_number, created_by)
-       VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7)`,
+    const progSprintId = sprintIds[prog.key][currentSprintNumber] || null;
+    const progIssueResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, ticket_number, created_by)
+       VALUES ($1, 'issue', $2, $3, $4, $5, $6)
+       RETURNING id`,
       [
         workspaceId,
         `${prog.name} initial setup`,
         programIds[prog.key],
-        sprintIds[prog.key][currentSprintNumber] || null,
         JSON.stringify({ state: 'in_progress', priority: 'medium', source: 'internal', assignee_id: userId, estimate: 8 }),
         ticketNumber,
         userId,
       ]
     );
+
+    // Create sprint association via document_associations
+    if (progSprintId) {
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'sprint')`,
+        [progIssueResult.rows[0].id, progSprintId]
+      );
+    }
   }
 
   // Create external issues for feedback consolidation testing

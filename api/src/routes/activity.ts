@@ -139,16 +139,18 @@ router.get('/:entityType/:entityId', authMiddleware, async (req: Request, res: R
             )::date AS date
           ),
           project_sprints AS (
-            SELECT id FROM documents
-            WHERE project_id = $1 AND document_type = 'sprint' AND workspace_id = $2
+            SELECT da.document_id as id FROM document_associations da
+            JOIN documents d ON d.id = da.document_id
+            WHERE da.related_id = $1 AND da.relationship_type = 'project'
+              AND d.document_type = 'sprint' AND d.workspace_id = $2
           ),
           activity_counts AS (
             SELECT updated_at::date AS activity_date, COUNT(*) AS count
             FROM documents
             WHERE workspace_id = $2
               AND (
-                -- Direct project documents (sprints use project_id column)
-                project_id = $1
+                -- Sprints linked to this project via document_associations
+                id IN (SELECT id FROM project_sprints)
                 -- Documents linked to sprints via junction table (issues)
                 OR id IN (SELECT da.document_id FROM document_associations da
                           JOIN project_sprints ps ON ps.id = da.related_id AND da.relationship_type = 'sprint')

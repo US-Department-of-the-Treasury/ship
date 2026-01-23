@@ -119,7 +119,9 @@ function isSprintActive(sprintNumber: number, workspaceStartDate: Date | string)
 // Take a snapshot of current issues in the sprint
 async function takeSprintSnapshot(sprintId: string): Promise<string[]> {
   const result = await pool.query(
-    `SELECT id FROM documents WHERE sprint_id = $1 AND document_type = 'issue'`,
+    `SELECT d.id FROM documents d
+     JOIN document_associations da ON da.document_id = d.id
+     WHERE da.related_id = $1 AND da.relationship_type = 'sprint' AND d.document_type = 'issue'`,
     [sprintId]
   );
   return result.rows.map(row => row.id);
@@ -1159,9 +1161,9 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Remove sprint_id from issues
+    // Remove sprint associations from issues via document_associations
     await pool.query(
-      `UPDATE documents SET sprint_id = NULL WHERE sprint_id = $1`,
+      `DELETE FROM document_associations WHERE related_id = $1 AND relationship_type = 'sprint'`,
       [id]
     );
 
