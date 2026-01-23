@@ -276,6 +276,21 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
+    // Get owner details for sprints (owner stored in assignee_ids[0], consistent with sprints API)
+    // Return user_id as id so Combobox can match correctly
+    if (doc.document_type === 'sprint' && Array.isArray(props.assignee_ids) && props.assignee_ids[0]) {
+      const ownerResult = await pool.query(
+        `SELECT u.id::text as id, d.title as name, COALESCE(d.properties->>'email', u.email) as email
+         FROM users u
+         LEFT JOIN documents d ON (d.properties->>'user_id')::uuid = u.id AND d.document_type = 'person' AND d.workspace_id = $2
+         WHERE u.id = $1`,
+        [props.assignee_ids[0], workspaceId]
+      );
+      if (ownerResult.rows.length > 0) {
+        owner = ownerResult.rows[0];
+      }
+    }
+
     // Get belongs_to associations from junction table (for issues and other document types)
     let belongs_to: Array<{ id: string; type: string; title?: string; color?: string }> = [];
     if (doc.document_type === 'issue' || doc.document_type === 'wiki') {
@@ -308,7 +323,10 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       impact: props.impact,
       confidence: props.confidence,
       ease: props.ease,
-      owner_id: props.owner_id,
+      // For sprints, owner is stored in assignee_ids[0] (consistent with sprints API)
+      owner_id: doc.document_type === 'sprint' && Array.isArray(props.assignee_ids)
+        ? props.assignee_ids[0] || null
+        : props.owner_id,
       owner,
       // Generic properties
       prefix: props.prefix,
@@ -623,6 +641,10 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.ease !== undefined) topLevelProps.ease = data.ease;
     if (data.color !== undefined) topLevelProps.color = data.color;
     if (data.owner_id !== undefined) topLevelProps.owner_id = data.owner_id;
+    // For sprints, also store owner in assignee_ids array (sprints API reads from assignee_ids[0])
+    if (data.owner_id !== undefined && existing.document_type === 'sprint') {
+      topLevelProps.assignee_ids = data.owner_id ? [data.owner_id] : [];
+    }
     if (data.start_date !== undefined) topLevelProps.start_date = data.start_date;
     if (data.end_date !== undefined) topLevelProps.end_date = data.end_date;
     if (data.sprint_status !== undefined) topLevelProps.sprint_status = data.sprint_status;
