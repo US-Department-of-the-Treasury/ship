@@ -65,12 +65,12 @@ export function DocumentListToolbar({
   const showColumns = showColumnPicker && allColumns && visibleColumns && onToggleColumn && viewMode === 'list';
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3 flex-shrink-0">
       {/* Additional filter content (e.g., program filter) */}
       {filterContent}
 
       {/* Sort dropdown */}
-      <div className="w-32">
+      <div className="w-32 flex-shrink-0">
         <Combobox
           options={sortOptions}
           value={sortBy}
@@ -84,7 +84,7 @@ export function DocumentListToolbar({
 
       {/* View toggle */}
       {showViewToggle && (
-        <div className="flex rounded-md border border-border" role="group" aria-label="View mode">
+        <div className="flex rounded-md border border-border flex-shrink-0" role="group" aria-label="View mode">
           {viewModes.includes('list') && (
             <button
               onClick={() => onViewModeChange('list')}
@@ -132,7 +132,7 @@ export function DocumentListToolbar({
         <Popover.Root>
           <Popover.Trigger asChild>
             <button
-              className="relative rounded-md border border-border p-1.5 text-muted hover:bg-border/30 hover:text-foreground transition-colors"
+              className="relative rounded-md border border-border p-1.5 text-muted hover:bg-border/30 hover:text-foreground transition-colors flex-shrink-0"
               aria-label="Customize columns"
             >
               <ColumnsIcon className="h-4 w-4" />
@@ -179,7 +179,7 @@ export function DocumentListToolbar({
           onClick={createButton.onClick}
           disabled={createButton.disabled}
           className={cn(
-            'rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors',
+            'rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors flex-shrink-0 whitespace-nowrap',
             'disabled:opacity-50 disabled:cursor-not-allowed'
           )}
         >

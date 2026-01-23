@@ -1125,9 +1125,9 @@ export function IssuesList({
     <div className={cn('flex h-full flex-col', className)}>
       {/* Header */}
       {!hideHeader && (
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          {headerContent || <div />}
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4 gap-4">
+          {headerContent || <div className="flex-shrink-0" />}
+          <div className="flex items-center gap-2 overflow-x-auto flex-shrink min-w-0">
             <DocumentListToolbar
               sortOptions={SORT_OPTIONS}
               sortBy={sortBy}
@@ -1150,7 +1150,7 @@ export function IssuesList({
             {showBacklogPicker && (effectiveContext.sprintId || effectiveContext.projectId || effectiveContext.programId) && (
               <button
                 onClick={() => setIsBacklogPickerOpen(true)}
-                className="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-foreground hover:bg-border/30 transition-colors flex items-center gap-1.5"
+                className="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-foreground hover:bg-border/30 transition-colors flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -1163,7 +1163,7 @@ export function IssuesList({
               <button
                 onClick={() => setShowAllIssues(!showAllIssues)}
                 className={cn(
-                  "rounded-md border px-3 py-1.5 text-sm transition-colors flex items-center gap-1.5",
+                  "rounded-md border px-3 py-1.5 text-sm transition-colors flex items-center gap-1.5 flex-shrink-0 whitespace-nowrap",
                   showAllIssues
                     ? "border-accent bg-accent/10 text-accent"
                     : "border-border text-muted hover:text-foreground hover:bg-border/30"
