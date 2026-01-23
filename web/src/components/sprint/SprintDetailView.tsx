@@ -208,7 +208,7 @@ export function SprintDetailView({
             filterTabs={null}
             showCreateButton={true}
             showBacklogPicker={true}
-            showOutOfContextIssues={true}
+            allowShowAllIssues={true}
             inheritedContext={{
               programId,
               projectId,
