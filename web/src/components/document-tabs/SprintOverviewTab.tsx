@@ -68,9 +68,15 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
     navigate('/sprints');
   }, [navigate]);
 
-  // Handle update
+  // Handle update - map frontend field names to API field names
   const handleUpdate = useCallback(async (updates: Partial<UnifiedDocument>) => {
-    await updateMutation.mutateAsync(updates);
+    // Map 'status' to 'sprint_status' for the API
+    const apiUpdates: Record<string, unknown> = { ...updates };
+    if ('status' in apiUpdates) {
+      apiUpdates.sprint_status = apiUpdates.status;
+      delete apiUpdates.status;
+    }
+    await updateMutation.mutateAsync(apiUpdates as Partial<UnifiedDocument>);
   }, [updateMutation]);
 
   // Handle delete
@@ -96,7 +102,7 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
     properties: document.properties as Record<string, unknown> | undefined,
     start_date: (document.start_date as string) || '',
     end_date: (document.end_date as string) || '',
-    status: ((document.status as string) || 'planning') as 'planning' | 'active' | 'completed',
+    status: ((document.sprint_status as string) || 'planning') as 'planning' | 'active' | 'completed',
     program_id: document.program_id as string | undefined,
     hypothesis: (document.hypothesis as string) || '',
     owner_id: document.owner_id as string | null | undefined,
