@@ -129,12 +129,22 @@ export const WELCOME_DOCUMENT_CONTENT = {
     {
       type: 'paragraph',
       content: [
-        { type: 'text', text: 'Issues flow through four statuses:' },
+        { type: 'text', text: 'Issues flow through these statuses:' },
       ],
     },
     {
       type: 'bulletList',
       content: [
+        {
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [
+              { type: 'text', marks: [{ type: 'bold' }], text: 'Triage' },
+              { type: 'text', text: ' — External feedback awaiting review' },
+            ],
+          }],
+        },
         {
           type: 'listItem',
           content: [{
@@ -170,8 +180,28 @@ export const WELCOME_DOCUMENT_CONTENT = {
           content: [{
             type: 'paragraph',
             content: [
+              { type: 'text', marks: [{ type: 'bold' }], text: 'In Review' },
+              { type: 'text', text: ' — Work complete, awaiting review or approval' },
+            ],
+          }],
+        },
+        {
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [
               { type: 'text', marks: [{ type: 'bold' }], text: 'Done' },
-              { type: 'text', text: ' — Work is complete' },
+              { type: 'text', text: ' — Work is complete and approved' },
+            ],
+          }],
+        },
+        {
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [
+              { type: 'text', marks: [{ type: 'bold' }], text: 'Cancelled' },
+              { type: 'text', text: ' — Work deprioritized or no longer needed' },
             ],
           }],
         },
@@ -207,7 +237,7 @@ export const WELCOME_DOCUMENT_CONTENT = {
             type: 'paragraph',
             content: [
               { type: 'text', marks: [{ type: 'bold' }], text: 'Board view' },
-              { type: 'text', text: ' — Kanban-style columns (Backlog | Todo | In Progress | Done). Drag issues between columns to change status.' },
+              { type: 'text', text: ' — Kanban-style columns (Backlog | Todo | In Progress | In Review | Done). Drag issues between columns to change status.' },
             ],
           }],
         },

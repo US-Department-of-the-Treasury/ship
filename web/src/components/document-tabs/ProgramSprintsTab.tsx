@@ -1,13 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SprintTimeline, getCurrentSprintNumber, computeSprintDates, type Sprint } from '@/components/sprint/SprintTimeline';
 import { SprintDetailView } from '@/components/sprint/SprintDetailView';
 import { useSprints } from '@/hooks/useSprintsQuery';
-import { PersonCombobox, Person } from '@/components/PersonCombobox';
-import { cn } from '@/lib/cn';
+import { apiPost } from '@/lib/api';
 import type { DocumentTabProps } from '@/lib/document-tabs';
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
 
 /**
  * ProgramSprintsTab - Shows sprints associated with a program
@@ -18,21 +15,11 @@ const API_URL = import.meta.env.VITE_API_URL ?? '';
  */
 export default function ProgramSprintsTab({ documentId, nestedPath }: DocumentTabProps) {
   const navigate = useNavigate();
-  const { sprints, loading, workspaceSprintStartDate, createSprint } = useSprints(documentId);
-  const [showOwnerPrompt, setShowOwnerPrompt] = useState<number | null>(null);
-  const [people, setPeople] = useState<Person[]>([]);
+  const { sprints, loading, workspaceSprintStartDate, refreshSprints } = useSprints(documentId);
 
   // If nestedPath is provided and looks like a UUID, show sprint detail
   const isUuid = nestedPath && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nestedPath);
   const selectedSprintId = isUuid ? nestedPath : null;
-
-  // Fetch team members for owner selection (filter out pending users)
-  useEffect(() => {
-    fetch(`${API_URL}/api/team/people`, { credentials: 'include' })
-      .then(res => res.ok ? res.json() : [])
-      .then((data: Person[]) => setPeople(data.filter(p => p.user_id)))
-      .catch(console.error);
-  }, []);
 
   // Handle sprint selection from timeline
   const handleSelectSprint = useCallback((_sprintNumber: number, sprint: Sprint | null) => {
@@ -46,19 +33,37 @@ export default function ProgramSprintsTab({ documentId, nestedPath }: DocumentTa
     navigate(`/documents/${documentId}/sprints/${sprintId}`);
   }, [documentId, navigate]);
 
-  // Handle sprint creation
-  const handleCreateSprint = useCallback(async (sprintNumber: number, ownerId: string) => {
+  // Handle sprint creation - follows document creation pattern (no modal)
+  const handleCreateSprint = useCallback(async (sprintNumber: number) => {
     try {
-      const newSprint = await createSprint(sprintNumber, ownerId, `Sprint ${sprintNumber}`);
-      if (newSprint) {
-        setShowOwnerPrompt(null);
-        // Navigate to the new sprint
-        navigate(`/documents/${documentId}/sprints/${newSprint.id}`);
+      // Calculate date range for sprint
+      const dateRange = computeSprintDates(sprintNumber, workspaceSprintStartDate);
+
+      // Create sprint via document API - no owner (user sets on sprint page)
+      const res = await apiPost('/api/documents', {
+        document_type: 'sprint',
+        title: `Sprint ${sprintNumber}`,
+        properties: {
+          sprint_number: sprintNumber,
+          status: 'planning',
+          start_date: dateRange.start.toISOString(),
+          end_date: dateRange.end.toISOString(),
+        },
+        belongs_to: [{ id: documentId, type: 'program' }],
+      });
+
+      if (res.ok) {
+        const newSprint = await res.json();
+        // Refresh sprint list and navigate to the new sprint
+        await refreshSprints();
+        navigate(`/documents/${newSprint.id}`);
+      } else {
+        console.error('Failed to create sprint:', await res.text());
       }
     } catch (err) {
       console.error('Failed to create sprint:', err);
     }
-  }, [createSprint, documentId, navigate]);
+  }, [documentId, workspaceSprintStartDate, refreshSprints, navigate]);
 
   if (loading) {
     return (
@@ -85,7 +90,7 @@ export default function ProgramSprintsTab({ documentId, nestedPath }: DocumentTa
           selectedSprintId={selectedSprintId ?? undefined}
           onSelectSprint={handleSelectSprint}
           onOpenSprint={handleOpenSprint}
-          onCreateClick={(num) => setShowOwnerPrompt(num)}
+          onCreateClick={handleCreateSprint}
           showCreateOption={true}
         />
       </div>
@@ -96,29 +101,15 @@ export default function ProgramSprintsTab({ documentId, nestedPath }: DocumentTa
           <SprintDetailView
             sprintId={selectedSprintId}
             programId={documentId}
-            onIssueClick={(issueId) => navigate(`/documents/${issueId}`)}
             onBack={() => navigate(`/documents/${documentId}/sprints`)}
           />
         ) : (
           <EmptySprintState
             sprints={sprints}
             workspaceSprintStartDate={workspaceSprintStartDate}
-            onPlanSprint={() => navigate(`/sprints/new/plan?program=${documentId}`)}
           />
         )}
       </div>
-
-      {/* Owner Selection Prompt */}
-      {showOwnerPrompt !== null && (
-        <OwnerSelectPrompt
-          sprintNumber={showOwnerPrompt}
-          dateRange={computeSprintDates(showOwnerPrompt, workspaceSprintStartDate)}
-          people={people}
-          existingSprints={sprints}
-          onSelect={(ownerId) => handleCreateSprint(showOwnerPrompt, ownerId)}
-          onCancel={() => setShowOwnerPrompt(null)}
-        />
-      )}
     </div>
   );
 }
@@ -127,10 +118,12 @@ export default function ProgramSprintsTab({ documentId, nestedPath }: DocumentTa
 interface EmptySprintStateProps {
   sprints: Sprint[];
   workspaceSprintStartDate: Date;
-  onPlanSprint: () => void;
 }
 
-function EmptySprintState({ sprints, workspaceSprintStartDate, onPlanSprint }: EmptySprintStateProps) {
+function EmptySprintState({
+  sprints,
+  workspaceSprintStartDate,
+}: EmptySprintStateProps) {
   const currentSprintNumber = getCurrentSprintNumber(workspaceSprintStartDate);
   const activeSprint = sprints.find(s => s.sprint_number === currentSprintNumber);
 
@@ -141,16 +134,9 @@ function EmptySprintState({ sprints, workspaceSprintStartDate, onPlanSprint }: E
           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
         </svg>
         <p className="text-lg font-medium mb-2">No sprints yet</p>
-        <p className="text-sm text-center mb-4 max-w-md">
-          Click on a sprint window in the timeline above to create your first sprint,
-          or use the plan sprint button to create one with full details.
+        <p className="text-sm text-center max-w-md">
+          Click on a sprint window in the timeline above to create your first sprint.
         </p>
-        <button
-          onClick={onPlanSprint}
-          className="rounded-md bg-accent/20 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition-colors"
-        >
-          Plan Sprint
-        </button>
       </div>
     );
   }
@@ -173,108 +159,3 @@ function EmptySprintState({ sprints, workspaceSprintStartDate, onPlanSprint }: E
   );
 }
 
-// Owner selection prompt for sprint creation
-function OwnerSelectPrompt({
-  sprintNumber,
-  dateRange,
-  people,
-  existingSprints,
-  onSelect,
-  onCancel,
-}: {
-  sprintNumber: number;
-  dateRange: { start: Date; end: Date };
-  people: Person[];
-  existingSprints: Sprint[];
-  onSelect: (ownerId: string) => void;
-  onCancel: () => void;
-}) {
-  const [selectedOwner, setSelectedOwner] = useState<string | null>(null);
-
-  // Check owner availability (simple version - just show who has sprints)
-  const ownerSprintCounts = new Map<string, number>();
-  existingSprints.forEach(s => {
-    if (s.owner) {
-      ownerSprintCounts.set(s.owner.id, (ownerSprintCounts.get(s.owner.id) || 0) + 1);
-    }
-  });
-
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-background p-6">
-        <h2 className="text-lg font-semibold text-foreground">
-          Create Sprint {sprintNumber}
-        </h2>
-        <p className="mt-1 text-sm text-muted">
-          {formatDate(dateRange.start)} - {formatDate(dateRange.end)}
-        </p>
-
-        <div className="mt-4">
-          <label className="mb-2 block text-sm font-medium text-muted">Who should own this sprint?</label>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {people.map((person) => {
-              const sprintCount = ownerSprintCounts.get(person.user_id) || 0;
-              return (
-                <button
-                  key={person.user_id}
-                  onClick={() => setSelectedOwner(person.user_id)}
-                  className={cn(
-                    'w-full flex items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors',
-                    selectedOwner === person.user_id
-                      ? 'bg-accent text-white'
-                      : 'bg-border/30 text-foreground hover:bg-border/50'
-                  )}
-                >
-                  <span>{person.name}</span>
-                  {sprintCount > 0 ? (
-                    <span className={cn(
-                      'text-xs',
-                      selectedOwner === person.user_id ? 'text-white/70' : 'text-yellow-400'
-                    )}>
-                      {sprintCount} sprint{sprintCount > 1 ? 's' : ''}
-                    </span>
-                  ) : (
-                    <span className={cn(
-                      'text-xs',
-                      selectedOwner === person.user_id ? 'text-white/70' : 'text-green-400'
-                    )}>
-                      Available
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-            {people.length === 0 && (
-              <p className="text-sm text-muted py-2">No team members found</p>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-6 flex justify-end gap-3">
-          <button
-            onClick={onCancel}
-            className="rounded-md px-3 py-2 text-sm text-muted hover:text-foreground transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => selectedOwner && onSelect(selectedOwner)}
-            disabled={!selectedOwner}
-            className={cn(
-              'rounded-md px-3 py-2 text-sm font-medium transition-colors',
-              selectedOwner
-                ? 'bg-accent text-white hover:bg-accent/90'
-                : 'bg-border text-muted cursor-not-allowed'
-            )}
-          >
-            Create Sprint
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

@@ -20,8 +20,9 @@ import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { cn } from '@/lib/cn';
 import { FilterTabs, FilterTab } from '@/components/FilterTabs';
-import { apiPost } from '@/lib/api';
+import { apiPost, apiPatch } from '@/lib/api';
 import { ConversionDialog } from '@/components/dialogs/ConversionDialog';
+import { BacklogPickerModal } from '@/components/dialogs/BacklogPickerModal';
 import { useSelectionPersistenceOptional } from '@/contexts/SelectionPersistenceContext';
 import { InlineSprintSelector } from '@/components/InlineSprintSelector';
 
@@ -167,6 +168,10 @@ export interface IssuesListProps {
   selectionPersistenceKey?: string;
   /** Enable inline sprint assignment dropdown in the sprint column. Requires lockedProgramId to fetch available sprints. */
   enableInlineSprintAssignment?: boolean;
+  /** Show "Add from Backlog" button to add existing issues to the current context (sprint/project/program) */
+  showBacklogPicker?: boolean;
+  /** Allow toggling "Show All Issues" to display out-of-context issues with reduced opacity and '+' button */
+  allowShowAllIssues?: boolean;
 }
 
 /**
@@ -214,6 +219,8 @@ export function IssuesList({
   toolbarContent,
   selectionPersistenceKey,
   enableInlineSprintAssignment = false,
+  showBacklogPicker = false,
+  allowShowAllIssues = false,
 }: IssuesListProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -234,6 +241,9 @@ export function IssuesList({
   // Determine if we should self-fetch based on locked filters
   const shouldSelfFetch = Boolean(lockedProgramId || lockedProjectId || lockedSprintId);
 
+  // State for "Show All Issues" toggle
+  const [showAllIssues, setShowAllIssues] = useState(false);
+
   // Self-fetch issues when using locked filters
   const { data: fetchedIssues, isLoading: isFetchingIssues } = useIssuesQuery(
     shouldSelfFetch ? {
@@ -242,6 +252,12 @@ export function IssuesList({
       sprintId: lockedSprintId,
     } : {},
     { enabled: shouldSelfFetch }
+  );
+
+  // Also fetch ALL issues when showAllIssues toggle is enabled (for inline add feature)
+  const { data: allIssuesData, isLoading: isLoadingAllIssues } = useIssuesQuery(
+    {},
+    { enabled: allowShowAllIssues && showAllIssues && shouldSelfFetch }
   );
 
   // Internal create issue mutation for self-fetching mode
@@ -286,8 +302,24 @@ export function IssuesList({
   }, [effectiveContext]);
 
   // Use fetched issues when self-fetching, otherwise use the prop
-  const issues = shouldSelfFetch ? (fetchedIssues ?? []) : (issuesProp ?? []);
-  const loading = shouldSelfFetch ? isFetchingIssues : loadingProp;
+  const inContextIssues = shouldSelfFetch ? (fetchedIssues ?? []) : (issuesProp ?? []);
+  const loading = shouldSelfFetch ? (isFetchingIssues || (showAllIssues && isLoadingAllIssues)) : loadingProp;
+
+  // Create set of in-context issue IDs for quick lookup
+  const inContextIds = useMemo(() => {
+    return new Set(inContextIssues.map(i => i.id));
+  }, [inContextIssues]);
+
+  // Combine in-context and out-of-context issues when showAllIssues toggle is enabled
+  const issues = useMemo(() => {
+    if (!showAllIssues || !allIssuesData) {
+      return inContextIssues;
+    }
+    // Get out-of-context issues (not already in the in-context set)
+    const outOfContextIssues = allIssuesData.filter(issue => !inContextIds.has(issue.id));
+    // Return in-context first, then out-of-context
+    return [...inContextIssues, ...outOfContextIssues];
+  }, [showAllIssues, inContextIssues, allIssuesData, inContextIds]);
 
   // Use shared hooks for list state management
   const { sortBy, setSortBy, viewMode, setViewMode } = useListFilters({
@@ -322,6 +354,9 @@ export function IssuesList({
   // Conversion state
   const [convertingIssue, setConvertingIssue] = useState<Issue | null>(null);
   const [isConverting, setIsConverting] = useState(false);
+
+  // Backlog picker state
+  const [isBacklogPickerOpen, setIsBacklogPickerOpen] = useState(false);
 
   // Undo state for bulk actions - using ref to avoid stale closure issues
   // (state updates are async, but we need the value immediately when toast onClick fires)
@@ -556,6 +591,42 @@ export function IssuesList({
       navigate(`/documents/${issue.id}`);
     }
   }, [shouldSelfFetch, buildBelongsTo, createIssueMutation, onCreateIssue, navigate]);
+
+  // Handler for adding an out-of-context issue to the current context (inline '+' button)
+  const handleAddIssueToContext = useCallback(async (issue: Issue) => {
+    const existingBelongsTo = issue.belongs_to || [];
+    const newBelongsTo = [...existingBelongsTo];
+
+    // Add context associations that aren't already present
+    if (effectiveContext.sprintId && !existingBelongsTo.some(b => b.id === effectiveContext.sprintId)) {
+      newBelongsTo.push({ id: effectiveContext.sprintId, type: 'sprint' });
+    }
+    if (effectiveContext.projectId && !existingBelongsTo.some(b => b.id === effectiveContext.projectId)) {
+      newBelongsTo.push({ id: effectiveContext.projectId, type: 'project' });
+    }
+    if (effectiveContext.programId && !existingBelongsTo.some(b => b.id === effectiveContext.programId)) {
+      newBelongsTo.push({ id: effectiveContext.programId, type: 'program' });
+    }
+
+    try {
+      const res = await apiPatch(`/api/documents/${issue.id}`, { belongs_to: newBelongsTo });
+      if (res.ok) {
+        showToast(`Added "${issue.title}" to context`, 'success');
+        // Invalidate queries to refresh
+        queryClient.invalidateQueries({ queryKey: issueKeys.all });
+        if (effectiveContext.sprintId) {
+          queryClient.invalidateQueries({ queryKey: issueKeys.list({ sprintId: effectiveContext.sprintId }) });
+        }
+        if (effectiveContext.projectId) {
+          queryClient.invalidateQueries({ queryKey: issueKeys.list({ projectId: effectiveContext.projectId }) });
+        }
+      } else {
+        showToast('Failed to add issue', 'error');
+      }
+    } catch {
+      showToast('Failed to add issue', 'error');
+    }
+  }, [effectiveContext, queryClient, showToast]);
 
   const handleFilterChange = useCallback((newFilter: string) => {
     setStateFilter(newFilter);
@@ -958,15 +1029,20 @@ export function IssuesList({
   }, [updateIssueMutation, availableSprints, showToast]);
 
   // Render function for issue rows
-  const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => (
-    <IssueRowContent
-      issue={issue}
-      isSelected={isSelected}
-      visibleColumns={visibleColumns}
-      sprints={enableInlineSprintAssignment ? availableSprints : undefined}
-      onSprintChange={enableInlineSprintAssignment ? handleInlineSprintChange : undefined}
-    />
-  ), [visibleColumns, enableInlineSprintAssignment, availableSprints, handleInlineSprintChange]);
+  const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => {
+    const isOutOfContext = allowShowAllIssues && showAllIssues && !inContextIds.has(issue.id);
+    return (
+      <IssueRowContent
+        issue={issue}
+        isSelected={isSelected}
+        visibleColumns={visibleColumns}
+        sprints={enableInlineSprintAssignment ? availableSprints : undefined}
+        onSprintChange={enableInlineSprintAssignment ? handleInlineSprintChange : undefined}
+        isOutOfContext={isOutOfContext}
+        onAddToContext={isOutOfContext ? () => handleAddIssueToContext(issue) : undefined}
+      />
+    );
+  }, [visibleColumns, enableInlineSprintAssignment, availableSprints, handleInlineSprintChange, allowShowAllIssues, showAllIssues, inContextIds, handleAddIssueToContext]);
 
   // Default empty state
   const defaultEmptyState = useMemo(() => (
@@ -1049,26 +1125,72 @@ export function IssuesList({
     <div className={cn('flex h-full flex-col', className)}>
       {/* Header */}
       {!hideHeader && (
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          {headerContent || <div />}
-          <DocumentListToolbar
-            sortOptions={SORT_OPTIONS}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            viewModes={viewModes}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            allColumns={ALL_COLUMNS}
-            visibleColumns={visibleColumns}
-            onToggleColumn={toggleColumn}
-            hiddenCount={hiddenCount}
-            showColumnPicker={viewMode === 'list'}
-            filterContent={combinedFilterContent}
-            createButton={showCreateButton && canCreateIssue ? {
-              label: createButtonLabel,
-              onClick: handleCreateIssue
-            } : undefined}
-          />
+        <div className="flex items-center justify-between border-b border-border px-6 py-4 gap-4">
+          {headerContent || <div className="flex-shrink-0" />}
+          <div className="flex items-center gap-3">
+            {/* Scrollable toolbar section */}
+            <div className="flex items-center gap-2 overflow-x-auto flex-shrink min-w-0">
+              <DocumentListToolbar
+                sortOptions={SORT_OPTIONS}
+                sortBy={sortBy}
+                onSortChange={setSortBy}
+                viewModes={viewModes}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+                allColumns={ALL_COLUMNS}
+                visibleColumns={visibleColumns}
+                onToggleColumn={toggleColumn}
+                hiddenCount={hiddenCount}
+                showColumnPicker={viewMode === 'list'}
+                filterContent={combinedFilterContent}
+              />
+              {/* Add from Backlog button - text collapses on small screens */}
+              {showBacklogPicker && (effectiveContext.sprintId || effectiveContext.projectId || effectiveContext.programId) && (
+                <button
+                  onClick={() => setIsBacklogPickerOpen(true)}
+                  className="rounded-md border border-border px-2 py-1.5 text-sm text-muted hover:text-foreground hover:bg-border/30 transition-colors flex items-center gap-1.5 flex-shrink-0"
+                  title="Add from Backlog"
+                >
+                  <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  <span className="hidden lg:inline whitespace-nowrap">Add from Backlog</span>
+                </button>
+              )}
+              {/* Show All Issues toggle - text collapses on small screens */}
+              {allowShowAllIssues && shouldSelfFetch && (
+                <button
+                  onClick={() => setShowAllIssues(!showAllIssues)}
+                  className={cn(
+                    "rounded-md border px-2 py-1.5 text-sm transition-colors flex items-center gap-1.5 flex-shrink-0",
+                    showAllIssues
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-border text-muted hover:text-foreground hover:bg-border/30"
+                  )}
+                  aria-pressed={showAllIssues}
+                  title={showAllIssues ? "Showing all issues - click to show only in-context" : "Click to show all issues"}
+                >
+                  <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {showAllIssues ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    )}
+                  </svg>
+                  <span className="hidden lg:inline whitespace-nowrap">{showAllIssues ? "All Issues" : "In Context"}</span>
+                </button>
+              )}
+            </div>
+            {/* Fixed Create button - always visible on the right */}
+            {showCreateButton && canCreateIssue && (
+              <button
+                onClick={handleCreateIssue}
+                className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors flex-shrink-0 whitespace-nowrap"
+              >
+                {createButtonLabel}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1174,6 +1296,29 @@ export function IssuesList({
           isConverting={isConverting}
         />
       )}
+
+      {/* Backlog picker modal for adding existing issues */}
+      {showBacklogPicker && (
+        <BacklogPickerModal
+          isOpen={isBacklogPickerOpen}
+          onClose={() => setIsBacklogPickerOpen(false)}
+          context={{
+            sprintId: effectiveContext.sprintId,
+            projectId: effectiveContext.projectId,
+            programId: effectiveContext.programId,
+          }}
+          onIssuesAdded={() => {
+            // Invalidate queries to refresh the issues list
+            queryClient.invalidateQueries({ queryKey: issueKeys.all });
+            if (effectiveContext.sprintId) {
+              queryClient.invalidateQueries({ queryKey: issueKeys.list({ sprintId: effectiveContext.sprintId }) });
+            }
+            if (effectiveContext.projectId) {
+              queryClient.invalidateQueries({ queryKey: issueKeys.list({ projectId: effectiveContext.projectId }) });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1187,38 +1332,62 @@ interface IssueRowContentProps {
   visibleColumns: Set<string>;
   sprints?: { id: string; name: string }[];
   onSprintChange?: (issueId: string, sprintId: string | null) => void;
+  /** Whether this issue is outside the current filter context (for inline add feature) */
+  isOutOfContext?: boolean;
+  /** Handler to add this issue to the current context */
+  onAddToContext?: () => void;
 }
 
-function IssueRowContent({ issue, visibleColumns, sprints, onSprintChange }: IssueRowContentProps) {
+function IssueRowContent({ issue, visibleColumns, sprints, onSprintChange, isOutOfContext, onAddToContext }: IssueRowContentProps) {
+  // Apply reduced opacity to out-of-context issues
+  const cellClass = isOutOfContext ? 'opacity-50' : '';
+
   return (
     <>
       {visibleColumns.has('id') && (
-        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+        <td className={cn("px-4 py-3 text-sm text-muted", cellClass)} role="gridcell">
           #{issue.ticket_number}
         </td>
       )}
       {visibleColumns.has('title') && (
-        <td className="px-4 py-3 text-sm text-foreground" role="gridcell">
-          {issue.title}
+        <td className={cn("px-4 py-3 text-sm text-foreground", cellClass)} role="gridcell">
+          <div className="flex items-center gap-2">
+            <span className="truncate">{issue.title}</span>
+            {isOutOfContext && onAddToContext && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddToContext();
+                }}
+                className="flex-shrink-0 p-1 rounded hover:bg-accent/20 text-accent opacity-100 transition-colors"
+                title="Add to current context"
+                aria-label={`Add "${issue.title}" to context`}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </button>
+            )}
+          </div>
         </td>
       )}
       {visibleColumns.has('status') && (
-        <td className="px-4 py-3" role="gridcell">
+        <td className={cn("px-4 py-3", cellClass)} role="gridcell">
           <StatusBadge state={issue.state} />
         </td>
       )}
       {visibleColumns.has('source') && (
-        <td className="px-4 py-3" role="gridcell">
+        <td className={cn("px-4 py-3", cellClass)} role="gridcell">
           <SourceBadge source={issue.source} />
         </td>
       )}
       {visibleColumns.has('program') && (
-        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+        <td className={cn("px-4 py-3 text-sm text-muted", cellClass)} role="gridcell">
           {getProgramTitle(issue) || '—'}
         </td>
       )}
       {visibleColumns.has('sprint') && (
-        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+        <td className={cn("px-4 py-3 text-sm text-muted", cellClass)} role="gridcell">
           {sprints && onSprintChange ? (
             <InlineSprintSelector
               value={getSprintId(issue)}
@@ -1231,12 +1400,12 @@ function IssueRowContent({ issue, visibleColumns, sprints, onSprintChange }: Iss
         </td>
       )}
       {visibleColumns.has('priority') && (
-        <td className="px-4 py-3" role="gridcell">
+        <td className={cn("px-4 py-3", cellClass)} role="gridcell">
           <PriorityBadge priority={issue.priority} />
         </td>
       )}
       {visibleColumns.has('assignee') && (
-        <td className={cn("px-4 py-3 text-sm text-muted", issue.assignee_archived && "opacity-50")} role="gridcell">
+        <td className={cn("px-4 py-3 text-sm text-muted", cellClass, issue.assignee_archived && "opacity-50")} role="gridcell">
           {issue.assignee_name ? (
             <>
               {issue.assignee_name}{issue.assignee_archived && ' (archived)'}
@@ -1245,7 +1414,7 @@ function IssueRowContent({ issue, visibleColumns, sprints, onSprintChange }: Iss
         </td>
       )}
       {visibleColumns.has('updated') && (
-        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+        <td className={cn("px-4 py-3 text-sm text-muted", cellClass)} role="gridcell">
           {issue.updated_at ? formatDate(issue.updated_at) : '-'}
         </td>
       )}

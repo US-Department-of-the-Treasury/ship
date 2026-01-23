@@ -106,7 +106,6 @@ interface SprintWindowCardProps {
   window: SprintWindow;
   isCurrentWindow: boolean;
   isSelected: boolean;
-  showCreateOption: boolean;
   onSelectSprint: (sprintNumber: number) => void;
   onOpenSprint: (id: string) => void;
   onCreateClick: (sprintNumber: number) => void;
@@ -116,13 +115,12 @@ function SprintWindowCard({
   window,
   isCurrentWindow,
   isSelected,
-  showCreateOption,
   onSelectSprint,
   onOpenSprint,
   onCreateClick,
 }: SprintWindowCardProps) {
   const { sprint, status, sprint_number, start_date, end_date } = window;
-  const canCreate = showCreateOption && status !== 'completed';
+  const canCreate = status !== 'completed';
 
   if (sprint) {
     // Filled window - sprint exists
@@ -460,7 +458,6 @@ export function SprintTimeline({
                 window={window}
                 isCurrentWindow={window.sprint_number === currentSprintNumber}
                 isSelected={window.sprint_number === selectedSprintNumber}
-                showCreateOption={showCreateOption}
                 onSelectSprint={handleSelectSprint}
                 onOpenSprint={handleOpenSprint}
                 onCreateClick={handleCreateClick}

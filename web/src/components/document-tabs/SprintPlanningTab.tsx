@@ -24,8 +24,11 @@ export default function SprintPlanningTab({ documentId, document }: DocumentTabP
   const queryClient = useQueryClient();
   const [isStarting, setIsStarting] = useState(false);
 
-  // Get program_id from document (sprint's parent program)
-  const programId = document.program_id as string | undefined;
+  // Get program_id from document or belongs_to (sprint's parent program)
+  // Sprints store their program association in belongs_to via document_associations
+  const belongsTo = (document as { belongs_to?: Array<{ id: string; type: string }> }).belongs_to;
+  const programId = (document.program_id as string | undefined) ||
+    belongsTo?.find(b => b.type === 'program')?.id;
   // Sprint status is stored in properties.status
   const properties = document.properties as { status?: string; issue_count?: number } | undefined;
   const status = properties?.status || 'planning';
@@ -89,7 +92,9 @@ export default function SprintPlanningTab({ documentId, document }: DocumentTabP
       {/* Issues list */}
       <div className="flex-1 overflow-hidden">
         <IssuesList
-          // Lock to program context - shows all issues from this program
+          // Lock to sprint context - shows only issues in this sprint by default
+          lockedSprintId={documentId}
+          // Lock program context for sprint selector dropdown
           lockedProgramId={programId}
           // Inherit context for new issues - auto-assign to this sprint and program
           inheritedContext={{
@@ -101,8 +106,9 @@ export default function SprintPlanningTab({ documentId, document }: DocumentTabP
           initialStateFilter=""
           showProgramFilter={false}
           showProjectFilter={true}
-          showSprintFilter={true}
+          showSprintFilter={false}
           showCreateButton={true}
+          showBacklogPicker={true}
           createButtonLabel="New Issue"
           viewModes={['list', 'kanban']}
           initialViewMode="list"
@@ -110,13 +116,14 @@ export default function SprintPlanningTab({ documentId, document }: DocumentTabP
           selectionPersistenceKey={`sprint-planning-${documentId}`}
           enableKeyboardNavigation={true}
           enableInlineSprintAssignment={true}
+          allowShowAllIssues={true}
           emptyState={
             <div className="text-center py-12">
               <svg className="h-12 w-12 mx-auto mb-4 text-muted opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <p className="text-sm font-medium text-muted">No issues in this program yet</p>
-              <p className="text-xs text-muted mt-1">Create issues to scope them into this sprint</p>
+              <p className="text-sm font-medium text-muted">No issues in this sprint yet</p>
+              <p className="text-xs text-muted mt-1">Use "Show All" to find issues to add</p>
             </div>
           }
         />

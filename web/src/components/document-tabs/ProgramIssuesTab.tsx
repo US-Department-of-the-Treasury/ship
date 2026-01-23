@@ -13,6 +13,9 @@ export default function ProgramIssuesTab({ documentId }: DocumentTabProps) {
       showProgramFilter={false}
       showProjectFilter={true}
       enableKeyboardNavigation={false}
+      showBacklogPicker={true}
+      showCreateButton={true}
+      allowShowAllIssues={true}
       inheritedContext={{
         programId: documentId,
       }}

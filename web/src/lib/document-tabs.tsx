@@ -61,6 +61,7 @@ const ProgramSprintsTab = React.lazy(() => import('@/components/document-tabs/Pr
 
 const SprintOverviewTab = React.lazy(() => import('@/components/document-tabs/SprintOverviewTab'));
 const SprintPlanningTab = React.lazy(() => import('@/components/document-tabs/SprintPlanningTab'));
+const SprintIssuesTab = React.lazy(() => import('@/components/document-tabs/SprintIssuesTab'));
 const SprintReviewTab = React.lazy(() => import('@/components/document-tabs/SprintReviewTab'));
 const SprintStandupsTab = React.lazy(() => import('@/components/document-tabs/SprintStandupsTab'));
 
@@ -117,6 +118,8 @@ export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
     },
   ],
 
+  // Sprint tabs are dynamic based on status - see getTabsForDocument()
+  // Default sprint tabs (shown when status is unknown)
   sprint: [
     {
       id: 'overview',
@@ -139,6 +142,42 @@ export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
       component: SprintStandupsTab,
     },
   ],
+  // Planning sprint tabs (status = 'planning')
+  'sprint:planning': [
+    {
+      id: 'overview',
+      label: 'Overview',
+      component: SprintOverviewTab,
+    },
+    {
+      id: 'plan',
+      label: 'Plan',
+      component: SprintPlanningTab,
+    },
+  ],
+  // Active/completed sprint tabs (status = 'active' or 'completed')
+  'sprint:active': [
+    {
+      id: 'overview',
+      label: 'Overview',
+      component: SprintOverviewTab,
+    },
+    {
+      id: 'issues',
+      label: 'Issues',
+      component: SprintIssuesTab,
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      component: SprintReviewTab,
+    },
+    {
+      id: 'standups',
+      label: 'Standups',
+      component: SprintStandupsTab,
+    },
+  ],
 
   // Document types without tabs - render directly in editor
   issue: [],
@@ -148,9 +187,40 @@ export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
 /**
  * Get tab configuration for a document type.
  * Returns empty array if document type has no tabs.
+ *
+ * Note: For sprints, use getTabsForDocument() instead to get status-aware tabs.
  */
 export function getTabsForDocumentType(documentType: string): DocumentTabConfig[] {
   return documentTabConfigs[documentType] || [];
+}
+
+/**
+ * Get tab configuration for a specific document, considering document properties.
+ * This is the preferred method as it handles dynamic tabs (e.g., sprint status).
+ *
+ * For sprints:
+ * - Planning status: shows ['overview', 'plan']
+ * - Active/Completed status: shows ['overview', 'issues', 'review', 'standups']
+ */
+export function getTabsForDocument(document: DocumentResponse): DocumentTabConfig[] {
+  const { document_type } = document;
+
+  // Handle sprint-specific dynamic tabs based on status
+  if (document_type === 'sprint') {
+    // Status is stored in properties.status
+    const properties = document.properties as { status?: string } | undefined;
+    const status = properties?.status || 'planning';
+
+    if (status === 'planning') {
+      return documentTabConfigs['sprint:planning'] || documentTabConfigs.sprint || [];
+    } else {
+      // active, completed, or any other status uses active tabs
+      return documentTabConfigs['sprint:active'] || documentTabConfigs.sprint || [];
+    }
+  }
+
+  // For all other document types, use standard lookup
+  return documentTabConfigs[document_type] || [];
 }
 
 /**

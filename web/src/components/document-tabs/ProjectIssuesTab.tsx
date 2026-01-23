@@ -13,6 +13,9 @@ export default function ProjectIssuesTab({ documentId, document }: DocumentTabPr
       showProgramFilter={false}
       showProjectFilter={false}
       enableKeyboardNavigation={false}
+      showBacklogPicker={true}
+      showCreateButton={true}
+      allowShowAllIssues={true}
       inheritedContext={{
         projectId: documentId,
         programId: (document.program_id as string) || undefined,

@@ -217,22 +217,67 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Standup feed */}
-      <div className="flex-1 overflow-auto px-6 py-4">
+    <div className="relative flex h-full flex-col">
+      {/* Floating Add button */}
+      {!showEditor && (
+        <button
+          onClick={() => setShowEditor(true)}
+          className="absolute top-3 right-3 z-10 rounded-md bg-accent p-2 text-white hover:bg-accent/90 transition-colors shadow-sm"
+          title="Add standup update"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      )}
+
+      {/* Editor overlay when active */}
+      {showEditor && (
+        <div className="absolute inset-x-0 top-0 z-10 bg-background border-b border-border p-3">
+          <div className="space-y-2">
+            <div className="min-h-[5rem] rounded-lg border border-border bg-background px-3 py-2 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
+              <EditorContent
+                editor={createEditor}
+                className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[3rem] [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-muted [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowEditor(false);
+                  createEditor?.commands.clearContent();
+                }}
+                className="rounded-md px-3 py-1.5 text-sm text-muted hover:bg-border transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!createEditor || createEditor.isEmpty || saving}
+                className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Posting...' : 'Post'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Standup feed - Scrollable */}
+      <div className="flex-1 overflow-auto px-4 py-3">
         {standups.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-muted">
-            <svg className="h-12 w-12 mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex flex-col items-center justify-center h-48 text-muted">
+            <svg className="h-10 w-10 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
             </svg>
             <p className="text-sm">No standup updates yet</p>
-            <p className="text-xs mt-1">Be the first to share a status update</p>
+            <p className="text-xs mt-1">Click + to share an update</p>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {groupedStandups.map(({ label, standups: dateStandups }) => (
               <div key={label}>
-                <div className="sticky top-0 bg-background py-2">
+                <div className="sticky top-0 bg-background py-1.5">
                   <span className="text-xs font-medium text-muted uppercase tracking-wide">
                     {label}
                   </span>
@@ -255,45 +300,6 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
               </div>
             ))}
           </div>
-        )}
-      </div>
-
-      {/* Add standup form */}
-      <div className="border-t border-border px-6 py-4">
-        {showEditor ? (
-          <div className="space-y-3">
-            <div className="min-h-[8rem] rounded-lg border border-border bg-background px-4 py-3 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
-              <EditorContent
-                editor={createEditor}
-                className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[6rem] [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-muted [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setShowEditor(false);
-                  createEditor?.commands.clearContent();
-                }}
-                className="rounded-md px-4 py-2 text-sm text-muted hover:bg-border transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!createEditor || createEditor.isEmpty || saving}
-                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {saving ? 'Posting...' : 'Post Update'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowEditor(true)}
-            className="w-full rounded-lg border border-border border-dashed px-4 py-3 text-sm text-muted hover:border-accent hover:text-foreground transition-colors"
-          >
-            + Add Standup Update
-          </button>
         )}
       </div>
     </div>
