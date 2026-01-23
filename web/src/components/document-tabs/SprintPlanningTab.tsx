@@ -103,6 +103,7 @@ export default function SprintPlanningTab({ documentId, document }: DocumentTabP
           showProjectFilter={true}
           showSprintFilter={true}
           showCreateButton={true}
+          showBacklogPicker={true}
           createButtonLabel="New Issue"
           viewModes={['list', 'kanban']}
           initialViewMode="list"

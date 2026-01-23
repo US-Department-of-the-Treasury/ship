@@ -33,6 +33,7 @@ export default function SprintIssuesTab({ documentId, document }: DocumentTabPro
         showProjectFilter={true}
         showSprintFilter={false} // Already locked to this sprint
         showCreateButton={true}
+        showBacklogPicker={true}
         createButtonLabel="New Issue"
         viewModes={['list', 'kanban']}
         initialViewMode="kanban" // Kanban is better for active sprint tracking

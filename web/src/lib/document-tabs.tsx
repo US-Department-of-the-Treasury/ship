@@ -207,8 +207,9 @@ export function getTabsForDocument(document: DocumentResponse): DocumentTabConfi
 
   // Handle sprint-specific dynamic tabs based on status
   if (document_type === 'sprint') {
-    // Status is stored as sprint_status in the API response
-    const status = (document as Record<string, unknown>).sprint_status || 'planning';
+    // Status is stored in properties.status
+    const properties = document.properties as { status?: string } | undefined;
+    const status = properties?.status || 'planning';
 
     if (status === 'planning') {
       return documentTabConfigs['sprint:planning'] || documentTabConfigs.sprint || [];
