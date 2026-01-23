@@ -7,9 +7,10 @@ This document summarizes all significant changes to the Ship platform and Claude
 | Metric | Count |
 |--------|-------|
 | PRDs Completed | 4 |
-| User Stories Delivered | 41 |
-| Git Commits | 75+ |
-| Major Features | 6 |
+| PRDs In Progress | 1 |
+| User Stories Delivered | 41+ |
+| Git Commits | 85+ |
+| Major Features | 7 |
 
 ---
 
@@ -52,6 +53,67 @@ All document types now use `/documents/:id` as the canonical route:
 - Sprint close reconciliation prompts
 - In-app standup due indicators
 - Guided project creation wizard
+
+### 5. Sprint Workflow Enhancement (in progress)
+**Impact:** Streamlined sprint management with bulk operations and owner tracking
+
+**Branch:** `feat/sprint-workflow-enhancement`
+
+#### Sprint Owner with Availability Tracking
+- Owner dropdown in sprint properties sidebar
+- Availability indicators per person ("Available" vs "2 sprint(s)")
+- Calculates active sprint count per owner in real-time
+- Uses `user_id` for accurate availability comparison
+
+#### Backlog Picker Modal
+New bulk selection interface for adding issues to sprints:
+```
+┌─────────────────────────────────────────────┐
+│  Add Issues to Sprint 14                    │
+├─────────────────────────────────────────────┤
+│  🔍 Search issues...                        │
+├─────────────────────────────────────────────┤
+│  ☑ Issue #42 - Fix login bug     [High]    │
+│  ☑ Issue #43 - Add export        [Medium]  │
+│  ☐ Issue #44 - Already in sprint [Greyed]  │
+│  ☑ Issue #45 - Refactor auth     [Low]     │
+├─────────────────────────────────────────────┤
+│  [Cancel]              [Add 3 Issues]       │
+└─────────────────────────────────────────────┘
+```
+
+Features:
+- Checkbox multi-select with search
+- Already-assigned issues greyed out
+- Batch PATCH for all selected issues
+- Works for sprint, project, or program context
+
+#### Context-Aware Issue Creation
+- Inline "+" button creates issues pre-linked to current sprint/project
+- `inheritedContext` prop flows through IssuesList component
+- New issues auto-populate `belongs_to[]` with current context
+
+#### Standardized Sprint Issues List
+- Replaced custom issues table with reusable `IssuesList` component
+- List/Kanban toggle (list is default per interview decision)
+- Self-fetching via `lockedSprintId` prop
+- Consistent UX across all issue contexts
+
+#### API Fixes
+- `sync sprint owner to assignee_ids array` - Owner selection persists correctly
+- `align sprint status field name` - Consistent `sprint_status` vs `status` handling
+- Sprint creation includes `document_association` and correct route path
+- Hide "Create Sprint" option on project sprints tab (sprints belong to programs)
+
+#### Files Changed (15 files, +972/-275 lines)
+| File | Changes |
+|------|---------|
+| `BacklogPickerModal.tsx` | NEW - 359 lines |
+| `IssuesList.tsx` | +175 lines (inline creation, backlog picker integration) |
+| `SprintSidebar.tsx` | +66 lines (owner dropdown, availability) |
+| `SprintDetailView.tsx` | Refactored to use IssuesList |
+| `ProgramSprintsTab.tsx` | Simplified (-108 lines) |
+| `documents.ts` (API) | +66 lines (sprint status, associations) |
 
 ---
 
