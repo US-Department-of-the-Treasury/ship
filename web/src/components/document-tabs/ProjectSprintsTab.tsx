@@ -1,8 +1,9 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SprintTimeline, getCurrentSprintNumber, type Sprint } from '@/components/sprint/SprintTimeline';
+import { SprintTimeline, getCurrentSprintNumber, computeSprintDates, type Sprint } from '@/components/sprint/SprintTimeline';
 import { SprintDetailView } from '@/components/sprint/SprintDetailView';
 import { useProjectSprints } from '@/hooks/useSprintsQuery';
+import { apiPost } from '@/lib/api';
 import type { DocumentTabProps } from '@/lib/document-tabs';
 
 /**
@@ -11,14 +12,23 @@ import type { DocumentTabProps } from '@/lib/document-tabs';
  * This is the "Sprints" tab content when viewing a project document.
  * Features a horizontal scrolling SprintTimeline at the top.
  * When nestedPath contains a sprint ID, shows SprintDetailView inline.
+ *
+ * Sprint creation is enabled for ALL projects (with or without program association).
+ * Created sprints are automatically associated with the project (and program if available).
  */
-export default function ProjectSprintsTab({ documentId, nestedPath }: DocumentTabProps) {
+export default function ProjectSprintsTab({ documentId, document, nestedPath }: DocumentTabProps) {
   const navigate = useNavigate();
-  const { sprints, loading, workspaceSprintStartDate } = useProjectSprints(documentId);
+  const { sprints, loading, workspaceSprintStartDate, refreshSprints } = useProjectSprints(documentId);
+
+  // Get program_id from the project document for sprint creation
+  const programId = (document.program_id as string) || undefined;
 
   // If nestedPath is provided and looks like a UUID, show sprint detail
   const isUuid = nestedPath && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nestedPath);
   const selectedSprintId = isUuid ? nestedPath : null;
+
+  // Sprint creation is enabled for all projects
+  const canCreateSprints = true;
 
   // Handle sprint selection from timeline
   const handleSelectSprint = useCallback((_sprintNumber: number, sprint: Sprint | null) => {
@@ -31,6 +41,46 @@ export default function ProjectSprintsTab({ documentId, nestedPath }: DocumentTa
   const handleOpenSprint = useCallback((sprintId: string) => {
     navigate(`/documents/${documentId}/sprints/${sprintId}`);
   }, [documentId, navigate]);
+
+  // Handle sprint creation - follows document creation pattern (no modal)
+  const handleCreateSprint = useCallback(async (sprintNumber: number) => {
+    try {
+      // Calculate date range for sprint
+      const dateRange = computeSprintDates(sprintNumber, workspaceSprintStartDate);
+
+      // Build belongs_to associations - always include project, optionally include program
+      const belongs_to: Array<{ id: string; type: 'project' | 'program' }> = [
+        { id: documentId, type: 'project' }
+      ];
+      if (programId) {
+        belongs_to.push({ id: programId, type: 'program' });
+      }
+
+      // Create sprint via document API - no owner (user sets on sprint page)
+      const res = await apiPost('/api/documents', {
+        document_type: 'sprint',
+        title: `Sprint ${sprintNumber}`,
+        properties: {
+          sprint_number: sprintNumber,
+          status: 'planning',
+          start_date: dateRange.start.toISOString(),
+          end_date: dateRange.end.toISOString(),
+        },
+        belongs_to,
+      });
+
+      if (res.ok) {
+        const newSprint = await res.json();
+        // Refresh sprint list and navigate to the new sprint
+        await refreshSprints();
+        navigate(`/documents/${newSprint.id}`);
+      } else {
+        console.error('Failed to create sprint:', await res.text());
+      }
+    } catch (err) {
+      console.error('Failed to create sprint:', err);
+    }
+  }, [documentId, programId, workspaceSprintStartDate, refreshSprints, navigate]);
 
   if (loading) {
     return (
@@ -57,7 +107,8 @@ export default function ProjectSprintsTab({ documentId, nestedPath }: DocumentTa
           selectedSprintId={selectedSprintId ?? undefined}
           onSelectSprint={handleSelectSprint}
           onOpenSprint={handleOpenSprint}
-          showCreateOption={false}
+          onCreateClick={canCreateSprints ? handleCreateSprint : undefined}
+          showCreateOption={canCreateSprints}
         />
       </div>
 
@@ -87,7 +138,10 @@ interface EmptySprintStateProps {
   workspaceSprintStartDate: Date;
 }
 
-function EmptySprintState({ sprints, workspaceSprintStartDate }: EmptySprintStateProps) {
+function EmptySprintState({
+  sprints,
+  workspaceSprintStartDate,
+}: EmptySprintStateProps) {
   const currentSprintNumber = getCurrentSprintNumber(workspaceSprintStartDate);
   const activeSprint = sprints.find(s => s.sprint_number === currentSprintNumber);
 
@@ -97,10 +151,9 @@ function EmptySprintState({ sprints, workspaceSprintStartDate }: EmptySprintStat
         <svg className="w-16 h-16 mb-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
         </svg>
-        <p className="text-lg font-medium mb-2">No sprints associated</p>
+        <p className="text-lg font-medium mb-2">No sprints yet</p>
         <p className="text-sm text-center max-w-md">
-          This project is not yet associated with any sprints.
-          Sprints are created at the program level and can be linked to projects.
+          Click on a sprint window in the timeline above to create your first sprint.
         </p>
       </div>
     );
@@ -123,3 +176,4 @@ function EmptySprintState({ sprints, workspaceSprintStartDate }: EmptySprintStat
     </div>
   );
 }
+

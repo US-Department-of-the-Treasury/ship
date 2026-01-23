@@ -15,7 +15,7 @@ import { projectKeys, useProjectSprintsQuery } from '@/hooks/useProjectsQuery';
 import { TabBar } from '@/components/ui/TabBar';
 import { useCurrentDocument } from '@/contexts/CurrentDocumentContext';
 import {
-  getTabsForDocumentType,
+  getTabsForDocument,
   documentTypeHasTabs,
   resolveTabLabels,
   type DocumentResponse,
@@ -70,8 +70,8 @@ export function UnifiedDocumentPage() {
     };
   }, [document, id, setCurrentDocument, clearCurrentDocument]);
 
-  // Set default active tab when document loads
-  const tabConfig = document ? getTabsForDocumentType(document.document_type) : [];
+  // Set default active tab when document loads (status-aware for sprints)
+  const tabConfig = document ? getTabsForDocument(document) : [];
   const hasTabs = document ? documentTypeHasTabs(document.document_type) : false;
 
   // Derive activeTab from URL - if valid tab in URL, use it; otherwise default to first tab
