@@ -40,6 +40,7 @@ export default function SprintIssuesTab({ documentId, document }: DocumentTabPro
         storageKeyPrefix={`sprint-issues-${documentId}`}
         selectionPersistenceKey={`sprint-issues-${documentId}`}
         enableKeyboardNavigation={true}
+        allowShowAllIssues={true}
         emptyState={
           <div className="text-center py-12">
             <svg className="h-12 w-12 mx-auto mb-4 text-muted opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">

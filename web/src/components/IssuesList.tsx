@@ -170,8 +170,8 @@ export interface IssuesListProps {
   enableInlineSprintAssignment?: boolean;
   /** Show "Add from Backlog" button to add existing issues to the current context (sprint/project/program) */
   showBacklogPicker?: boolean;
-  /** Show out-of-context issues with reduced opacity and '+' button to add them inline */
-  showOutOfContextIssues?: boolean;
+  /** Allow toggling "Show All Issues" to display out-of-context issues with reduced opacity and '+' button */
+  allowShowAllIssues?: boolean;
 }
 
 /**
@@ -220,7 +220,7 @@ export function IssuesList({
   selectionPersistenceKey,
   enableInlineSprintAssignment = false,
   showBacklogPicker = false,
-  showOutOfContextIssues = false,
+  allowShowAllIssues = false,
 }: IssuesListProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -241,6 +241,9 @@ export function IssuesList({
   // Determine if we should self-fetch based on locked filters
   const shouldSelfFetch = Boolean(lockedProgramId || lockedProjectId || lockedSprintId);
 
+  // State for "Show All Issues" toggle
+  const [showAllIssues, setShowAllIssues] = useState(false);
+
   // Self-fetch issues when using locked filters
   const { data: fetchedIssues, isLoading: isFetchingIssues } = useIssuesQuery(
     shouldSelfFetch ? {
@@ -251,10 +254,10 @@ export function IssuesList({
     { enabled: shouldSelfFetch }
   );
 
-  // Also fetch ALL issues when showOutOfContextIssues is enabled (for inline add feature)
+  // Also fetch ALL issues when showAllIssues toggle is enabled (for inline add feature)
   const { data: allIssuesData, isLoading: isLoadingAllIssues } = useIssuesQuery(
     {},
-    { enabled: showOutOfContextIssues && shouldSelfFetch }
+    { enabled: allowShowAllIssues && showAllIssues && shouldSelfFetch }
   );
 
   // Internal create issue mutation for self-fetching mode
@@ -300,23 +303,23 @@ export function IssuesList({
 
   // Use fetched issues when self-fetching, otherwise use the prop
   const inContextIssues = shouldSelfFetch ? (fetchedIssues ?? []) : (issuesProp ?? []);
-  const loading = shouldSelfFetch ? (isFetchingIssues || (showOutOfContextIssues && isLoadingAllIssues)) : loadingProp;
+  const loading = shouldSelfFetch ? (isFetchingIssues || (showAllIssues && isLoadingAllIssues)) : loadingProp;
 
   // Create set of in-context issue IDs for quick lookup
   const inContextIds = useMemo(() => {
     return new Set(inContextIssues.map(i => i.id));
   }, [inContextIssues]);
 
-  // Combine in-context and out-of-context issues when showOutOfContextIssues is enabled
+  // Combine in-context and out-of-context issues when showAllIssues toggle is enabled
   const issues = useMemo(() => {
-    if (!showOutOfContextIssues || !allIssuesData) {
+    if (!showAllIssues || !allIssuesData) {
       return inContextIssues;
     }
     // Get out-of-context issues (not already in the in-context set)
     const outOfContextIssues = allIssuesData.filter(issue => !inContextIds.has(issue.id));
     // Return in-context first, then out-of-context
     return [...inContextIssues, ...outOfContextIssues];
-  }, [showOutOfContextIssues, inContextIssues, allIssuesData, inContextIds]);
+  }, [showAllIssues, inContextIssues, allIssuesData, inContextIds]);
 
   // Use shared hooks for list state management
   const { sortBy, setSortBy, viewMode, setViewMode } = useListFilters({
@@ -1027,7 +1030,7 @@ export function IssuesList({
 
   // Render function for issue rows
   const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => {
-    const isOutOfContext = showOutOfContextIssues && !inContextIds.has(issue.id);
+    const isOutOfContext = allowShowAllIssues && showAllIssues && !inContextIds.has(issue.id);
     return (
       <IssueRowContent
         issue={issue}
@@ -1039,7 +1042,7 @@ export function IssuesList({
         onAddToContext={isOutOfContext ? () => handleAddIssueToContext(issue) : undefined}
       />
     );
-  }, [visibleColumns, enableInlineSprintAssignment, availableSprints, handleInlineSprintChange, showOutOfContextIssues, inContextIds, handleAddIssueToContext]);
+  }, [visibleColumns, enableInlineSprintAssignment, availableSprints, handleInlineSprintChange, allowShowAllIssues, showAllIssues, inContextIds, handleAddIssueToContext]);
 
   // Default empty state
   const defaultEmptyState = useMemo(() => (
@@ -1153,6 +1156,29 @@ export function IssuesList({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                 </svg>
                 Add from Backlog
+              </button>
+            )}
+            {/* Show All Issues toggle */}
+            {allowShowAllIssues && shouldSelfFetch && (
+              <button
+                onClick={() => setShowAllIssues(!showAllIssues)}
+                className={cn(
+                  "rounded-md border px-3 py-1.5 text-sm transition-colors flex items-center gap-1.5",
+                  showAllIssues
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border text-muted hover:text-foreground hover:bg-border/30"
+                )}
+                aria-pressed={showAllIssues}
+                title={showAllIssues ? "Showing all issues - click to show only in-context" : "Click to show all issues"}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {showAllIssues ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                  )}
+                </svg>
+                {showAllIssues ? "All Issues" : "In Context"}
               </button>
             )}
           </div>
