@@ -217,26 +217,28 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header with Add standup form - Fixed */}
-      <div className="flex-shrink-0 border-b border-border p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-foreground">Standups</h3>
-          {!showEditor && (
-            <button
-              onClick={() => setShowEditor(true)}
-              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
-            >
-              + Add Update
-            </button>
-          )}
-        </div>
-        {showEditor && (
-          <div className="space-y-3">
-            <div className="min-h-[6rem] rounded-lg border border-border bg-background px-3 py-2 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
+    <div className="relative flex h-full flex-col">
+      {/* Floating Add button */}
+      {!showEditor && (
+        <button
+          onClick={() => setShowEditor(true)}
+          className="absolute top-3 right-3 z-10 rounded-md bg-accent p-2 text-white hover:bg-accent/90 transition-colors shadow-sm"
+          title="Add standup update"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      )}
+
+      {/* Editor overlay when active */}
+      {showEditor && (
+        <div className="absolute inset-x-0 top-0 z-10 bg-background border-b border-border p-3">
+          <div className="space-y-2">
+            <div className="min-h-[5rem] rounded-lg border border-border bg-background px-3 py-2 focus-within:border-accent focus-within:ring-1 focus-within:ring-accent">
               <EditorContent
                 editor={createEditor}
-                className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[4rem] [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-muted [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
+                className="prose prose-sm max-w-none text-foreground [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[3rem] [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-muted [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
               />
             </div>
             <div className="flex justify-end gap-2">
@@ -258,18 +260,18 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
               </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Standup feed - Scrollable */}
-      <div className="flex-1 overflow-auto px-4 py-4">
+      <div className="flex-1 overflow-auto px-4 py-3">
         {standups.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-muted">
             <svg className="h-10 w-10 mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
             </svg>
             <p className="text-sm">No standup updates yet</p>
-            <p className="text-xs mt-1">Share your first status update</p>
+            <p className="text-xs mt-1">Click + to share an update</p>
           </div>
         ) : (
           <div className="space-y-4">
