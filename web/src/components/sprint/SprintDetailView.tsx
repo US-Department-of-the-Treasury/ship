@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { cn } from '@/lib/cn';
-import { issueStatusColors } from '@/lib/statusColors';
 import { StandupFeed } from '@/components/StandupFeed';
+import { IssuesList } from '@/components/IssuesList';
 import { SprintProgressGraph } from './SprintProgressGraph';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -36,7 +35,6 @@ export interface SprintDetailViewProps {
   sprintId: string;
   programId?: string;
   projectId?: string;
-  onIssueClick: (id: string) => void;
   onBack: () => void;
 }
 
@@ -46,20 +44,13 @@ export interface SprintDetailViewProps {
  */
 export function SprintDetailView({
   sprintId,
-  onIssueClick,
+  programId,
+  projectId,
   onBack,
 }: SprintDetailViewProps) {
   const [sprint, setSprint] = useState<SprintDetail | null>(null);
   const [issues, setIssues] = useState<SprintIssue[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const stateLabels: Record<string, string> = {
-    backlog: 'Backlog',
-    todo: 'Todo',
-    in_progress: 'In Progress',
-    done: 'Done',
-    cancelled: 'Cancelled',
-  };
 
   // Fetch sprint details and issues
   useEffect(() => {
@@ -209,43 +200,25 @@ export function SprintDetailView({
         </div>
 
         {/* Issues List Column */}
-        <div className="flex-1 overflow-auto">
-          {issues.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
-              <p className="text-muted">No issues in this sprint</p>
-            </div>
-          ) : (
-            <table className="w-full">
-              <thead className="sticky top-0 bg-background border-b border-border">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider w-24">ID</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider">Title</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider w-32">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {issues.map((issue) => (
-                  <tr
-                    key={issue.id}
-                    className="hover:bg-border/30 cursor-pointer transition-colors"
-                    onClick={() => onIssueClick(issue.id)}
-                  >
-                    <td className="px-4 py-3 text-sm font-mono text-muted">
-                      {issue.display_id}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-foreground">
-                      {issue.title}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={cn('rounded px-2 py-0.5 text-xs font-medium whitespace-nowrap', issueStatusColors[issue.state])}>
-                        {stateLabels[issue.state] || issue.state}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <IssuesList
+            lockedSprintId={sprintId}
+            viewModes={['list', 'kanban']}
+            initialViewMode="list"
+            filterTabs={null}
+            showCreateButton={false}
+            inheritedContext={{
+              programId,
+              projectId,
+              sprintId,
+            }}
+            emptyState={
+              <div className="flex h-full items-center justify-center">
+                <p className="text-muted">No issues in this sprint</p>
+              </div>
+            }
+            className="flex-1"
+          />
         </div>
       </div>
     </div>
