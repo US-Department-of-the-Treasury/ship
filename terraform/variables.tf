@@ -69,3 +69,9 @@ variable "eb_environment_cname" {
   type        = string
   default     = ""
 }
+
+variable "cloudfront_waf_web_acl_id" {
+  description = "WAF WebACL ARN to attach to CloudFront distribution (optional)"
+  type        = string
+  default     = ""
+}
