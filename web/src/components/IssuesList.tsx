@@ -1127,7 +1127,7 @@ export function IssuesList({
       {!hideHeader && (
         <div className="flex items-center justify-between border-b border-border px-6 py-4 gap-4">
           {headerContent || <div className="flex-shrink-0" />}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {/* Scrollable toolbar section */}
             <div className="flex items-center gap-2 overflow-x-auto flex-shrink min-w-0">
               <DocumentListToolbar

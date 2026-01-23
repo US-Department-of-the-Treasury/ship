@@ -170,36 +170,39 @@ export function SprintDetailView({
         </div>
       </div>
 
-      {/* Three-column layout: Burndown | Standup Feed | Issues */}
+      {/* Two-column layout: Left (1/3 - Progress + Standups) | Right (2/3 - Issues) */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Burndown Chart Column */}
-        <div className="w-80 flex-shrink-0 border-r border-border overflow-auto p-4">
-          <h3 className="text-sm font-medium text-foreground mb-3">Sprint Progress</h3>
-          {sprintEstimate > 0 ? (
-            <SprintProgressGraph
-              startDate={startDate}
-              endDate={endDate}
-              scopeHours={sprintEstimate}
-              completedHours={completedEstimate}
-              status={status}
-            />
-          ) : (
-            <div className="text-sm text-muted">No estimates yet</div>
-          )}
-          {sprint.goal && (
-            <div className="mt-4">
-              <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-1">Goal</h4>
-              <p className="text-sm text-foreground">{sprint.goal}</p>
-            </div>
-          )}
+        {/* Left Column: Sprint Progress (fixed) + Standups (scrollable) */}
+        <div className="w-1/3 min-w-[320px] max-w-[400px] flex-shrink-0 border-r border-border flex flex-col overflow-hidden">
+          {/* Sprint Progress - Fixed */}
+          <div className="flex-shrink-0 border-b border-border p-4">
+            <h3 className="text-sm font-medium text-foreground mb-3">Sprint Progress</h3>
+            {sprintEstimate > 0 ? (
+              <SprintProgressGraph
+                startDate={startDate}
+                endDate={endDate}
+                scopeHours={sprintEstimate}
+                completedHours={completedEstimate}
+                status={status}
+              />
+            ) : (
+              <div className="text-sm text-muted">No estimates yet</div>
+            )}
+            {sprint.goal && (
+              <div className="mt-4">
+                <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-1">Goal</h4>
+                <p className="text-sm text-foreground">{sprint.goal}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Standups - Scrollable with fixed header */}
+          <div className="flex-1 overflow-hidden">
+            <StandupFeed sprintId={sprintId} />
+          </div>
         </div>
 
-        {/* Standup Feed Column */}
-        <div className="flex-1 border-r border-border overflow-hidden">
-          <StandupFeed sprintId={sprintId} />
-        </div>
-
-        {/* Issues List Column */}
+        {/* Right Column: Issues List (2/3) */}
         <div className="flex-1 overflow-hidden flex flex-col">
           <IssuesList
             lockedSprintId={sprintId}
