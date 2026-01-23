@@ -129,16 +129,23 @@ Issues are individual units of work. They can belong to projects and be assigned
 **Issue States:**
 
 ```
-┌──────┐     ┌─────────────┐     ┌───────────┐     ┌──────┐
-│ todo │ ──▶ │ in_progress │ ──▶ │ in_review │ ──▶ │ done │
-└──────┘     └─────────────┘     └───────────┘     └──────┘
-
-   ↓ (if blocked or deprioritized)
-
-┌───────────┐
-│ cancelled │
-└───────────┘
+┌────────┐     ┌─────────┐     ┌──────┐     ┌─────────────┐     ┌───────────┐     ┌──────┐
+│ triage │ ──▶ │ backlog │ ──▶ │ todo │ ──▶ │ in_progress │ ──▶ │ in_review │ ──▶ │ done │
+└────────┘     └─────────┘     └──────┘     └─────────────┘     └───────────┘     └──────┘
+(external       (internal
+ feedback)      issues)        Any state can transition to cancelled:
+                               ┌───────────┐
+                               │ cancelled │
+                               └───────────┘
 ```
+
+- **Triage**: External feedback submissions awaiting review
+- **Backlog**: Accepted ideas and future work, not yet prioritized
+- **Todo**: Prioritized and ready to pick up
+- **In Progress**: Someone is actively working on this
+- **In Review**: Work complete, awaiting review/approval
+- **Done**: Work is complete and approved
+- **Cancelled**: Work deprioritized or no longer needed
 
 ---
 
@@ -293,8 +300,8 @@ All bulk operations support **Undo** for 5 seconds.
 ### Filters
 
 Filter issues by:
-- **Status**: Todo, In Progress, In Review, Done, Cancelled
-- **Priority**: High, Medium, Low
+- **Status**: Triage, Backlog, Todo, In Progress, In Review, Done, Cancelled
+- **Priority**: Urgent, High, Medium, Low, None
 - **Assignee**: Team member
 - **Sprint**: Current, specific, or none
 - **Tags**: Custom labels
