@@ -1,11 +1,19 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PropertyRow } from '@/components/ui/PropertyRow';
+import { Combobox } from '@/components/ui/Combobox';
 
 const STATUS_OPTIONS = [
   { value: 'planning', label: 'Planning', color: 'bg-blue-500' },
   { value: 'active', label: 'Active', color: 'bg-green-500' },
   { value: 'completed', label: 'Completed', color: 'bg-gray-500' },
 ];
+
+interface SprintOwner {
+  id: string;
+  name: string;
+  email: string;
+}
 
 interface Sprint {
   id: string;
@@ -19,6 +27,18 @@ interface Sprint {
   issue_count?: number;
   completed_count?: number;
   hypothesis?: string;
+  owner?: SprintOwner | null;
+  owner_id?: string | null;
+}
+
+interface Person {
+  id: string;
+  user_id: string;
+  name: string;
+}
+
+interface ExistingSprint {
+  owner?: SprintOwner | null;
 }
 
 interface SprintSidebarProps {
@@ -26,9 +46,19 @@ interface SprintSidebarProps {
   onUpdate: (updates: Partial<Sprint>) => Promise<void>;
   /** Fields to highlight as missing (e.g., after type conversion) */
   highlightedFields?: string[];
+  /** Team members for owner selection */
+  people?: Person[];
+  /** Existing sprints for calculating availability */
+  existingSprints?: ExistingSprint[];
 }
 
-export function SprintSidebar({ sprint, onUpdate, highlightedFields = [] }: SprintSidebarProps) {
+export function SprintSidebar({
+  sprint,
+  onUpdate,
+  highlightedFields = [],
+  people = [],
+  existingSprints = [],
+}: SprintSidebarProps) {
   const navigate = useNavigate();
   // Helper to check if a field should be highlighted
   const isHighlighted = (field: string) => highlightedFields.includes(field);
@@ -37,8 +67,48 @@ export function SprintSidebar({ sprint, onUpdate, highlightedFields = [] }: Spri
     ? Math.round(((sprint.completed_count || 0) / (sprint.issue_count || 1)) * 100)
     : 0;
 
+  // Calculate owner availability (sprint count per person)
+  const ownerOptions = useMemo(() => {
+    // Count sprints per owner
+    const ownerSprintCounts = new Map<string, number>();
+    existingSprints.forEach(s => {
+      if (s.owner?.id) {
+        ownerSprintCounts.set(s.owner.id, (ownerSprintCounts.get(s.owner.id) || 0) + 1);
+      }
+    });
+
+    // Build options with availability description
+    return people
+      .filter(p => p.user_id) // Only include people with user accounts
+      .map(person => {
+        const sprintCount = ownerSprintCounts.get(person.user_id) || 0;
+        const availability = sprintCount === 0
+          ? 'Available'
+          : `${sprintCount} sprint${sprintCount > 1 ? 's' : ''}`;
+
+        return {
+          value: person.user_id,
+          label: person.name,
+          description: availability,
+        };
+      });
+  }, [people, existingSprints]);
+
   return (
     <div className="space-y-4 p-4">
+      <PropertyRow label="Owner">
+        <Combobox
+          options={ownerOptions}
+          value={sprint.owner_id || null}
+          onChange={(value) => onUpdate({ owner_id: value })}
+          placeholder="Unassigned"
+          clearLabel="Unassigned"
+          searchPlaceholder="Search people..."
+          emptyText="No people found"
+          aria-label="Owner"
+        />
+      </PropertyRow>
+
       <PropertyRow label="Status" highlighted={isHighlighted('status')}>
         <select
           value={sprint.status}
@@ -123,4 +193,3 @@ export function SprintSidebar({ sprint, onUpdate, highlightedFields = [] }: Spri
     </div>
   );
 }
-
