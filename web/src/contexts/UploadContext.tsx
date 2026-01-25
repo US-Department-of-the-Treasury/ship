@@ -2,11 +2,9 @@
  * Upload Context - Tracks active uploads for navigation warnings
  * Subscribes to the global upload tracker for real-time updates
  */
-import { createContext, useContext, useState, useEffect, ReactNode, useSyncExternalStore } from 'react';
-import { useBlocker } from 'react-router-dom';
+import { createContext, useContext, useEffect, ReactNode, useSyncExternalStore } from 'react';
 import {
   getUploadCount,
-  getActiveUploads,
   subscribeToUploads,
 } from '@/services/uploadTracker';
 
@@ -63,22 +61,17 @@ export function useUploads() {
 }
 
 /**
- * Hook for blocking navigation while uploads are in progress
- * Shows a custom modal for in-app navigation
+ * Hook for checking upload status
+ * Note: In-app SPA navigation blocking requires migrating to createBrowserRouter.
+ * Currently we only block browser navigation via beforeunload.
  */
 export function useUploadNavigationWarning() {
   const { isUploading, uploadCount } = useUploads();
 
-  // Block in-app navigation when uploads are in progress
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      isUploading && currentLocation.pathname !== nextLocation.pathname
-  );
-
   return {
-    isBlocked: blocker.state === 'blocked',
+    isBlocked: false, // Disabled until we migrate to data router
     uploadCount,
-    proceed: blocker.proceed,
-    reset: blocker.reset,
+    proceed: () => {},
+    reset: () => {},
   };
 }
