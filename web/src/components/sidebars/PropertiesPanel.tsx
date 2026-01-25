@@ -107,7 +107,7 @@ interface IssuePanelProps {
 
 // Props for project panel
 interface ProjectPanelProps {
-  programs: Array<{ id: string; name: string; emoji?: string | null }>;
+  programs: Array<{ id: string; name: string; color: string; emoji?: string | null }>;
   people: Person[];
   onConvert?: () => void;
   onUndoConversion?: () => void;

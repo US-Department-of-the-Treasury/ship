@@ -1,6 +1,7 @@
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
+import { ProgramCombobox } from '@/components/ProgramCombobox';
 import { PropertyRow } from '@/components/ui/PropertyRow';
 import { computeICEScore } from '@ship/shared';
 
@@ -40,6 +41,7 @@ interface Project {
 interface Program {
   id: string;
   name: string;
+  color: string;
   emoji?: string | null;
 }
 
@@ -210,18 +212,12 @@ export function ProjectSidebar({
 
       {/* Program (Optional) */}
       <PropertyRow label="Program">
-        <select
-          value={project.program_id || ''}
-          onChange={(e) => onUpdate({ program_id: e.target.value || null })}
-          className="w-full h-9 text-sm bg-transparent border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-        >
-          <option value="">No program</option>
-          {programs.map((program) => (
-            <option key={program.id} value={program.id}>
-              {program.emoji ? `${program.emoji} ` : ''}{program.name}
-            </option>
-          ))}
-        </select>
+        <ProgramCombobox
+          programs={programs}
+          value={project.program_id}
+          onChange={(programId) => onUpdate({ program_id: programId })}
+          placeholder="No program"
+        />
       </PropertyRow>
 
       {/* Stats */}
