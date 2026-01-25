@@ -78,3 +78,13 @@ output "eb_config_summary" {
   }
 }
 
+output "uploads_bucket_name" {
+  description = "S3 bucket for file uploads"
+  value       = aws_s3_bucket.uploads.id
+}
+
+output "uploads_bucket_arn" {
+  description = "S3 bucket ARN for file uploads"
+  value       = aws_s3_bucket.uploads.arn
+}
+

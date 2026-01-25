@@ -99,7 +99,7 @@ resource "aws_cloudfront_distribution" "frontend" {
 
       forwarded_values {
         query_string = true
-        headers      = ["*"]  # Forward all headers including CloudFront-Forwarded-Proto for trust proxy
+        headers      = ["*"] # Forward all headers including CloudFront-Forwarded-Proto for trust proxy
         cookies {
           forward = "all"
         }
@@ -165,7 +165,7 @@ resource "aws_cloudfront_distribution" "frontend" {
       cached_methods         = ["GET", "HEAD"]
       compress               = true
       min_ttl                = 0
-      default_ttl            = 3600  # Cache JWKS for 1 hour
+      default_ttl            = 3600 # Cache JWKS for 1 hour
       max_ttl                = 86400
 
       forwarded_values {
@@ -307,5 +307,75 @@ resource "aws_route53_record" "app" {
     name                   = aws_cloudfront_distribution.frontend.domain_name
     zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
     evaluate_target_health = false
+  }
+}
+
+# =============================================================================
+# S3 Bucket for File Uploads
+# =============================================================================
+
+# S3 Bucket for user file uploads (documents, videos, etc.)
+resource "aws_s3_bucket" "uploads" {
+  bucket = "${var.project_name}-uploads-${var.environment}-${data.aws_caller_identity.current.account_id}"
+
+  tags = {
+    Name = "${var.project_name}-uploads"
+  }
+}
+
+# Block all public access (files served via presigned URLs)
+resource "aws_s3_bucket_public_access_block" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Enable versioning for compliance and recovery
+resource "aws_s3_bucket_versioning" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Server-side encryption (AES256)
+resource "aws_s3_bucket_server_side_encryption_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# CORS configuration for browser uploads
+resource "aws_s3_bucket_cors_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["PUT", "POST"]
+    allowed_origins = var.upload_cors_origins
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3600
+  }
+}
+
+# Lifecycle rule to clean up incomplete multipart uploads
+resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
   }
 }

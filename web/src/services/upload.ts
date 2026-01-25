@@ -7,6 +7,10 @@
 // In production, use VITE_API_URL or relative URLs
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
+// File size limits
+export const MAX_FILE_SIZE = 1073741824; // 1GB in bytes
+export const MAX_FILE_SIZE_DISPLAY = '1GB';
+
 interface UploadResult {
   fileId: string;
   cdnUrl: string;

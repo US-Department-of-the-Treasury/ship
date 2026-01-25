@@ -7,6 +7,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Editor } from '@tiptap/react';
 import { uploadFile, isImageFile } from '@/services/upload';
+import { registerUpload, updateUploadProgress, unregisterUpload } from '@/services/uploadTracker';
 
 export interface ImageUploadOptions {
   /**
@@ -107,6 +108,10 @@ async function handleImageUpload(
 
   options.onUploadStart?.(file);
 
+  // Generate unique upload ID for tracking navigation warnings
+  const uploadId = crypto.randomUUID();
+  registerUpload(uploadId, file.name);
+
   // Create a data URL for immediate preview
   const dataUrl = await fileToDataUrl(file);
 
@@ -130,8 +135,8 @@ async function handleImageUpload(
     const result = await uploadFile(
       file,
       (progress) => {
-        // Could update a progress indicator here
-        console.log(`Upload progress: ${progress.progress}%`);
+        // Update global tracker for navigation warning
+        updateUploadProgress(uploadId, progress.progress);
       },
       signal
     );
@@ -169,8 +174,12 @@ async function handleImageUpload(
       view.dispatch(transaction);
     }
 
+    // Upload complete - unregister from tracker
+    unregisterUpload(uploadId);
     options.onUploadComplete?.(result.cdnUrl);
   } catch (error) {
+    // Upload failed - unregister from tracker
+    unregisterUpload(uploadId);
     // Don't report cancellation as an error - it's intentional
     if (error instanceof DOMException && error.name === 'AbortError') {
       console.log('Image upload cancelled');

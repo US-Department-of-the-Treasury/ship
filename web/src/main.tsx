@@ -14,6 +14,7 @@ import { IssuesProvider } from '@/contexts/IssuesContext';
 import { ProjectsProvider } from '@/contexts/ProjectsContext';
 import { ArchivedPersonsProvider } from '@/contexts/ArchivedPersonsContext';
 import { CurrentDocumentProvider } from '@/contexts/CurrentDocumentContext';
+import { UploadProvider } from '@/contexts/UploadContext';
 import { LoginPage } from '@/pages/Login';
 import { AppLayout } from '@/pages/App';
 import { DocumentsPage } from '@/pages/Documents';
@@ -191,7 +192,9 @@ function AppRoutes() {
                   <ProgramsProvider>
                     <ProjectsProvider>
                       <IssuesProvider>
-                        <AppLayout />
+                        <UploadProvider>
+                          <AppLayout />
+                        </UploadProvider>
                       </IssuesProvider>
                     </ProjectsProvider>
                   </ProgramsProvider>

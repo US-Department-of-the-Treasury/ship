@@ -59,6 +59,7 @@ module "cloudfront_s3" {
   app_domain_name      = var.app_domain_name
   route53_zone_id      = var.route53_zone_id
   eb_environment_cname = var.eb_environment_cname
+  upload_cors_origins  = var.upload_cors_origins
 }
 
 # SSM Parameters

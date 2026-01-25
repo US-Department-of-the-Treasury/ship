@@ -69,3 +69,9 @@ variable "eb_environment_cname" {
   type        = string
   default     = ""
 }
+
+variable "upload_cors_origins" {
+  description = "Allowed origins for file upload CORS (browser direct-to-S3 uploads)"
+  type        = list(string)
+  default     = [] # Must be set per-environment (e.g., ["https://ship.awsdev.treasury.gov"])
+}

@@ -6,7 +6,8 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
-import { uploadFile, isAllowedFileType, getMimeTypeFromExtension, isImageFile } from '@/services/upload';
+import { uploadFile, isAllowedFileType, getMimeTypeFromExtension, isImageFile, MAX_FILE_SIZE, MAX_FILE_SIZE_DISPLAY } from '@/services/upload';
+import { registerUpload, updateUploadProgress, unregisterUpload } from '@/services/uploadTracker';
 import { useState } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -204,6 +205,14 @@ async function handleFileUpload(editor: any, file: File, signal?: AbortSignal) {
   if (signal?.aborted) {
     return;
   }
+
+  // Check file size before uploading
+  if (file.size > MAX_FILE_SIZE) {
+    console.error('File too large:', { name: file.name, size: file.size, maxSize: MAX_FILE_SIZE });
+    alert(`File "${file.name}" is too large.\n\nMaximum file size is ${MAX_FILE_SIZE_DISPLAY}.`);
+    return;
+  }
+
   // Check if file type is blocked (executables/scripts are blocked for security)
   if (!isAllowedFileType(file.type, file.name)) {
     const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
@@ -214,6 +223,10 @@ async function handleFileUpload(editor: any, file: File, signal?: AbortSignal) {
 
   // Get effective MIME type (use extension fallback if browser returns empty)
   const effectiveMimeType = file.type || getMimeTypeFromExtension(file.name) || 'application/octet-stream';
+
+  // Generate unique upload ID for tracking navigation warnings
+  const uploadId = crypto.randomUUID();
+  registerUpload(uploadId, file.name);
 
   // Insert placeholder with uploading state
   editor
@@ -231,7 +244,8 @@ async function handleFileUpload(editor: any, file: File, signal?: AbortSignal) {
   try {
     // Upload file with abort signal
     const result = await uploadFile(file, (progress) => {
-      console.log(`Upload progress: ${progress.progress}%`);
+      // Update global tracker for navigation warning
+      updateUploadProgress(uploadId, progress.progress);
     }, signal);
 
     // Check if aborted before updating the editor
@@ -271,7 +285,13 @@ async function handleFileUpload(editor: any, file: File, signal?: AbortSignal) {
       });
       view.dispatch(transaction);
     }
+
+    // Upload complete - unregister from tracker
+    unregisterUpload(uploadId);
   } catch (error) {
+    // Upload failed - unregister from tracker
+    unregisterUpload(uploadId);
+
     // Don't report cancellation as an error - it's intentional
     if (error instanceof DOMException && error.name === 'AbortError') {
       console.log('File upload cancelled');

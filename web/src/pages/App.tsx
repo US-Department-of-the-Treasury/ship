@@ -17,6 +17,7 @@ import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
 import { SessionTimeoutModal } from '@/components/SessionTimeoutModal';
+import { UploadNavigationWarning } from '@/components/UploadNavigationWarning';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 import { CacheCorruptionAlert } from '@/components/CacheCorruptionAlert';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
@@ -506,6 +507,9 @@ export function AppLayout() {
         warningType={warningType}
         onStayLoggedIn={resetSessionTimer}
       />
+
+      {/* Upload Navigation Warning Modal */}
+      <UploadNavigationWarning />
     </div>
     </SelectionPersistenceProvider>
     </TooltipProvider>
