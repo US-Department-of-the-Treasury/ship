@@ -103,12 +103,12 @@ CREATE TABLE IF NOT EXISTS documents (
   parent_id UUID REFERENCES documents(id) ON DELETE CASCADE,
   position INTEGER DEFAULT 0,
 
-  -- Associations (documents can reference other documents)
-  -- Note: project_id and sprint_id are migrated to document_associations table and dropped by migration 027
-  -- These columns are kept here so migrations 020-022 can copy data before 027 drops them
-  program_id UUID REFERENCES documents(id) ON DELETE SET NULL,
-  project_id UUID REFERENCES documents(id) ON DELETE SET NULL,
-  sprint_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+  -- Associations: program, project, and sprint relationships are stored in document_associations table
+  -- These legacy columns are kept here so migrations 020-029 can copy data before dropping them
+  -- All three columns are dropped by migrations 027 (project_id, sprint_id) and 029 (program_id)
+  -- DO NOT USE: project_id UUID - DROPPED by migration 027
+  -- DO NOT USE: sprint_id UUID - DROPPED by migration 027
+  -- DO NOT USE: program_id UUID - DROPPED by migration 029
 
   -- Type-specific properties stored as JSONB
   -- Issue properties: state, priority, assignee_id, source, rejection_reason, feedback_status
@@ -144,8 +144,7 @@ CREATE INDEX IF NOT EXISTS idx_users_last_workspace_id ON users(last_workspace_i
 CREATE INDEX IF NOT EXISTS idx_documents_workspace_id ON documents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_documents_parent_id ON documents(parent_id);
 CREATE INDEX IF NOT EXISTS idx_documents_document_type ON documents(document_type);
-CREATE INDEX IF NOT EXISTS idx_documents_program_id ON documents(program_id);
--- Note: project_id and sprint_id indexes removed - use document_associations table
+-- Note: program_id, project_id, and sprint_id indexes removed - use document_associations table
 -- GIN index for efficient JSONB property queries
 CREATE INDEX IF NOT EXISTS idx_documents_properties ON documents USING GIN (properties);
 
