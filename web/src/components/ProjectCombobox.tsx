@@ -223,7 +223,7 @@ export function ProjectCombobox({
                 const programProjects = projectsByProgram[programKey];
                 const firstProject = programProjects[0];
                 const programName = programKey === '__unassigned__'
-                  ? 'No Program'
+                  ? 'Not assigned to a program'
                   : firstProject?.programName || 'Unknown';
                 const programColor = firstProject?.programColor || '#6b7280';
                 const programEmoji = firstProject?.programEmoji;

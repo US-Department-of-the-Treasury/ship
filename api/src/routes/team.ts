@@ -502,13 +502,7 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
         return;
       }
       resolvedProjectId = projectId;
-      resolvedProgramId = projectCheck.rows[0].program_id;
-
-      // If project has no program, create a dummy program reference or handle gracefully
-      if (!resolvedProgramId) {
-        res.status(400).json({ error: 'Project must belong to a program' });
-        return;
-      }
+      resolvedProgramId = projectCheck.rows[0].program_id; // Can be null for projects without programs
     } else {
       // Legacy: Validate programId belongs to current workspace
       const programCheck = await pool.query(
@@ -524,6 +518,7 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
     }
 
     // Check if person is already assigned to this exact project/sprint (prevent duplicates)
+    // Use IS NOT DISTINCT FROM for program_id to handle NULL values correctly
     const existingAssignment = await pool.query(
       `SELECT s.id
        FROM documents s
@@ -531,7 +526,7 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
          AND s.properties->'assignee_ids' ? $2
          AND (s.properties->>'sprint_number')::int = $3
          AND s.properties->>'project_id' = $4
-         AND s.program_id = $5`,
+         AND s.program_id IS NOT DISTINCT FROM $5`,
       [workspaceId, personDocId, sprintNumber, resolvedProjectId, resolvedProgramId]
     );
 
@@ -542,10 +537,11 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
     }
 
     // Find existing sprint for this program, project, and sprint number
+    // Use IS NOT DISTINCT FROM for program_id to handle NULL values correctly
     let sprintResult = await pool.query(
       `SELECT id, properties FROM documents
        WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND program_id = $2 AND (properties->>'sprint_number')::int = $3
+         AND program_id IS NOT DISTINCT FROM $2 AND (properties->>'sprint_number')::int = $3
          AND properties->>'project_id' = $4`,
       [workspaceId, resolvedProgramId, sprintNumber, resolvedProjectId]
     );
