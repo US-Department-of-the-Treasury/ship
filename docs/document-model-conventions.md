@@ -79,7 +79,8 @@ Entities that are "configuration" rather than "content":
 | Category               | Description                | Examples                                             |
 | ---------------------- | -------------------------- | ---------------------------------------------------- |
 | **Core fields**        | Columns on every document  | `id`, `title`, `workspace_id`, `document_type`       |
-| **Association fields** | Columns for relationships  | `program_id`, `project_id`, `sprint_id`, `parent_id` |
+| **Hierarchy field**    | Parent-child containment   | `parent_id` (only column for relationships)          |
+| **Association table**  | Junction table for org relationships | `document_associations` (program, project, sprint) |
 | **Type-specific**      | In properties JSONB        | `state` (issues), `sprint_number` (sprints)          |
 | **Custom**             | User-defined in properties | "Department", "Risk Level"                           |
 
@@ -112,6 +113,140 @@ document.properties = {
 - Simpler schema (fewer nullable columns)
 - Query performance is fine with aggressive client-side caching
 - TypeScript provides compile-time safety anyway
+
+## Association Pattern
+
+Ship uses two distinct patterns for document relationships. Understanding when to use each is critical to avoid bugs.
+
+### parent_id vs document_associations
+
+| Pattern | Column/Table | Relationship | Use Case |
+|---------|--------------|--------------|----------|
+| **parent_id** | `parent_id` column | 1:1 containment | Wiki children, sprint_plan → sprint |
+| **document_associations** | Junction table | Many-to-many organizational | program, project, sprint memberships |
+
+**parent_id (Hierarchy):** Used when a document is *contained within* another document. The child cannot exist without the parent. Examples:
+- Wiki page nested under another wiki page
+- Sprint plan belonging to a sprint document
+- Sprint retro belonging to a sprint document
+
+**document_associations (Organizational):** Used when a document *belongs to* another document for organizational purposes, but could theoretically belong to multiple or move between them. Examples:
+- Issue belongs to a program (organizational grouping)
+- Issue belongs to a project (work stream)
+- Issue assigned to a sprint (time window)
+
+### Junction Table Schema
+
+```sql
+CREATE TABLE document_associations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  related_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  relationship_type TEXT NOT NULL,  -- 'program' | 'project' | 'sprint'
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (document_id, related_id, relationship_type)
+);
+```
+
+### Using document-crud.ts Utilities
+
+**Always use the utility functions** in `api/src/utils/document-crud.ts` for association operations. Never write raw SQL for associations in route files.
+
+#### Reading Associations
+
+```typescript
+import {
+  getBelongsToAssociations,
+  getBelongsToAssociationsBatch,
+  getProgramAssociation,
+  getProjectAssociation,
+  getSprintAssociation,
+} from '../utils/document-crud.js';
+
+// Get all associations for a document
+const associations = await getBelongsToAssociations(documentId);
+// Returns: [{ id, type, title, color }, ...]
+
+// Get specific association type
+const program = await getProgramAssociation(documentId);
+const project = await getProjectAssociation(documentId);
+const sprint = await getSprintAssociation(documentId);
+// Returns: { id, type, title, color } or null
+
+// Batch fetch to avoid N+1 (for lists)
+const associationsMap = await getBelongsToAssociationsBatch(documentIds);
+for (const doc of documents) {
+  doc.belongs_to = associationsMap.get(doc.id) || [];
+}
+```
+
+#### Writing Associations
+
+```typescript
+import {
+  addBelongsToAssociation,
+  removeBelongsToAssociation,
+  removeAssociationsByType,
+  syncBelongsToAssociations,
+  updateProgramAssociation,
+  updateProjectAssociation,
+  updateSprintAssociation,
+} from '../utils/document-crud.js';
+
+// Add a single association (idempotent - uses ON CONFLICT DO NOTHING)
+await addBelongsToAssociation(issueId, sprintId, 'sprint');
+
+// Remove a single association
+await removeBelongsToAssociation(issueId, sprintId, 'sprint');
+
+// Remove all associations of a type
+await removeAssociationsByType(issueId, 'program');
+
+// Replace association (remove old, add new - handles null)
+await updateProgramAssociation(documentId, newProgramId);
+await updateProjectAssociation(documentId, newProjectId);
+await updateSprintAssociation(documentId, newSprintId);
+
+// Full sync (replace all associations)
+await syncBelongsToAssociations(issueId, [
+  { id: programId, type: 'program' },
+  { id: projectId, type: 'project' },
+  { id: sprintId, type: 'sprint' },
+]);
+```
+
+### Why This Pattern Exists
+
+The document_associations pattern was adopted after discovering write-read mismatch bugs with direct columns:
+
+1. **Old pattern (buggy):** `program_id` column on documents table
+   - CREATE wrote to the column
+   - GET read from junction table via JOIN
+   - Result: orphaned entities, data inconsistency
+
+2. **New pattern (consistent):** All reads and writes go through `document_associations`
+   - Single source of truth
+   - Utility functions ensure consistent usage
+   - No more orphaned entities
+
+### Migration History
+
+| Column | Status | Migration |
+|--------|--------|-----------|
+| `project_id` | DROPPED | 027_drop_legacy_association_columns.sql |
+| `sprint_id` | DROPPED | 027_drop_legacy_association_columns.sql |
+| `program_id` | DROPPED | 029_drop_program_id_column.sql |
+
+All three organizational relationship columns have been removed. Only `parent_id` remains for hierarchy.
+
+### Adding New Association Types
+
+If you need to add a new association type (e.g., 'team', 'milestone'):
+
+1. Add the type to `BelongsToEntry` in `document-crud.ts`
+2. Create type-specific helpers (e.g., `getTeamAssociation`, `updateTeamAssociation`)
+3. Update documentation
+4. No schema changes needed - junction table handles any relationship_type string
 
 ## Sprint Model
 
