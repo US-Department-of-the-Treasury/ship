@@ -247,6 +247,211 @@ export async function removeBelongsToAssociation(
   );
 }
 
+/**
+ * Remove all associations of a specific type for a document
+ *
+ * @example
+ * await removeAssociationsByType(issueId, 'program');
+ */
+export async function removeAssociationsByType(
+  documentId: string,
+  relationshipType: string
+): Promise<void> {
+  await pool.query(
+    `DELETE FROM document_associations
+     WHERE document_id = $1 AND relationship_type = $2`,
+    [documentId, relationshipType]
+  );
+}
+
+// =============================================================================
+// Type-Specific Association Helpers
+// =============================================================================
+
+/**
+ * Get the program association for a document
+ *
+ * @example
+ * const program = await getProgramAssociation(projectId);
+ * // Returns: { id: '...', title: 'My Program', color: '#ff0000' } or null
+ */
+export async function getProgramAssociation(
+  documentId: string
+): Promise<BelongsToEntry | null> {
+  const result = await pool.query(
+    `SELECT da.related_id as id, da.relationship_type as type,
+            d.title, d.properties->>'color' as color
+     FROM document_associations da
+     LEFT JOIN documents d ON da.related_id = d.id
+     WHERE da.document_id = $1 AND da.relationship_type = 'program'
+     LIMIT 1`,
+    [documentId]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title || undefined,
+    color: row.color || undefined,
+  };
+}
+
+/**
+ * Get the project association for a document
+ *
+ * @example
+ * const project = await getProjectAssociation(issueId);
+ */
+export async function getProjectAssociation(
+  documentId: string
+): Promise<BelongsToEntry | null> {
+  const result = await pool.query(
+    `SELECT da.related_id as id, da.relationship_type as type,
+            d.title, d.properties->>'color' as color
+     FROM document_associations da
+     LEFT JOIN documents d ON da.related_id = d.id
+     WHERE da.document_id = $1 AND da.relationship_type = 'project'
+     LIMIT 1`,
+    [documentId]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title || undefined,
+    color: row.color || undefined,
+  };
+}
+
+/**
+ * Get the sprint association for a document
+ *
+ * @example
+ * const sprint = await getSprintAssociation(issueId);
+ */
+export async function getSprintAssociation(
+  documentId: string
+): Promise<BelongsToEntry | null> {
+  const result = await pool.query(
+    `SELECT da.related_id as id, da.relationship_type as type,
+            d.title, d.properties->>'color' as color
+     FROM document_associations da
+     LEFT JOIN documents d ON da.related_id = d.id
+     WHERE da.document_id = $1 AND da.relationship_type = 'sprint'
+     LIMIT 1`,
+    [documentId]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title || undefined,
+    color: row.color || undefined,
+  };
+}
+
+/**
+ * Update the program association for a document (replace existing)
+ *
+ * Pass null to remove the program association entirely.
+ *
+ * @example
+ * await updateProgramAssociation(projectId, newProgramId);
+ * await updateProgramAssociation(projectId, null); // Remove program
+ */
+export async function updateProgramAssociation(
+  documentId: string,
+  programId: string | null
+): Promise<void> {
+  // Remove existing program association
+  await removeAssociationsByType(documentId, 'program');
+
+  // Add new one if provided
+  if (programId) {
+    await addBelongsToAssociation(documentId, programId, 'program');
+  }
+}
+
+/**
+ * Update the project association for a document (replace existing)
+ *
+ * Pass null to remove the project association entirely.
+ *
+ * @example
+ * await updateProjectAssociation(issueId, newProjectId);
+ */
+export async function updateProjectAssociation(
+  documentId: string,
+  projectId: string | null
+): Promise<void> {
+  await removeAssociationsByType(documentId, 'project');
+  if (projectId) {
+    await addBelongsToAssociation(documentId, projectId, 'project');
+  }
+}
+
+/**
+ * Update the sprint association for a document (replace existing)
+ *
+ * Pass null to remove the sprint association entirely.
+ *
+ * @example
+ * await updateSprintAssociation(issueId, newSprintId);
+ */
+export async function updateSprintAssociation(
+  documentId: string,
+  sprintId: string | null
+): Promise<void> {
+  await removeAssociationsByType(documentId, 'sprint');
+  if (sprintId) {
+    await addBelongsToAssociation(documentId, sprintId, 'sprint');
+  }
+}
+
+/**
+ * Batch get program associations for multiple documents
+ *
+ * Returns a Map keyed by document ID with the program info.
+ * Used to avoid N+1 queries when listing documents.
+ *
+ * @example
+ * const programsMap = await getProgramAssociationsBatch(projectIds);
+ * for (const project of projects) {
+ *   project.program = programsMap.get(project.id) || null;
+ * }
+ */
+export async function getProgramAssociationsBatch(
+  documentIds: string[]
+): Promise<Map<string, BelongsToEntry>> {
+  if (documentIds.length === 0) {
+    return new Map();
+  }
+
+  const result = await pool.query(
+    `SELECT da.document_id, da.related_id as id, da.relationship_type as type,
+            d.title, d.properties->>'color' as color
+     FROM document_associations da
+     LEFT JOIN documents d ON da.related_id = d.id
+     WHERE da.document_id = ANY($1) AND da.relationship_type = 'program'`,
+    [documentIds]
+  );
+
+  const programsMap = new Map<string, BelongsToEntry>();
+  for (const row of result.rows) {
+    programsMap.set(row.document_id, {
+      id: row.id,
+      type: row.type,
+      title: row.title || undefined,
+      color: row.color || undefined,
+    });
+  }
+
+  return programsMap;
+}
+
 // =============================================================================
 // User Lookup
 // =============================================================================
