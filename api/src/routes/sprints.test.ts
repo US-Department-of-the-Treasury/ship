@@ -517,4 +517,144 @@ describe('Sprints API', () => {
       expect(res.status).toBe(404)
     })
   })
+
+  describe('POST /api/sprints/:id/carryover', () => {
+    let sourceSprintId: string
+    let targetSprintId: string
+    let issueId1: string
+    let issueId2: string
+
+    beforeAll(async () => {
+      // Create source sprint (completed)
+      const sourceResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
+         VALUES ($1, 'sprint', 'Source Sprint for Carryover', 'workspace', $2, $3, $4)
+         RETURNING id`,
+        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 100, status: 'completed' })]
+      )
+      sourceSprintId = sourceResult.rows[0].id
+
+      // Create target sprint (planning)
+      const targetResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
+         VALUES ($1, 'sprint', 'Target Sprint for Carryover', 'workspace', $2, $3, $4)
+         RETURNING id`,
+        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 101, status: 'planning' })]
+      )
+      targetSprintId = targetResult.rows[0].id
+
+      // Create test issues
+      const issue1Result = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
+         VALUES ($1, 'issue', 'Issue 1 for Carryover', 'workspace', $2, $3, '{}')
+         RETURNING id`,
+        [testWorkspaceId, testProgramId, testUserId]
+      )
+      issueId1 = issue1Result.rows[0].id
+
+      const issue2Result = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
+         VALUES ($1, 'issue', 'Issue 2 for Carryover', 'workspace', $2, $3, '{}')
+         RETURNING id`,
+        [testWorkspaceId, testProgramId, testUserId]
+      )
+      issueId2 = issue2Result.rows[0].id
+
+      // Associate issues with source sprint
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'sprint'), ($3, $2, 'sprint')`,
+        [issueId1, sourceSprintId, issueId2]
+      )
+    })
+
+    it('should move issues from source sprint to target sprint', async () => {
+      const res = await request(app)
+        .post(`/api/sprints/${sourceSprintId}/carryover`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+        .send({
+          issue_ids: [issueId1],
+          target_sprint_id: targetSprintId
+        })
+
+      expect(res.status).toBe(200)
+      expect(res.body.moved_count).toBe(1)
+      expect(res.body.source_sprint.id).toBe(sourceSprintId)
+      expect(res.body.target_sprint.id).toBe(targetSprintId)
+
+      // Verify issue is now in target sprint
+      const assocResult = await pool.query(
+        `SELECT related_id FROM document_associations
+         WHERE document_id = $1 AND relationship_type = 'sprint'`,
+        [issueId1]
+      )
+      expect(assocResult.rows[0].related_id).toBe(targetSprintId)
+
+      // Verify carryover_from_sprint_id is set
+      const issueResult = await pool.query(
+        `SELECT properties FROM documents WHERE id = $1`,
+        [issueId1]
+      )
+      expect(issueResult.rows[0].properties.carryover_from_sprint_id).toBe(sourceSprintId)
+    })
+
+    it('should reject carryover to completed sprint', async () => {
+      // Create a completed sprint
+      const completedResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
+         VALUES ($1, 'sprint', 'Completed Sprint', 'workspace', $2, $3, $4)
+         RETURNING id`,
+        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 102, status: 'completed' })]
+      )
+
+      const res = await request(app)
+        .post(`/api/sprints/${sourceSprintId}/carryover`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+        .send({
+          issue_ids: [issueId2],
+          target_sprint_id: completedResult.rows[0].id
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('planning or active')
+    })
+
+    it('should reject issues not in source sprint', async () => {
+      // Create an issue NOT in the source sprint
+      const unrelatedResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
+         VALUES ($1, 'issue', 'Unrelated Issue', 'workspace', $2, $3, '{}')
+         RETURNING id`,
+        [testWorkspaceId, testProgramId, testUserId]
+      )
+
+      const res = await request(app)
+        .post(`/api/sprints/${sourceSprintId}/carryover`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+        .send({
+          issue_ids: [unrelatedResult.rows[0].id],
+          target_sprint_id: targetSprintId
+        })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('not found in source sprint')
+    })
+
+    it('should return 404 for non-existent source sprint', async () => {
+      const fakeId = crypto.randomUUID()
+      const res = await request(app)
+        .post(`/api/sprints/${fakeId}/carryover`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+        .send({
+          issue_ids: [issueId2],
+          target_sprint_id: targetSprintId
+        })
+
+      expect(res.status).toBe(404)
+    })
+  })
 })

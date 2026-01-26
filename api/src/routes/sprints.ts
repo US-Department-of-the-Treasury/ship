@@ -2298,12 +2298,13 @@ router.post('/:id/carryover', authMiddleware, async (req: Request, res: Response
       return;
     }
 
-    // 3. Verify all issue_ids belong to the source sprint
+    // 3. Verify all issue_ids belong to the source sprint and user has access
     const issueCheckResult = await pool.query(
       `SELECT d.id FROM documents d
        JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
-       WHERE d.id = ANY($2) AND d.document_type = 'issue' AND d.workspace_id = $3`,
-      [sourceSprintId, issue_ids, workspaceId]
+       WHERE d.id = ANY($2) AND d.document_type = 'issue' AND d.workspace_id = $3
+         AND ${VISIBILITY_FILTER_SQL('d', '$4', '$5')}`,
+      [sourceSprintId, issue_ids, workspaceId, userId, isAdmin]
     );
 
     const foundIssueIds = new Set(issueCheckResult.rows.map(r => r.id));
