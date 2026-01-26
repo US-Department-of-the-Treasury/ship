@@ -108,7 +108,7 @@ searchRouter.get('/learnings', authMiddleware, async (req: Request, res: Respons
       SELECT
         d.id,
         d.title,
-        d.program_id,
+        prog_da.related_id as program_id,
         d.properties->>'category' as category,
         d.properties->'tags' as tags,
         d.properties->>'source_prd' as source_prd,
@@ -117,6 +117,7 @@ searchRouter.get('/learnings', authMiddleware, async (req: Request, res: Respons
         d.updated_at,
         substring(d.content::text, 1, 500) as content_preview
       FROM documents d
+      LEFT JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
       WHERE d.workspace_id = $1
         AND d.document_type = 'wiki'
         AND d.archived_at IS NULL
@@ -146,7 +147,7 @@ searchRouter.get('/learnings', authMiddleware, async (req: Request, res: Respons
     // Filter by program if provided
     if (programId) {
       params.push(programId);
-      query += ` AND d.program_id = $${params.length}`;
+      query += ` AND d.id IN (SELECT document_id FROM document_associations WHERE related_id = $${params.length} AND relationship_type = 'program')`;
     }
 
     params.push(limit);

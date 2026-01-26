@@ -94,7 +94,8 @@ router.get('/my-work', authMiddleware, async (req: Request, res: Response) => {
        FROM documents d
        LEFT JOIN document_associations sprint_assoc ON sprint_assoc.document_id = d.id AND sprint_assoc.relationship_type = 'sprint'
        LEFT JOIN documents sprint ON sprint.id = sprint_assoc.related_id AND sprint.document_type = 'sprint'
-       LEFT JOIN documents p ON d.program_id = p.id
+       LEFT JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id AND p.document_type = 'program'
        WHERE d.workspace_id = $1
          AND d.document_type = 'issue'
          AND (d.properties->>'assignee_id')::uuid = $2
@@ -179,7 +180,8 @@ router.get('/my-work', authMiddleware, async (req: Request, res: Response) => {
                 )
               END as inferred_status
        FROM documents d
-       LEFT JOIN documents p ON d.program_id = p.id
+       LEFT JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id AND p.document_type = 'program'
        WHERE d.workspace_id = $1
          AND d.document_type = 'project'
          AND (d.properties->>'owner_id')::uuid = $2
@@ -220,7 +222,8 @@ router.get('/my-work', authMiddleware, async (req: Request, res: Response) => {
               p.title as program_name,
               (d.properties->>'sprint_number')::int as sprint_number
        FROM documents d
-       JOIN documents p ON d.program_id = p.id
+       JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       JOIN documents p ON prog_da.related_id = p.id AND p.document_type = 'program'
        WHERE d.workspace_id = $1
          AND d.document_type = 'sprint'
          AND (d.properties->>'owner_id')::uuid = $2

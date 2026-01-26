@@ -499,10 +499,10 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     await client.query('BEGIN');
 
     const result = await client.query(
-      `INSERT INTO documents (workspace_id, document_type, title, parent_id, program_id, properties, created_by, visibility, content)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO documents (workspace_id, document_type, title, parent_id, properties, created_by, visibility, content)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [req.workspaceId, document_type, title, parent_id || null, program_id || null, JSON.stringify(properties || {}), req.userId, visibility, content ? JSON.stringify(content) : null]
+      [req.workspaceId, document_type, title, parent_id || null, JSON.stringify(properties || {}), req.userId, visibility, content ? JSON.stringify(content) : null]
     );
 
     const newDoc = result.rows[0];
@@ -635,10 +635,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       updates.push(`parent_id = $${paramIndex++}`);
       values.push(data.parent_id);
     }
-    if (data.program_id !== undefined) {
-      updates.push(`program_id = $${paramIndex++}`);
-      values.push(data.program_id);
-    }
+    // Note: program_id is handled via document_associations table (see below)
     // Note: sprint_id is handled via document_associations table (see below)
     if (data.position !== undefined) {
       updates.push(`position = $${paramIndex++}`);
@@ -822,6 +819,31 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
           await pool.query(
             `INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, 'sprint') ON CONFLICT DO NOTHING`,
             [id, data.sprint_id]
+          );
+        }
+      }
+    }
+
+    // Handle program_id via document_associations (when passed directly, not via belongs_to)
+    if (data.program_id !== undefined && !hasBelongsToUpdate) {
+      // Remove existing program association
+      await pool.query(
+        `DELETE FROM document_associations WHERE document_id = $1 AND relationship_type = 'program'`,
+        [id]
+      );
+
+      // Add new program association if program_id is not null
+      if (data.program_id !== null) {
+        // Verify the program exists
+        const programCheck = await pool.query(
+          `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program' AND deleted_at IS NULL`,
+          [data.program_id, workspaceId]
+        );
+
+        if (programCheck.rows.length > 0) {
+          await pool.query(
+            `INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, 'program') ON CONFLICT DO NOTHING`,
+            [id, data.program_id]
           );
         }
       }

@@ -37,11 +37,12 @@ router.get('/:id/backlinks', authMiddleware, async (req: Request, res: Response)
 
     // Get all documents that link to this document (only visible ones)
     const result = await pool.query(
-      `SELECT d.id, d.document_type, d.title, d.ticket_number, d.program_id, d.properties,
+      `SELECT d.id, d.document_type, d.title, d.ticket_number, prog_da.related_id as program_id, d.properties,
               p.properties->>'prefix' as program_prefix
        FROM document_links dl
        JOIN documents d ON dl.source_id = d.id
-       LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
+       LEFT JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id AND p.document_type = 'program'
        WHERE dl.target_id = $1 AND d.workspace_id = $2
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
        ORDER BY dl.created_at DESC`,

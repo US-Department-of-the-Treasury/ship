@@ -528,10 +528,10 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     properties.missing_fields = completeness.missingFields;
 
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, properties, program_id, created_by)
-       VALUES ($1, 'project', $2, $3, $4, $5)
-       RETURNING id, title, properties, program_id, archived_at, created_at, updated_at`,
-      [req.workspaceId, title, JSON.stringify(properties), program_id || null, req.userId]
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+       VALUES ($1, 'project', $2, $3, $4)
+       RETURNING id, title, properties, archived_at, created_at, updated_at`,
+      [req.workspaceId, title, JSON.stringify(properties), req.userId]
     );
 
     // Create program association in junction table (mirrors PATCH behavior)
@@ -562,7 +562,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     }
 
     res.status(201).json({
-      ...extractProjectFromRow({ ...result.rows[0], inferred_status: 'backlog' }),
+      ...extractProjectFromRow({ ...result.rows[0], program_id: program_id || null, inferred_status: 'backlog' }),
       sprint_count: 0,
       issue_count: 0,
       owner,
@@ -1288,12 +1288,12 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     };
 
     // Create the sprint document
-    // Use project's program_id for backward compatibility
+    // program_id is set via document_associations below (not directly on documents table)
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by, content)
-       VALUES ($1, 'sprint', $2, $3, $4, $5, $6)
-       RETURNING id, title, properties, program_id`,
-      [workspaceId, title, project.program_id, JSON.stringify(properties), userId, JSON.stringify(defaultContent)]
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by, content)
+       VALUES ($1, 'sprint', $2, $3, $4, $5)
+       RETURNING id, title, properties`,
+      [workspaceId, title, JSON.stringify(properties), userId, JSON.stringify(defaultContent)]
     );
 
     const sprint = result.rows[0];

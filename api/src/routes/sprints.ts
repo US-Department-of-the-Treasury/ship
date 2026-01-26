@@ -816,10 +816,10 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     };
 
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by, content)
-       VALUES ($1, 'sprint', $2, $3, $4, $5, $6)
-       RETURNING id, title, properties, program_id`,
-      [workspaceId, title, program_id || null, JSON.stringify(properties), userId, JSON.stringify(defaultContent)]
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by, content)
+       VALUES ($1, 'sprint', $2, $3, $4, $5)
+       RETURNING id, title, properties`,
+      [workspaceId, title, JSON.stringify(properties), userId, JSON.stringify(defaultContent)]
     );
 
     const sprintId = result.rows[0].id;

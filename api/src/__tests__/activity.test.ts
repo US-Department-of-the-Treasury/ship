@@ -311,12 +311,13 @@ describe('Activity API', () => {
 
         const activityQuery = vi.mocked(pool.query).mock.calls[1]![0] as string;
 
-        // Verify query structure includes all relevant associations
+        // Verify query structure includes all relevant associations via document_associations
         expect(activityQuery).toContain('program_projects');
         expect(activityQuery).toContain('program_sprints');
-        expect(activityQuery).toContain('program_id = $1');
-        expect(activityQuery).toContain('project_id IN');
-        expect(activityQuery).toContain('sprint_id IN');
+        expect(activityQuery).toContain('document_associations');
+        expect(activityQuery).toContain("relationship_type = 'program'");
+        expect(activityQuery).toContain("relationship_type = 'project'");
+        expect(activityQuery).toContain("relationship_type = 'sprint'");
       });
 
       it('project query includes direct documents and sprints', async () => {
@@ -338,8 +339,7 @@ describe('Activity API', () => {
         const activityQuery = vi.mocked(pool.query).mock.calls[1]![0] as string;
 
         expect(activityQuery).toContain('project_sprints');
-        expect(activityQuery).toContain('project_id = $1');
-        // Issues linked via junction table
+        // Project and sprint associations use document_associations junction table
         expect(activityQuery).toContain('document_associations');
         expect(activityQuery).toContain("relationship_type = 'sprint'");
         expect(activityQuery).toContain("relationship_type = 'project'");

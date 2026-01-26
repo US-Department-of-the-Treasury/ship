@@ -472,10 +472,19 @@ describe('Sprints API', () => {
       const sprintId = sprintResult.rows[0].id
 
       // Create an issue assigned to the sprint
+      const issueResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by)
+         VALUES ($1, 'issue', 'Issue for Snapshot', 'workspace', $2)
+         RETURNING id`,
+        [testWorkspaceId, testUserId]
+      )
+      const issueId = issueResult.rows[0].id
+
+      // Link issue to sprint via document_associations (required for sprint snapshot)
       await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, project_id, sprint_id, created_by)
-         VALUES ($1, 'issue', 'Issue for Snapshot', 'workspace', $2, $3, $4)`,
-        [testWorkspaceId, testProjectId, sprintId, testUserId]
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'sprint')`,
+        [issueId, sprintId]
       )
 
       const res = await request(app)

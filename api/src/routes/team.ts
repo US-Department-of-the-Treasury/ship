@@ -104,10 +104,12 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
     const maxDate = sprints[sprints.length - 1]?.endDate || today.toISOString().split('T')[0];
 
     const dbSprintsResult = await pool.query(
-      `SELECT d.id, d.title as name, d.properties->>'start_date' as start_date, d.properties->>'end_date' as end_date, d.program_id,
+      `SELECT d.id, d.title as name, d.properties->>'start_date' as start_date, d.properties->>'end_date' as end_date,
+              prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'emoji' as program_emoji, p.properties->>'color' as program_color
        FROM documents d
-       JOIN documents p ON d.program_id = p.id
+       LEFT JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id AND p.document_type = 'program'
        WHERE d.workspace_id = $1 AND d.document_type = 'sprint'
          AND (d.properties->>'start_date')::date >= $2 AND (d.properties->>'end_date')::date <= $3
          AND ${VISIBILITY_FILTER_SQL('d', '$4', '$5')}`,
@@ -118,11 +120,12 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
     const issuesResult = await pool.query(
       `SELECT i.id, i.title, da_sprint.related_id as sprint_id, i.properties->>'assignee_id' as assignee_id, i.properties->>'state' as state, i.ticket_number,
               s.properties->>'start_date' as sprint_start, s.properties->>'end_date' as sprint_end,
-              p.id as program_id, p.title as program_name, p.properties->>'emoji' as program_emoji, p.properties->>'color' as program_color
+              prog_da.related_id as program_id, p.title as program_name, p.properties->>'emoji' as program_emoji, p.properties->>'color' as program_color
        FROM documents i
        JOIN document_associations da_sprint ON da_sprint.document_id = i.id AND da_sprint.relationship_type = 'sprint'
        JOIN documents s ON s.id = da_sprint.related_id
-       JOIN documents p ON i.program_id = p.id
+       LEFT JOIN document_associations prog_da ON i.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id AND p.document_type = 'program'
        WHERE i.workspace_id = $1 AND i.document_type = 'issue' AND i.properties->>'assignee_id' IS NOT NULL
          AND ${VISIBILITY_FILTER_SQL('i', '$2', '$3')}`,
       [workspaceId, userId, isAdmin]
@@ -206,12 +209,13 @@ router.get('/projects', authMiddleware, async (req: Request, res: Response) => {
       `SELECT
          proj.id,
          proj.title,
-         proj.program_id as "programId",
+         prog_da.related_id as "programId",
          prog.title as "programName",
          prog.properties->>'emoji' as "programEmoji",
          prog.properties->>'color' as "programColor"
        FROM documents proj
-       LEFT JOIN documents prog ON proj.program_id = prog.id AND prog.document_type = 'program'
+       LEFT JOIN document_associations prog_da ON proj.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id AND prog.document_type = 'program'
        WHERE proj.workspace_id = $1
          AND proj.document_type = 'project'
          AND proj.archived_at IS NULL
@@ -264,20 +268,21 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     // First, get explicit sprint document assignments (assignee_ids array + project_id in properties)
-    // Use sprint's program_id directly (handles legacy programId assignments without project)
+    // Use sprint's program association (handles legacy programId assignments without project)
     const explicitResult = await pool.query(
       `SELECT
          jsonb_array_elements_text(s.properties->'assignee_ids') as person_id,
          (s.properties->>'sprint_number')::int as sprint_number,
          s.properties->>'project_id' as project_id,
          proj.title as project_name,
-         s.program_id,
+         prog_da.related_id as program_id,
          prog.title as program_name,
          prog.properties->>'emoji' as program_emoji,
          prog.properties->>'color' as program_color
        FROM documents s
        LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
-       LEFT JOIN documents prog ON s.program_id = prog.id
+       LEFT JOIN document_associations prog_da ON s.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id AND prog.document_type = 'program'
        WHERE s.workspace_id = $1
          AND s.document_type = 'sprint'
          AND jsonb_array_length(COALESCE(s.properties->'assignee_ids', '[]'::jsonb)) > 0
@@ -338,7 +343,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
          i.properties->>'assignee_id' as assignee_id,
          da_project.related_id as project_id,
          proj.title as project_name,
-         proj.program_id,
+         proj_prog_da.related_id as program_id,
          prog.title as program_name,
          prog.properties->>'emoji' as program_emoji,
          prog.properties->>'color' as program_color,
@@ -348,7 +353,8 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
        JOIN documents s ON s.id = da_sprint.related_id
        JOIN document_associations da_project ON da_project.document_id = i.id AND da_project.relationship_type = 'project'
        JOIN documents proj ON proj.id = da_project.related_id
-       LEFT JOIN documents prog ON proj.program_id = prog.id
+       LEFT JOIN document_associations proj_prog_da ON proj.id = proj_prog_da.document_id AND proj_prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON proj_prog_da.related_id = prog.id AND prog.document_type = 'program'
        WHERE i.workspace_id = $1
          AND i.document_type = 'issue'
          AND i.properties->>'assignee_id' IS NOT NULL
@@ -491,10 +497,12 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
     let resolvedProjectId: string | null = null;
 
     if (isProjectAssignment) {
-      // Validate projectId and get its parent program
+      // Validate projectId and get its parent program via document_associations
       const projectCheck = await pool.query(
-        `SELECT id, program_id FROM documents
-         WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+        `SELECT d.id, prog_da.related_id as program_id
+         FROM documents d
+         LEFT JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+         WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'project'`,
         [projectId, workspaceId]
       );
       if (!projectCheck.rows[0]) {
@@ -526,7 +534,7 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
          AND s.properties->'assignee_ids' ? $2
          AND (s.properties->>'sprint_number')::int = $3
          AND s.properties->>'project_id' = $4
-         AND s.program_id IS NOT DISTINCT FROM $5`,
+         AND ($5::uuid IS NULL AND NOT EXISTS (SELECT 1 FROM document_associations WHERE document_id = s.id AND relationship_type = 'program') OR s.id IN (SELECT document_id FROM document_associations WHERE related_id = $5 AND relationship_type = 'program'))`,
       [workspaceId, personDocId, sprintNumber, resolvedProjectId, resolvedProgramId]
     );
 
@@ -541,7 +549,8 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
     let sprintResult = await pool.query(
       `SELECT id, properties FROM documents
        WHERE workspace_id = $1 AND document_type = 'sprint'
-         AND program_id IS NOT DISTINCT FROM $2 AND (properties->>'sprint_number')::int = $3
+         AND ($2::uuid IS NULL AND NOT EXISTS (SELECT 1 FROM document_associations WHERE document_id = documents.id AND relationship_type = 'program') OR id IN (SELECT document_id FROM document_associations WHERE related_id = $2 AND relationship_type = 'program'))
+         AND (properties->>'sprint_number')::int = $3
          AND properties->>'project_id' = $4`,
       [workspaceId, resolvedProgramId, sprintNumber, resolvedProjectId]
     );
@@ -578,12 +587,19 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
       }
 
       const newSprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, program_id, properties)
-         VALUES ($1, 'sprint', $2, $3, $4)
+        `INSERT INTO documents (workspace_id, document_type, title, properties)
+         VALUES ($1, 'sprint', $2, $3)
          RETURNING id`,
-        [workspaceId, `Sprint ${sprintNumber}`, resolvedProgramId, JSON.stringify(props)]
+        [workspaceId, `Sprint ${sprintNumber}`, JSON.stringify(props)]
       );
       sprintId = newSprintResult.rows[0].id;
+
+      // Create program association for the new sprint
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [sprintId, resolvedProgramId]
+      );
     }
 
     res.json({ success: true, sprintId });
