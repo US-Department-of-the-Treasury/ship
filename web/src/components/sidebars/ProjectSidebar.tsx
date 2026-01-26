@@ -1,6 +1,7 @@
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
+import { MultiPersonCombobox } from '@/components/MultiPersonCombobox';
 import { ProgramCombobox } from '@/components/ProgramCombobox';
 import { PropertyRow } from '@/components/ui/PropertyRow';
 import { ApprovalButton } from '@/components/ApprovalButton';
@@ -201,6 +202,26 @@ export function ProjectSidebar({
           value={project.accountable_id || null}
           onChange={(accountableId) => onUpdate({ accountable_id: accountableId } as Partial<Project>)}
           placeholder="Select approver..."
+        />
+      </PropertyRow>
+
+      {/* Consulted (C - Consulted) */}
+      <PropertyRow label="Consulted" tooltip="C - Consulted: People whose opinions are sought (two-way communication)">
+        <MultiPersonCombobox
+          people={people}
+          value={project.consulted_ids || []}
+          onChange={(consultedIds) => onUpdate({ consulted_ids: consultedIds } as Partial<Project>)}
+          placeholder="Select people..."
+        />
+      </PropertyRow>
+
+      {/* Informed (I - Informed) */}
+      <PropertyRow label="Informed" tooltip="I - Informed: People kept up-to-date on progress (one-way communication)">
+        <MultiPersonCombobox
+          people={people}
+          value={project.informed_ids || []}
+          onChange={(informedIds) => onUpdate({ informed_ids: informedIds } as Partial<Project>)}
+          placeholder="Select people..."
         />
       </PropertyRow>
 

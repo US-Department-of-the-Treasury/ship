@@ -106,6 +106,11 @@ export async function checkMissingAccountability(
 
 /**
  * Check for missing standups for active sprints where user has assigned issues.
+ *
+ * Note: This query starts from issues assigned to the user and joins to sprints.
+ * This effectively SKIPS sprints with no members (no assigned issues) because
+ * there are no issue rows to match. Users are only prompted for standups in
+ * sprints where they're actually participating (have assigned issues).
  */
 async function checkMissingStandups(
   userId: string,
@@ -121,6 +126,7 @@ async function checkMissingStandups(
   }
 
   // Find active sprints where user has assigned issues
+  // (This inherently skips empty sprints with no members)
   const activeSprintsResult = await pool.query(
     `SELECT DISTINCT s.id, s.title, s.properties
      FROM documents i
