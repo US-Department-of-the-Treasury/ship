@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 export interface Project {
   id: string;
   title: string;
+  color?: string | null;
   programId: string | null;
   programName: string | null;
   programEmoji?: string | null;
@@ -76,8 +77,8 @@ export function ProjectCombobox({
     }
   };
 
-  // Get the color to display - from the project's parent program
-  const badgeColor = selectedProject?.programColor || '#6b7280';
+  // Get the color to display - prefer project's own color, fallback to program's color
+  const badgeColor = selectedProject?.color || selectedProject?.programColor || '#6b7280';
 
   return (
     <Popover.Root open={open} onOpenChange={disabled ? undefined : setOpen}>

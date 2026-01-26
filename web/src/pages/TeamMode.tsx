@@ -40,6 +40,7 @@ interface Sprint {
 interface Assignment {
   projectId: string | null;
   projectName: string | null;
+  projectColor: string | null;
   programId: string | null;
   programName: string | null;
   emoji?: string | null;
@@ -251,6 +252,7 @@ export function TeamModePage() {
         [sprintNumber]: {
           projectId,
           projectName: project.title,
+          projectColor: project.color ?? null,
           programId: project.programId,
           programName: project.programName,
           emoji: project.programEmoji ?? null,
@@ -805,6 +807,7 @@ function SprintCell({
       ? {
           id: previousWeekAssignment.projectId,
           title: previousWeekAssignment.projectName,
+          color: previousWeekAssignment.projectColor,
           programId: previousWeekAssignment.programId,
           programName: previousWeekAssignment.programName,
           programEmoji: previousWeekAssignment.emoji,

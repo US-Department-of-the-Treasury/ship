@@ -209,6 +209,7 @@ router.get('/projects', authMiddleware, async (req: Request, res: Response) => {
       `SELECT
          proj.id,
          proj.title,
+         proj.properties->>'color' as "color",
          prog_da.related_id as "programId",
          prog.title as "programName",
          prog.properties->>'emoji' as "programEmoji",
@@ -275,6 +276,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
          (s.properties->>'sprint_number')::int as sprint_number,
          s.properties->>'project_id' as project_id,
          proj.title as project_name,
+         proj.properties->>'color' as project_color,
          prog_da.related_id as program_id,
          prog.title as program_name,
          prog.properties->>'emoji' as program_emoji,
@@ -294,6 +296,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
     const assignments: Record<string, Record<number, {
       projectId: string | null;
       projectName: string | null;
+      projectColor: string | null;
       programId: string | null;
       programName: string | null;
       emoji: string | null;
@@ -311,6 +314,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
       assignments[personId][sprintNumber] = {
         projectId: row.project_id,
         projectName: row.project_name,
+        projectColor: row.project_color,
         programId: row.program_id,
         programName: row.program_name,
         emoji: row.program_emoji,
@@ -343,6 +347,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
          i.properties->>'assignee_id' as assignee_id,
          da_project.related_id as project_id,
          proj.title as project_name,
+         proj.properties->>'color' as project_color,
          proj_prog_da.related_id as program_id,
          prog.title as program_name,
          prog.properties->>'emoji' as program_emoji,
@@ -367,6 +372,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
       count: number;
       projectId: string;
       projectName: string;
+      projectColor: string | null;
       programId: string | null;
       programName: string | null;
       programEmoji: string | null;
@@ -396,6 +402,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
           count: 0,
           projectId,
           projectName: issue.project_name,
+          projectColor: issue.project_color,
           programId: issue.program_id,
           programName: issue.program_name,
           programEmoji: issue.program_emoji,
@@ -428,6 +435,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
           assignments[personId][sprintNum] = {
             projectId: primaryProject.projectId,
             projectName: primaryProject.projectName,
+            projectColor: primaryProject.projectColor,
             programId: primaryProject.programId,
             programName: primaryProject.programName,
             emoji: primaryProject.programEmoji,
