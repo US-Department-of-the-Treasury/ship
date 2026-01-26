@@ -44,7 +44,7 @@ test.describe('Issues - Bulk Operations', () => {
   test('can archive an issue via context menu', async ({ page }) => {
     // Create a new issue to archive (ensures we have one)
     await page.keyboard.press('c')
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Go back to issues list
     await page.goto('/issues')

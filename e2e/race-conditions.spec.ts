@@ -33,7 +33,7 @@ async function createNewDocument(page: Page) {
   }
 
   await page.waitForFunction(
-    (oldUrl) => window.location.href !== oldUrl && /\/docs\/[a-f0-9-]+/.test(window.location.href),
+    (oldUrl) => window.location.href !== oldUrl && /\/documents\/[a-f0-9-]+/.test(window.location.href),
     currentUrl,
     { timeout: 10000 }
   )
@@ -304,7 +304,7 @@ test.describe('Race Conditions - Rapid Operations', () => {
     for (let i = 0; i < 3; i++) {
       await expect(sidebarButton).toBeVisible({ timeout: 3000 })
       await sidebarButton.click()
-      await page.waitForURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
+      await page.waitForURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
       // Store the URL to check for duplicates
       const url = page.url()

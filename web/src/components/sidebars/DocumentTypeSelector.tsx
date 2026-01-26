@@ -32,6 +32,7 @@ export function DocumentTypeSelector({
         value={value}
         onChange={(e) => onChange(e.target.value as DocumentType)}
         disabled={disabled}
+        aria-label="Document type"
         className={cn(
           'w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground',
           'focus:border-accent focus:outline-none',

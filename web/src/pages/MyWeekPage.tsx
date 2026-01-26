@@ -24,11 +24,11 @@ interface SprintGroup {
     id: string;
     name: string;
     sprint_number: number;
-  };
+  } | null;
   program: {
     id: string;
     name: string;
-  };
+  } | null;
   issues: Issue[];
 }
 
@@ -397,9 +397,13 @@ export function MyWeekPage() {
             </div>
           ) : (
             <div className="space-y-6">
-              {groups.map((group) => (
-                <IssueGroup key={`${group.sprint.id}-${group.program.id}`} group={group} />
-              ))}
+              {groups
+                .filter((group): group is SprintGroup & { sprint: NonNullable<SprintGroup['sprint']>; program: NonNullable<SprintGroup['program']> } =>
+                  group.sprint !== null && group.program !== null
+                )
+                .map((group) => (
+                  <IssueGroup key={`${group.sprint.id}-${group.program.id}`} group={group} />
+                ))}
             </div>
           )
         )}
@@ -427,7 +431,7 @@ function StatCard({
   );
 }
 
-function IssueGroup({ group }: { group: SprintGroup }) {
+function IssueGroup({ group }: { group: SprintGroup & { sprint: NonNullable<SprintGroup['sprint']>; program: NonNullable<SprintGroup['program']> } }) {
   return (
     <div className="rounded-lg border border-border bg-background overflow-hidden">
       {/* Group Header */}

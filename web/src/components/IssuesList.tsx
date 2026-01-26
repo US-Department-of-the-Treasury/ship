@@ -144,6 +144,8 @@ export interface IssuesListProps {
   showCreateButton?: boolean;
   /** Label for the create button */
   createButtonLabel?: string;
+  /** Test ID for the create button */
+  createButtonTestId?: string;
   /** Available view modes */
   viewModes?: ViewMode[];
   /** Initial view mode */
@@ -207,6 +209,7 @@ export function IssuesList({
   inheritedContext,
   showCreateButton = true,
   createButtonLabel = 'New Issue',
+  createButtonTestId,
   viewModes = ['list', 'kanban'],
   initialViewMode = 'list',
   defaultColumns,
@@ -1186,6 +1189,7 @@ export function IssuesList({
               <button
                 onClick={handleCreateIssue}
                 className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors flex-shrink-0 whitespace-nowrap"
+                data-testid={createButtonTestId}
               >
                 {createButtonLabel}
               </button>

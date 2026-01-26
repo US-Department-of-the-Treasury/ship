@@ -56,10 +56,10 @@ test.describe('Team Mode (Phase 7)', () => {
     // Wait for grid to load
     await expect(page.getByText('Team Member', { exact: true })).toBeVisible({ timeout: 5000 })
 
-    // The current sprint header should have accent styling (bg-accent/10)
+    // The current sprint header should have accent styling (bg-accent/5)
     // We can check that at least one sprint column exists with the current styling
-    // The current sprint has class bg-accent/10 applied
-    const currentSprintHeader = page.locator('.bg-accent\\/10').first()
+    // The current sprint has class bg-accent/5 applied
+    const currentSprintHeader = page.locator('.bg-accent\\/5').first()
     await expect(currentSprintHeader).toBeVisible({ timeout: 5000 })
   })
 

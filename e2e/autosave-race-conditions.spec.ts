@@ -32,7 +32,7 @@ async function createNewDocument(page: Page) {
   await newDocButton.first().click();
 
   await page.waitForFunction(
-    (oldUrl) => window.location.href !== oldUrl && /\/docs\/[a-f0-9-]+/.test(window.location.href),
+    (oldUrl) => window.location.href !== oldUrl && /\/documents\/[a-f0-9-]+/.test(window.location.href),
     currentUrl,
     { timeout: 10000 }
   );
@@ -51,7 +51,7 @@ async function createNewIssue(page: Page) {
   await expect(newIssueButton).toBeVisible({ timeout: 5000 });
   await newIssueButton.click();
 
-  await page.waitForURL(/\/issues\/[a-f0-9-]+/, { timeout: 10000 });
+  await page.waitForURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 });
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
   await expect(page.locator('input[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 });
 }

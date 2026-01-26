@@ -15,6 +15,7 @@ export default function ProgramIssuesTab({ documentId }: DocumentTabProps) {
       enableKeyboardNavigation={false}
       showBacklogPicker={true}
       showCreateButton={true}
+      createButtonTestId="program-new-issue"
       allowShowAllIssues={true}
       inheritedContext={{
         programId: documentId,

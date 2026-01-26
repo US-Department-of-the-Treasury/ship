@@ -13,7 +13,7 @@ async function login(page: Page) {
 async function createNewDocument(page: Page) {
   await page.goto('/docs');
   await page.getByRole('button', { name: 'New Document', exact: true }).click();
-  await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 });
+  await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 });
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
 }
 
@@ -166,7 +166,7 @@ test.describe('Critical Blocker: WebSocket Rate Limiting', () => {
 
     // Create a document to get a valid ID for WebSocket connections
     await createNewDocument(page);
-    const docId = page.url().split('/docs/')[1];
+    const docId = page.url().split('/documents/')[1];
     expect(docId).toBeTruthy();
 
     // Get the WebSocket URL for this document

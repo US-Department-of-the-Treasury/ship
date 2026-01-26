@@ -402,24 +402,33 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
   const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
 
   // Create sprints for each program (current-2 to current+2)
+  // IMPORTANT: Must create document_associations for sprints to programs
+  // The API queries via junction table, not legacy program_id column
   const sprintIds: Record<string, Record<number, string>> = {};
   for (const prog of programs) {
     sprintIds[prog.key] = {};
     for (let sprintNum = currentSprintNumber - 2; sprintNum <= currentSprintNumber + 2; sprintNum++) {
       if (sprintNum > 0) {
         const result = await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by)
-           VALUES ($1, 'sprint', $2, $3, $4, $5)
+          `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+           VALUES ($1, 'sprint', $2, $3, $4)
            RETURNING id`,
           [
             workspaceId,
             `Sprint ${sprintNum}`,
-            programIds[prog.key],
             JSON.stringify({ sprint_number: sprintNum, owner_id: userId }),
             userId,
           ]
         );
-        sprintIds[prog.key][sprintNum] = result.rows[0].id;
+        const sprintId = result.rows[0].id;
+        sprintIds[prog.key][sprintNum] = sprintId;
+
+        // Create association to program via junction table (required for API queries)
+        await pool.query(
+          `INSERT INTO document_associations (document_id, related_id, relationship_type)
+           VALUES ($1, $2, 'program')`,
+          [sprintId, programIds[prog.key]]
+        );
       }
     }
   }

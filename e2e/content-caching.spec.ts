@@ -27,13 +27,13 @@ test.describe('Content Caching - High Performance Navigation', () => {
 
     // Visit first document
     await docLinks.first().click();
-    await page.waitForURL(/\/docs\/.+/);
+    await page.waitForURL(/\/documents\/.+/);
     await page.waitForSelector('.ProseMirror', { timeout: 10000 });
     const doc1Url = page.url();
 
     // Visit second document
     await docLinks.nth(1).click();
-    await page.waitForURL(/\/docs\/.+/);
+    await page.waitForURL(/\/documents\/.+/);
     await page.waitForSelector('.ProseMirror', { timeout: 10000 });
     const doc2Url = page.url();
 
@@ -60,7 +60,7 @@ test.describe('Content Caching - High Performance Navigation', () => {
     const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
     const firstDoc = tree.getByRole('link').first();
     await firstDoc.click();
-    await page.waitForURL(/\/docs\/.+/);
+    await page.waitForURL(/\/documents\/.+/);
 
     // Wait for content to load and sync
     await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -68,11 +68,14 @@ test.describe('Content Caching - High Performance Navigation', () => {
 
     // Extract document ID from URL
     const url = page.url();
-    const docId = url.split('/docs/')[1];
+    const docId = url.split('/documents/')[1];
 
     // Check IndexedDB has the document cached
+    // The database name is `ship-{documentType}-{docId}` where documentType is 'wiki' for wiki docs
+    // Note: We need to check for the actual document type used in the IndexedDB name
     const hasCache = await page.evaluate(async (docId) => {
-      const dbName = `ship-doc-${docId}`;
+      // Wiki documents use 'wiki' as the room prefix in IndexedDB
+      const dbName = `ship-wiki-${docId}`;
       return new Promise((resolve) => {
         const request = indexedDB.open(dbName);
         request.onsuccess = () => {
@@ -113,7 +116,7 @@ test.describe('WebSocket Connection Reliability', () => {
     const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
     const firstDoc = tree.getByRole('link').first();
     await firstDoc.click();
-    await page.waitForURL(/\/docs\/.+/);
+    await page.waitForURL(/\/documents\/.+/);
 
     // Wait for WebSocket to connect
     await page.waitForTimeout(2000);
@@ -129,7 +132,7 @@ test.describe('WebSocket Connection Reliability', () => {
     const tree2 = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
     const firstDoc2 = tree2.getByRole('link').first();
     await firstDoc2.click();
-    await page.waitForURL(/\/docs\/.+/);
+    await page.waitForURL(/\/documents\/.+/);
 
     // Wait for sync status to show "Saved"
     await page.waitForSelector('text=Saved', { timeout: 10000 });
@@ -152,7 +155,7 @@ test.describe('WebSocket Connection Reliability', () => {
     const tree3 = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }));
     const firstDoc3 = tree3.getByRole('link').first();
     await firstDoc3.click();
-    await page.waitForURL(/\/docs\/.+/);
+    await page.waitForURL(/\/documents\/.+/);
 
     // Wait for connection to establish
     await page.waitForSelector('text=Saved', { timeout: 10000 });

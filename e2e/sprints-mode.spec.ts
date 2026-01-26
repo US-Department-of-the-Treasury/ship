@@ -187,7 +187,7 @@ test.describe('Sprints Mode', () => {
       await sprintRow.click()
 
       // Should navigate to sprint detail view
-      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+\/sprints\/[a-f0-9-]+/, { timeout: 5000 })
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
     }
   })
 
@@ -205,7 +205,7 @@ test.describe('Sprints Mode', () => {
       await sprintRow.click()
 
       // Wait for navigation
-      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+\/sprints\/[a-f0-9-]+/, { timeout: 5000 })
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
       // Sprints icon should still be highlighted (mode stickiness)
       const sprintsButton = page.getByRole('button', { name: /sprints/i })
@@ -310,7 +310,7 @@ test.describe('Sprints Mode', () => {
       await sidebarItems.first().click()
 
       // Should navigate to sprint detail
-      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+\/sprints\/[a-f0-9-]+/, { timeout: 5000 })
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
     }
   })
 
@@ -332,7 +332,7 @@ test.describe('Sprints Mode', () => {
       await page.keyboard.press('Enter')
 
       // Should navigate to sprint detail
-      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+\/sprints\/[a-f0-9-]+/, { timeout: 5000 })
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
     }
   })
 })

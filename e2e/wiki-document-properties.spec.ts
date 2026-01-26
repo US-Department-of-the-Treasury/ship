@@ -22,7 +22,7 @@ test.describe('Wiki Document Properties Sidebar', () => {
       // Click on first document
       const firstDoc = tree.getByRole('link').first();
       await firstDoc.click();
-      await page.waitForURL(/\/docs\/.+/);
+      await page.waitForURL(/\/documents\/.+/);
 
       // Wait for editor to load
       await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -43,7 +43,7 @@ test.describe('Wiki Document Properties Sidebar', () => {
       // Click on first document
       const firstDoc = tree.getByRole('link').first();
       await firstDoc.click();
-      await page.waitForURL(/\/docs\/.+/);
+      await page.waitForURL(/\/documents\/.+/);
 
       // Wait for editor to load
       await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -64,7 +64,7 @@ test.describe('Wiki Document Properties Sidebar', () => {
       // Click on first document
       const firstDoc = tree.getByRole('link').first();
       await firstDoc.click();
-      await page.waitForURL(/\/docs\/.+/);
+      await page.waitForURL(/\/documents\/.+/);
 
       // Wait for editor to load
       await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -94,7 +94,7 @@ test.describe('Wiki Document Properties Sidebar', () => {
       // Click on first document
       const firstDoc = tree.getByRole('link').first();
       await firstDoc.click();
-      await page.waitForURL(/\/docs\/.+/);
+      await page.waitForURL(/\/documents\/.+/);
       const docUrl = page.url();
 
       // Wait for editor to load
@@ -129,7 +129,7 @@ test.describe('Wiki Document Properties Sidebar', () => {
       // Click on first document
       const firstDoc = tree.getByRole('link').first();
       await firstDoc.click();
-      await page.waitForURL(/\/docs\/.+/);
+      await page.waitForURL(/\/documents\/.+/);
 
       // Wait for editor to load
       await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -158,7 +158,7 @@ test.describe('Wiki Document Properties Sidebar', () => {
       // Click on first document
       const firstDoc = tree.getByRole('link').first();
       await firstDoc.click();
-      await page.waitForURL(/\/docs\/.+/);
+      await page.waitForURL(/\/documents\/.+/);
 
       // Wait for editor to load
       await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -183,7 +183,7 @@ test.describe('Wiki Document Properties Sidebar', () => {
       // Click on first document
       const firstDoc = tree.getByRole('link').first();
       await firstDoc.click();
-      await page.waitForURL(/\/docs\/.+/);
+      await page.waitForURL(/\/documents\/.+/);
 
       // Wait for editor to load
       await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -208,7 +208,7 @@ test.describe('Wiki Document Properties Sidebar', () => {
       // Click on first document
       const firstDoc = tree.getByRole('link').first();
       await firstDoc.click();
-      await page.waitForURL(/\/docs\/.+/);
+      await page.waitForURL(/\/documents\/.+/);
 
       // Wait for editor to load
       await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -249,7 +249,7 @@ test.describe('Wiki Document Properties Sidebar', () => {
       // Click on first document
       const firstDoc = tree.getByRole('link').first();
       await firstDoc.click();
-      await page.waitForURL(/\/docs\/.+/);
+      await page.waitForURL(/\/documents\/.+/);
 
       // Wait for editor to load
       await page.waitForSelector('.ProseMirror', { timeout: 10000 });
@@ -273,7 +273,7 @@ test.describe('Wiki Document Properties Sidebar', () => {
       // Click on first document
       const firstDoc = tree.getByRole('link').first();
       await firstDoc.click();
-      await page.waitForURL(/\/docs\/.+/);
+      await page.waitForURL(/\/documents\/.+/);
 
       // Wait for editor to load
       await page.waitForSelector('.ProseMirror', { timeout: 10000 });

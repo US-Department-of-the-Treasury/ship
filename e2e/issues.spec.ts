@@ -36,8 +36,8 @@ test.describe('Issues (Phase 5)', () => {
     // Click New Issue button (exact match to avoid sidebar icon button)
     await page.getByRole('button', { name: 'New Issue', exact: true }).click()
 
-    // Should navigate to issue editor (full-page editor)
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    // Should navigate to issue editor (full-page editor) - unified document routing
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Editor should be visible
     await expect(page.locator('.ProseMirror, .tiptap, [data-testid="editor"]')).toBeVisible({ timeout: 5000 })
@@ -48,7 +48,7 @@ test.describe('Issues (Phase 5)', () => {
 
     // Create new issue (exact match to avoid sidebar icon button)
     await page.getByRole('button', { name: 'New Issue', exact: true }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Navigate back to list
     await page.goto('/issues')
@@ -87,7 +87,7 @@ test.describe('Issues (Phase 5)', () => {
 
     // Create new issue (exact match to avoid sidebar icon button)
     await page.getByRole('button', { name: 'New Issue', exact: true }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Should see full editor with title area
     await expect(page.locator('.ProseMirror, .tiptap')).toBeVisible({ timeout: 5000 })
@@ -101,7 +101,7 @@ test.describe('Issues (Phase 5)', () => {
 
     // Create new issue (exact match to avoid sidebar icon button)
     await page.getByRole('button', { name: 'New Issue', exact: true }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Find title input (contenteditable or input)
     const titleElement = page.locator('[contenteditable="true"]').first()
@@ -149,8 +149,8 @@ test.describe('Issues (Phase 5)', () => {
     await expect(issueRow).toBeVisible({ timeout: 5000 })
     await issueRow.click()
 
-    // Should navigate to issue editor
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    // Should navigate to issue editor - unified document routing
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
     await expect(page.locator('.ProseMirror, .tiptap')).toBeVisible({ timeout: 5000 })
   })
 
@@ -173,7 +173,7 @@ test.describe('Issues (Phase 5)', () => {
     // Press C to create new issue
     await page.keyboard.press('c')
 
-    // Should navigate to new issue editor
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    // Should navigate to new issue editor - unified document routing
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
   })
 })

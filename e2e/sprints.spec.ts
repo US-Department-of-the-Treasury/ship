@@ -24,7 +24,7 @@ test.describe('Sprints - Issue Editor Integration', () => {
 
     // Click on an existing program (Ship Core from seed data) - using table row
     await page.locator('tr[role="row"]', { hasText: /ship core/i }).first().click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Should see Sprints tab in the program editor
     await expect(page.getByRole('tab', { name: 'Sprints' })).toBeVisible({ timeout: 5000 })
@@ -34,48 +34,51 @@ test.describe('Sprints - Issue Editor Integration', () => {
     // Navigate to an existing program with sprints (Ship Core from seed data)
     await page.goto('/programs')
     await page.locator('tr[role="row"]', { hasText: /ship core/i }).first().click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Navigate to issues and create a new issue
     await page.goto('/issues')
     await page.getByRole('button', { name: 'New Issue', exact: true }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 10000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
 
     // Give the issue a title
     const titleInput = page.getByPlaceholder('Untitled')
     await titleInput.fill('Sprint Picker Test Issue')
 
-    // Wait for title to save (API call)
-    await page.waitForResponse(resp => resp.url().includes('/api/issues/') && resp.request().method() === 'PATCH')
+    // Wait for title to save (API call) - unified document model uses /api/documents/
+    await page.waitForResponse(resp => resp.url().includes('/api/documents/') && resp.request().method() === 'PATCH')
 
     // Add an estimate first (required before assigning to sprint)
     const estimateInput = page.getByRole('spinbutton', { name: /estimate/i })
     await estimateInput.fill('4')
-    await page.waitForResponse(resp => resp.url().includes('/api/issues/') && resp.request().method() === 'PATCH')
+    await page.waitForResponse(resp => resp.url().includes('/api/documents/') && resp.request().method() === 'PATCH')
 
-    // Assign the issue to Ship Core program using the Program combobox
-    await page.getByRole('combobox').filter({ hasText: 'No Program' }).click()
+    // Assign the issue to Ship Core program using the Programs multi-select
+    // Programs now use MultiAssociationChips with "Add program..." button
+    // Use specific selector to avoid collision with navigation Programs button
+    await page.getByText('Add program...').click()
 
-    // Wait for popover and click Ship Core
+    // Wait for dropdown and click Ship Core
     await page.waitForTimeout(300)
-    await page.getByText('Ship Core').click()
+    await page.getByRole('button', { name: /Ship Core/i }).click()
 
     // Wait for sprints to load
     await page.waitForResponse(resp => resp.url().includes('/api/programs/') && resp.url().includes('/sprints'))
 
     // Now use the Sprint picker to assign to a sprint
-    await page.getByRole('combobox').filter({ hasText: 'No Sprint' }).click()
+    // Sprint uses Combobox with aria-label="Sprint"
+    await page.getByRole('combobox', { name: 'Sprint' }).click()
 
     // Wait for popover and select a sprint (any Sprint will do from seed data)
     await page.waitForTimeout(300)
     const sprintOption = page.locator('[cmdk-item]').filter({ hasText: /Sprint \d+/ }).first()
     await sprintOption.click()
 
-    // Wait for the update to save
-    await page.waitForResponse(resp => resp.url().includes('/api/issues/') && resp.request().method() === 'PATCH')
+    // Wait for the update to save - unified document model uses /api/documents/
+    await page.waitForResponse(resp => resp.url().includes('/api/documents/') && resp.request().method() === 'PATCH')
 
     // Verify the sprint is now selected (the combobox should show the sprint name)
-    await expect(page.getByRole('combobox').filter({ hasText: /Sprint \d+/ })).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('combobox', { name: 'Sprint' })).toHaveText(/Sprint \d+/, { timeout: 5000 })
   })
 })
 
@@ -93,24 +96,27 @@ test.describe('Sprint Planning Page', () => {
     // Navigate to a program and go to Sprints tab
     await page.goto('/programs')
     await page.locator('tr[role="row"]', { hasText: /ship core/i }).first().click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
-    const programUrl = page.url()
-    const programId = programUrl.split('/programs/')[1]
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Create a new sprint via inline form
-    await page.goto(`/sprints/new/plan?program=${programId}`)
+    // Click Sprints tab
+    await page.locator('main').getByRole('tab', { name: 'Sprints' }).click()
 
-    // Fill in the sprint name and create
-    await page.getByLabelText(/sprint name/i).fill('Test Planning Sprint')
-    await page.getByRole('button', { name: /create sprint/i }).click()
+    // Create a new sprint by clicking "+ Create sprint" - this creates via API and navigates
+    await page.getByText(/\+ Create sprint/).first().click()
 
-    // Should redirect to the sprint plan page
-    await expect(page).toHaveURL(/\/sprints\/[a-f0-9-]+\/plan/, { timeout: 10000 })
+    // Should navigate to the new sprint document
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
+
+    // Should see Plan tab (sprints in 'planning' status show 'Plan' tab)
+    await expect(page.getByRole('tab', { name: 'Plan' })).toBeVisible({ timeout: 5000 })
+
+    // Click the Plan tab to see the Start Sprint button (it's on the Plan tab, not Overview)
+    await page.getByRole('tab', { name: 'Plan' }).click()
 
     // Should see "Start Sprint" button (since it's in planning status)
     await expect(page.getByRole('button', { name: /start sprint/i })).toBeVisible({ timeout: 5000 })
 
-    // Status badge should show "Planning"
-    await expect(page.getByText('Planning')).toBeVisible({ timeout: 5000 })
+    // Status should show "Planning" somewhere on the page
+    await expect(page.getByText('Planning').first()).toBeVisible({ timeout: 5000 })
   })
 })

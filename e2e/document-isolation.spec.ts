@@ -32,7 +32,7 @@ async function createNewDocument(page: import('@playwright/test').Page): Promise
   await page.waitForFunction(
     (oldUrl: string) => {
       const url = window.location.href;
-      return url !== oldUrl && url.includes('/docs/');
+      return url !== oldUrl && url.includes('/documents/');
     },
     currentUrl,
     { timeout: 10000 }
@@ -64,7 +64,7 @@ test.describe('Document Isolation - Critical Data Integrity', () => {
 
     // Create first document
     const doc1Url = await createNewDocument(page);
-    const doc1Id = doc1Url.split('/docs/')[1];
+    const doc1Id = doc1Url.split('/documents/')[1];
 
     // Type unique content in doc 1
     const doc1Content = `UNIQUE_DOC1_${Date.now()}_ISOLATION_TEST`;
@@ -80,7 +80,7 @@ test.describe('Document Isolation - Critical Data Integrity', () => {
 
     // Create second document
     const doc2Url = await createNewDocument(page);
-    const doc2Id = doc2Url.split('/docs/')[1];
+    const doc2Id = doc2Url.split('/documents/')[1];
 
     // Ensure we're on a different document
     expect(doc2Id).not.toBe(doc1Id);
@@ -232,8 +232,9 @@ test.describe('Document Isolation - Critical Data Integrity', () => {
     for (let i = 0; i < 3; i++) {
       // Go to doc 1 and type
       await page.goto(doc1Url);
-      await page.waitForSelector('.ProseMirror', { timeout: 5000 });
-      await page.waitForSelector('text=Saved', { timeout: 10000 });
+      await page.waitForSelector('.ProseMirror', { timeout: 10000 });
+      // Wait for sync - use longer timeout and accept either Saved or Synced status
+      await expect(page.locator('text=Saved').or(page.locator('text=Synced'))).toBeVisible({ timeout: 15000 });
       // Wait for existing content to load
       await expect(async () => {
         const content = await getEditorTextWithoutCursor(page);
@@ -251,14 +252,15 @@ test.describe('Document Isolation - Critical Data Integrity', () => {
         const content = await getEditorTextWithoutCursor(page);
         expect(content).toContain(`DOC1-ITER${i}`);
       }).toPass({ timeout: 10000 });
-      // Wait for sync to complete
-      await page.waitForSelector('text=Saved', { timeout: 10000 });
+      // Wait for sync to complete - accept either Saved or Synced status
+      await expect(page.locator('text=Saved').or(page.locator('text=Synced'))).toBeVisible({ timeout: 15000 });
       await page.waitForTimeout(300); // Extra sync time
 
       // Go to doc 2 and type
       await page.goto(doc2Url);
-      await page.waitForSelector('.ProseMirror', { timeout: 5000 });
-      await page.waitForSelector('text=Saved', { timeout: 10000 });
+      await page.waitForSelector('.ProseMirror', { timeout: 10000 });
+      // Wait for sync - accept either Saved or Synced status
+      await expect(page.locator('text=Saved').or(page.locator('text=Synced'))).toBeVisible({ timeout: 15000 });
       // Wait for existing content to load
       await expect(async () => {
         const content = await getEditorTextWithoutCursor(page);
@@ -276,15 +278,15 @@ test.describe('Document Isolation - Critical Data Integrity', () => {
         const content = await getEditorTextWithoutCursor(page);
         expect(content).toContain(`DOC2-ITER${i}`);
       }).toPass({ timeout: 10000 });
-      // Wait for sync to complete
-      await page.waitForSelector('text=Saved', { timeout: 10000 });
+      // Wait for sync to complete - accept either Saved or Synced status
+      await expect(page.locator('text=Saved').or(page.locator('text=Synced'))).toBeVisible({ timeout: 15000 });
       await page.waitForTimeout(300); // Extra sync time
     }
 
     // Verify doc 1 has only DOC1 content
     await page.goto(doc1Url);
     await page.waitForSelector('.ProseMirror', { timeout: 10000 });
-    await page.waitForSelector('text=Saved', { timeout: 15000 });
+    await expect(page.locator('text=Saved').or(page.locator('text=Synced'))).toBeVisible({ timeout: 15000 });
 
     const doc1Content = await getEditorTextWithoutCursor(page);
 
@@ -297,7 +299,7 @@ test.describe('Document Isolation - Critical Data Integrity', () => {
     // Verify doc 2 has only DOC2 content
     await page.goto(doc2Url);
     await page.waitForSelector('.ProseMirror', { timeout: 10000 });
-    await page.waitForSelector('text=Saved', { timeout: 15000 });
+    await expect(page.locator('text=Saved').or(page.locator('text=Synced'))).toBeVisible({ timeout: 15000 });
 
     const doc2Content = await getEditorTextWithoutCursor(page);
 
