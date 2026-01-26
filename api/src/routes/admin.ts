@@ -1579,25 +1579,9 @@ router.get('/debug/orphans', async (req: Request, res: Response): Promise<void> 
       WHERE d2.id IS NULL
     `);
 
-    // 2. Documents with program_id column but no program association
-    const missingProgramAssocResult = await pool.query(`
-      SELECT
-        d.id,
-        d.title,
-        d.document_type,
-        d.program_id,
-        w.name AS workspace_name,
-        d.created_at
-      FROM documents d
-      JOIN workspaces w ON d.workspace_id = w.id
-      WHERE d.program_id IS NOT NULL
-        AND d.deleted_at IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM document_associations da
-          WHERE da.document_id = d.id AND da.relationship_type = 'program'
-        )
-      ORDER BY d.created_at DESC
-    `);
+    // Note: program_id column was dropped by migration 029.
+    // This check is now a no-op but we keep the structure for API compatibility.
+    const missingProgramAssocResult = { rows: [] };
 
     // 3. Projects without program association (in junction table)
     const projectsWithoutProgramResult = await pool.query(`
@@ -1605,8 +1589,7 @@ router.get('/debug/orphans', async (req: Request, res: Response): Promise<void> 
         d.id,
         d.title,
         w.name AS workspace_name,
-        d.created_at,
-        d.program_id AS legacy_program_id
+        d.created_at
       FROM documents d
       JOIN workspaces w ON d.workspace_id = w.id
       WHERE d.document_type = 'project'
@@ -1706,28 +1689,9 @@ router.post('/debug/orphans/fix', async (req: Request, res: Response): Promise<v
         RETURNING id
       `);
 
-      // 2. Backfill missing program associations
-      const backfillProgramResult = await client.query(`
-        INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
-        SELECT
-          d.id AS document_id,
-          d.program_id AS related_id,
-          'program'::relationship_type AS relationship_type,
-          jsonb_build_object(
-            'backfilled_from', 'program_id_column',
-            'backfilled_at', NOW(),
-            'backfilled_via', 'admin_api'
-          )
-        FROM documents d
-        WHERE d.program_id IS NOT NULL
-          AND d.deleted_at IS NULL
-          AND NOT EXISTS (
-            SELECT 1 FROM document_associations da
-            WHERE da.document_id = d.id AND da.relationship_type = 'program'
-          )
-        ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING
-        RETURNING document_id
-      `);
+      // Note: program_id column was dropped by migration 029.
+      // Backfill from column is no longer possible, but we keep the response structure.
+      const backfillProgramResult = { rowCount: 0 };
 
       await client.query('COMMIT');
 

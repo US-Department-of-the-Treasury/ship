@@ -104,7 +104,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
     let query = `
       SELECT id, workspace_id, document_type, title, parent_id, position,
-             program_id, ticket_number, properties,
+             ticket_number, properties,
              created_at, updated_at, created_by, visibility
       FROM documents
       WHERE workspace_id = $1

@@ -147,12 +147,18 @@ describe('Sprints API', () => {
 
     beforeAll(async () => {
       const sprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by)
-         VALUES ($1, 'sprint', 'Test Sprint for Get', 'workspace', $2, $3)
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by)
+         VALUES ($1, 'sprint', 'Test Sprint for Get', 'workspace', $2)
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId]
+        [testWorkspaceId, testUserId]
       )
       testSprintId = sprintResult.rows[0].id
+      // Create program association
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [testSprintId, testProgramId]
+      )
     })
 
     it('should return sprint by id', async () => {
@@ -245,12 +251,18 @@ describe('Sprints API', () => {
 
     beforeAll(async () => {
       const sprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by)
-         VALUES ($1, 'sprint', 'Sprint to Update', 'workspace', $2, $3)
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by)
+         VALUES ($1, 'sprint', 'Sprint to Update', 'workspace', $2)
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId]
+        [testWorkspaceId, testUserId]
       )
       testSprintId = sprintResult.rows[0].id
+      // Create program association
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [testSprintId, testProgramId]
+      )
     })
 
     it('should update sprint title', async () => {
@@ -298,12 +310,18 @@ describe('Sprints API', () => {
     it('should delete a sprint', async () => {
       // Create sprint to delete
       const sprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by)
-         VALUES ($1, 'sprint', 'Sprint to Delete', 'workspace', $2, $3)
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by)
+         VALUES ($1, 'sprint', 'Sprint to Delete', 'workspace', $2)
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId]
+        [testWorkspaceId, testUserId]
       )
       const sprintId = sprintResult.rows[0].id
+      // Create program association
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [sprintId, testProgramId]
+      )
 
       const res = await request(app)
         .delete(`/api/sprints/${sprintId}`)
@@ -326,12 +344,18 @@ describe('Sprints API', () => {
 
     beforeAll(async () => {
       const sprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by)
-         VALUES ($1, 'sprint', 'Sprint for Hypothesis', 'workspace', $2, $3)
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by)
+         VALUES ($1, 'sprint', 'Sprint for Hypothesis', 'workspace', $2)
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId]
+        [testWorkspaceId, testUserId]
       )
       testSprintId = sprintResult.rows[0].id
+      // Create program association
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [testSprintId, testProgramId]
+      )
     })
 
     it('should update sprint hypothesis', async () => {
@@ -402,12 +426,18 @@ describe('Sprints API', () => {
 
     beforeAll(async () => {
       const sprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
-         VALUES ($1, 'sprint', 'Lifecycle Sprint', 'workspace', $2, $3, $4)
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by, properties)
+         VALUES ($1, 'sprint', 'Lifecycle Sprint', 'workspace', $2, $3)
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 10 })]
+        [testWorkspaceId, testUserId, JSON.stringify({ sprint_number: 10 })]
       )
       testSprintId = sprintResult.rows[0].id
+      // Create program association
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [testSprintId, testProgramId]
+      )
     })
 
     it('should update sprint_number', async () => {
@@ -464,12 +494,18 @@ describe('Sprints API', () => {
     it('should start a planning sprint and capture scope snapshot', async () => {
       // Create a sprint in planning status
       const sprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
-         VALUES ($1, 'sprint', 'Sprint to Start', 'workspace', $2, $3, $4)
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by, properties)
+         VALUES ($1, 'sprint', 'Sprint to Start', 'workspace', $2, $3)
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 50, status: 'planning' })]
+        [testWorkspaceId, testUserId, JSON.stringify({ sprint_number: 50, status: 'planning' })]
       )
       const sprintId = sprintResult.rows[0].id
+      // Create program association
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [sprintId, testProgramId]
+      )
 
       // Create an issue assigned to the sprint
       const issueResult = await pool.query(
@@ -500,12 +536,18 @@ describe('Sprints API', () => {
     it('should reject starting an already active sprint', async () => {
       // Create a sprint that's already active
       const sprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
-         VALUES ($1, 'sprint', 'Already Active Sprint', 'workspace', $2, $3, $4)
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by, properties)
+         VALUES ($1, 'sprint', 'Already Active Sprint', 'workspace', $2, $3)
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 51, status: 'active' })]
+        [testWorkspaceId, testUserId, JSON.stringify({ sprint_number: 51, status: 'active' })]
       )
       const sprintId = sprintResult.rows[0].id
+      // Create program association
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [sprintId, testProgramId]
+      )
 
       const res = await request(app)
         .post(`/api/sprints/${sprintId}/start`)
@@ -536,38 +578,62 @@ describe('Sprints API', () => {
     beforeAll(async () => {
       // Create source sprint (completed)
       const sourceResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
-         VALUES ($1, 'sprint', 'Source Sprint for Carryover', 'workspace', $2, $3, $4)
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by, properties)
+         VALUES ($1, 'sprint', 'Source Sprint for Carryover', 'workspace', $2, $3)
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 100, status: 'completed' })]
+        [testWorkspaceId, testUserId, JSON.stringify({ sprint_number: 100, status: 'completed' })]
       )
       sourceSprintId = sourceResult.rows[0].id
+      // Create program association for source sprint
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [sourceSprintId, testProgramId]
+      )
 
       // Create target sprint (planning)
       const targetResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
-         VALUES ($1, 'sprint', 'Target Sprint for Carryover', 'workspace', $2, $3, $4)
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by, properties)
+         VALUES ($1, 'sprint', 'Target Sprint for Carryover', 'workspace', $2, $3)
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 101, status: 'planning' })]
+        [testWorkspaceId, testUserId, JSON.stringify({ sprint_number: 101, status: 'planning' })]
       )
       targetSprintId = targetResult.rows[0].id
+      // Create program association for target sprint
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [targetSprintId, testProgramId]
+      )
 
       // Create test issues
       const issue1Result = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
-         VALUES ($1, 'issue', 'Issue 1 for Carryover', 'workspace', $2, $3, '{}')
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by, properties)
+         VALUES ($1, 'issue', 'Issue 1 for Carryover', 'workspace', $2, '{}')
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId]
+        [testWorkspaceId, testUserId]
       )
       issueId1 = issue1Result.rows[0].id
+      // Create program association for issue 1
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [issueId1, testProgramId]
+      )
 
       const issue2Result = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
-         VALUES ($1, 'issue', 'Issue 2 for Carryover', 'workspace', $2, $3, '{}')
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by, properties)
+         VALUES ($1, 'issue', 'Issue 2 for Carryover', 'workspace', $2, '{}')
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId]
+        [testWorkspaceId, testUserId]
       )
       issueId2 = issue2Result.rows[0].id
+      // Create program association for issue 2
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [issueId2, testProgramId]
+      )
 
       // Associate issues with source sprint
       await pool.query(
@@ -611,10 +677,16 @@ describe('Sprints API', () => {
     it('should reject carryover to completed sprint', async () => {
       // Create a completed sprint
       const completedResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
-         VALUES ($1, 'sprint', 'Completed Sprint', 'workspace', $2, $3, $4)
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by, properties)
+         VALUES ($1, 'sprint', 'Completed Sprint', 'workspace', $2, $3)
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId, JSON.stringify({ sprint_number: 102, status: 'completed' })]
+        [testWorkspaceId, testUserId, JSON.stringify({ sprint_number: 102, status: 'completed' })]
+      )
+      // Create program association
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [completedResult.rows[0].id, testProgramId]
       )
 
       const res = await request(app)
@@ -633,10 +705,16 @@ describe('Sprints API', () => {
     it('should reject issues not in source sprint', async () => {
       // Create an issue NOT in the source sprint
       const unrelatedResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, visibility, program_id, created_by, properties)
-         VALUES ($1, 'issue', 'Unrelated Issue', 'workspace', $2, $3, '{}')
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by, properties)
+         VALUES ($1, 'issue', 'Unrelated Issue', 'workspace', $2, '{}')
          RETURNING id`,
-        [testWorkspaceId, testProgramId, testUserId]
+        [testWorkspaceId, testUserId]
+      )
+      // Create program association
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [unrelatedResult.rows[0].id, testProgramId]
       )
 
       const res = await request(app)

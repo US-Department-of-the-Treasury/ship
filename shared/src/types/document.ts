@@ -167,9 +167,8 @@ export interface Document {
   yjs_state?: Uint8Array | null;
   parent_id?: string | null;
   position: number;
-  program_id?: string | null;
-  // Note: project_id and sprint_id removed - use belongs_to array instead
-  // Legacy columns still exist in database for migration compatibility
+  // Note: program_id, project_id, and sprint_id removed - use belongs_to array instead
+  // These columns were dropped by migrations 027 and 029
   properties: Record<string, unknown>;
   ticket_number?: number | null;
   archived_at?: Date | null;
@@ -249,8 +248,7 @@ export interface CreateDocumentInput {
   content?: Record<string, unknown>;
   parent_id?: string | null;
   position?: number;
-  program_id?: string | null;
-  // Note: project_id and sprint_id removed - use belongs_to array instead
+  // Note: program_id, project_id, and sprint_id removed - use belongs_to array instead
   properties?: Record<string, unknown>;
   visibility?: DocumentVisibility;
 }
@@ -260,8 +258,7 @@ export interface UpdateDocumentInput {
   content?: Record<string, unknown>;
   parent_id?: string | null;
   position?: number;
-  program_id?: string | null;
-  // Note: project_id and sprint_id removed - use belongs_to array instead
+  // Note: program_id, project_id, and sprint_id removed - use belongs_to array instead
   properties?: Record<string, unknown>;
   archived_at?: Date | null;
   visibility?: DocumentVisibility;

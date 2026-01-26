@@ -214,7 +214,6 @@ describe('Issues History API', () => {
         id: issueId,
         title: 'Test Issue',
         properties: { state: 'todo', priority: 'medium' },
-        program_id: null,
         sprint_id: null,
       };
       const updatedRow = {

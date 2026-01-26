@@ -718,8 +718,10 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 
       // Check if sprint already exists for this program + sprint_number
       const existingCheck = await pool.query(
-        `SELECT id FROM documents
-         WHERE program_id = $1 AND document_type = 'sprint' AND (properties->>'sprint_number')::int = $2`,
+        `SELECT d.id FROM documents d
+         JOIN document_associations da ON da.document_id = d.id
+         WHERE da.related_id = $1 AND da.relationship_type = 'program'
+           AND d.document_type = 'sprint' AND (d.properties->>'sprint_number')::int = $2`,
         [program_id, sprint_number]
       );
 
@@ -728,10 +730,16 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
         return;
       }
     } else {
-      // For projectless sprints, check workspace-wide uniqueness
+      // For projectless sprints, check workspace-wide uniqueness (sprints without program association)
       const existingCheck = await pool.query(
-        `SELECT id FROM documents
-         WHERE workspace_id = $1 AND program_id IS NULL AND document_type = 'sprint' AND (properties->>'sprint_number')::int = $2`,
+        `SELECT d.id FROM documents d
+         WHERE d.workspace_id = $1
+           AND d.document_type = 'sprint'
+           AND (d.properties->>'sprint_number')::int = $2
+           AND NOT EXISTS (
+             SELECT 1 FROM document_associations da
+             WHERE da.document_id = d.id AND da.relationship_type = 'program'
+           )`,
         [workspaceId, sprint_number]
       );
 
