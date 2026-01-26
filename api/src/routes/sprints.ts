@@ -2237,4 +2237,142 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
   }
 });
 
+// Carryover schema
+const carryoverSchema = z.object({
+  issue_ids: z.array(z.string().uuid()).min(1),
+  target_sprint_id: z.string().uuid(),
+});
+
+// POST /api/sprints/:id/carryover - Move incomplete issues to another sprint
+router.post('/:id/carryover', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id: sourceSprintId } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const parsed = carryoverSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    const { issue_ids, target_sprint_id } = parsed.data;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // 1. Validate source sprint exists
+    const sourceSprintResult = await pool.query(
+      `SELECT d.id, d.title, d.properties FROM documents d
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [sourceSprintId, workspaceId, userId, isAdmin]
+    );
+
+    if (sourceSprintResult.rows.length === 0) {
+      res.status(404).json({ error: 'Source sprint not found' });
+      return;
+    }
+
+    const sourceSprint = sourceSprintResult.rows[0];
+
+    // 2. Validate target sprint exists and is planning/active
+    const targetSprintResult = await pool.query(
+      `SELECT d.id, d.title, d.properties FROM documents d
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [target_sprint_id, workspaceId, userId, isAdmin]
+    );
+
+    if (targetSprintResult.rows.length === 0) {
+      res.status(404).json({ error: 'Target sprint not found' });
+      return;
+    }
+
+    const targetSprint = targetSprintResult.rows[0];
+    const targetProps = targetSprint.properties || {};
+    const targetStatus = targetProps.status || 'planning';
+
+    if (!['planning', 'active'].includes(targetStatus)) {
+      res.status(400).json({ error: `Target sprint must be planning or active (currently: ${targetStatus})` });
+      return;
+    }
+
+    // 3. Verify all issue_ids belong to the source sprint
+    const issueCheckResult = await pool.query(
+      `SELECT d.id FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
+       WHERE d.id = ANY($2) AND d.document_type = 'issue' AND d.workspace_id = $3`,
+      [sourceSprintId, issue_ids, workspaceId]
+    );
+
+    const foundIssueIds = new Set(issueCheckResult.rows.map(r => r.id));
+    const missingIssues = issue_ids.filter(id => !foundIssueIds.has(id));
+
+    if (missingIssues.length > 0) {
+      res.status(400).json({
+        error: 'Some issues not found in source sprint',
+        missing_issue_ids: missingIssues,
+      });
+      return;
+    }
+
+    // 4. Move each issue: delete old association, create new one, update properties
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      for (const issueId of issue_ids) {
+        // Delete the sprint association from source sprint
+        await client.query(
+          `DELETE FROM document_associations
+           WHERE document_id = $1 AND related_id = $2 AND relationship_type = 'sprint'`,
+          [issueId, sourceSprintId]
+        );
+
+        // Create new sprint association to target sprint
+        await client.query(
+          `INSERT INTO document_associations (document_id, related_id, relationship_type)
+           VALUES ($1, $2, 'sprint')
+           ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+          [issueId, target_sprint_id]
+        );
+
+        // Set carryover_from_sprint_id in the issue properties
+        await client.query(
+          `UPDATE documents
+           SET properties = properties || $1::jsonb, updated_at = now()
+           WHERE id = $2`,
+          [JSON.stringify({ carryover_from_sprint_id: sourceSprintId }), issueId]
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
+
+    // 5. Return result
+    res.json({
+      moved_count: issue_ids.length,
+      source_sprint: {
+        id: sourceSprint.id,
+        name: sourceSprint.title,
+        sprint_number: sourceSprint.properties?.sprint_number || null,
+      },
+      target_sprint: {
+        id: targetSprint.id,
+        name: targetSprint.title,
+        sprint_number: targetProps.sprint_number || null,
+      },
+    });
+  } catch (err) {
+    console.error('Sprint carryover error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
