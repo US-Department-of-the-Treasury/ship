@@ -13,6 +13,7 @@ import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
 import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
 import { useStandupStatusQuery } from '@/hooks/useStandupStatusQuery';
+import { useActionItemsQuery } from '@/hooks/useActionItemsQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -28,6 +29,8 @@ import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { ContextTreeNav } from '@/components/ContextTreeNav';
 import { ProjectSetupWizard, ProjectSetupData } from '@/components/ProjectSetupWizard';
 import { SelectionPersistenceProvider } from '@/contexts/SelectionPersistenceContext';
+import { ActionItemsModal } from '@/components/ActionItemsModal';
+import { AccountabilityBanner } from '@/components/AccountabilityBanner';
 
 type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week';
 
@@ -46,6 +49,8 @@ export function AppLayout() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
   const [projectSetupWizardOpen, setProjectSetupWizardOpen] = useState(false);
+  const [actionItemsModalOpen, setActionItemsModalOpen] = useState(false);
+  const [actionItemsModalShownOnLoad, setActionItemsModalShownOnLoad] = useState(false);
 
   // Session timeout handling
   const handleSessionTimeout = useCallback(() => {
@@ -64,6 +69,18 @@ export function AppLayout() {
   // Check if user needs to post a standup today
   const { data: standupStatus } = useStandupStatusQuery();
   const standupDue = standupStatus?.due ?? false;
+
+  // Check if user has pending action items (accountability tasks)
+  const { data: actionItemsData } = useActionItemsQuery();
+  const hasActionItems = (actionItemsData?.items?.length ?? 0) > 0;
+
+  // Show action items modal on initial load if there are pending items
+  useEffect(() => {
+    if (!actionItemsModalShownOnLoad && hasActionItems && actionItemsData?.items) {
+      setActionItemsModalOpen(true);
+      setActionItemsModalShownOnLoad(true);
+    }
+  }, [actionItemsModalShownOnLoad, hasActionItems, actionItemsData?.items]);
 
   // Accessibility: focus management on navigation
   useFocusOnNavigate();
@@ -220,6 +237,12 @@ export function AppLayout() {
         </div>
       )}
 
+      {/* Accountability banner - persistent until all items complete */}
+      <AccountabilityBanner
+        itemCount={actionItemsData?.items?.length ?? 0}
+        onBannerClick={() => setActionItemsModalOpen(true)}
+      />
+
       <div className="flex flex-1 overflow-hidden">
         {/* Icon Rail - Navigation landmark */}
         <nav className="flex w-12 flex-col items-center border-r border-border bg-background py-3" role="navigation" aria-label="Primary navigation">
@@ -318,9 +341,10 @@ export function AppLayout() {
             />
             <RailIcon
               icon={<MyWeekIcon />}
-              label="My Week"
+              label={hasActionItems ? "My Week (action items)" : "My Week"}
               active={activeMode === 'my-week'}
               onClick={() => handleModeClick('my-week')}
+              showBadge={hasActionItems}
             />
             <RailIcon
               icon={<TeamIcon />}
@@ -510,6 +534,12 @@ export function AppLayout() {
 
       {/* Upload Navigation Warning Modal */}
       <UploadNavigationWarning />
+
+      {/* Action Items Modal - shows on login when user has pending accountability tasks */}
+      <ActionItemsModal
+        open={actionItemsModalOpen}
+        onClose={() => setActionItemsModalOpen(false)}
+      />
     </div>
     </SelectionPersistenceProvider>
     </TooltipProvider>

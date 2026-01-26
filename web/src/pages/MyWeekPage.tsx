@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 import { priorityColors } from '@/lib/statusColors';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { useToast } from '@/components/ui/Toast';
+import { ActionItems } from '@/components/ActionItems';
 
 interface Issue {
   id: string;
@@ -194,6 +195,9 @@ export function MyWeekPage() {
   return (
     <div className="h-full overflow-auto p-6 pb-20">
       <div className="mx-auto max-w-5xl space-y-6">
+        {/* Action Items - accountability tasks */}
+        <ActionItems />
+
         {/* Sprint ending notice */}
         {isEndingSoon && (
           <div className="flex items-center justify-between rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">

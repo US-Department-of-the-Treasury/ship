@@ -291,10 +291,21 @@ export interface UserInfo {
   isSuperAdmin: boolean;
 }
 
+// Accountability item returned by auth endpoints
+export interface AccountabilityItem {
+  id: string;
+  title: string;
+  accountability_type: 'standup' | 'sprint_hypothesis' | 'sprint_review' | 'sprint_start' | 'sprint_issues' | 'project_hypothesis' | 'project_retro';
+  accountability_target_id: string;
+  due_date: string | null;
+  is_system_generated: boolean;
+}
+
 export interface LoginResponse {
   user: UserInfo;
   currentWorkspace: Workspace;
   workspaces: Array<Workspace & { role: 'admin' | 'member' }>;
+  pendingAccountabilityItems?: AccountabilityItem[];
 }
 
 export interface MeResponse {
@@ -305,6 +316,7 @@ export interface MeResponse {
     userId: string;
     userName: string;
   };
+  pendingAccountabilityItems?: AccountabilityItem[];
 }
 
 export const api = {

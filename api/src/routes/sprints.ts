@@ -8,6 +8,8 @@ import {
   extractTicketNumbersFromContents,
   batchLookupIssues,
 } from '../utils/transformIssueLinks.js';
+import { autoCompleteAccountabilityIssue } from '../services/accountability.js';
+import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -61,6 +63,7 @@ function extractSprintFromRow(row: any) {
     program_id: row.program_id,
     program_name: row.program_name,
     program_prefix: row.program_prefix,
+    program_accountable_id: row.program_accountable_id || null,
     workspace_sprint_start_date: row.workspace_sprint_start_date,
     issue_count: parseInt(row.issue_count) || 0,
     completed_count: parseInt(row.completed_count) || 0,
@@ -83,6 +86,11 @@ function extractSprintFromRow(row: any) {
     // Plan snapshot (populated when sprint becomes active)
     planned_issue_ids: props.planned_issue_ids || null,
     snapshot_taken_at: props.snapshot_taken_at || null,
+    // Approval tracking
+    hypothesis_approval: props.hypothesis_approval || null,
+    review_approval: props.review_approval || null,
+    // Accountability (sprints inherit from program, but may have direct assignment)
+    accountable_id: props.accountable_id || null,
   };
 }
 
@@ -177,6 +185,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
+              p.properties->>'accountable_id' as program_accountable_id,
               $5::timestamp as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -597,6 +606,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
+              p.properties->>'accountable_id' as program_accountable_id,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -1007,6 +1017,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
+              p.properties->>'accountable_id' as program_accountable_id,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -1100,10 +1111,14 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
       [JSON.stringify(newProps), id]
     );
 
+    // Auto-complete any pending sprint_start accountability issues
+    await autoCompleteAccountabilityIssue(id as string, 'sprint_start', workspaceId as string);
+
     // Re-query to get full sprint with owner info
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
+              p.properties->>'accountable_id' as program_accountable_id,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -1221,6 +1236,7 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
     const newProps = { ...currentProps };
     const data = parsed.data;
     const now = new Date().toISOString();
+    let hypothesisWasWritten = false;
 
     // If hypothesis is being updated, append old one to history
     if (data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis) {
@@ -1241,6 +1257,11 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
       // Update to new hypothesis
       newProps.hypothesis = data.hypothesis;
       newProps.hypothesis_history = currentHistory;
+
+      // Track if we're writing a non-empty hypothesis for the first time
+      if (data.hypothesis && !currentProps.hypothesis) {
+        hypothesisWasWritten = true;
+      }
     }
 
     // Update success_criteria and confidence directly
@@ -1251,6 +1272,19 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
       newProps.confidence = data.confidence;
     }
 
+    // If hypothesis or success_criteria changed and was previously approved, transition to 'changed_since_approved'
+    const hypothesisChanged = data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis;
+    const criteriaChanged = data.success_criteria !== undefined &&
+      JSON.stringify(data.success_criteria) !== JSON.stringify(currentProps.success_criteria);
+
+    if ((hypothesisChanged || criteriaChanged) &&
+        currentProps.hypothesis_approval?.state === 'approved') {
+      newProps.hypothesis_approval = {
+        ...currentProps.hypothesis_approval,
+        state: 'changed_since_approved',
+      };
+    }
+
     // Save updated properties
     await pool.query(
       `UPDATE documents SET properties = $1, updated_at = now()
@@ -1258,10 +1292,40 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
       [JSON.stringify(newProps), id, workspaceId]
     );
 
+    // Log changes to document_history for approval workflow tracking
+    if (data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis) {
+      await logDocumentChange(
+        id as string,
+        'hypothesis',
+        currentProps.hypothesis || null,
+        data.hypothesis || null,
+        userId
+      );
+    }
+    if (data.success_criteria !== undefined) {
+      const oldCriteria = currentProps.success_criteria ? JSON.stringify(currentProps.success_criteria) : null;
+      const newCriteria = data.success_criteria ? JSON.stringify(data.success_criteria) : null;
+      if (oldCriteria !== newCriteria) {
+        await logDocumentChange(
+          id as string,
+          'success_criteria',
+          oldCriteria,
+          newCriteria,
+          userId
+        );
+      }
+    }
+
+    // Auto-complete any pending hypothesis accountability issues if hypothesis was written
+    if (hypothesisWasWritten) {
+      await autoCompleteAccountabilityIssue(id as string, 'sprint_hypothesis', workspaceId as string);
+    }
+
     // Re-query to get full sprint with owner info
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
+              p.properties->>'accountable_id' as program_accountable_id,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -1764,6 +1828,9 @@ router.post('/:id/standups', authMiddleware, async (req: Request, res: Response)
     const standup = result.rows[0];
     const author = authorResult.rows[0];
 
+    // Auto-complete any pending standup accountability issues for this sprint
+    await autoCompleteAccountabilityIssue(id as string, 'standup', workspaceId as string);
+
     res.status(201).json({
       id: standup.id,
       sprint_id: standup.parent_id,
@@ -2105,7 +2172,21 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
       [userId]
     );
 
+    // Auto-complete any pending sprint_review accountability issues
+    await autoCompleteAccountabilityIssue(id as string, 'sprint_review', workspaceId as string);
+
+    // Log initial review content to document_history for approval workflow tracking
     const review = result.rows[0];
+    if (reviewContent) {
+      await logDocumentChange(
+        review.id,
+        'review_content',
+        null,
+        JSON.stringify(reviewContent),
+        userId
+      );
+    }
+
     const owner = ownerResult.rows[0];
 
     res.status(201).json({
@@ -2147,7 +2228,7 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
 
     // Find existing sprint_review for this sprint
     const existing = await pool.query(
-      `SELECT d.id, d.properties FROM documents d
+      `SELECT d.id, d.properties, d.content FROM documents d
        JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
        WHERE d.document_type = 'sprint_review'
          AND d.workspace_id = $2
@@ -2162,6 +2243,7 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
 
     const reviewId = existing.rows[0].id;
     const currentProps = existing.rows[0].properties || {};
+    const currentContent = existing.rows[0].content;
 
     // Check if user is owner or admin
     const ownerId = currentProps.owner_id;
@@ -2211,6 +2293,48 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
        WHERE id = $${paramIndex} AND document_type = 'sprint_review'`,
       [...values, reviewId]
     );
+
+    // Log review content changes to document_history for approval workflow tracking
+    if (content !== undefined) {
+      const oldContent = currentContent ? JSON.stringify(currentContent) : null;
+      const newContent = JSON.stringify(content);
+      if (oldContent !== newContent) {
+        await logDocumentChange(
+          reviewId,
+          'review_content',
+          oldContent,
+          newContent,
+          userId
+        );
+      }
+    }
+
+    // If review content or hypothesis_validated changed, update parent sprint's review_approval
+    const reviewFieldsChanged = content !== undefined || hypothesis_validated !== undefined;
+    if (reviewFieldsChanged) {
+      // Fetch parent sprint to check review_approval state
+      const sprintResult = await pool.query(
+        `SELECT properties FROM documents WHERE id = $1 AND document_type = 'sprint'`,
+        [id]
+      );
+      if (sprintResult.rows.length > 0) {
+        const sprintProps = sprintResult.rows[0].properties || {};
+        if (sprintProps.review_approval?.state === 'approved') {
+          const newSprintProps = {
+            ...sprintProps,
+            review_approval: {
+              ...sprintProps.review_approval,
+              state: 'changed_since_approved',
+            },
+          };
+          await pool.query(
+            `UPDATE documents SET properties = $1, updated_at = now()
+             WHERE id = $2 AND document_type = 'sprint'`,
+            [JSON.stringify(newSprintProps), id]
+          );
+        }
+      }
+    }
 
     // Re-query to get full review with owner info
     // Note: sprint_review documents use owner_id (not assignee_ids like sprint docs)
@@ -2380,6 +2504,151 @@ router.post('/:id/carryover', authMiddleware, async (req: Request, res: Response
     });
   } catch (err) {
     console.error('Sprint carryover error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/sprints/:id/approve-hypothesis - Approve sprint hypothesis
+router.post('/:id/approve-hypothesis', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for admin check
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists, get properties and program's accountable_id
+    const sprintResult = await pool.query(
+      `SELECT d.id, d.properties, prog.properties->>'accountable_id' as program_accountable_id
+       FROM documents d
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintResult.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    const sprint = sprintResult.rows[0];
+    const programAccountableId = sprint.program_accountable_id;
+
+    // Check authorization: must be program's accountable_id OR workspace admin
+    if (programAccountableId !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the program accountable person or admin can approve hypotheses' });
+      return;
+    }
+
+    // Get the latest hypothesis history entry for version tracking
+    const historyEntry = await getLatestDocumentFieldHistory(id as string, 'hypothesis');
+    const versionId = historyEntry?.id || null;
+
+    // Update sprint properties with approval
+    const currentProps = sprint.properties || {};
+    const newProps = {
+      ...currentProps,
+      hypothesis_approval: {
+        state: 'approved',
+        approved_by: userId,
+        approved_at: new Date().toISOString(),
+        approved_version_id: versionId,
+      },
+    };
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND document_type = 'sprint'`,
+      [JSON.stringify(newProps), id]
+    );
+
+    res.json({
+      success: true,
+      approval: newProps.hypothesis_approval,
+    });
+  } catch (err) {
+    console.error('Approve sprint hypothesis error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/sprints/:id/approve-review - Approve sprint review
+router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for admin check
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists, get properties and program's accountable_id
+    const sprintResult = await pool.query(
+      `SELECT d.id, d.properties, prog.properties->>'accountable_id' as program_accountable_id
+       FROM documents d
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintResult.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    const sprint = sprintResult.rows[0];
+    const programAccountableId = sprint.program_accountable_id;
+
+    // Check authorization: must be program's accountable_id OR workspace admin
+    if (programAccountableId !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the program accountable person or admin can approve reviews' });
+      return;
+    }
+
+    // Find the sprint_review document to get its version history
+    const reviewResult = await pool.query(
+      `SELECT d.id FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
+       WHERE d.document_type = 'sprint_review' AND d.workspace_id = $2`,
+      [id, workspaceId]
+    );
+
+    let versionId: number | null = null;
+    if (reviewResult.rows.length > 0) {
+      const reviewId = reviewResult.rows[0].id;
+      const historyEntry = await getLatestDocumentFieldHistory(reviewId, 'review_content');
+      versionId = historyEntry?.id || null;
+    }
+
+    // Update sprint properties with review approval
+    const currentProps = sprint.properties || {};
+    const newProps = {
+      ...currentProps,
+      review_approval: {
+        state: 'approved',
+        approved_by: userId,
+        approved_at: new Date().toISOString(),
+        approved_version_id: versionId,
+      },
+    };
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND document_type = 'sprint'`,
+      [JSON.stringify(newProps), id]
+    );
+
+    res.json({
+      success: true,
+      approval: newProps.review_approval,
+    });
+  } catch (err) {
+    console.error('Approve sprint review error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

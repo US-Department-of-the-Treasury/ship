@@ -3,7 +3,8 @@ import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { ProgramCombobox } from '@/components/ProgramCombobox';
 import { PropertyRow } from '@/components/ui/PropertyRow';
-import { computeICEScore } from '@ship/shared';
+import { ApprovalButton } from '@/components/ApprovalButton';
+import { computeICEScore, type ApprovalTracking } from '@ship/shared';
 
 const PROJECT_COLORS = [
   '#6366f1', // Indigo
@@ -33,9 +34,18 @@ interface Project {
   program_id: string | null;
   owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
+  // RACI fields
+  accountable_id?: string | null;
+  consulted_ids?: string[];
+  informed_ids?: string[];
   sprint_count?: number;
   issue_count?: number;
   converted_from_id?: string | null;
+  // Approval tracking
+  hypothesis?: string | null;
+  hypothesis_approval?: ApprovalTracking | null;
+  retro_approval?: ApprovalTracking | null;
+  has_retro?: boolean;
 }
 
 interface Program {
@@ -56,6 +66,12 @@ interface ProjectSidebarProps {
   isUndoing?: boolean;
   /** Fields to highlight as missing (e.g., after type conversion) */
   highlightedFields?: string[];
+  /** Whether current user can approve (is accountable or workspace admin) */
+  canApprove?: boolean;
+  /** Map of user ID to name for displaying approver */
+  userNames?: Record<string, string>;
+  /** Callback when approval state changes */
+  onApprovalUpdate?: () => void;
 }
 
 export function ProjectSidebar({
@@ -68,6 +84,9 @@ export function ProjectSidebar({
   isConverting = false,
   isUndoing = false,
   highlightedFields = [],
+  canApprove = false,
+  userNames = {},
+  onApprovalUpdate,
 }: ProjectSidebarProps) {
   // Helper to check if a field should be highlighted
   const isHighlighted = (field: string) => highlightedFields.includes(field);
@@ -165,8 +184,8 @@ export function ProjectSidebar({
         />
       </PropertyRow>
 
-      {/* Owner */}
-      <PropertyRow label="Owner">
+      {/* Owner (R - Responsible) */}
+      <PropertyRow label="Owner" tooltip="R - Responsible: Person who does the work">
         <PersonCombobox
           people={people}
           value={project.owner?.id || null}
@@ -174,6 +193,50 @@ export function ProjectSidebar({
           placeholder="Select owner..."
         />
       </PropertyRow>
+
+      {/* Accountable (A - Accountable) */}
+      <PropertyRow label="Accountable" tooltip="A - Accountable: Person who approves hypotheses and reviews">
+        <PersonCombobox
+          people={people}
+          value={project.accountable_id || null}
+          onChange={(accountableId) => onUpdate({ accountable_id: accountableId } as Partial<Project>)}
+          placeholder="Select approver..."
+        />
+      </PropertyRow>
+
+      {/* Approvals Section - only show if user can approve */}
+      {canApprove && (
+        <div className="pt-4 border-t border-border space-y-4">
+          <h4 className="text-xs font-medium text-muted uppercase tracking-wide">Approvals</h4>
+
+          {/* Hypothesis Approval */}
+          <PropertyRow label="Hypothesis">
+            <ApprovalButton
+              type="hypothesis"
+              approval={project.hypothesis_approval}
+              hasContent={!!project.hypothesis?.trim()}
+              canApprove={canApprove}
+              approveEndpoint={`/api/projects/${project.id}/approve-hypothesis`}
+              approverName={project.hypothesis_approval?.approved_by ? userNames[project.hypothesis_approval.approved_by] : undefined}
+              currentContent={project.hypothesis || ''}
+              onApproved={onApprovalUpdate}
+            />
+          </PropertyRow>
+
+          {/* Retro Approval */}
+          <PropertyRow label="Retrospective">
+            <ApprovalButton
+              type="retro"
+              approval={project.retro_approval}
+              hasContent={project.has_retro ?? false}
+              canApprove={canApprove}
+              approveEndpoint={`/api/projects/${project.id}/approve-retro`}
+              approverName={project.retro_approval?.approved_by ? userNames[project.retro_approval.approved_by] : undefined}
+              onApproved={onApprovalUpdate}
+            />
+          </PropertyRow>
+        </div>
+      )}
 
       {/* Icon (Emoji) */}
       <PropertyRow label="Icon">

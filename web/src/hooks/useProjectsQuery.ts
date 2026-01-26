@@ -18,12 +18,17 @@ export interface Project {
   emoji: string | null;
   // Associations
   program_id: string | null;
-  // Owner info
+  // Owner info (R - Responsible)
   owner: {
     id: string;
     name: string;
     email: string;
   } | null;
+  owner_id?: string | null;
+  // RACI fields
+  accountable_id?: string | null;  // A - Accountable (approver)
+  consulted_ids?: string[];        // C - Consulted
+  informed_ids?: string[];         // I - Informed
   // Counts
   sprint_count: number;
   issue_count: number;
@@ -94,7 +99,10 @@ async function fetchProjects(): Promise<Project[]> {
 // Create project
 interface CreateProjectData {
   title?: string;
-  owner_id?: string | null;  // Optional - can be unassigned
+  owner_id?: string | null;  // R - Responsible (optional - can be unassigned)
+  accountable_id?: string | null;  // A - Accountable (approver)
+  consulted_ids?: string[];        // C - Consulted
+  informed_ids?: string[];         // I - Informed
   impact?: number | null;
   confidence?: number | null;
   ease?: number | null;
@@ -285,7 +293,10 @@ export function useDeleteProject() {
 // Options for creating a project
 export interface CreateProjectOptions {
   title?: string;
-  owner_id?: string | null;  // Optional - can be unassigned
+  owner_id?: string | null;  // R - Responsible (optional - can be unassigned)
+  accountable_id?: string | null;  // A - Accountable (approver)
+  consulted_ids?: string[];        // C - Consulted
+  informed_ids?: string[];         // I - Informed
   program_id?: string;
   hypothesis?: string;
   target_date?: string;

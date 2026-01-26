@@ -5,6 +5,8 @@ import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visib
 import { authMiddleware } from '../middleware/auth.js';
 import { DEFAULT_PROJECT_PROPERTIES, computeICEScore } from '@ship/shared';
 import { checkDocumentCompleteness } from '../utils/extractHypothesis.js';
+import { autoCompleteAccountabilityIssue } from '../services/accountability.js';
+import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -53,6 +55,17 @@ function extractProjectFromRow(row: any) {
     inferred_status: row.inferred_status as InferredProjectStatus || 'backlog',
     // Conversion tracking
     converted_from_id: row.converted_from_id || null,
+    // RACI fields
+    owner_id: props.owner_id || null,
+    accountable_id: props.accountable_id || null,
+    consulted_ids: props.consulted_ids || [],
+    informed_ids: props.informed_ids || [],
+    // Hypothesis and approval tracking
+    hypothesis: props.hypothesis || null,
+    hypothesis_approval: props.hypothesis_approval || null,
+    retro_approval: props.retro_approval || null,
+    has_retro: props.has_retro ?? false,
+    target_date: props.target_date || null,
   };
 }
 
@@ -64,7 +77,10 @@ const createProjectSchema = z.object({
   impact: iceScoreSchema.optional().nullable().default(null),
   confidence: iceScoreSchema.optional().nullable().default(null),
   ease: iceScoreSchema.optional().nullable().default(null),
-  owner_id: z.string().uuid().optional().nullable().default(null), // Optional - can be unassigned
+  owner_id: z.string().uuid().optional().nullable().default(null), // R - Responsible (does the work)
+  accountable_id: z.string().uuid().optional().nullable().default(null), // A - Accountable (approver)
+  consulted_ids: z.array(z.string().uuid()).optional().default([]), // C - Consulted (provide input)
+  informed_ids: z.array(z.string().uuid()).optional().default([]), // I - Informed (kept in loop)
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#6366f1'),
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
@@ -77,7 +93,10 @@ const updateProjectSchema = z.object({
   impact: iceScoreSchema.optional().nullable(),
   confidence: iceScoreSchema.optional().nullable(),
   ease: iceScoreSchema.optional().nullable(),
-  owner_id: z.string().uuid().optional().nullable(), // Can be cleared (set to null)
+  owner_id: z.string().uuid().optional().nullable(), // R - Responsible (can be cleared)
+  accountable_id: z.string().uuid().optional().nullable(), // A - Accountable (can be cleared)
+  consulted_ids: z.array(z.string().uuid()).optional(), // C - Consulted
+  informed_ids: z.array(z.string().uuid()).optional(), // I - Informed
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
@@ -502,14 +521,17 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, impact, confidence, ease, owner_id, color, emoji, program_id, hypothesis, target_date } = parsed.data;
+    const { title, impact, confidence, ease, owner_id, accountable_id, consulted_ids, informed_ids, color, emoji, program_id, hypothesis, target_date } = parsed.data;
 
-    // Build properties JSONB
+    // Build properties JSONB with RACI fields
     const properties: Record<string, unknown> = {
       impact,
       confidence,
       ease,
-      owner_id,
+      owner_id, // R - Responsible
+      accountable_id, // A - Accountable
+      consulted_ids, // C - Consulted
+      informed_ids, // I - Informed
       color,
     };
     if (emoji) {
@@ -641,6 +663,21 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    if (data.accountable_id !== undefined) {
+      newProps.accountable_id = data.accountable_id;
+      propsChanged = true;
+    }
+
+    if (data.consulted_ids !== undefined) {
+      newProps.consulted_ids = data.consulted_ids;
+      propsChanged = true;
+    }
+
+    if (data.informed_ids !== undefined) {
+      newProps.informed_ids = data.informed_ids;
+      propsChanged = true;
+    }
+
     if (data.color !== undefined) {
       newProps.color = data.color;
       propsChanged = true;
@@ -651,9 +688,24 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    // Track if hypothesis was written for the first time
+    let hypothesisWasWritten = false;
     if (data.hypothesis !== undefined) {
+      // Check if this is the first time writing a non-empty hypothesis
+      if (data.hypothesis && !currentProps.hypothesis) {
+        hypothesisWasWritten = true;
+      }
       newProps.hypothesis = data.hypothesis;
       propsChanged = true;
+
+      // If hypothesis changed and was previously approved, transition to 'changed_since_approved'
+      if (data.hypothesis !== currentProps.hypothesis &&
+          currentProps.hypothesis_approval?.state === 'approved') {
+        newProps.hypothesis_approval = {
+          ...currentProps.hypothesis_approval,
+          state: 'changed_since_approved',
+        };
+      }
     }
 
     if (data.target_date !== undefined) {
@@ -689,6 +741,22 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         `UPDATE documents SET ${updates.join(', ')}
          WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'project'`,
         [...values, id, req.workspaceId]
+      );
+    }
+
+    // Auto-complete any pending project_hypothesis accountability issues if hypothesis was written
+    if (hypothesisWasWritten) {
+      await autoCompleteAccountabilityIssue(id as string, 'project_hypothesis', workspaceId as string);
+    }
+
+    // Log hypothesis changes to document_history for approval workflow tracking
+    if (data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis) {
+      await logDocumentChange(
+        id as string,
+        'hypothesis',
+        currentProps.hypothesis || null,
+        data.hypothesis || null,
+        userId
       );
     }
 
@@ -969,6 +1037,20 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
        WHERE id = $${values.length + 1} AND workspace_id = $${values.length + 2} AND document_type = 'project'`,
       [...values, id, workspaceId]
     );
+
+    // Auto-complete any pending project_retro accountability issues
+    await autoCompleteAccountabilityIssue(id as string, 'project_retro', workspaceId as string);
+
+    // Log initial retro content to document_history for approval workflow tracking
+    if (content) {
+      await logDocumentChange(
+        id as string,
+        'retro_content',
+        null,
+        JSON.stringify(content),
+        userId
+      );
+    }
 
     // Re-query to get updated data
     const result = await pool.query(
@@ -1360,7 +1442,7 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
 
     // Verify project exists and user can access it
     const existing = await pool.query(
-      `SELECT id, properties FROM documents
+      `SELECT id, properties, content FROM documents
        WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
          AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
@@ -1372,6 +1454,7 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
     }
 
     const currentProps = existing.rows[0].properties || {};
+    const currentContent = existing.rows[0].content;
     const { hypothesis_validated, monetary_impact_actual, success_criteria, next_steps, content } = parsed.data;
 
     // Update properties with retro data (only update fields that are provided)
@@ -1389,6 +1472,20 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
       newProps.next_steps = next_steps;
     }
 
+    // If any retro fields changed and was previously approved, transition to 'changed_since_approved'
+    const retroFieldsChanged = hypothesis_validated !== undefined ||
+      monetary_impact_actual !== undefined ||
+      success_criteria !== undefined ||
+      next_steps !== undefined ||
+      content !== undefined;
+
+    if (retroFieldsChanged && currentProps.retro_approval?.state === 'approved') {
+      newProps.retro_approval = {
+        ...currentProps.retro_approval,
+        state: 'changed_since_approved',
+      };
+    }
+
     // Update project with retro properties and optional content
     const updates: string[] = ['properties = $1', 'updated_at = now()'];
     const values: any[] = [JSON.stringify(newProps)];
@@ -1403,6 +1500,21 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
        WHERE id = $${values.length + 1} AND workspace_id = $${values.length + 2} AND document_type = 'project'`,
       [...values, id, workspaceId]
     );
+
+    // Log retro content changes to document_history for approval workflow tracking
+    if (content !== undefined) {
+      const oldContent = currentContent ? JSON.stringify(currentContent) : null;
+      const newContent = JSON.stringify(content);
+      if (oldContent !== newContent) {
+        await logDocumentChange(
+          id as string,
+          'retro_content',
+          oldContent,
+          newContent,
+          userId
+        );
+      }
+    }
 
     // Re-query to get updated data
     const result = await pool.query(
@@ -1422,6 +1534,134 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
     });
   } catch (err) {
     console.error('Update project retro error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/projects/:id/approve-hypothesis - Approve project hypothesis
+router.post('/:id/approve-hypothesis', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for admin check
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify project exists and get its properties
+    const projectResult = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (projectResult.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    const project = projectResult.rows[0];
+    const currentProps = project.properties || {};
+    const accountableId = currentProps.accountable_id;
+
+    // Check authorization: must be project's accountable_id OR workspace admin
+    if (accountableId !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the project accountable person or admin can approve hypotheses' });
+      return;
+    }
+
+    // Get the latest hypothesis history entry for version tracking
+    const historyEntry = await getLatestDocumentFieldHistory(id as string, 'hypothesis');
+    const versionId = historyEntry?.id || null;
+
+    // Update project properties with approval
+    const newProps = {
+      ...currentProps,
+      hypothesis_approval: {
+        state: 'approved',
+        approved_by: userId,
+        approved_at: new Date().toISOString(),
+        approved_version_id: versionId,
+      },
+    };
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND document_type = 'project'`,
+      [JSON.stringify(newProps), id]
+    );
+
+    res.json({
+      success: true,
+      approval: newProps.hypothesis_approval,
+    });
+  } catch (err) {
+    console.error('Approve project hypothesis error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/projects/:id/approve-retro - Approve project retro
+router.post('/:id/approve-retro', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for admin check
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify project exists and get its properties
+    const projectResult = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (projectResult.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    const project = projectResult.rows[0];
+    const currentProps = project.properties || {};
+    const accountableId = currentProps.accountable_id;
+
+    // Check authorization: must be project's accountable_id OR workspace admin
+    if (accountableId !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the project accountable person or admin can approve retros' });
+      return;
+    }
+
+    // Get the latest retro content history entry for version tracking
+    const historyEntry = await getLatestDocumentFieldHistory(id as string, 'retro_content');
+    const versionId = historyEntry?.id || null;
+
+    // Update project properties with retro approval
+    const newProps = {
+      ...currentProps,
+      retro_approval: {
+        state: 'approved',
+        approved_by: userId,
+        approved_at: new Date().toISOString(),
+        approved_version_id: versionId,
+      },
+    };
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND document_type = 'project'`,
+      [JSON.stringify(newProps), id]
+    );
+
+    res.json({
+      success: true,
+      approval: newProps.retro_approval,
+    });
+  } catch (err) {
+    console.error('Approve project retro error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

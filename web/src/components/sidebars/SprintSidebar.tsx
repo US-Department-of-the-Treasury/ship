@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PropertyRow } from '@/components/ui/PropertyRow';
 import { Combobox } from '@/components/ui/Combobox';
+import { ApprovalButton } from '@/components/ApprovalButton';
+import type { ApprovalTracking } from '@ship/shared';
 
 const STATUS_OPTIONS = [
   { value: 'planning', label: 'Planning', color: 'bg-blue-500' },
@@ -29,6 +31,13 @@ interface Sprint {
   hypothesis?: string;
   owner?: SprintOwner | null;
   owner_id?: string | null;
+  // Approval tracking
+  hypothesis_approval?: ApprovalTracking | null;
+  review_approval?: ApprovalTracking | null;
+  // For RACI - who can approve
+  accountable_id?: string | null;
+  // Whether a review exists
+  has_review?: boolean;
 }
 
 interface Person {
@@ -50,6 +59,14 @@ interface SprintSidebarProps {
   people?: Person[];
   /** Existing sprints for calculating availability */
   existingSprints?: ExistingSprint[];
+  /** Whether current user can approve (is accountable or workspace admin) */
+  canApprove?: boolean;
+  /** Current user ID (for showing approver name) */
+  currentUserId?: string;
+  /** Map of user ID to name for displaying approver */
+  userNames?: Record<string, string>;
+  /** Callback when approval state changes */
+  onApprovalUpdate?: () => void;
 }
 
 export function SprintSidebar({
@@ -58,6 +75,9 @@ export function SprintSidebar({
   highlightedFields = [],
   people = [],
   existingSprints = [],
+  canApprove = false,
+  userNames = {},
+  onApprovalUpdate,
 }: SprintSidebarProps) {
   const navigate = useNavigate();
   // Helper to check if a field should be highlighted
@@ -155,6 +175,19 @@ export function SprintSidebar({
           className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none resize-none"
           rows={3}
         />
+        {/* Hypothesis Approval */}
+        <div className="mt-2">
+          <ApprovalButton
+            type="hypothesis"
+            approval={sprint.hypothesis_approval}
+            hasContent={!!sprint.hypothesis?.trim()}
+            canApprove={canApprove}
+            approveEndpoint={`/api/sprints/${sprint.id}/approve-hypothesis`}
+            approverName={sprint.hypothesis_approval?.approved_by ? userNames[sprint.hypothesis_approval.approved_by] : undefined}
+            currentContent={sprint.hypothesis || ''}
+            onApproved={onApprovalUpdate}
+          />
+        </div>
       </PropertyRow>
 
       <PropertyRow label="Progress">
@@ -170,6 +203,21 @@ export function SprintSidebar({
           </p>
         </div>
       </PropertyRow>
+
+      {/* Review Approval - only show for completed sprints with a review */}
+      {sprint.status === 'completed' && (
+        <PropertyRow label="Review Approval">
+          <ApprovalButton
+            type="review"
+            approval={sprint.review_approval}
+            hasContent={sprint.has_review ?? false}
+            canApprove={canApprove}
+            approveEndpoint={`/api/sprints/${sprint.id}/approve-review`}
+            approverName={sprint.review_approval?.approved_by ? userNames[sprint.review_approval.approved_by] : undefined}
+            onApproved={onApprovalUpdate}
+          />
+        </PropertyRow>
+      )}
 
       {sprint.program_name && sprint.program_id && (
         <PropertyRow label="Program">
