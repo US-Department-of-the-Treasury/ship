@@ -529,6 +529,16 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       );
     }
 
+    // Handle program_id via document_associations (mirrors column for junction table queries)
+    if (program_id) {
+      await client.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')
+         ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+        [newDoc.id, program_id]
+      );
+    }
+
     await client.query('COMMIT');
 
     res.status(201).json(newDoc);

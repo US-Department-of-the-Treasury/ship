@@ -534,6 +534,16 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       [req.workspaceId, title, JSON.stringify(properties), program_id || null, req.userId]
     );
 
+    // Create program association in junction table (mirrors PATCH behavior)
+    if (program_id) {
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')
+         ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+        [result.rows[0].id, program_id]
+      );
+    }
+
     // Get user info for owner response (only if owner_id is set)
     let owner = null;
     if (owner_id) {
@@ -1288,13 +1298,23 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
 
     const sprint = result.rows[0];
 
-    // Create association in junction table
+    // Create association in junction table for project
     await pool.query(
       `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
        VALUES ($1, $2, 'project', $3)
        ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
       [sprint.id, id, JSON.stringify({ created_via: 'POST /api/projects/:id/sprints' })]
     );
+
+    // Create association in junction table for program (if project has one)
+    if (project.program_id) {
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')
+         ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+        [sprint.id, project.program_id]
+      );
+    }
 
     res.status(201).json({
       id: sprint.id,
