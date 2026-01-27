@@ -225,6 +225,111 @@ describe('extractHypothesisFromContent', () => {
       expect(result).not.toContain('Next Section');
     });
   });
+
+  describe('hypothesisBlock extraction', () => {
+    it('extracts content from hypothesisBlock node', () => {
+      const content = {
+        type: 'doc',
+        content: [
+          {
+            type: 'hypothesisBlock',
+            attrs: { placeholder: 'What will get done this sprint?' },
+            content: [{ type: 'text', text: 'We will complete the authentication feature.' }],
+          },
+          {
+            type: 'heading',
+            attrs: { level: 2 },
+            content: [{ type: 'text', text: 'Success Criteria' }],
+          },
+        ],
+      };
+
+      const result = extractHypothesisFromContent(content);
+      expect(result).toBe('We will complete the authentication feature.');
+    });
+
+    it('prefers hypothesisBlock over H2 heading format', () => {
+      const content = {
+        type: 'doc',
+        content: [
+          {
+            type: 'hypothesisBlock',
+            content: [{ type: 'text', text: 'Block hypothesis content.' }],
+          },
+          {
+            type: 'heading',
+            attrs: { level: 2 },
+            content: [{ type: 'text', text: 'Hypothesis' }],
+          },
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'Legacy heading hypothesis.' }],
+          },
+        ],
+      };
+
+      const result = extractHypothesisFromContent(content);
+      expect(result).toBe('Block hypothesis content.');
+    });
+
+    it('returns null for empty hypothesisBlock', () => {
+      const content = {
+        type: 'doc',
+        content: [
+          {
+            type: 'hypothesisBlock',
+            content: [],
+          },
+        ],
+      };
+
+      const result = extractHypothesisFromContent(content);
+      expect(result).toBeNull();
+    });
+
+    it('handles hypothesisBlock with multiple text nodes', () => {
+      const content = {
+        type: 'doc',
+        content: [
+          {
+            type: 'hypothesisBlock',
+            content: [
+              { type: 'text', text: 'We believe ' },
+              { type: 'text', text: 'this feature ', marks: [{ type: 'bold' }] },
+              { type: 'text', text: 'will improve UX.' },
+            ],
+          },
+        ],
+      };
+
+      const result = extractHypothesisFromContent(content);
+      expect(result).toBe('We believe this feature will improve UX.');
+    });
+
+    it('skips empty hypothesisBlock and falls back to H2 heading', () => {
+      const content = {
+        type: 'doc',
+        content: [
+          {
+            type: 'hypothesisBlock',
+            content: [],
+          },
+          {
+            type: 'heading',
+            attrs: { level: 2 },
+            content: [{ type: 'text', text: 'Hypothesis' }],
+          },
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'Fallback content.' }],
+          },
+        ],
+      };
+
+      const result = extractHypothesisFromContent(content);
+      expect(result).toBe('Fallback content.');
+    });
+  });
 });
 
 describe('extractSuccessCriteriaFromContent', () => {

@@ -167,27 +167,18 @@ export function SprintSidebar({
         />
       </PropertyRow>
 
-      <PropertyRow label="Hypothesis">
-        <textarea
-          value={sprint.hypothesis || ''}
-          onChange={(e) => onUpdate({ hypothesis: e.target.value })}
-          placeholder="What are we trying to learn or achieve this sprint?"
-          className="w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none resize-none"
-          rows={3}
+      {/* Hypothesis Approval - hypothesis is edited in the document body via /hypothesis block */}
+      <PropertyRow label="Hypothesis Approval">
+        <ApprovalButton
+          type="hypothesis"
+          approval={sprint.hypothesis_approval}
+          hasContent={!!sprint.hypothesis?.trim()}
+          canApprove={canApprove}
+          approveEndpoint={`/api/sprints/${sprint.id}/approve-hypothesis`}
+          approverName={sprint.hypothesis_approval?.approved_by ? userNames[sprint.hypothesis_approval.approved_by] : undefined}
+          currentContent={sprint.hypothesis || ''}
+          onApproved={onApprovalUpdate}
         />
-        {/* Hypothesis Approval */}
-        <div className="mt-2">
-          <ApprovalButton
-            type="hypothesis"
-            approval={sprint.hypothesis_approval}
-            hasContent={!!sprint.hypothesis?.trim()}
-            canApprove={canApprove}
-            approveEndpoint={`/api/sprints/${sprint.id}/approve-hypothesis`}
-            approverName={sprint.hypothesis_approval?.approved_by ? userNames[sprint.hypothesis_approval.approved_by] : undefined}
-            currentContent={sprint.hypothesis || ''}
-            onApproved={onApprovalUpdate}
-          />
-        </div>
       </PropertyRow>
 
       <PropertyRow label="Progress">

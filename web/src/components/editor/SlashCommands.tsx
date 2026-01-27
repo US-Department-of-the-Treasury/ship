@@ -478,30 +478,23 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
           .run();
       },
     },
-    // Hypothesis section (for Project and Sprint documents)
+    // Hypothesis block (for Sprint documents only - syncs with properties.hypothesis)
     {
       title: 'Hypothesis',
-      description: 'Add a hypothesis section',
+      description: 'Add a hypothesis block',
       aliases: ['hypothesis', 'hypo', 'theory'],
       icon: icons.hypothesis,
+      documentTypes: ['sprint'],
       command: ({ editor, range }) => {
         editor
           .chain()
           .focus()
           .deleteRange(range)
-          .insertContent([
-            {
-              type: 'heading',
-              attrs: { level: 2 },
-              content: [{ type: 'text', text: 'Hypothesis' }],
-            },
-            {
-              type: 'paragraph',
-            },
-          ])
+          .insertContent({
+            type: 'hypothesisBlock',
+            attrs: { placeholder: 'What will get done this sprint?' },
+          })
           .run();
-        // Move cursor to the empty paragraph
-        editor.commands.focus('end');
       },
     },
     // Success Criteria section (for Project and Sprint documents)

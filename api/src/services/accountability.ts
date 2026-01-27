@@ -26,6 +26,7 @@ export interface MissingAccountabilityItem {
   dueDate: string | null;
   message: string;
   daysSinceLastStandup?: number; // Only set for standup type
+  issueCount?: number; // Number of issues assigned to user (for standup type)
 }
 
 // Created accountability issue
@@ -126,10 +127,10 @@ async function checkMissingStandups(
     return items;
   }
 
-  // Find active sprints where user has assigned issues
+  // Find active sprints where user has assigned issues with count
   // (This inherently skips empty sprints with no members)
   const activeSprintsResult = await pool.query(
-    `SELECT DISTINCT s.id, s.title, s.properties
+    `SELECT s.id, s.title, s.properties, COUNT(i.id) as issue_count
      FROM documents i
      JOIN document_associations da ON da.document_id = i.id AND da.relationship_type = 'sprint'
      JOIN documents s ON s.id = da.related_id AND s.document_type = 'sprint'
@@ -137,7 +138,8 @@ async function checkMissingStandups(
        AND i.document_type = 'issue'
        AND (i.properties->>'assignee_id')::uuid = $2
        AND (s.properties->>'sprint_number')::int = $3
-       AND s.deleted_at IS NULL`,
+       AND s.deleted_at IS NULL
+     GROUP BY s.id, s.title, s.properties`,
     [workspaceId, userId, currentSprintNumber]
   );
 
@@ -168,25 +170,33 @@ async function checkMissingStandups(
 
       const lastStandupDate = lastStandupResult.rows[0]?.last_standup_date;
       let daysSinceLastStandup = 0;
-      let message = `Post standup for ${sprint.title || 'current sprint'}`;
+      const sprintTitle = sprint.title || `Sprint ${sprint.properties?.sprint_number || 'N'}`;
+      const issueCount = parseInt(sprint.issue_count, 10) || 0;
+
+      // Format: "Post standup for {sprint_title} ({issue_count} issues)"
+      let message = `Post standup for ${sprintTitle}`;
+      if (issueCount > 0) {
+        message += ` (${issueCount} issue${issueCount === 1 ? '' : 's'} assigned)`;
+      }
 
       if (lastStandupDate) {
         const lastDate = new Date(lastStandupDate);
         const todayDate = new Date(todayStr);
         daysSinceLastStandup = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
-        message = `Post standup (${daysSinceLastStandup} day${daysSinceLastStandup === 1 ? '' : 's'} since last)`;
-      } else {
-        message = `Post standup for ${sprint.title || 'current sprint'} (no previous standups)`;
+        if (daysSinceLastStandup > 1) {
+          message += ` - ${daysSinceLastStandup} days since last`;
+        }
       }
 
       items.push({
         type: 'standup',
         targetId: sprint.id,
-        targetTitle: sprint.title || `Sprint ${sprint.properties?.sprint_number || 'N'}`,
+        targetTitle: sprintTitle,
         targetType: 'sprint',
         dueDate: todayStr,
         message,
         daysSinceLastStandup,
+        issueCount,
       });
     }
   }

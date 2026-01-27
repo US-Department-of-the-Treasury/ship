@@ -31,6 +31,7 @@ import { FileAttachmentExtension } from './editor/FileAttachment';
 import { DetailsExtension, DetailsSummary, DetailsContent } from './editor/DetailsExtension';
 import { EmojiExtension } from './editor/EmojiExtension';
 import { TableOfContentsExtension } from './editor/TableOfContents';
+import { HypothesisBlockExtension } from './editor/HypothesisBlockExtension';
 import 'tippy.js/dist/tippy.css';
 
 // Create lowlight instance with common languages
@@ -455,6 +456,7 @@ export function Editor({
     mentionExtension,
     EmojiExtension,
     TableOfContentsExtension,
+    HypothesisBlockExtension,
     ...(slashCommandsExtension ? [slashCommandsExtension] : []),
   ];
 

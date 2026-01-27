@@ -808,18 +808,15 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       properties.confidence = confidence;
     }
 
-    // Default TipTap content for new sprints with Hypothesis and Success Criteria headings
+    // Default TipTap content for new sprints with HypothesisBlock and Success Criteria
+    // The hypothesisBlock syncs bidirectionally with sprint.properties.hypothesis
     const defaultContent = {
       type: 'doc',
       content: [
         {
-          type: 'heading',
-          attrs: { level: 2 },
-          content: [{ type: 'text', text: 'Hypothesis' }]
-        },
-        {
-          type: 'paragraph',
-          content: [{ type: 'text', text: 'What do we believe will happen? What are we trying to learn or prove?' }]
+          type: 'hypothesisBlock',
+          attrs: { placeholder: 'What will get done this sprint?' },
+          content: []
         },
         {
           type: 'heading',

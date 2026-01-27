@@ -59,8 +59,9 @@ function isH2Heading(node: TipTapNode): boolean {
 /**
  * Extract hypothesis content from TipTap document JSON.
  *
- * Finds the first H2 "Hypothesis" heading and extracts all content
- * until the next H2 heading (or end of document).
+ * Looks for:
+ * 1. hypothesisBlock nodes (preferred - custom block component)
+ * 2. H2 "Hypothesis" heading with content until next H2 (legacy format)
  *
  * @param content - TipTap JSON document
  * @returns Extracted hypothesis text, or null if no hypothesis section found
@@ -72,6 +73,16 @@ export function extractHypothesisFromContent(content: unknown): string | null {
   if (doc.type !== 'doc' || !Array.isArray(doc.content)) return null;
 
   const nodes = doc.content;
+
+  // First, look for hypothesisBlock nodes (preferred)
+  for (const node of nodes) {
+    if (node.type === 'hypothesisBlock' && node.content) {
+      const text = extractText(node.content).trim();
+      if (text) return text;
+    }
+  }
+
+  // Fallback: look for H2 "Hypothesis" heading (legacy format)
   let hypothesisStartIndex = -1;
 
   // Find the Hypothesis H2 heading
