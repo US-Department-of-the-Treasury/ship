@@ -12,6 +12,7 @@ import {
   type BelongsToEntry,
 } from '../utils/document-crud.js';
 import { autoCompleteAccountabilityIssue } from '../services/accountability.js';
+import { broadcastToUser } from '../collaboration/index.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -941,7 +942,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
         // If this is the first issue in the sprint, auto-complete any pending sprint_issues accountability
         if (issueCount === 1) {
-          await autoCompleteAccountabilityIssue(sprintId, 'sprint_issues', req.workspaceId!);
+          await autoCompleteAccountabilityIssue(sprintId, 'sprint_issues', req.workspaceId!, req.userId);
         }
       }
     }
@@ -957,6 +958,18 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const issue = extractIssueFromRow(row);
     const belongsTo = await getBelongsToAssociations(id);
+
+    // Broadcast accountability update when an action item issue is completed
+    // This triggers the celebration animation on the frontend
+    if (isClosingIssue && wasNotClosed) {
+      const props = row.properties || {};
+      if (props.source === 'action_items') {
+        // Broadcast to the assignee (or current user if no assignee)
+        const assigneeId = props.assignee_id || req.userId;
+        broadcastToUser(assigneeId, 'accountability:updated', { issueId: id, state: data.state });
+      }
+    }
+
     res.json({ ...issue, display_id: displayId, belongs_to: belongsTo });
   } catch (err) {
     console.error('Update issue error:', err);

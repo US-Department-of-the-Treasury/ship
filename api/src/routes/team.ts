@@ -1177,31 +1177,10 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       [workspaceId]
     );
 
-    // Get sprint allocations for each project
-    // An allocation = person assigned to project for that sprint
-    const allocationsResult = await pool.query(
-      `SELECT
-         sa.project_id,
-         s.properties->>'sprint_number' as sprint_number,
-         COUNT(DISTINCT sa.person_id) as person_count
-       FROM sprint_allocations sa
-       JOIN documents s ON s.id = sa.sprint_id
-       WHERE sa.workspace_id = $1
-         AND (s.properties->>'sprint_number')::int BETWEEN $2 AND $3
-       GROUP BY sa.project_id, s.properties->>'sprint_number'`,
-      [workspaceId, fromSprint, toSprint]
-    );
-
-    // Build allocation map: projectId -> { sprintNumber -> personCount }
+    // Sprint allocations feature not yet implemented in unified document model
+    // TODO: Derive allocations from issue assignments (issues assigned to both project and sprint)
+    // For now, return empty allocations so the endpoint works
     const projectAllocations: Record<string, Record<number, number>> = {};
-    for (const row of allocationsResult.rows) {
-      const projectId = row.project_id;
-      const sprintNumber = parseInt(row.sprint_number, 10);
-      if (!projectAllocations[projectId]) {
-        projectAllocations[projectId] = {};
-      }
-      projectAllocations[projectId][sprintNumber] = parseInt(row.person_count, 10);
-    }
 
     // Build projects array with accountability data
     const projects = projectsResult.rows.map(p => {

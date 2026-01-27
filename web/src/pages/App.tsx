@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
+import { useRealtimeEvent } from '@/hooks/useRealtimeEvents';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
@@ -13,7 +15,7 @@ import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
 import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
 import { useStandupStatusQuery } from '@/hooks/useStandupStatusQuery';
-import { useActionItemsQuery } from '@/hooks/useActionItemsQuery';
+import { useActionItemsQuery, actionItemsKeys } from '@/hooks/useActionItemsQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -73,6 +75,41 @@ export function AppLayout() {
   // Check if user has pending action items (accountability tasks)
   const { data: actionItemsData } = useActionItemsQuery();
   const hasActionItems = (actionItemsData?.items?.length ?? 0) > 0;
+  const queryClient = useQueryClient();
+
+  // Celebration state for when user completes an accountability item
+  const [isCelebrating, setIsCelebrating] = useState(false);
+  const celebrationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Listen for realtime accountability updates
+  const handleAccountabilityUpdate = useCallback(() => {
+    // Show celebration banner
+    setIsCelebrating(true);
+
+    // Clear any existing timeout
+    if (celebrationTimeoutRef.current) {
+      clearTimeout(celebrationTimeoutRef.current);
+    }
+
+    // After 4 seconds, invalidate query and hide celebration
+    celebrationTimeoutRef.current = setTimeout(() => {
+      // Invalidate action items to refetch
+      queryClient.invalidateQueries({ queryKey: actionItemsKeys.all });
+      setIsCelebrating(false);
+      celebrationTimeoutRef.current = null;
+    }, 4000);
+  }, [queryClient]);
+
+  useRealtimeEvent('accountability:updated', handleAccountabilityUpdate);
+
+  // Cleanup celebration timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (celebrationTimeoutRef.current) {
+        clearTimeout(celebrationTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Show action items modal on initial load if there are pending items
   useEffect(() => {
@@ -241,6 +278,7 @@ export function AppLayout() {
       <AccountabilityBanner
         itemCount={actionItemsData?.items?.length ?? 0}
         onBannerClick={() => setActionItemsModalOpen(true)}
+        isCelebrating={isCelebrating}
       />
 
       <div className="flex flex-1 overflow-hidden">

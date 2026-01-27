@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
-import { handleVisibilityChange, handleDocumentConversion, invalidateDocumentCache } from '../collaboration/index.js';
+import { handleVisibilityChange, handleDocumentConversion, invalidateDocumentCache, broadcastToUser } from '../collaboration/index.js';
 import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, extractVisionFromContent, extractGoalsFromContent, checkDocumentCompleteness } from '../utils/extractHypothesis.js';
 import { loadContentFromYjsState } from '../utils/yjsConverter.js';
 
@@ -540,6 +540,13 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     }
 
     await client.query('COMMIT');
+
+    // Broadcast accountability update for document types that affect action items
+    // Sprint plans clear the "write sprint plan" action item
+    // Documents with outcome property linked to sprints clear the "write retro" action item
+    if (document_type === 'sprint_plan' || (properties && 'outcome' in properties)) {
+      broadcastToUser(req.userId!, 'accountability:updated', { documentId: newDoc.id, documentType: document_type });
+    }
 
     res.status(201).json(newDoc);
   } catch (err) {

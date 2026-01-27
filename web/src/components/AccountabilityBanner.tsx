@@ -2,6 +2,18 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 
+// Celebration messages when user completes an action
+const CELEBRATION_MESSAGES = [
+  "Done! One less thing on your plate.",
+  "Nice work! Your team thanks you.",
+  "Accountability level: Expert.",
+  "That's how it's done!",
+  "Progress feels good, doesn't it?",
+  "One down, excellence achieved.",
+  "Hypothesis-driven development in action!",
+  "The sprint gods are pleased.",
+];
+
 // Rotating messages - mix of urgency and humor
 const MESSAGES = [
   "You have {count} items demanding your attention. They're not going away.",
@@ -29,10 +41,12 @@ const MESSAGES = [
 interface AccountabilityBannerProps {
   itemCount: number;
   onBannerClick: () => void;
+  isCelebrating?: boolean;
 }
 
-export function AccountabilityBanner({ itemCount, onBannerClick }: AccountabilityBannerProps) {
+export function AccountabilityBanner({ itemCount, onBannerClick, isCelebrating = false }: AccountabilityBannerProps) {
   const [messageIndex, setMessageIndex] = useState(() => Math.floor(Math.random() * MESSAGES.length));
+  const [celebrationMessageIndex] = useState(() => Math.floor(Math.random() * CELEBRATION_MESSAGES.length));
   const [isAnimating, setIsAnimating] = useState(false);
   const lastChangeTime = useRef<number>(Date.now());
   const location = useLocation();
@@ -63,8 +77,34 @@ export function AccountabilityBanner({ itemCount, onBannerClick }: Accountabilit
     return MESSAGES[messageIndex].replace(/{count}/g, String(itemCount));
   }, [messageIndex, itemCount]);
 
-  if (itemCount === 0) {
+  // During celebration, show even if count is 0 (we'll show success message)
+  if (itemCount === 0 && !isCelebrating) {
     return null;
+  }
+
+  // Celebration mode: green background, checkmark, celebration message
+  if (isCelebrating) {
+    return (
+      <div
+        className="flex w-full items-center justify-center gap-3 bg-green-600 px-4 py-2 text-white transition-all duration-500"
+        aria-live="polite"
+      >
+        {/* Celebration emoji */}
+        <span className="text-lg" role="img" aria-label="celebration">
+          🎉
+        </span>
+
+        {/* Success message */}
+        <span className="text-sm font-medium">
+          {CELEBRATION_MESSAGES[celebrationMessageIndex]}
+        </span>
+
+        {/* Checkmark icon */}
+        <svg className="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+      </div>
+    );
   }
 
   return (

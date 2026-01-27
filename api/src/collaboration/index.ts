@@ -12,6 +12,7 @@ import cookie from 'cookie';
 
 const messageSync = 0;
 const messageAwareness = 1;
+const messageCustomEvent = 2;
 
 // Rate limiting configuration
 const RATE_LIMIT = {
@@ -82,6 +83,10 @@ function recordMessage(ws: WebSocket): void {
 const docs = new Map<string, Y.Doc>();
 const awareness = new Map<string, awarenessProtocol.Awareness>();
 const conns = new Map<WebSocket, { docName: string; awarenessClientId: number; userId: string; workspaceId: string }>();
+
+// Global events connections (separate from document collaboration)
+// These persist across navigation and are used for real-time notifications
+const eventConns = new Map<WebSocket, { userId: string; workspaceId: string }>();
 
 // Debounce persistence (save every 2 seconds after changes)
 const pendingSaves = new Map<string, NodeJS.Timeout>();
@@ -648,11 +653,66 @@ export async function handleVisibilityChange(
   }
 }
 
+/**
+ * Broadcast a custom event to all WebSocket connections for a specific user.
+ * Used for real-time notifications like accountability updates.
+ * Sends to both document collaboration connections and global event connections.
+ *
+ * @param userId - The user ID to broadcast to
+ * @param eventType - The event type (e.g., 'accountability:updated')
+ * @param data - Optional event data payload
+ */
+export function broadcastToUser(userId: string, eventType: string, data?: Record<string, unknown>): void {
+  const payload = JSON.stringify({ type: eventType, data: data || {} });
+
+  // For events connections, send as plain JSON (they're dedicated for events)
+  let sentCount = 0;
+  eventConns.forEach((conn, ws) => {
+    if (conn.userId === userId && ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+      sentCount++;
+    }
+  });
+
+  if (sentCount > 0) {
+    console.log(`[Events] Broadcast '${eventType}' to user ${userId} (${sentCount} connections)`);
+  }
+}
+
 export function setupCollaboration(server: Server) {
   const wss = new WebSocketServer({ noServer: true });
+  const eventsWss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', async (request, socket, head) => {
     const url = new URL(request.url || '', `http://${request.headers.host}`);
+
+    // Handle /events WebSocket for real-time notifications
+    if (url.pathname === '/events') {
+      // Rate limit check
+      const clientIp = (request.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+                       request.socket.remoteAddress ||
+                       'unknown';
+
+      if (isConnectionRateLimited(clientIp)) {
+        socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      recordConnectionAttempt(clientIp);
+
+      // Validate session
+      const sessionData = await validateWebSocketSession(request);
+      if (!sessionData) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      eventsWss.handleUpgrade(request, socket, head, (ws) => {
+        eventsWss.emit('connection', ws, sessionData);
+      });
+      return;
+    }
 
     // Only handle /collaboration/* paths
     if (!url.pathname.startsWith('/collaboration/')) {
@@ -769,5 +829,32 @@ export function setupCollaboration(server: Server) {
     });
   });
 
+  // Handle events WebSocket connections (for real-time notifications)
+  eventsWss.on('connection', (ws: WebSocket, sessionData: { userId: string; workspaceId: string }) => {
+    eventConns.set(ws, { userId: sessionData.userId, workspaceId: sessionData.workspaceId });
+    console.log(`[Events] User ${sessionData.userId} connected (${eventConns.size} total connections)`);
+
+    // Send initial connected message
+    ws.send(JSON.stringify({ type: 'connected', data: {} }));
+
+    // Handle ping/pong for keepalive
+    ws.on('message', (data: Buffer) => {
+      try {
+        const message = JSON.parse(data.toString());
+        if (message.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong' }));
+        }
+      } catch {
+        // Ignore invalid messages
+      }
+    });
+
+    ws.on('close', () => {
+      eventConns.delete(ws);
+      console.log(`[Events] User ${sessionData.userId} disconnected (${eventConns.size} total connections)`);
+    });
+  });
+
   console.log('Yjs collaboration server attached');
+  console.log('Events WebSocket server attached');
 }

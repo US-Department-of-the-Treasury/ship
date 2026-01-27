@@ -7,6 +7,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { queryClient, queryPersister } from '@/lib/queryClient';
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { RealtimeEventsProvider } from '@/hooks/useRealtimeEvents';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { DocumentsProvider } from '@/contexts/DocumentsContext';
 import { ProgramsProvider } from '@/contexts/ProgramsContext';
@@ -138,7 +139,9 @@ function App() {
         element={
           <WorkspaceProvider>
             <AuthProvider>
-              <AppRoutes />
+              <RealtimeEventsProvider>
+                <AppRoutes />
+              </RealtimeEventsProvider>
             </AuthProvider>
           </WorkspaceProvider>
         }
