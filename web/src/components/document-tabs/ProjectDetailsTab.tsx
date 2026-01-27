@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { UnifiedEditor } from '@/components/UnifiedEditor';
@@ -22,6 +22,10 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { showToast } = useToast();
+
+  // Track conversion state separately from update mutation
+  const [isConverting, setIsConverting] = useState(false);
+  const [isUndoing, setIsUndoing] = useState(false);
 
   // Fetch team members for sidebar
   const { data: teamMembersData = [] } = useAssignableMembersQuery();
@@ -98,10 +102,16 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
 
   // Handle conversion callbacks
   const handleConvert = useCallback(async () => {
-    await handleTypeChange('issue');
+    setIsConverting(true);
+    try {
+      await handleTypeChange('issue');
+    } finally {
+      setIsConverting(false);
+    }
   }, [handleTypeChange]);
 
   const handleUndoConversion = useCallback(async () => {
+    setIsUndoing(true);
     try {
       const res = await apiPost(`/api/documents/${documentId}/undo-conversion`, {});
       if (res.ok) {
@@ -117,6 +127,8 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
       }
     } catch (err) {
       showToast('Failed to undo conversion', 'error');
+    } finally {
+      setIsUndoing(false);
     }
   }, [documentId, queryClient, showToast]);
 
@@ -147,9 +159,9 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
     people: teamMembers,
     onConvert: handleConvert,
     onUndoConversion: handleUndoConversion,
-    isConverting: updateMutation.isPending,
-    isUndoing: updateMutation.isPending,
-  }), [programs, teamMembers, handleConvert, handleUndoConversion, updateMutation.isPending]);
+    isConverting,
+    isUndoing,
+  }), [programs, teamMembers, handleConvert, handleUndoConversion, isConverting, isUndoing]);
 
   // Get program_id from belongs_to array (project's parent program via document_associations)
   const belongsTo = (document as { belongs_to?: Array<{ id: string; type: string }> }).belongs_to;
