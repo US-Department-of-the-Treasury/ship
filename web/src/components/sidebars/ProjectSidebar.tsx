@@ -91,11 +91,8 @@ export function ProjectSidebar({
 }: ProjectSidebarProps) {
   // Helper to check if a field should be highlighted
   const isHighlighted = (field: string) => highlightedFields.includes(field);
-  // Compute ICE score from current values (default to 3 for null values)
-  const impact = project.impact ?? 3;
-  const confidence = project.confidence ?? 3;
-  const ease = project.ease ?? 3;
-  const iceScore = computeICEScore(impact, confidence, ease);
+  // Compute ICE score from current values (null if any value is unset)
+  const iceScore = computeICEScore(project.impact, project.confidence, project.ease);
 
   return (
     <div className="space-y-4 p-4">
@@ -133,10 +130,10 @@ export function ProjectSidebar({
       <div className="rounded-lg border border-border bg-accent/10 p-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-muted uppercase tracking-wide">ICE Score</span>
-          <span className="text-2xl font-bold text-accent tabular-nums">{iceScore}</span>
+          <span className="text-2xl font-bold text-accent tabular-nums">{iceScore ?? '—'}</span>
         </div>
         <div className="text-xs text-muted">
-          {impact} × {confidence} × {ease} = {iceScore}
+          {project.impact ?? '—'} × {project.confidence ?? '—'} × {project.ease ?? '—'} = {iceScore ?? '—'}
         </div>
       </div>
 

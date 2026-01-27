@@ -93,6 +93,10 @@ const updateDocumentSchema = z.object({
   // Note: start_date/end_date are computed from sprint_number + workspace.sprint_start_date
   status: z.enum(['planning', 'active', 'completed']).optional(),
   hypothesis: z.string().optional(),
+  // RACI fields (stored in properties but accepted at top level for projects and programs)
+  accountable_id: z.string().uuid().nullable().optional(), // A - Accountable (approver)
+  consulted_ids: z.array(z.string().uuid()).optional(), // C - Consulted (provide input)
+  informed_ids: z.array(z.string().uuid()).optional(), // I - Informed (kept in loop)
 });
 
 // List documents
@@ -331,10 +335,10 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
         ? props.assignee_ids[0] || null
         : props.owner_id,
       owner,
-      // RACI fields for projects
-      accountable_id: props.accountable_id,
-      consulted_ids: props.consulted_ids,
-      informed_ids: props.informed_ids,
+      // RACI properties (for projects and programs)
+      accountable_id: props.accountable_id || null,
+      consulted_ids: props.consulted_ids || [],
+      informed_ids: props.informed_ids || [],
       // Generic properties
       prefix: props.prefix,
       color: props.color,
@@ -678,6 +682,10 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.status !== undefined) topLevelProps.status = data.status;
     // Note: hypothesis can be set via API but content extraction always wins when content is updated
     if (data.hypothesis !== undefined) topLevelProps.hypothesis = data.hypothesis;
+    // RACI fields (for projects and programs)
+    if (data.accountable_id !== undefined) topLevelProps.accountable_id = data.accountable_id;
+    if (data.consulted_ids !== undefined) topLevelProps.consulted_ids = data.consulted_ids;
+    if (data.informed_ids !== undefined) topLevelProps.informed_ids = data.informed_ids;
 
     const hasTopLevelProps = Object.keys(topLevelProps).length > 0;
 
