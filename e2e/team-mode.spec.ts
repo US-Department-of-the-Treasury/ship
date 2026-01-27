@@ -21,13 +21,13 @@ test.describe('Team Mode (Phase 7)', () => {
   })
 
   test('Teams mode shows header with team member count', async ({ page }) => {
-    await page.goto('/team')
+    await page.goto('/team/directory')
 
-    // Should see Teams heading (use h1 to avoid matching sidebar h2)
-    await expect(page.locator('h1').filter({ hasText: 'Teams' })).toBeVisible({ timeout: 5000 })
+    // Should see Team Directory heading (use h1 to avoid matching sidebar h2)
+    await expect(page.locator('h1').filter({ hasText: 'Team Directory' })).toBeVisible({ timeout: 5000 })
 
     // Should see team member count (at least 1 for logged in user)
-    await expect(page.getByText(/\d+ team members?/)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(/\d+ members?/)).toBeVisible({ timeout: 5000 })
   })
 
   test('Team grid displays logged-in user', async ({ page }) => {
@@ -470,8 +470,8 @@ test.describe('Team Mode (Phase 7)', () => {
       // Wait for grid to load
       await expect(page.getByText('Team Member', { exact: true })).toBeVisible({ timeout: 10000 })
 
-      // Find the current sprint column (highlighted with bg-accent)
-      const currentSprintHeader = page.locator('.bg-accent\\/10').first()
+      // Find the current sprint column (highlighted with bg-accent/5)
+      const currentSprintHeader = page.locator('.bg-accent\\/5').first()
       await expect(currentSprintHeader).toBeVisible({ timeout: 5000 })
 
       // Get initial Unassigned count

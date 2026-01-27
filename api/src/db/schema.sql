@@ -104,11 +104,12 @@ CREATE TABLE IF NOT EXISTS documents (
   position INTEGER DEFAULT 0,
 
   -- Associations: program, project, and sprint relationships are stored in document_associations table
-  -- These legacy columns are kept here so migrations 020-029 can copy data before dropping them
-  -- All three columns are dropped by migrations 027 (project_id, sprint_id) and 029 (program_id)
-  -- DO NOT USE: project_id UUID - DROPPED by migration 027
-  -- DO NOT USE: sprint_id UUID - DROPPED by migration 027
-  -- DO NOT USE: program_id UUID - DROPPED by migration 029
+  -- These legacy columns exist so migrations 020-029 can run on fresh databases (e.g., E2E tests).
+  -- They are dropped by migrations 027 (project_id, sprint_id) and 029 (program_id).
+  -- DO NOT USE in application code - use document_associations table instead.
+  project_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+  sprint_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+  program_id UUID REFERENCES documents(id) ON DELETE SET NULL,
 
   -- Type-specific properties stored as JSONB
   -- Issue properties: state, priority, assignee_id, source, rejection_reason, feedback_status
@@ -144,7 +145,10 @@ CREATE INDEX IF NOT EXISTS idx_users_last_workspace_id ON users(last_workspace_i
 CREATE INDEX IF NOT EXISTS idx_documents_workspace_id ON documents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_documents_parent_id ON documents(parent_id);
 CREATE INDEX IF NOT EXISTS idx_documents_document_type ON documents(document_type);
--- Note: program_id, project_id, and sprint_id indexes removed - use document_associations table
+-- Legacy indexes for migrations to drop (027, 029) - DO NOT USE in application code
+CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id);
+CREATE INDEX IF NOT EXISTS idx_documents_sprint_id ON documents(sprint_id);
+CREATE INDEX IF NOT EXISTS idx_documents_program_id ON documents(program_id);
 -- GIN index for efficient JSONB property queries
 CREATE INDEX IF NOT EXISTS idx_documents_properties ON documents USING GIN (properties);
 
