@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CardGrid } from '@/components/CardGrid';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
@@ -59,21 +58,7 @@ export function TeamDirectoryPage() {
     setContextMenu({ x: e.clientX, y: e.clientY, person });
   }, []);
 
-  const handleMenuClick = useCallback((e: React.MouseEvent, person: Person) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    setContextMenu({ x: rect.right, y: rect.bottom, person });
-  }, []);
-
   const handleViewProfile = useCallback(() => {
-    if (contextMenu) {
-      navigate(`/team/${contextMenu.person.id}`);
-      setContextMenu(null);
-    }
-  }, [contextMenu, navigate]);
-
-  const handleEditCapacity = useCallback(() => {
     if (contextMenu) {
       navigate(`/team/${contextMenu.person.id}`);
       setContextMenu(null);
@@ -122,28 +107,67 @@ export function TeamDirectoryPage() {
         </label>
       </div>
 
-      {/* List */}
-      <div className="flex-1 overflow-auto p-6 pb-20">
-        <CardGrid
-          items={people}
-          loading={loading}
-          columns={{ sm: 1, md: 2, lg: 3, xl: 4 }}
-          gap={3}
-          renderCard={(person) => (
-            <PersonCard
-              person={person}
-              onContextMenu={(e) => handleContextMenu(e, person)}
-              onMenuClick={(e) => handleMenuClick(e, person)}
-            />
-          )}
-          onItemClick={(person) => navigate(`/team/${person.id}`)}
-          emptyState={
-            <div className="text-center">
-              <h2 className="text-xl font-medium text-foreground">No team members</h2>
-              <p className="mt-1 text-sm text-muted">Team members will appear here once added</p>
-            </div>
-          }
-        />
+      {/* Table */}
+      <div className="flex-1 overflow-auto">
+        {loading ? (
+          <div className="flex h-32 items-center justify-center">
+            <span className="text-muted">Loading...</span>
+          </div>
+        ) : people.length === 0 ? (
+          <div className="flex h-32 flex-col items-center justify-center text-center">
+            <h2 className="text-xl font-medium text-foreground">No team members</h2>
+            <p className="mt-1 text-sm text-muted">Team members will appear here once added</p>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead className="sticky top-0 bg-background border-b border-border">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
+                  Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
+                  Email
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {people.map((person) => (
+                <tr
+                  key={person.id}
+                  onClick={() => navigate(`/team/${person.id}`)}
+                  onContextMenu={(e) => handleContextMenu(e, person)}
+                  className={cn(
+                    'cursor-pointer transition-colors hover:bg-border/30',
+                    person.isArchived && 'opacity-50'
+                  )}
+                >
+                  <td className="px-6 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-medium text-white',
+                        person.isArchived ? 'bg-gray-400' : 'bg-accent/80'
+                      )}>
+                        {person.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className={cn(
+                        'font-medium',
+                        person.isArchived ? 'text-muted' : 'text-foreground'
+                      )}>
+                        {person.name}
+                        {person.isArchived && (
+                          <span className="ml-1 text-xs font-normal text-muted">(archived)</span>
+                        )}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-3 text-sm text-muted">
+                    {person.email}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Context menu */}
@@ -152,10 +176,6 @@ export function TeamDirectoryPage() {
           <ContextMenuItem onClick={handleViewProfile}>
             <UserIcon className="h-4 w-4" />
             View profile
-          </ContextMenuItem>
-          <ContextMenuItem onClick={handleEditCapacity}>
-            <CapacityIcon className="h-4 w-4" />
-            Edit capacity
           </ContextMenuItem>
           {isSuperAdmin && (
             <>
@@ -172,75 +192,12 @@ export function TeamDirectoryPage() {
   );
 }
 
-function PersonCard({
-  person,
-  onContextMenu,
-  onMenuClick,
-}: {
-  person: Person;
-  onContextMenu: (e: React.MouseEvent) => void;
-  onMenuClick: (e: React.MouseEvent) => void;
-}) {
-  return (
-    <div
-      className={cn(
-        "group relative flex items-center gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:bg-border/30",
-        person.isArchived && "opacity-50"
-      )}
-      onContextMenu={onContextMenu}
-    >
-      {/* Avatar */}
-      <div className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-medium text-white",
-        person.isArchived ? "bg-gray-400" : "bg-accent/80"
-      )}>
-        {person.name.charAt(0).toUpperCase()}
-      </div>
-      {/* Info */}
-      <div className="min-w-0 flex-1">
-        <div className={cn(
-          "truncate font-medium",
-          person.isArchived ? "text-muted" : "text-foreground"
-        )}>
-          {person.name}
-          {person.isArchived && <span className="ml-1 text-xs font-normal">(archived)</span>}
-        </div>
-        <div className="truncate text-sm text-muted">{person.email}</div>
-      </div>
-      {/* Three-dot menu button */}
-      <button
-        type="button"
-        onClick={onMenuClick}
-        className="absolute right-2 top-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
-        aria-label={`Actions for ${person.name}`}
-      >
-        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-          <circle cx="12" cy="5" r="2" />
-          <circle cx="12" cy="12" r="2" />
-          <circle cx="12" cy="19" r="2" />
-        </svg>
-      </button>
-    </div>
-  );
-}
-
 // Icons
 function UserIcon({ className }: { className?: string }) {
   return (
     <svg className={cn('h-4 w-4', className)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <circle cx="12" cy="8" r="4" />
       <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
-    </svg>
-  );
-}
-
-function CapacityIcon({ className }: { className?: string }) {
-  return (
-    <svg className={cn('h-4 w-4', className)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <line x1="16" y1="2" x2="16" y2="6" />
-      <line x1="8" y1="2" x2="8" y2="6" />
-      <line x1="3" y1="10" x2="21" y2="10" />
     </svg>
   );
 }
