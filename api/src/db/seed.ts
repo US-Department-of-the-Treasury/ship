@@ -472,7 +472,7 @@ async function seed() {
         ];
 
         // Determine state, hypothesis, and approval based on offset
-        let expectedState: 'completed' | 'in_progress' | 'planning' = 'planning';
+        let expectedState: 'completed' | 'active' | 'planning' = 'planning';
         let hasHypothesis = false;
         let hypothesisApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
         let reviewApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
@@ -510,7 +510,7 @@ async function seed() {
           }
         } else if (sprintOffset === 0) {
           const variant = sprint.number % 4;
-          expectedState = variant === 3 ? 'planning' : 'in_progress';
+          expectedState = variant === 3 ? 'planning' : 'active';
           hasHypothesis = variant < 2;
           if (hasHypothesis) {
             // One variant has changed_since_approved for current sprint
@@ -537,14 +537,14 @@ async function seed() {
         // Build updated properties
         const updatedProps: Record<string, unknown> = {
           ...currentProps,
-          state: expectedState,
+          status: expectedState,
         };
 
         if (hasHypothesis) {
           updatedProps.hypothesis = sprintHypotheses[sprint.number % sprintHypotheses.length];
         }
 
-        if (expectedState === 'in_progress' || expectedState === 'completed') {
+        if (expectedState === 'active' || expectedState === 'completed') {
           updatedProps.started_at = thisSprintStart.toISOString();
         }
 
@@ -612,9 +612,9 @@ async function seed() {
         // Calculate sprint offset from current
         const sprintOffset = sprint.number - currentSprintNumber;
 
-        // Determine sprint state and hypothesis/review presence based on timing
+        // Determine sprint status and hypothesis/review presence based on timing
         // This creates realistic data for testing the accountability grid
-        let state: 'completed' | 'in_progress' | 'planning' = 'planning';
+        let status: 'completed' | 'active' | 'planning' = 'planning';
         let started_at: string | null = null;
         let hasHypothesis = false;
         let hasReview = false;
@@ -627,7 +627,7 @@ async function seed() {
 
         if (sprintOffset < -1) {
           // Past sprints (more than 1 sprint ago): mostly completed with hypothesis + review
-          state = 'completed';
+          status = 'completed';
           started_at = thisSprintStart.toISOString();
 
           // 80% of past sprints have hypothesis, 20% missing for testing
@@ -650,7 +650,7 @@ async function seed() {
           }
         } else if (sprintOffset === -1) {
           // Just completed sprint: should have hypothesis, review may be missing
-          state = 'completed';
+          status = 'completed';
           started_at = thisSprintStart.toISOString();
           hasHypothesis = true;
           // 60% have review (some people are behind)
@@ -665,29 +665,29 @@ async function seed() {
           const currentSprintVariant = sprint.number % 4;
           if (currentSprintVariant === 0) {
             // Started with hypothesis and approved
-            state = 'in_progress';
+            status = 'active';
             started_at = thisSprintStart.toISOString();
             hasHypothesis = true;
             hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
           } else if (currentSprintVariant === 1) {
             // Started with hypothesis pending approval
-            state = 'in_progress';
+            status = 'active';
             started_at = thisSprintStart.toISOString();
             hasHypothesis = true;
             hypothesisApproval = { state: 'pending' };
           } else if (currentSprintVariant === 2) {
             // Started but no hypothesis (should show warning/error)
-            state = 'in_progress';
+            status = 'active';
             started_at = thisSprintStart.toISOString();
             hasHypothesis = false;
           } else {
             // Not yet started (should show "not started" indicator)
-            state = 'planning';
+            status = 'planning';
             hasHypothesis = false;
           }
         } else if (sprintOffset === 1) {
           // Next sprint: some proactive teams have hypothesis already
-          state = 'planning';
+          status = 'planning';
           // 40% have hypothesis written early
           hasHypothesis = sprint.number % 5 < 2;
           if (hasHypothesis) {
@@ -695,7 +695,7 @@ async function seed() {
           }
         } else if (sprintOffset <= 3) {
           // Near future (2-3 sprints out): occasional early planning
-          state = 'planning';
+          status = 'planning';
           // 20% have hypothesis
           hasHypothesis = sprint.number % 5 === 0;
           if (hasHypothesis) {
@@ -703,7 +703,7 @@ async function seed() {
           }
         } else {
           // Far future: no hypothesis yet (normal)
-          state = 'planning';
+          status = 'planning';
           hasHypothesis = false;
         }
 
@@ -718,7 +718,7 @@ async function seed() {
           sprint_number: sprint.number,
           owner_id: owner.id,
           assignee_ids: sprint.assigneeIds,
-          state: state,
+          status: status,
           success_criteria: sprintSuccessCriteria[sprint.number % sprintSuccessCriteria.length],
           confidence: baseConfidence + (Math.random() * 10 - 5), // Add some variance
         };
