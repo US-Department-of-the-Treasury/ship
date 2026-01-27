@@ -416,7 +416,24 @@ function handleMessage(ws: WebSocket, message: Uint8Array, docName: string, doc:
       break;
     }
     case messageAwareness: {
-      awarenessProtocol.applyAwarenessUpdate(aw, decoding.readVarUint8Array(decoder), ws);
+      const awarenessData = decoding.readVarUint8Array(decoder);
+
+      // Extract the actual client's awarenessClientId from the update
+      // This is critical for proper cleanup on disconnect - the server was
+      // previously storing doc.clientID (server's ID) instead of the client's
+      // actual awareness clientID, causing stale states on page refresh.
+      // Format: [numStates, ...for each: clientId, clock, stateJson]
+      const conn = conns.get(ws);
+      if (conn) {
+        const updateDecoder = decoding.createDecoder(awarenessData);
+        const numStates = decoding.readVarUint(updateDecoder);
+        if (numStates > 0) {
+          const clientId = decoding.readVarUint(updateDecoder);
+          conn.awarenessClientId = clientId;
+        }
+      }
+
+      awarenessProtocol.applyAwarenessUpdate(aw, awarenessData, ws);
       break;
     }
   }
