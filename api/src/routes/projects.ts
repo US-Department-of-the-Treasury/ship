@@ -316,43 +316,42 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       orderByClause = `d.${sortField} ${sortDir}`;
     }
 
-    // Subquery to compute inferred status based on sprint relationships
-    // Priority: archived (if archived_at set) > active (issues in active sprint) > planned (upcoming) > completed > backlog
-    // Sprint status is computed from sprint_number + workspace.sprint_start_date:
-    //   - active: today is within the sprint's 7-day window
-    //   - upcoming: sprint hasn't started yet
-    //   - completed: sprint window has passed
+    // Subquery to compute inferred status based on sprint allocations
+    // Priority: archived > completed (retro done) > active (current sprint allocation) > planned (future allocation) > backlog
+    // Sprint timing is computed from sprint_number + workspace.sprint_start_date:
+    //   - current: today is within the sprint's 7-day window
+    //   - future: sprint hasn't started yet
+    //   - past: sprint window has passed
+    // Allocations are tracked via sprint documents with properties.project_id
     const inferredStatusSubquery = `
       CASE
         WHEN d.archived_at IS NOT NULL THEN 'archived'
+        WHEN d.properties->>'hypothesis_validated' IS NOT NULL THEN 'completed'
         ELSE COALESCE(
           (
             SELECT
               CASE MAX(
                 CASE
-                  -- Compute sprint status: active=3, upcoming=2, completed=1
+                  -- Compute sprint timing: current=3, future=2, past=1
                   WHEN CURRENT_DATE BETWEEN
                     (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
                     AND (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7 + 6)
-                  THEN 3  -- active
+                  THEN 3  -- current sprint
                   WHEN CURRENT_DATE < (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
-                  THEN 2  -- upcoming
-                  ELSE 1  -- completed
+                  THEN 2  -- future sprint
+                  ELSE 1  -- past sprint
                 END
               )
               WHEN 3 THEN 'active'
               WHEN 2 THEN 'planned'
-              WHEN 1 THEN 'completed'
-              ELSE NULL
+              ELSE NULL  -- past allocations don't count
               END
-            FROM documents issue
-            JOIN document_associations da_project ON da_project.document_id = issue.id
-              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
-            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
-              AND da_sprint.relationship_type = 'sprint'
-            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
-            JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.document_type = 'issue'
+            FROM documents sprint
+            JOIN workspaces w ON w.id = sprint.workspace_id
+            WHERE sprint.document_type = 'sprint'
+              AND sprint.workspace_id = d.workspace_id
+              AND (sprint.properties->>'project_id')::uuid = d.id
+              AND jsonb_array_length(COALESCE(sprint.properties->'assignee_ids', '[]'::jsonb)) > 0
           ),
           'backlog'
         )
@@ -403,10 +402,11 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
-    // Same inferred status subquery as list endpoint
+    // Same inferred status subquery as list endpoint (allocation-based)
     const inferredStatusSubquery = `
       CASE
         WHEN d.archived_at IS NOT NULL THEN 'archived'
+        WHEN d.properties->>'hypothesis_validated' IS NOT NULL THEN 'completed'
         ELSE COALESCE(
           (
             SELECT
@@ -415,25 +415,22 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
                   WHEN CURRENT_DATE BETWEEN
                     (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
                     AND (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7 + 6)
-                  THEN 3
+                  THEN 3  -- current sprint
                   WHEN CURRENT_DATE < (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
-                  THEN 2
-                  ELSE 1
+                  THEN 2  -- future sprint
+                  ELSE 1  -- past sprint
                 END
               )
               WHEN 3 THEN 'active'
               WHEN 2 THEN 'planned'
-              WHEN 1 THEN 'completed'
-              ELSE NULL
+              ELSE NULL  -- past allocations don't count
               END
-            FROM documents issue
-            JOIN document_associations da_project ON da_project.document_id = issue.id
-              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
-            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
-              AND da_sprint.relationship_type = 'sprint'
-            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
-            JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.document_type = 'issue'
+            FROM documents sprint
+            JOIN workspaces w ON w.id = sprint.workspace_id
+            WHERE sprint.document_type = 'sprint'
+              AND sprint.workspace_id = d.workspace_id
+              AND (sprint.properties->>'project_id')::uuid = d.id
+              AND jsonb_array_length(COALESCE(sprint.properties->'assignee_ids', '[]'::jsonb)) > 0
           ),
           'backlog'
         )
@@ -710,10 +707,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
-    // Re-query to get full project with owner info and inferred status
+    // Re-query to get full project with owner info and inferred status (allocation-based)
     const updateInferredStatusSubquery = `
       CASE
         WHEN d.archived_at IS NOT NULL THEN 'archived'
+        WHEN d.properties->>'hypothesis_validated' IS NOT NULL THEN 'completed'
         ELSE COALESCE(
           (
             SELECT
@@ -722,25 +720,22 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
                   WHEN CURRENT_DATE BETWEEN
                     (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
                     AND (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7 + 6)
-                  THEN 3
+                  THEN 3  -- current sprint
                   WHEN CURRENT_DATE < (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
-                  THEN 2
-                  ELSE 1
+                  THEN 2  -- future sprint
+                  ELSE 1  -- past sprint
                 END
               )
               WHEN 3 THEN 'active'
               WHEN 2 THEN 'planned'
-              WHEN 1 THEN 'completed'
-              ELSE NULL
+              ELSE NULL  -- past allocations don't count
               END
-            FROM documents issue
-            JOIN document_associations da_project ON da_project.document_id = issue.id
-              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
-            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
-              AND da_sprint.relationship_type = 'sprint'
-            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
-            JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.document_type = 'issue'
+            FROM documents sprint
+            JOIN workspaces w ON w.id = sprint.workspace_id
+            WHERE sprint.document_type = 'sprint'
+              AND sprint.workspace_id = d.workspace_id
+              AND (sprint.properties->>'project_id')::uuid = d.id
+              AND jsonb_array_length(COALESCE(sprint.properties->'assignee_ids', '[]'::jsonb)) > 0
           ),
           'backlog'
         )
