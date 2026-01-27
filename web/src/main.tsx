@@ -221,7 +221,7 @@ function AppRoutes() {
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:programId/sprints/:id" element={<DocumentRedirect />} />
         <Route path="programs/:id/*" element={<ProgramTabRedirect />} />
-        <Route path="sprints" element={<SprintsPage />} />
+        <Route path="sprints" element={<Navigate to="/team/allocation" replace />} />
         {/* Sprint routes - redirect legacy views to /documents/:id, keep planning workflow */}
         <Route path="sprints/:id" element={<DocumentRedirect />} />
         <Route path="sprints/:id/view" element={<SprintTabRedirect tab="view" />} />
