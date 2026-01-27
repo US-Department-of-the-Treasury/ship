@@ -27,7 +27,7 @@ export default function ProgramOverviewTab({ documentId, document }: DocumentTab
     email: m.email || '',
   })), [teamMembersData]);
 
-  // Update mutation
+  // Update mutation with optimistic updates
   const updateMutation = useMutation({
     mutationFn: async (updates: Partial<UnifiedDocument>) => {
       const response = await apiPatch(`/api/documents/${documentId}`, updates);
@@ -35,6 +35,29 @@ export default function ProgramOverviewTab({ documentId, document }: DocumentTab
         throw new Error('Failed to update document');
       }
       return response.json();
+    },
+    onMutate: async (updates) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['document', documentId] });
+      await queryClient.cancelQueries({ queryKey: ['programs'] });
+
+      // Snapshot the previous value
+      const previousDocument = queryClient.getQueryData<Record<string, unknown>>(['document', documentId]);
+
+      // Optimistically update the document cache
+      if (previousDocument) {
+        const programUpdates = updates as Record<string, unknown>;
+        queryClient.setQueryData(['document', documentId], { ...previousDocument, ...programUpdates });
+      }
+
+      // Return context with the previous value for rollback
+      return { previousDocument };
+    },
+    onError: (_err, _updates, context) => {
+      // Rollback to the previous value on error
+      if (context?.previousDocument) {
+        queryClient.setQueryData(['document', documentId], context.previousDocument);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['document', documentId] });

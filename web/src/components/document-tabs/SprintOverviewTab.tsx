@@ -35,7 +35,7 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
     [activeSprintsData]
   );
 
-  // Update mutation
+  // Update mutation with optimistic updates
   const updateMutation = useMutation({
     mutationFn: async (updates: Partial<UnifiedDocument>) => {
       const response = await apiPatch(`/api/documents/${documentId}`, updates);
@@ -43,6 +43,29 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
         throw new Error('Failed to update document');
       }
       return response.json();
+    },
+    onMutate: async (updates) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['document', documentId] });
+      await queryClient.cancelQueries({ queryKey: ['sprints'] });
+
+      // Snapshot the previous value
+      const previousDocument = queryClient.getQueryData<Record<string, unknown>>(['document', documentId]);
+
+      // Optimistically update the document cache
+      if (previousDocument) {
+        const sprintUpdates = updates as Record<string, unknown>;
+        queryClient.setQueryData(['document', documentId], { ...previousDocument, ...sprintUpdates });
+      }
+
+      // Return context with the previous value for rollback
+      return { previousDocument };
+    },
+    onError: (_err, _updates, context) => {
+      // Rollback to the previous value on error
+      if (context?.previousDocument) {
+        queryClient.setQueryData(['document', documentId], context.previousDocument);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['document', documentId] });
