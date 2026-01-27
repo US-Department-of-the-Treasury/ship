@@ -42,52 +42,10 @@ resource "aws_wafv2_web_acl" "cloudfront" {
     allow {}
   }
 
-  # Rule 0: AWS Anti-DDoS Rule Set (Challenge mode with static file exemptions)
-  # Note: AWSManagedRulesAntiDDoSRuleSet detailed config (Challenge sensitivity,
-  # exempt URIs, SensitivityToBlock) is configured in AWS Console as Terraform
-  # provider doesn't yet support aws_managed_rules_anti_ddos_rule_set config block.
-  # The scope_down_statement excludes static files from DDoS checks.
-  rule {
-    name     = "AWSManagedRulesAntiDDoSRuleSet"
-    priority = 0
-
-    override_action {
-      none {}
-    }
-
-    statement {
-      managed_rule_group_statement {
-        vendor_name = "AWS"
-        name        = "AWSManagedRulesAntiDDoSRuleSet"
-
-        # Exclude static files from DDoS protection rules
-        scope_down_statement {
-          not_statement {
-            statement {
-              regex_pattern_set_reference_statement {
-                arn = aws_wafv2_regex_pattern_set.static_files[0].arn
-
-                field_to_match {
-                  uri_path {}
-                }
-
-                text_transformation {
-                  priority = 0
-                  type     = "NONE"
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    visibility_config {
-      sampled_requests_enabled   = true
-      cloudwatch_metrics_enabled = true
-      metric_name                = "${var.project_name}-AWSAntiDDoS"
-    }
-  }
+  # Rule 0: AWS Anti-DDoS Rule Set - DISABLED
+  # Requires managed_rule_group_configs block that Terraform AWS provider doesn't
+  # fully support yet. Enable via AWS Console if needed.
+  # See: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/wafv2_web_acl
 
   # Rule 1: Rate limiting - 300 requests per 5 minutes per IP
   rule {
