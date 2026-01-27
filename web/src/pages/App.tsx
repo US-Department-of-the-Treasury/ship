@@ -379,9 +379,10 @@ export function AppLayout() {
             />
             <RailIcon
               icon={<TeamIcon />}
-              label="Teams"
+              label={standupDue ? "Teams (standup due)" : "Teams"}
               active={activeMode === 'team'}
               onClick={() => handleModeClick('team')}
+              showBadge={standupDue}
             />
           </div>
 
