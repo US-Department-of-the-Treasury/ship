@@ -57,7 +57,11 @@ interface ProgramGroup {
   projects: ProjectData[];
 }
 
-export function AccountabilityGrid() {
+interface AccountabilityGridProps {
+  showArchived?: boolean;
+}
+
+export function AccountabilityGrid({ showArchived = false }: AccountabilityGridProps) {
   const navigate = useNavigate();
   const [data, setData] = useState<AccountabilityGridData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,7 +73,10 @@ export function AccountabilityGrid() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const res = await fetch(`${API_URL}/api/team/accountability-grid`, { credentials: 'include' });
+        const params = new URLSearchParams();
+        if (showArchived) params.set('includeArchived', 'true');
+        const url = `${API_URL}/api/team/accountability-grid${params.toString() ? `?${params}` : ''}`;
+        const res = await fetch(url, { credentials: 'include' });
         if (!res.ok) {
           if (res.status === 403) {
             setError('Admin access required to view accountability grid');
@@ -88,7 +95,7 @@ export function AccountabilityGrid() {
     }
 
     fetchData();
-  }, []);
+  }, [showArchived]);
 
   // Scroll to current sprint on initial load
   useEffect(() => {
