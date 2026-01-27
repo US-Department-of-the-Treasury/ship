@@ -153,6 +153,7 @@ export function AppLayout() {
       if (currentDocumentType === 'project') return 'projects';
       if (currentDocumentType === 'program') return 'programs';
       if (currentDocumentType === 'sprint') return 'sprints';
+      if (currentDocumentType === 'person') return 'team';
       // Default to docs while loading or for unknown types
       return 'docs';
     }
@@ -1521,9 +1522,13 @@ function SprintsList() {
 function TeamSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { currentDocumentType } = useCurrentDocument();
 
   const isAllocation = location.pathname === '/team/allocation' || location.pathname === '/team';
-  const isDirectory = location.pathname === '/team/directory';
+  // Directory is active when on /team/directory OR viewing a person document (at /documents/:id)
+  const isDirectory = location.pathname === '/team/directory' ||
+    location.pathname.startsWith('/team/') && location.pathname !== '/team/allocation' ||
+    (location.pathname.startsWith('/documents/') && currentDocumentType === 'person');
 
   return (
     <ul className="space-y-0.5 px-2">
