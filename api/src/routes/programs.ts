@@ -26,6 +26,11 @@ function extractProgramFromRow(row: any) {
       name: row.owner_name,
       email: row.owner_email,
     } : null,
+    owner_id: props.owner_id || null,
+    // RACI fields
+    accountable_id: props.accountable_id || null,
+    consulted_ids: props.consulted_ids || [],
+    informed_ids: props.informed_ids || [],
   };
 }
 
