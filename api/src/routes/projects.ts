@@ -5,7 +5,6 @@ import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visib
 import { authMiddleware } from '../middleware/auth.js';
 import { DEFAULT_PROJECT_PROPERTIES, computeICEScore } from '@ship/shared';
 import { checkDocumentCompleteness } from '../utils/extractHypothesis.js';
-import { autoCompleteAccountabilityIssue } from '../services/accountability.js';
 import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
 
 type RouterType = ReturnType<typeof Router>;
@@ -741,10 +740,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       );
     }
 
-    // Auto-complete any pending project_hypothesis accountability issues if hypothesis was written
-    if (hypothesisWasWritten) {
-      await autoCompleteAccountabilityIssue(id as string, 'project_hypothesis', workspaceId as string, userId);
-    }
+    // project_hypothesis accountability is now computed via inference - no issue completion needed
 
     // Log hypothesis changes to document_history for approval workflow tracking
     if (data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis) {
@@ -1033,8 +1029,7 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
       [...values, id, workspaceId]
     );
 
-    // Auto-complete any pending project_retro accountability issues
-    await autoCompleteAccountabilityIssue(id as string, 'project_retro', workspaceId as string, userId);
+    // project_retro accountability is now computed via inference - no issue completion needed
 
     // Log initial retro content to document_history for approval workflow tracking
     if (content) {

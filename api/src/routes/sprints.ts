@@ -8,7 +8,6 @@ import {
   extractTicketNumbersFromContents,
   batchLookupIssues,
 } from '../utils/transformIssueLinks.js';
-import { autoCompleteAccountabilityIssue } from '../services/accountability.js';
 import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
 
 type RouterType = ReturnType<typeof Router>;
@@ -1097,8 +1096,7 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
       [JSON.stringify(newProps), id]
     );
 
-    // Auto-complete any pending sprint_start accountability issues
-    await autoCompleteAccountabilityIssue(id as string, 'sprint_start', workspaceId as string, req.userId);
+    // sprint_start accountability is now computed via inference - no issue completion needed
 
     // Re-query to get full sprint with owner info
     const result = await pool.query(
@@ -1302,10 +1300,7 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
       }
     }
 
-    // Auto-complete any pending hypothesis accountability issues if hypothesis was written
-    if (hypothesisWasWritten) {
-      await autoCompleteAccountabilityIssue(id as string, 'sprint_hypothesis', workspaceId as string, req.userId);
-    }
+    // sprint_hypothesis accountability is now computed via inference - no issue completion needed
 
     // Re-query to get full sprint with owner info
     const result = await pool.query(
@@ -1830,8 +1825,7 @@ router.post('/:id/standups', authMiddleware, async (req: Request, res: Response)
     const standup = result.rows[0];
     const author = authorResult.rows[0];
 
-    // Auto-complete any pending standup accountability issues for this sprint
-    await autoCompleteAccountabilityIssue(id as string, 'standup', workspaceId as string, userId);
+    // standup accountability is now computed via inference - no issue completion needed
 
     res.status(201).json({
       id: standup.id,
@@ -2174,8 +2168,7 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
       [userId]
     );
 
-    // Auto-complete any pending sprint_review accountability issues
-    await autoCompleteAccountabilityIssue(id as string, 'sprint_review', workspaceId as string, userId);
+    // sprint_review accountability is now computed via inference - no issue completion needed
 
     // Log initial review content to document_history for approval workflow tracking
     const review = result.rows[0];

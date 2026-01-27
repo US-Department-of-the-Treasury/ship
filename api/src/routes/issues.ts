@@ -11,7 +11,6 @@ import {
   TRACKED_FIELDS,
   type BelongsToEntry,
 } from '../utils/document-crud.js';
-import { autoCompleteAccountabilityIssue } from '../services/accountability.js';
 import { broadcastToUser } from '../collaboration/index.js';
 
 type RouterType = ReturnType<typeof Router>;
@@ -641,10 +640,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       );
       const issueCount = parseInt(issueCountResult.rows[0].count, 10);
 
-      // If this is the first issue in the sprint, auto-complete any pending sprint_issues accountability
-      if (issueCount === 1) {
-        await autoCompleteAccountabilityIssue(sprintAssoc.id, 'sprint_issues', req.workspaceId!, req.userId);
-      }
+      // sprint_issues accountability is now computed via inference - no issue completion needed
     }
 
     // Get the belongs_to associations with display info
@@ -957,10 +953,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         );
         const issueCount = parseInt(issueCountResult.rows[0].count, 10);
 
-        // If this is the first issue in the sprint, auto-complete any pending sprint_issues accountability
-        if (issueCount === 1) {
-          await autoCompleteAccountabilityIssue(sprintId, 'sprint_issues', req.workspaceId!, req.userId);
-        }
+        // sprint_issues accountability is now computed via inference - no issue completion needed
       }
     }
 
