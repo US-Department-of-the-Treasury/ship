@@ -94,6 +94,7 @@ export const test = base.extend<
   WorkerFixtures
 >({
   // PostgreSQL container - one per worker, starts fresh for each test run
+  // CRITICAL: Use try-finally to ensure container cleanup even on errors
   dbContainer: [
     async ({}, use, workerInfo) => {
       const workerTag = `[Worker ${workerInfo.workerIndex}]`;
@@ -106,23 +107,26 @@ export const test = base.extend<
         .withPassword('test')
         .start();
 
-      const dbUrl = container.getConnectionUri();
-      if (debug) console.log(`${workerTag} PostgreSQL ready on port ${container.getMappedPort(5432)}`);
+      try {
+        const dbUrl = container.getConnectionUri();
+        if (debug) console.log(`${workerTag} PostgreSQL ready on port ${container.getMappedPort(5432)}`);
 
-      // Run schema and migrations
-      if (debug) console.log(`${workerTag} Running migrations...`);
-      await runMigrations(dbUrl);
-      if (debug) console.log(`${workerTag} Migrations complete`);
+        // Run schema and migrations
+        if (debug) console.log(`${workerTag} Running migrations...`);
+        await runMigrations(dbUrl);
+        if (debug) console.log(`${workerTag} Migrations complete`);
 
-      await use(container);
-
-      if (debug) console.log(`${workerTag} Stopping PostgreSQL container...`);
-      await container.stop();
+        await use(container);
+      } finally {
+        if (debug) console.log(`${workerTag} Stopping PostgreSQL container...`);
+        await container.stop();
+      }
     },
     { scope: 'worker' },
   ],
 
   // API server - one per worker
+  // CRITICAL: Use try-finally to ensure process cleanup even on errors
   apiServer: [
     async ({ dbContainer }, use, workerInfo) => {
       const workerTag = `[Worker ${workerInfo.workerIndex}]`;
@@ -148,25 +152,27 @@ export const test = base.extend<
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      // Log server output for debugging
-      proc.stdout?.on('data', (data) => {
-        if (process.env.DEBUG) {
-          console.log(`${workerTag} API: ${data.toString().trim()}`);
-        }
-      });
-      proc.stderr?.on('data', (data) => {
-        console.error(`${workerTag} API ERROR: ${data.toString().trim()}`);
-      });
+      try {
+        // Log server output for debugging
+        proc.stdout?.on('data', (data) => {
+          if (process.env.DEBUG) {
+            console.log(`${workerTag} API: ${data.toString().trim()}`);
+          }
+        });
+        proc.stderr?.on('data', (data) => {
+          console.error(`${workerTag} API ERROR: ${data.toString().trim()}`);
+        });
 
-      // Wait for server to be ready
-      const apiUrl = `http://localhost:${port}`;
-      await waitForServer(`${apiUrl}/health`, 30000);
-      if (debug) console.log(`${workerTag} API server ready at ${apiUrl}`);
+        // Wait for server to be ready
+        const apiUrl = `http://localhost:${port}`;
+        await waitForServer(`${apiUrl}/health`, 30000);
+        if (debug) console.log(`${workerTag} API server ready at ${apiUrl}`);
 
-      await use({ url: apiUrl, process: proc });
-
-      if (debug) console.log(`${workerTag} Stopping API server...`);
-      proc.kill('SIGTERM');
+        await use({ url: apiUrl, process: proc });
+      } finally {
+        if (debug) console.log(`${workerTag} Stopping API server...`);
+        proc.kill('SIGTERM');
+      }
     },
     { scope: 'worker' },
   ],
@@ -175,6 +181,7 @@ export const test = base.extend<
   // CRITICAL: We use vite preview instead of vite dev to avoid memory explosion
   // vite dev = 300-500MB per instance (HMR, file watchers, dependency graph)
   // vite preview = 30-50MB per instance (simple static file server)
+  // CRITICAL: Use try-finally to ensure process cleanup even on errors
   webServer: [
     async ({ apiServer }, use, workerInfo) => {
       const workerTag = `[Worker ${workerInfo.workerIndex}]`;
@@ -207,27 +214,29 @@ export const test = base.extend<
         stdio: ['pipe', 'pipe', 'pipe'],
       });
 
-      // Log output for debugging
-      proc.stdout?.on('data', (data) => {
-        if (process.env.DEBUG) {
-          console.log(`${workerTag} Preview: ${data.toString().trim()}`);
-        }
-      });
-      proc.stderr?.on('data', (data) => {
-        // Vite uses stderr for some normal output
-        if (process.env.DEBUG) {
-          console.log(`${workerTag} Preview: ${data.toString().trim()}`);
-        }
-      });
+      try {
+        // Log output for debugging
+        proc.stdout?.on('data', (data) => {
+          if (process.env.DEBUG) {
+            console.log(`${workerTag} Preview: ${data.toString().trim()}`);
+          }
+        });
+        proc.stderr?.on('data', (data) => {
+          // Vite uses stderr for some normal output
+          if (process.env.DEBUG) {
+            console.log(`${workerTag} Preview: ${data.toString().trim()}`);
+          }
+        });
 
-      const webUrl = `http://localhost:${port}`;
-      await waitForServer(webUrl, 30000); // Preview starts much faster than dev
-      if (debug) console.log(`${workerTag} Vite preview server ready at ${webUrl}`);
+        const webUrl = `http://localhost:${port}`;
+        await waitForServer(webUrl, 30000); // Preview starts much faster than dev
+        if (debug) console.log(`${workerTag} Vite preview server ready at ${webUrl}`);
 
-      await use({ url: webUrl, process: proc });
-
-      if (debug) console.log(`${workerTag} Stopping Vite preview server...`);
-      proc.kill('SIGTERM');
+        await use({ url: webUrl, process: proc });
+      } finally {
+        if (debug) console.log(`${workerTag} Stopping Vite preview server...`);
+        proc.kill('SIGTERM');
+      }
     },
     { scope: 'worker' },
   ],
