@@ -55,11 +55,11 @@ export type IssueSource = 'internal' | 'external' | 'action_items';
 // Accountability types for auto-generated action_items issues
 export type AccountabilityType =
   | 'standup'
-  | 'sprint_hypothesis'
+  | 'sprint_plan'
   | 'sprint_review'
   | 'sprint_start'
   | 'sprint_issues'
-  | 'project_hypothesis'
+  | 'project_plan'
   | 'project_retro';
 
 // Sprint status - computed from dates, not stored
@@ -112,21 +112,21 @@ export interface ProjectProperties {
   // Visual identification
   color: string;
   emoji?: string | null;
-  // Project retro properties - track hypothesis validation and outcomes
-  hypothesis_validated?: boolean | null;  // null = not yet determined, true = validated, false = invalidated
+  // Project retro properties - track plan validation and outcomes
+  plan_validated?: boolean | null;  // null = not yet determined, true = validated, false = invalidated
   monetary_impact_expected?: string | null;  // Expected monetary value (e.g., "$50K annual savings")
   monetary_impact_actual?: string | null;    // Actual monetary impact after completion
   success_criteria?: string[] | null;        // Array of measurable success criteria
   next_steps?: string | null;                // Recommended follow-up actions
   // Approval tracking for accountability workflow
-  hypothesis_approval?: ApprovalTracking | null;  // Approval status for project hypothesis
+  plan_approval?: ApprovalTracking | null;  // Approval status for project plan
   retro_approval?: ApprovalTracking | null;       // Approval status for project retro
   [key: string]: unknown;
 }
 
-// Hypothesis history entry for tracking hypothesis changes over time
-export interface HypothesisHistoryEntry {
-  hypothesis: string;
+// Plan history entry for tracking plan changes over time
+export interface PlanHistoryEntry {
+  plan: string;
   timestamp: string;  // ISO 8601 date string
   author_id: string;
   author_name?: string;
@@ -147,13 +147,13 @@ export interface SprintProperties {
   sprint_number: number;  // References implicit 1-week window, dates computed from this
   owner_id: string;       // REQUIRED - person accountable for this sprint
   status?: 'planning' | 'active' | 'completed';  // Sprint workflow status (default: 'planning')
-  // Hypothesis tracking (for Ship-Claude integration)
-  hypothesis?: string | null;           // Current hypothesis statement
+  // Plan tracking (for Ship-Claude integration)
+  plan?: string | null;           // Current plan statement
   success_criteria?: string[] | null;   // Array of measurable success criteria
   confidence?: number | null;           // Confidence level 0-100
-  hypothesis_history?: HypothesisHistoryEntry[] | null;  // History of hypothesis changes
+  plan_history?: PlanHistoryEntry[] | null;  // History of plan changes
   // Approval tracking for accountability workflow
-  hypothesis_approval?: ApprovalTracking | null;  // Approval status for sprint hypothesis
+  plan_approval?: ApprovalTracking | null;  // Approval status for sprint plan
   review_approval?: ApprovalTracking | null;      // Approval status for sprint review
   [key: string]: unknown;
 }
@@ -179,11 +179,11 @@ export interface StandupProperties {
   [key: string]: unknown;
 }
 
-// Sprint review properties - one per sprint, tracks hypothesis validation
+// Sprint review properties - one per sprint, tracks plan validation
 export interface SprintReviewProperties {
   sprint_id: string;          // REQUIRED - which sprint this reviews
   owner_id: string;           // REQUIRED - who is accountable for this review
-  hypothesis_validated: boolean | null;  // null = not yet determined
+  plan_validated: boolean | null;  // null = not yet determined
   [key: string]: unknown;
 }
 

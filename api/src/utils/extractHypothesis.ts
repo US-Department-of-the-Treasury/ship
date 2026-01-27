@@ -265,8 +265,8 @@ export function extractGoalsFromContent(content: unknown): string | null {
  * Check if a document is complete based on document type requirements.
  *
  * Requirements:
- * - Projects: need hypothesis AND success_criteria
- * - Sprints: need hypothesis AND at least 1 linked issue
+ * - Projects: need plan AND success_criteria
+ * - Sprints: need plan AND at least 1 linked issue
  *   (dates are computed from sprint_number + workspace.sprint_start_date)
  *
  * @param documentType - The document type (project, sprint, etc.)
@@ -283,18 +283,18 @@ export function checkDocumentCompleteness(
   const missingFields: string[] = [];
 
   if (documentType === 'project') {
-    // Projects need hypothesis + success_criteria
-    if (!props.hypothesis || (typeof props.hypothesis === 'string' && !props.hypothesis.trim())) {
-      missingFields.push('Hypothesis');
+    // Projects need plan + success_criteria
+    if (!props.plan || (typeof props.plan === 'string' && !props.plan.trim())) {
+      missingFields.push('Plan');
     }
     if (!props.success_criteria || (typeof props.success_criteria === 'string' && !props.success_criteria.trim())) {
       missingFields.push('Success Criteria');
     }
   } else if (documentType === 'sprint') {
-    // Sprints need hypothesis + at least 1 linked issue
+    // Sprints need plan + at least 1 linked issue
     // Dates are computed from sprint_number + workspace.sprint_start_date
-    if (!props.hypothesis || (typeof props.hypothesis === 'string' && !props.hypothesis.trim())) {
-      missingFields.push('Hypothesis');
+    if (!props.plan || (typeof props.plan === 'string' && !props.plan.trim())) {
+      missingFields.push('Plan');
     }
     if (linkedIssuesCount === 0) {
       missingFields.push('Linked Issues');

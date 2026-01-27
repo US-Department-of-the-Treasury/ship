@@ -19,8 +19,8 @@ interface ApprovalState {
 interface SprintAccountability {
   id: string;
   title: string;
-  hasHypothesis: boolean;
-  hypothesisApproval: ApprovalState | null;
+  hasPlan: boolean;
+  planApproval: ApprovalState | null;
   hasReview: boolean;
   reviewApproval: ApprovalState | null;
 }
@@ -34,8 +34,8 @@ interface ProjectData {
   programName?: string | null;
   programColor?: string | null;
   programEmoji?: string | null;
-  hasHypothesis: boolean;
-  hypothesisApproval: ApprovalState | null;
+  hasPlan: boolean;
+  planApproval: ApprovalState | null;
   hasRetro: boolean;
   retroApproval: ApprovalState | null;
   allocations: Record<number, number>; // sprintNumber -> personCount
@@ -179,9 +179,9 @@ export function AccountabilityGrid({ showArchived = false }: AccountabilityGridP
           {/* Legend row */}
           <div className="flex h-10 w-[180px] items-center gap-2 border-b border-border px-3 bg-border/20">
             <div className="flex items-center gap-1">
-              <span className="text-[10px] text-muted">H</span>
+              <span className="text-[10px] text-muted">P</span>
               <span className="text-[10px] text-muted">=</span>
-              <span className="text-[10px] text-muted">Hypothesis</span>
+              <span className="text-[10px] text-muted">Plan</span>
             </div>
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-muted">R</span>
@@ -244,11 +244,11 @@ export function AccountabilityGrid({ showArchived = false }: AccountabilityGridP
                           {project.title}
                         </span>
                         <div className="ml-auto flex items-center gap-1">
-                          {/* Hypothesis status */}
+                          {/* Plan status */}
                           <StatusIndicator
-                            hasContent={project.hasHypothesis}
-                            approvalState={project.hypothesisApproval?.state}
-                            label="H"
+                            hasContent={project.hasPlan}
+                            approvalState={project.planApproval?.state}
+                            label="P"
                           />
                           {/* Retro status */}
                           <StatusIndicator
@@ -363,7 +363,7 @@ export function AccountabilityGrid({ showArchived = false }: AccountabilityGridP
   );
 }
 
-// Sprint accountability cell with left/right split for hypothesis/review
+// Sprint accountability cell with left/right split for plan/review
 function SprintAccountabilityCell({
   accountability,
   isCurrent,
@@ -388,16 +388,16 @@ function SprintAccountabilityCell({
   }
 
   // Determine border color based on approval states
-  const hypothesisApprovalState = accountability.hypothesisApproval?.state;
+  const planApprovalState = accountability.planApproval?.state;
   const reviewApprovalState = accountability.reviewApproval?.state;
 
   // Border priority: yellow (changed) > green (approved) > none
   let borderClass = '';
-  if (hypothesisApprovalState === 'changed_since_approved' || reviewApprovalState === 'changed_since_approved') {
+  if (planApprovalState === 'changed_since_approved' || reviewApprovalState === 'changed_since_approved') {
     borderClass = 'ring-2 ring-yellow-500';
-  } else if (hypothesisApprovalState === 'approved' && reviewApprovalState === 'approved') {
+  } else if (planApprovalState === 'approved' && reviewApprovalState === 'approved') {
     borderClass = 'ring-2 ring-green-500';
-  } else if (hypothesisApprovalState === 'approved' || reviewApprovalState === 'approved') {
+  } else if (planApprovalState === 'approved' || reviewApprovalState === 'approved') {
     borderClass = 'ring-1 ring-green-500/50';
   }
 
@@ -411,12 +411,12 @@ function SprintAccountabilityCell({
       onClick={() => onNavigate(accountability.id)}
       title={`${accountability.title}\nClick to open sprint`}
     >
-      {/* Left half - Hypothesis */}
+      {/* Left half - Plan */}
       <div className="flex-1 flex flex-col items-center justify-center border-r border-border/50">
-        <span className="text-[9px] text-muted mb-0.5">H</span>
+        <span className="text-[9px] text-muted mb-0.5">P</span>
         <StatusIcon
-          hasContent={accountability.hasHypothesis}
-          approvalState={hypothesisApprovalState}
+          hasContent={accountability.hasPlan}
+          approvalState={planApprovalState}
         />
       </div>
 
@@ -456,7 +456,7 @@ function StatusIndicator({
         "flex items-center justify-center h-4 w-4 rounded text-[8px] font-bold text-white",
         bgColor
       )}
-      title={`${label === 'H' ? 'Hypothesis' : label === 'R' ? 'Review/Retro' : label}: ${
+      title={`${label === 'P' ? 'Plan' : label === 'R' ? 'Review/Retro' : label}: ${
         !hasContent ? 'Not written' :
         approvalState === 'approved' ? 'Approved' :
         approvalState === 'changed_since_approved' ? 'Changed since approved' :

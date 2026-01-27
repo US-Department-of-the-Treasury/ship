@@ -392,7 +392,7 @@ export function UnifiedDocumentPage() {
         end_date: (document.end_date as string) || '',
         status: ((document.status as string) || 'planning') as 'planning' | 'active' | 'completed',
         program_id: programIdFromBelongsTo,
-        hypothesis: (document.hypothesis as string) || '',
+        plan: (document.plan as string) || '',
       }),
       ...(document.document_type === 'wiki' && {
         parent_id: document.parent_id as string | undefined,

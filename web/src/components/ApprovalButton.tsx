@@ -49,14 +49,14 @@ function CloseIcon({ className }: { className?: string }) {
 
 interface ApprovalButtonProps {
   /** The type of content being approved */
-  type: 'hypothesis' | 'review' | 'retro';
+  type: 'plan' | 'review' | 'retro';
   /** Current approval tracking state */
   approval: ApprovalTracking | null | undefined;
   /** Whether the content exists (can't approve empty content) */
   hasContent: boolean;
   /** Whether current user can approve (is accountable or workspace admin) */
   canApprove: boolean;
-  /** API endpoint to call for approval (e.g., '/api/sprints/123/approve-hypothesis') */
+  /** API endpoint to call for approval (e.g., '/api/sprints/123/approve-plan') */
   approveEndpoint: string;
   /** Name of the person who approved (for display) */
   approverName?: string;
@@ -129,7 +129,7 @@ export function ApprovalButton({
   };
 
   // Type label for display
-  const typeLabel = type === 'hypothesis' ? 'Hypothesis' : type === 'review' ? 'Review' : 'Retrospective';
+  const typeLabel = type === 'plan' ? 'Plan' : type === 'review' ? 'Review' : 'Retrospective';
 
   // If user can't approve, don't show the button section
   if (!canApprove) {

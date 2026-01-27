@@ -216,20 +216,20 @@ describe('Sprints API', () => {
       expect(res.body.workspace_sprint_start_date).toBeDefined()
     })
 
-    it('should create sprint with hypothesis', async () => {
+    it('should create sprint with plan', async () => {
       const res = await request(app)
         .post('/api/sprints')
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
-          title: 'Sprint with Hypothesis',
+          title: 'Sprint with Plan',
           program_id: testProgramId,
           sprint_number: 3,
-          hypothesis: 'If we implement feature X, then metric Y will improve by Z%',
+          plan: 'If we implement feature X, then metric Y will improve by Z%',
         })
 
       expect(res.status).toBe(201)
-      expect(res.body.hypothesis).toBe('If we implement feature X, then metric Y will improve by Z%')
+      expect(res.body.plan).toBe('If we implement feature X, then metric Y will improve by Z%')
     })
 
     it('should require sprint_number', async () => {
@@ -339,13 +339,13 @@ describe('Sprints API', () => {
     })
   })
 
-  describe('PATCH /api/sprints/:id/hypothesis', () => {
+  describe('PATCH /api/sprints/:id/plan', () => {
     let testSprintId: string
 
     beforeAll(async () => {
       const sprintResult = await pool.query(
         `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by)
-         VALUES ($1, 'sprint', 'Sprint for Hypothesis', 'workspace', $2)
+         VALUES ($1, 'sprint', 'Sprint for Plan', 'workspace', $2)
          RETURNING id`,
         [testWorkspaceId, testUserId]
       )
@@ -358,17 +358,17 @@ describe('Sprints API', () => {
       )
     })
 
-    it('should update sprint hypothesis', async () => {
+    it('should update sprint plan', async () => {
       const res = await request(app)
-        .patch(`/api/sprints/${testSprintId}/hypothesis`)
+        .patch(`/api/sprints/${testSprintId}/plan`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
-          hypothesis: 'Updated hypothesis text',
+          plan: 'Updated plan text',
         })
 
       expect(res.status).toBe(200)
-      expect(res.body.hypothesis).toBe('Updated hypothesis text')
+      expect(res.body.plan).toBe('Updated plan text')
     })
   })
 

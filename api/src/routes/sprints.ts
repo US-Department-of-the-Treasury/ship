@@ -15,7 +15,7 @@ type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
 // Validation schemas
-// Sprint properties: sprint_number, assignee_ids (array), and hypothesis fields
+// Sprint properties: sprint_number, assignee_ids (array), and plan fields
 // API accepts owner_id for backwards compatibility, stored internally as assignee_ids[0]
 // Dates and status are computed from sprint_number + workspace.sprint_start_date
 // program_id is optional - sprints can be projectless (ad-hoc work)
@@ -24,8 +24,8 @@ const createSprintSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
   sprint_number: z.number().int().positive(),
   owner_id: z.string().uuid().optional(),
-  // Hypothesis tracking (optional at creation) - what will we learn/validate?
-  hypothesis: z.string().max(2000).optional(),
+  // Plan tracking (optional at creation) - what will we learn/validate?
+  plan: z.string().max(2000).optional(),
   success_criteria: z.array(z.string().max(500)).max(20).optional(),
   confidence: z.number().int().min(0).max(100).optional(),
 });
@@ -37,9 +37,9 @@ const updateSprintSchema = z.object({
   status: z.enum(['planning', 'active', 'completed']).optional(),
 });
 
-// Separate schema for hypothesis updates (append mode)
-const updateHypothesisSchema = z.object({
-  hypothesis: z.string().max(2000).optional(),
+// Separate schema for plan updates (append mode)
+const updatePlanSchema = z.object({
+  plan: z.string().max(2000).optional(),
   success_criteria: z.array(z.string().max(500)).max(20).optional(),
   confidence: z.number().int().min(0).max(100).optional(),
 });
@@ -71,11 +71,11 @@ function extractSprintFromRow(row: any) {
     // Retro outcome summary (populated if retro exists)
     retro_outcome: row.retro_outcome || null,
     retro_id: row.retro_id || null,
-    // Hypothesis tracking fields - what will we learn/validate?
-    hypothesis: props.hypothesis || null,
+    // Plan tracking fields - what will we learn/validate?
+    plan: props.plan || null,
     success_criteria: props.success_criteria || null,
     confidence: typeof props.confidence === 'number' ? props.confidence : null,
-    hypothesis_history: props.hypothesis_history || null,
+    plan_history: props.plan_history || null,
     // Completeness flags
     is_complete: props.is_complete ?? null,
     missing_fields: props.missing_fields ?? [],
@@ -83,7 +83,7 @@ function extractSprintFromRow(row: any) {
     planned_issue_ids: props.planned_issue_ids || null,
     snapshot_taken_at: props.snapshot_taken_at || null,
     // Approval tracking
-    hypothesis_approval: props.hypothesis_approval || null,
+    plan_approval: props.plan_approval || null,
     review_approval: props.review_approval || null,
     // Accountability (sprints inherit from program, but may have direct assignment)
     accountable_id: props.accountable_id || null,
@@ -689,7 +689,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { program_id, title, sprint_number, owner_id, hypothesis, success_criteria, confidence } = parsed.data;
+    const { program_id, title, sprint_number, owner_id, plan, success_criteria, confidence } = parsed.data;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -772,7 +772,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       ownerData = ownerCheck.rows[0];
     }
 
-    // Build properties JSONB - sprint_number, assignee_ids, and hypothesis fields
+    // Build properties JSONB - sprint_number, assignee_ids, and plan fields
     const properties: Record<string, unknown> = {
       sprint_number,
       assignee_ids: owner_id ? [owner_id] : [],
@@ -782,12 +782,12 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       properties.owner_id = owner_id;
     }
 
-    // Add hypothesis fields if provided
-    if (hypothesis !== undefined) {
-      properties.hypothesis = hypothesis;
-      // Initialize hypothesis_history with the initial hypothesis
-      properties.hypothesis_history = [{
-        hypothesis,
+    // Add plan fields if provided
+    if (plan !== undefined) {
+      properties.plan = plan;
+      // Initialize plan_history with the initial plan
+      properties.plan_history = [{
+        plan,
         timestamp: new Date().toISOString(),
         author_id: userId,
       }];
@@ -853,11 +853,11 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       issue_count: 0,
       completed_count: 0,
       started_count: 0,
-      // Hypothesis tracking fields - what will we learn/validate?
-      hypothesis: properties.hypothesis || null,
+      // Plan tracking fields - what will we learn/validate?
+      plan: properties.plan || null,
       success_criteria: properties.success_criteria || null,
       confidence: properties.confidence ?? null,
-      hypothesis_history: properties.hypothesis_history || null,
+      plan_history: properties.plan_history || null,
     });
   } catch (err) {
     console.error('Create sprint error:', err);
@@ -1193,15 +1193,15 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-// Update sprint hypothesis (append mode - preserves history)
-// PATCH /api/sprints/:id/hypothesis
-router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Response) => {
+// Update sprint plan (append mode - preserves history)
+// PATCH /api/sprints/:id/plan
+router.patch('/:id/plan', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
-    const parsed = updateHypothesisSchema.safeParse(req.body);
+    const parsed = updatePlanSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
       return;
@@ -1227,31 +1227,31 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
     const newProps = { ...currentProps };
     const data = parsed.data;
     const now = new Date().toISOString();
-    let hypothesisWasWritten = false;
+    let planWasWritten = false;
 
-    // If hypothesis is being updated, append old one to history
-    if (data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis) {
+    // If plan is being updated, append old one to history
+    if (data.plan !== undefined && data.plan !== currentProps.plan) {
       // Initialize history if doesn't exist
-      const currentHistory = Array.isArray(currentProps.hypothesis_history)
-        ? [...currentProps.hypothesis_history]
+      const currentHistory = Array.isArray(currentProps.plan_history)
+        ? [...currentProps.plan_history]
         : [];
 
-      // If there was a previous hypothesis, add it to history
-      if (currentProps.hypothesis) {
+      // If there was a previous plan, add it to history
+      if (currentProps.plan) {
         currentHistory.push({
-          hypothesis: currentProps.hypothesis,
+          plan: currentProps.plan,
           timestamp: now,
           author_id: userId,
         });
       }
 
-      // Update to new hypothesis
-      newProps.hypothesis = data.hypothesis;
-      newProps.hypothesis_history = currentHistory;
+      // Update to new plan
+      newProps.plan = data.plan;
+      newProps.plan_history = currentHistory;
 
-      // Track if we're writing a non-empty hypothesis for the first time
-      if (data.hypothesis && !currentProps.hypothesis) {
-        hypothesisWasWritten = true;
+      // Track if we're writing a non-empty plan for the first time
+      if (data.plan && !currentProps.plan) {
+        planWasWritten = true;
       }
     }
 
@@ -1263,15 +1263,15 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
       newProps.confidence = data.confidence;
     }
 
-    // If hypothesis or success_criteria changed and was previously approved, transition to 'changed_since_approved'
-    const hypothesisChanged = data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis;
+    // If plan or success_criteria changed and was previously approved, transition to 'changed_since_approved'
+    const planChanged = data.plan !== undefined && data.plan !== currentProps.plan;
     const criteriaChanged = data.success_criteria !== undefined &&
       JSON.stringify(data.success_criteria) !== JSON.stringify(currentProps.success_criteria);
 
-    if ((hypothesisChanged || criteriaChanged) &&
-        currentProps.hypothesis_approval?.state === 'approved') {
-      newProps.hypothesis_approval = {
-        ...currentProps.hypothesis_approval,
+    if ((planChanged || criteriaChanged) &&
+        currentProps.plan_approval?.state === 'approved') {
+      newProps.plan_approval = {
+        ...currentProps.plan_approval,
         state: 'changed_since_approved',
       };
     }
@@ -1284,12 +1284,12 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
     );
 
     // Log changes to document_history for approval workflow tracking
-    if (data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis) {
+    if (data.plan !== undefined && data.plan !== currentProps.plan) {
       await logDocumentChange(
         id as string,
-        'hypothesis',
-        currentProps.hypothesis || null,
-        data.hypothesis || null,
+        'plan',
+        currentProps.plan || null,
+        data.plan || null,
         userId
       );
     }
@@ -1307,9 +1307,9 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
       }
     }
 
-    // Broadcast celebration when hypothesis is added
-    if (data.hypothesis && data.hypothesis.trim() !== '') {
-      broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_hypothesis', targetId: id as string });
+    // Broadcast celebration when plan is added
+    if (data.plan && data.plan.trim() !== '') {
+      broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_plan', targetId: id as string });
     }
 
     // Re-query to get full sprint with owner info
@@ -1349,7 +1349,7 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
 
     res.json(extractSprintFromRow(result.rows[0]));
   } catch (err) {
-    console.error('Update sprint hypothesis error:', err);
+    console.error('Update sprint plan error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1856,14 +1856,14 @@ router.post('/:id/standups', authMiddleware, async (req: Request, res: Response)
 });
 
 // ============================================
-// Sprint Review Endpoints - One per sprint with hypothesis validation
+// Sprint Review Endpoints - One per sprint with plan validation
 // ============================================
 
 // Schema for creating/updating a sprint review
 const sprintReviewSchema = z.object({
   content: z.record(z.unknown()).optional(),
   title: z.string().max(200).optional(),
-  hypothesis_validated: z.boolean().nullable().optional(),
+  plan_validated: z.boolean().nullable().optional(),
 });
 
 // Helper to generate pre-filled sprint review content
@@ -1907,17 +1907,17 @@ async function generatePrefilledReviewContent(sprintData: any, issues: any[]) {
     ]
   };
 
-  // Add hypothesis section if sprint has one
-  if (sprintData.hypothesis) {
+  // Add plan section if sprint has one
+  if (sprintData.plan) {
     content.content.push(
       {
         type: 'heading',
         attrs: { level: 3 },
-        content: [{ type: 'text', text: 'Hypothesis' }]
+        content: [{ type: 'text', text: 'Plan' }]
       },
       {
         type: 'paragraph',
-        content: [{ type: 'text', text: sprintData.hypothesis }]
+        content: [{ type: 'text', text: sprintData.plan }]
       }
     );
   }
@@ -2054,7 +2054,7 @@ router.get('/:id/review', authMiddleware, async (req: Request, res: Response) =>
         sprint_id: id,
         title: review.title,
         content: review.content,
-        hypothesis_validated: reviewProps.hypothesis_validated ?? null,
+        plan_validated: reviewProps.plan_validated ?? null,
         owner_id: reviewProps.owner_id || null,
         owner_name: review.owner_name || null,
         owner_email: review.owner_email || null,
@@ -2078,7 +2078,7 @@ router.get('/:id/review', authMiddleware, async (req: Request, res: Response) =>
     const sprintData = {
       sprint_number: sprintProps.sprint_number || 1,
       program_name: sprint.program_name,
-      hypothesis: sprintProps.hypothesis || null,
+      plan: sprintProps.plan || null,
     };
 
     const prefilledContent = await generatePrefilledReviewContent(sprintData, issuesResult.rows);
@@ -2088,7 +2088,7 @@ router.get('/:id/review', authMiddleware, async (req: Request, res: Response) =>
       sprint_id: id,
       title: `Sprint ${sprintData.sprint_number} Review`,
       content: prefilledContent,
-      hypothesis_validated: null,
+      plan_validated: null,
       owner_id: null,
       owner_name: null,
       owner_email: null,
@@ -2115,7 +2115,7 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
       return;
     }
 
-    const { content, title, hypothesis_validated } = parsed.data;
+    const { content, title, plan_validated } = parsed.data;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -2153,7 +2153,7 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
     const properties = {
       sprint_id: id,
       owner_id: userId,
-      hypothesis_validated: hypothesis_validated ?? null,
+      plan_validated: plan_validated ?? null,
     };
 
     const reviewTitle = title || `Sprint ${sprintProps.sprint_number || 'N'} Review`;
@@ -2201,7 +2201,7 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
       sprint_id: id,
       title: review.title,
       content: review.content,
-      hypothesis_validated: hypothesis_validated ?? null,
+      plan_validated: plan_validated ?? null,
       owner_id: userId,
       owner_name: owner?.name || null,
       owner_email: owner?.email || null,
@@ -2228,7 +2228,7 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
       return;
     }
 
-    const { content, title, hypothesis_validated } = parsed.data;
+    const { content, title, plan_validated } = parsed.data;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -2278,8 +2278,8 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
     let propsChanged = false;
     const newProps = { ...currentProps };
 
-    if (hypothesis_validated !== undefined) {
-      newProps.hypothesis_validated = hypothesis_validated;
+    if (plan_validated !== undefined) {
+      newProps.plan_validated = plan_validated;
       propsChanged = true;
     }
 
@@ -2316,8 +2316,8 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
       }
     }
 
-    // If review content or hypothesis_validated changed, update parent sprint's review_approval
-    const reviewFieldsChanged = content !== undefined || hypothesis_validated !== undefined;
+    // If review content or plan_validated changed, update parent sprint's review_approval
+    const reviewFieldsChanged = content !== undefined || plan_validated !== undefined;
     if (reviewFieldsChanged) {
       // Fetch parent sprint to check review_approval state
       const sprintResult = await pool.query(
@@ -2362,7 +2362,7 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
       sprint_id: id,
       title: review.title,
       content: review.content,
-      hypothesis_validated: reviewProps.hypothesis_validated ?? null,
+      plan_validated: reviewProps.plan_validated ?? null,
       owner_id: reviewProps.owner_id || null,
       owner_name: review.owner_name || null,
       owner_email: review.owner_email || null,
@@ -2515,8 +2515,8 @@ router.post('/:id/carryover', authMiddleware, async (req: Request, res: Response
   }
 });
 
-// POST /api/sprints/:id/approve-hypothesis - Approve sprint hypothesis
-router.post('/:id/approve-hypothesis', authMiddleware, async (req: Request, res: Response) => {
+// POST /api/sprints/:id/approve-plan - Approve sprint plan
+router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.userId!;
@@ -2546,19 +2546,19 @@ router.post('/:id/approve-hypothesis', authMiddleware, async (req: Request, res:
 
     // Check authorization: must be program's accountable_id OR workspace admin
     if (programAccountableId !== userId && !isAdmin) {
-      res.status(403).json({ error: 'Only the program accountable person or admin can approve hypotheses' });
+      res.status(403).json({ error: 'Only the program accountable person or admin can approve plans' });
       return;
     }
 
-    // Get the latest hypothesis history entry for version tracking
-    const historyEntry = await getLatestDocumentFieldHistory(id as string, 'hypothesis');
+    // Get the latest plan history entry for version tracking
+    const historyEntry = await getLatestDocumentFieldHistory(id as string, 'plan');
     const versionId = historyEntry?.id || null;
 
     // Update sprint properties with approval
     const currentProps = sprint.properties || {};
     const newProps = {
       ...currentProps,
-      hypothesis_approval: {
+      plan_approval: {
         state: 'approved',
         approved_by: userId,
         approved_at: new Date().toISOString(),
@@ -2574,10 +2574,10 @@ router.post('/:id/approve-hypothesis', authMiddleware, async (req: Request, res:
 
     res.json({
       success: true,
-      approval: newProps.hypothesis_approval,
+      approval: newProps.plan_approval,
     });
   } catch (err) {
-    console.error('Approve sprint hypothesis error:', err);
+    console.error('Approve sprint plan error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

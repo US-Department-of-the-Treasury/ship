@@ -10,14 +10,14 @@ const CELEBRATION_MESSAGES = [
   "That's how it's done!",
   "Progress feels good, doesn't it?",
   "One down, excellence achieved.",
-  "Hypothesis-driven development in action!",
+  "Plan-driven development in action!",
   "The sprint gods are pleased.",
 ];
 
 // Rotating messages - mix of urgency and humor
 const MESSAGES = [
   "You have {count} items demanding your attention. They're not going away.",
-  "Your hypothesis awaits. The team awaits. Science awaits.",
+  "Your plan awaits. The team awaits. Action awaits.",
   "Standups don't write themselves. Yet.",
   "Your future self will thank you. Your manager definitely will.",
   "The accountability police are watching. (It's us. We're the police.)",
@@ -26,7 +26,7 @@ const MESSAGES = [
   "Your sprint needs you. Don't leave it hanging.",
   "Remember: done is better than perfect. But started is better than nothing.",
   "The retro won't write itself. Trust us, we tried.",
-  "Hypothesis-driven development starts with... a hypothesis.",
+  "Plan-driven development starts with... a plan.",
   "Your accountability items miss you. Please visit them.",
   "{count} items, {count} opportunities to be awesome.",
   "The standup ritual awaits your participation.",
@@ -35,7 +35,7 @@ const MESSAGES = [
   "Achievement unlocked: Accountability Avoider. (Please un-unlock it.)",
   "Fun fact: completing tasks makes them disappear from this banner.",
   "These items have been waiting patiently. Their patience is running out.",
-  "Sprint review: where hypotheses meet reality. Please schedule the meeting.",
+  "Sprint review: where plans meet reality. Please schedule the meeting.",
 ];
 
 interface AccountabilityBannerProps {

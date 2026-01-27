@@ -23,7 +23,7 @@ const belongsToEntrySchema = z.object({
 });
 
 // Accountability types enum for validation
-const accountabilityTypes = ['standup', 'sprint_hypothesis', 'sprint_review', 'sprint_start', 'sprint_issues', 'project_hypothesis', 'project_retro'] as const;
+const accountabilityTypes = ['standup', 'sprint_plan', 'sprint_review', 'sprint_start', 'sprint_issues', 'project_plan', 'project_retro'] as const;
 
 // Validation schemas
 const createIssueSchema = z.object({

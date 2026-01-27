@@ -61,7 +61,7 @@ describe('Accountability Service', () => {
             {
               id: sprintId,
               title: 'Sprint 1',
-              properties: { sprint_number: 1, status: 'planning', hypothesis: '' },
+              properties: { sprint_number: 1, status: 'planning', plan: '' },
             },
           ],
         } as any)
@@ -69,7 +69,7 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [{ count: '0' }] } as any)
         // 7. Sprint reviews - past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // 8. Project hypothesis - projects without hypothesis
+        // 8. Project plan - projects without plan
         .mockResolvedValueOnce({
           rows: [{ id: projectId, title: 'Test Project', properties: {} }],
         } as any)
@@ -78,13 +78,13 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      // Should include: standup, sprint_hypothesis, sprint_start, sprint_issues, project_hypothesis
+      // Should include: standup, sprint_plan, sprint_start, sprint_issues, project_plan
       const types = result.map((item) => item.type);
       expect(types).toContain('standup');
-      expect(types).toContain('sprint_hypothesis');
+      expect(types).toContain('sprint_plan');
       expect(types).toContain('sprint_start');
       expect(types).toContain('sprint_issues');
-      expect(types).toContain('project_hypothesis');
+      expect(types).toContain('project_plan');
     });
   });
 
@@ -106,7 +106,7 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // No completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
@@ -130,7 +130,7 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // No completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
@@ -156,7 +156,7 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // No completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
@@ -168,48 +168,48 @@ describe('Accountability Service', () => {
     });
   });
 
-  describe('sprint_hypothesis type', () => {
-    it('returns item when sprint has no hypothesis', async () => {
+  describe('sprint_plan type', () => {
+    it('returns item when sprint has no plan', async () => {
       vi.mocked(pool.query)
         .mockResolvedValueOnce({
           rows: [{ sprint_start_date: '2024-01-01' }],
         } as any)
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
-        // Owned sprint without hypothesis
+        // Owned sprint without plan
         .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', hypothesis: '' } }],
+          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: '' } }],
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // No completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const hypothesisItem = result.find((item) => item.type === 'sprint_hypothesis');
-      expect(hypothesisItem).toBeDefined();
-      expect(hypothesisItem?.message).toContain('hypothesis');
+      const planItem = result.find((item) => item.type === 'sprint_plan');
+      expect(planItem).toBeDefined();
+      expect(planItem?.message).toContain('plan');
     });
 
-    it('does not return item when sprint has hypothesis', async () => {
+    it('does not return item when sprint has plan', async () => {
       vi.mocked(pool.query)
         .mockResolvedValueOnce({
           rows: [{ sprint_start_date: '2024-01-01' }],
         } as any)
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
-        // Owned sprint WITH hypothesis
+        // Owned sprint WITH plan
         .mockResolvedValueOnce({
           rows: [
             {
               id: sprintId,
               title: 'Sprint 1',
-              properties: { sprint_number: 1, status: 'active', hypothesis: 'Test hypothesis' },
+              properties: { sprint_number: 1, status: 'active', plan: 'Test plan' },
             },
           ],
         } as any)
@@ -217,15 +217,15 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // No completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const hypothesisItem = result.find((item) => item.type === 'sprint_hypothesis');
-      expect(hypothesisItem).toBeUndefined();
+      const planItem = result.find((item) => item.type === 'sprint_plan');
+      expect(planItem).toBeUndefined();
     });
   });
 
@@ -243,7 +243,7 @@ describe('Accountability Service', () => {
             {
               id: sprintId,
               title: 'Sprint 1',
-              properties: { sprint_number: 1, status: 'planning', hypothesis: 'test' },
+              properties: { sprint_number: 1, status: 'planning', plan: 'test' },
             },
           ],
         } as any)
@@ -251,7 +251,7 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // No completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
@@ -272,13 +272,13 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [] } as any)
         // Owned sprint is active
         .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', hypothesis: 'test' } }],
+          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' } }],
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // No completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
@@ -300,13 +300,13 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [] } as any)
         // Owned sprint
         .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', hypothesis: 'test' } }],
+          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' } }],
         } as any)
         // Sprint has NO issues
         .mockResolvedValueOnce({ rows: [{ count: '0' }] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // No completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
@@ -327,13 +327,13 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [] } as any)
         // Owned sprint
         .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', hypothesis: 'test' } }],
+          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' } }],
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // No completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
@@ -345,8 +345,8 @@ describe('Accountability Service', () => {
     });
   });
 
-  describe('project_hypothesis type', () => {
-    it('returns item when project has no hypothesis', async () => {
+  describe('project_plan type', () => {
+    it('returns item when project has no plan', async () => {
       vi.mocked(pool.query)
         .mockResolvedValueOnce({
           rows: [{ sprint_start_date: '2024-01-01' }],
@@ -357,7 +357,7 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // Project without hypothesis
+        // Project without plan
         .mockResolvedValueOnce({
           rows: [{ id: projectId, title: 'Test Project', properties: {} }],
         } as any)
@@ -366,10 +366,10 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const hypothesisItem = result.find((item) => item.type === 'project_hypothesis');
-      expect(hypothesisItem).toBeDefined();
-      expect(hypothesisItem?.message).toContain('hypothesis');
-      expect(hypothesisItem?.targetId).toBe(projectId);
+      const planItem = result.find((item) => item.type === 'project_plan');
+      expect(planItem).toBeDefined();
+      expect(planItem?.message).toContain('plan');
+      expect(planItem?.targetId).toBe(projectId);
     });
 
     it('excludes archived projects', async () => {
@@ -388,8 +388,8 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const hypothesisItem = result.find((item) => item.type === 'project_hypothesis');
-      expect(hypothesisItem).toBeUndefined();
+      const planItem = result.find((item) => item.type === 'project_plan');
+      expect(planItem).toBeUndefined();
     });
   });
 
@@ -405,7 +405,7 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // Completed project without retro
         .mockResolvedValueOnce({
@@ -429,13 +429,13 @@ describe('Accountability Service', () => {
         } as any)
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No owned sprints (for sprint_hypothesis/start/issues)
+        // No owned sprints (for sprint_plan/start/issues)
         .mockResolvedValueOnce({ rows: [] } as any)
         // Past sprint without review (very old sprint number to ensure it's past)
         .mockResolvedValueOnce({
           rows: [{ id: sprintId, title: 'Past Sprint', properties: { sprint_number: 1 } }],
         } as any)
-        // No projects without hypothesis
+        // No projects without plan
         .mockResolvedValueOnce({ rows: [] } as any)
         // No completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);

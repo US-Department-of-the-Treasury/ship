@@ -1,12 +1,12 @@
 import { test, expect } from './fixtures/isolated-env';
 
 /**
- * E2E test for the project hypothesis accountability flow.
+ * E2E test for the project plan accountability flow.
  *
  * Tests the complete flow:
- * 1. Create project owned by user (without hypothesis)
- * 2. Verify "Write hypothesis" action item appears
- * 3. Add hypothesis to project
+ * 1. Create project owned by user (without plan)
+ * 2. Verify "Write plan" action item appears
+ * 3. Add plan to project
  * 4. Verify action item disappears
  * 5. Verify celebration animation triggers (via WebSocket event)
  *
@@ -22,8 +22,8 @@ async function getCsrfToken(page: import('@playwright/test').Page, apiUrl: strin
   return token;
 }
 
-test.describe('Accountability Project Hypothesis Flow', () => {
-  test('project without hypothesis shows action item, adding hypothesis removes it', async ({ page, apiServer }) => {
+test.describe('Accountability Project Plan Flow', () => {
+  test('project without plan shows action item, adding plan removes it', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');
@@ -44,7 +44,7 @@ test.describe('Accountability Project Hypothesis Flow', () => {
     const programResponse = await page.request.post(`${apiServer.url}/api/documents`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
-        title: 'Test Program for Project Hypothesis',
+        title: 'Test Program for Project Plan',
         document_type: 'program',
       },
     });
@@ -52,11 +52,11 @@ test.describe('Accountability Project Hypothesis Flow', () => {
     const program = await programResponse.json();
     const programId = program.id;
 
-    // Create a project WITHOUT hypothesis, owned by user
+    // Create a project WITHOUT plan, owned by user
     const projectResponse = await page.request.post(`${apiServer.url}/api/documents`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
-        title: 'Test Project Without Hypothesis',
+        title: 'Test Project Without Plan',
         document_type: 'project',
         belongs_to: [{ id: programId, type: 'program' }],
       },
@@ -72,43 +72,43 @@ test.describe('Accountability Project Hypothesis Flow', () => {
     });
     expect(setOwnerResponse.ok()).toBe(true);
 
-    // Step 1: Check action items - should include project_hypothesis for this project
+    // Step 1: Check action items - should include project_plan for this project
     const actionItemsResponse1 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse1.ok()).toBe(true);
     const actionItems1 = await actionItemsResponse1.json();
 
-    // Find project_hypothesis item for this project
-    const hypothesisItems1 = actionItems1.items.filter(
+    // Find project_plan item for this project
+    const planItems1 = actionItems1.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === projectId && item.accountability_type === 'project_hypothesis'
+        item.accountability_target_id === projectId && item.accountability_type === 'project_plan'
     );
 
-    // Should have exactly one project_hypothesis action item
-    expect(hypothesisItems1.length).toBe(1);
-    expect(hypothesisItems1[0].target_title).toContain('Test Project Without Hypothesis');
+    // Should have exactly one project_plan action item
+    expect(planItems1.length).toBe(1);
+    expect(planItems1[0].target_title).toContain('Test Project Without Plan');
 
-    // Step 2: Add hypothesis to the project
-    const addHypothesisResponse = await page.request.patch(`${apiServer.url}/api/projects/${projectId}`, {
+    // Step 2: Add plan to the project
+    const addPlanResponse = await page.request.patch(`${apiServer.url}/api/projects/${projectId}`, {
       headers: { 'x-csrf-token': csrfToken },
-      data: { hypothesis: 'This is a test hypothesis for the project.' },
+      data: { plan: 'This is a test plan for the project.' },
     });
-    expect(addHypothesisResponse.ok()).toBe(true);
+    expect(addPlanResponse.ok()).toBe(true);
 
-    // Step 3: Check action items again - project_hypothesis should be GONE
+    // Step 3: Check action items again - project_plan should be GONE
     const actionItemsResponse2 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse2.ok()).toBe(true);
     const actionItems2 = await actionItemsResponse2.json();
 
-    const hypothesisItems2 = actionItems2.items.filter(
+    const planItems2 = actionItems2.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === projectId && item.accountability_type === 'project_hypothesis'
+        item.accountability_target_id === projectId && item.accountability_type === 'project_plan'
     );
 
-    // Key assertion: After adding hypothesis, no project_hypothesis item should exist
-    expect(hypothesisItems2.length).toBe(0);
+    // Key assertion: After adding plan, no project_plan item should exist
+    expect(planItems2.length).toBe(0);
   });
 
-  test('empty hypothesis string still shows action item', async ({ page, apiServer }) => {
+  test('empty plan string still shows action item', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');
@@ -129,7 +129,7 @@ test.describe('Accountability Project Hypothesis Flow', () => {
     const programResponse = await page.request.post(`${apiServer.url}/api/documents`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
-        title: 'Test Program for Empty Hypothesis',
+        title: 'Test Program for Empty Plan',
         document_type: 'program',
       },
     });
@@ -137,11 +137,11 @@ test.describe('Accountability Project Hypothesis Flow', () => {
     const program = await programResponse.json();
     const programId = program.id;
 
-    // Create a project with empty hypothesis string
+    // Create a project with empty plan string
     const projectResponse = await page.request.post(`${apiServer.url}/api/documents`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
-        title: 'Test Project With Empty Hypothesis',
+        title: 'Test Project With Empty Plan',
         document_type: 'project',
         belongs_to: [{ id: programId, type: 'program' }],
       },
@@ -150,27 +150,27 @@ test.describe('Accountability Project Hypothesis Flow', () => {
     const project = await projectResponse.json();
     const projectId = project.id;
 
-    // Set owner and explicitly set empty hypothesis
+    // Set owner and explicitly set empty plan
     await page.request.patch(`${apiServer.url}/api/projects/${projectId}`, {
       headers: { 'x-csrf-token': csrfToken },
-      data: { owner_id: userId, hypothesis: '' },
+      data: { owner_id: userId, plan: '' },
     });
 
-    // Check action items - should still show project_hypothesis because hypothesis is empty
+    // Check action items - should still show project_plan because plan is empty
     const actionItemsResponse = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse.ok()).toBe(true);
     const actionItems = await actionItemsResponse.json();
 
-    const hypothesisItems = actionItems.items.filter(
+    const planItems = actionItems.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === projectId && item.accountability_type === 'project_hypothesis'
+        item.accountability_target_id === projectId && item.accountability_type === 'project_plan'
     );
 
-    // Empty string hypothesis should still trigger action item
-    expect(hypothesisItems.length).toBe(1);
+    // Empty string plan should still trigger action item
+    expect(planItems.length).toBe(1);
   });
 
-  test('archived projects do not show hypothesis action items', async ({ page, apiServer }) => {
+  test('archived projects do not show plan action items', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');
@@ -199,7 +199,7 @@ test.describe('Accountability Project Hypothesis Flow', () => {
     const program = await programResponse.json();
     const programId = program.id;
 
-    // Create a project (without hypothesis)
+    // Create a project (without plan)
     const projectResponse = await page.request.post(`${apiServer.url}/api/documents`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
@@ -224,7 +224,7 @@ test.describe('Accountability Project Hypothesis Flow', () => {
     const actionItems1 = await actionItemsResponse1.json();
     const beforeArchive = actionItems1.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === projectId && item.accountability_type === 'project_hypothesis'
+        item.accountability_target_id === projectId && item.accountability_type === 'project_plan'
     );
     expect(beforeArchive.length).toBe(1);
 
@@ -235,14 +235,14 @@ test.describe('Accountability Project Hypothesis Flow', () => {
     });
     expect(archiveResponse.ok()).toBe(true);
 
-    // Check action items - archived project should NOT show hypothesis item
+    // Check action items - archived project should NOT show plan item
     const actionItemsResponse2 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse2.ok()).toBe(true);
     const actionItems2 = await actionItemsResponse2.json();
 
     const afterArchive = actionItems2.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === projectId && item.accountability_type === 'project_hypothesis'
+        item.accountability_target_id === projectId && item.accountability_type === 'project_plan'
     );
 
     // Archived projects should not show action items

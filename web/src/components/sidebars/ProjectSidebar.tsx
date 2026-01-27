@@ -43,8 +43,8 @@ interface Project {
   issue_count?: number;
   converted_from_id?: string | null;
   // Approval tracking
-  hypothesis?: string | null;
-  hypothesis_approval?: ApprovalTracking | null;
+  plan?: string | null;
+  plan_approval?: ApprovalTracking | null;
   retro_approval?: ApprovalTracking | null;
   has_retro?: boolean;
 }
@@ -223,21 +223,21 @@ export function ProjectSidebar({
       </PropertyRow>
 
       {/* Approvals Section - only show if user can approve AND there's content to approve */}
-      {canApprove && (!!project.hypothesis?.trim() || project.has_retro) && (
+      {canApprove && (!!project.plan?.trim() || project.has_retro) && (
         <div className="pt-4 border-t border-border space-y-4">
           <h4 className="text-xs font-medium text-muted uppercase tracking-wide">Approvals</h4>
 
-          {/* Hypothesis Approval - only show when hypothesis exists */}
-          {!!project.hypothesis?.trim() && (
-            <PropertyRow label="Hypothesis">
+          {/* Plan Approval - only show when plan exists */}
+          {!!project.plan?.trim() && (
+            <PropertyRow label="Plan">
               <ApprovalButton
-                type="hypothesis"
-                approval={project.hypothesis_approval}
-                hasContent={!!project.hypothesis?.trim()}
+                type="plan"
+                approval={project.plan_approval}
+                hasContent={!!project.plan?.trim()}
                 canApprove={canApprove}
-                approveEndpoint={`/api/projects/${project.id}/approve-hypothesis`}
-                approverName={project.hypothesis_approval?.approved_by ? userNames[project.hypothesis_approval.approved_by] : undefined}
-                currentContent={project.hypothesis || ''}
+                approveEndpoint={`/api/projects/${project.id}/approve-plan`}
+                approverName={project.plan_approval?.approved_by ? userNames[project.plan_approval.approved_by] : undefined}
+                currentContent={project.plan || ''}
                 onApproved={onApprovalUpdate}
               />
             </PropertyRow>
