@@ -21,8 +21,6 @@ interface Sprint {
   id: string;
   title?: string;  // Used in unified document model
   name?: string;   // Used in legacy sprint API
-  start_date: string;
-  end_date: string;
   status: 'planning' | 'active' | 'completed';
   program_id: string | null;
   program_name?: string;
@@ -145,31 +143,10 @@ export function SprintSidebar({
         </select>
       </PropertyRow>
 
-      <PropertyRow label="Start Date" highlighted={isHighlighted('start_date')}>
-        <input
-          type="date"
-          value={sprint.start_date}
-          onChange={(e) => onUpdate({ start_date: e.target.value })}
-          className={`w-full rounded border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none ${
-            isHighlighted('start_date') ? 'border-amber-500 bg-amber-500/10' : 'border-border'
-          }`}
-        />
-      </PropertyRow>
-
-      <PropertyRow label="End Date" highlighted={isHighlighted('end_date')}>
-        <input
-          type="date"
-          value={sprint.end_date}
-          onChange={(e) => onUpdate({ end_date: e.target.value })}
-          className={`w-full rounded border bg-background px-2 py-1.5 text-sm text-foreground focus:border-accent focus:outline-none ${
-            isHighlighted('end_date') ? 'border-amber-500 bg-amber-500/10' : 'border-border'
-          }`}
-        />
-      </PropertyRow>
-
-      {/* Hypothesis Approval - hypothesis is edited in the document body via /hypothesis block */}
-      <PropertyRow label="Hypothesis Approval">
-        <ApprovalButton
+      {/* Hypothesis Approval - only show when hypothesis exists */}
+      {!!sprint.hypothesis?.trim() && (
+        <PropertyRow label="Hypothesis Approval">
+          <ApprovalButton
           type="hypothesis"
           approval={sprint.hypothesis_approval}
           hasContent={!!sprint.hypothesis?.trim()}
@@ -179,7 +156,8 @@ export function SprintSidebar({
           currentContent={sprint.hypothesis || ''}
           onApproved={onApprovalUpdate}
         />
-      </PropertyRow>
+        </PropertyRow>
+      )}
 
       <PropertyRow label="Progress">
         <div className="space-y-1">

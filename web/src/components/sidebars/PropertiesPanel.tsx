@@ -81,8 +81,6 @@ interface ProjectDocument extends BaseDocument {
 // Sprint document properties
 interface SprintDocument extends BaseDocument {
   document_type: 'sprint';
-  start_date: string;
-  end_date: string;
   status: 'planning' | 'active' | 'completed';
   program_id: string | null;
   program_name?: string;

@@ -225,37 +225,41 @@ export function ProjectSidebar({
         />
       </PropertyRow>
 
-      {/* Approvals Section - only show if user can approve */}
-      {canApprove && (
+      {/* Approvals Section - only show if user can approve AND there's content to approve */}
+      {canApprove && (!!project.hypothesis?.trim() || project.has_retro) && (
         <div className="pt-4 border-t border-border space-y-4">
           <h4 className="text-xs font-medium text-muted uppercase tracking-wide">Approvals</h4>
 
-          {/* Hypothesis Approval */}
-          <PropertyRow label="Hypothesis">
-            <ApprovalButton
-              type="hypothesis"
-              approval={project.hypothesis_approval}
-              hasContent={!!project.hypothesis?.trim()}
-              canApprove={canApprove}
-              approveEndpoint={`/api/projects/${project.id}/approve-hypothesis`}
-              approverName={project.hypothesis_approval?.approved_by ? userNames[project.hypothesis_approval.approved_by] : undefined}
-              currentContent={project.hypothesis || ''}
-              onApproved={onApprovalUpdate}
-            />
-          </PropertyRow>
+          {/* Hypothesis Approval - only show when hypothesis exists */}
+          {!!project.hypothesis?.trim() && (
+            <PropertyRow label="Hypothesis">
+              <ApprovalButton
+                type="hypothesis"
+                approval={project.hypothesis_approval}
+                hasContent={!!project.hypothesis?.trim()}
+                canApprove={canApprove}
+                approveEndpoint={`/api/projects/${project.id}/approve-hypothesis`}
+                approverName={project.hypothesis_approval?.approved_by ? userNames[project.hypothesis_approval.approved_by] : undefined}
+                currentContent={project.hypothesis || ''}
+                onApproved={onApprovalUpdate}
+              />
+            </PropertyRow>
+          )}
 
-          {/* Retro Approval */}
-          <PropertyRow label="Retrospective">
-            <ApprovalButton
-              type="retro"
-              approval={project.retro_approval}
-              hasContent={project.has_retro ?? false}
-              canApprove={canApprove}
-              approveEndpoint={`/api/projects/${project.id}/approve-retro`}
-              approverName={project.retro_approval?.approved_by ? userNames[project.retro_approval.approved_by] : undefined}
-              onApproved={onApprovalUpdate}
-            />
-          </PropertyRow>
+          {/* Retro Approval - only show when retro exists */}
+          {project.has_retro && (
+            <PropertyRow label="Retrospective">
+              <ApprovalButton
+                type="retro"
+                approval={project.retro_approval}
+                hasContent={project.has_retro ?? false}
+                canApprove={canApprove}
+                approveEndpoint={`/api/projects/${project.id}/approve-retro`}
+                approverName={project.retro_approval?.approved_by ? userNames[project.retro_approval.approved_by] : undefined}
+                onApproved={onApprovalUpdate}
+              />
+            </PropertyRow>
+          )}
         </div>
       )}
 
