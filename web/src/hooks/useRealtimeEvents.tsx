@@ -27,7 +27,16 @@ interface RealtimeEventsContextType {
 const RealtimeEventsContext = createContext<RealtimeEventsContextType | null>(null);
 
 // WebSocket URLs for different environments
+// VITE_WS_URL allows bypassing CloudFront (which doesn't support WebSocket)
+// by connecting directly to the EB endpoint for real-time events
 function getEventsWsUrl(): string {
+  // Prefer explicit WebSocket URL (for CloudFront deployments)
+  const wsUrl = import.meta.env.VITE_WS_URL;
+  if (wsUrl) {
+    return wsUrl.replace(/^http/, 'ws') + '/events';
+  }
+
+  // Fall back to API URL or current host
   const apiUrl = import.meta.env.VITE_API_URL ?? '';
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return apiUrl
