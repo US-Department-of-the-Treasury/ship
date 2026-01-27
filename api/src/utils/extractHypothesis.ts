@@ -266,7 +266,8 @@ export function extractGoalsFromContent(content: unknown): string | null {
  *
  * Requirements:
  * - Projects: need hypothesis AND success_criteria
- * - Sprints: need goal, start_date, end_date, AND at least 1 linked issue
+ * - Sprints: need hypothesis AND at least 1 linked issue
+ *   (dates are computed from sprint_number + workspace.sprint_start_date)
  *
  * @param documentType - The document type (project, sprint, etc.)
  * @param properties - The document's properties object
@@ -290,15 +291,10 @@ export function checkDocumentCompleteness(
       missingFields.push('Success Criteria');
     }
   } else if (documentType === 'sprint') {
-    // Sprints need goal + date range + at least 1 linked issue
-    if (!props.goal || (typeof props.goal === 'string' && !props.goal.trim())) {
-      missingFields.push('Goal');
-    }
-    if (!props.start_date) {
-      missingFields.push('Start Date');
-    }
-    if (!props.end_date) {
-      missingFields.push('End Date');
+    // Sprints need hypothesis + at least 1 linked issue
+    // Dates are computed from sprint_number + workspace.sprint_start_date
+    if (!props.hypothesis || (typeof props.hypothesis === 'string' && !props.hypothesis.trim())) {
+      missingFields.push('Hypothesis');
     }
     if (linkedIssuesCount === 0) {
       missingFields.push('Linked Issues');

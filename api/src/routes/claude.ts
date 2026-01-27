@@ -122,8 +122,6 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       s.title as sprint_title,
       s.properties->>'sprint_number' as sprint_number,
       s.properties->>'status' as sprint_status,
-      s.properties->>'start_date' as start_date,
-      s.properties->>'end_date' as end_date,
       s.properties->>'hypothesis' as sprint_hypothesis,
       da_prog.related_id as program_id,
       p.title as program_name,
@@ -208,8 +206,6 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       title: sprint.sprint_title,
       number: sprint.sprint_number,
       status: sprint.sprint_status,
-      start_date: sprint.start_date,
-      end_date: sprint.end_date,
       hypothesis: sprint.sprint_hypothesis,
     },
     program: sprint.program_id ? {
@@ -255,8 +251,6 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       s.title as sprint_title,
       s.properties->>'sprint_number' as sprint_number,
       s.properties->>'status' as sprint_status,
-      s.properties->>'start_date' as start_date,
-      s.properties->>'end_date' as end_date,
       s.properties->>'hypothesis' as sprint_hypothesis,
       da_prog.related_id as program_id,
       p.title as program_name,
@@ -352,8 +346,6 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       title: sprint.sprint_title,
       number: sprint.sprint_number,
       status: sprint.sprint_status,
-      start_date: sprint.start_date,
-      end_date: sprint.end_date,
       hypothesis: sprint.sprint_hypothesis,
     },
     program: sprint.program_id ? {
@@ -425,15 +417,14 @@ async function getRetroContext(projectId: string, workspaceId: string) {
   const project = projectResult.rows[0];
 
   // Get all sprints for this project via junction table
+  // Note: dates computed from sprint_number + workspace.sprint_start_date
   const sprintsResult = await pool.query(`
     SELECT
       d.id,
       d.title,
       d.sprint_number,
       d.properties->>'status' as status,
-      d.properties->>'hypothesis' as hypothesis,
-      d.start_date,
-      d.end_date
+      d.properties->>'hypothesis' as hypothesis
     FROM documents d
     JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
     WHERE d.document_type = 'sprint'
