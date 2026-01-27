@@ -82,10 +82,10 @@ const updateDocumentSchema = z.object({
   ease: z.number().min(1).max(10).nullable().optional(),
   color: z.string().optional(),
   owner_id: z.string().uuid().nullable().optional(),
-  // RACI fields for projects (stored in properties)
+  // RACI fields for projects and programs (stored in properties)
   accountable_id: z.string().uuid().nullable().optional(), // A - Accountable (approver)
-  consulted_ids: z.array(z.string().uuid()).optional(), // C - Consulted
-  informed_ids: z.array(z.string().uuid()).optional(), // I - Informed
+  consulted_ids: z.array(z.string().uuid()).optional(), // C - Consulted (provide input)
+  informed_ids: z.array(z.string().uuid()).optional(), // I - Informed (kept in loop)
   // Common association fields (shared across document types)
   program_id: z.string().uuid().nullable().optional(),
   sprint_id: z.string().uuid().nullable().optional(),
@@ -93,10 +93,6 @@ const updateDocumentSchema = z.object({
   // Note: start_date/end_date are computed from sprint_number + workspace.sprint_start_date
   status: z.enum(['planning', 'active', 'completed']).optional(),
   hypothesis: z.string().optional(),
-  // RACI fields (stored in properties but accepted at top level for projects and programs)
-  accountable_id: z.string().uuid().nullable().optional(), // A - Accountable (approver)
-  consulted_ids: z.array(z.string().uuid()).optional(), // C - Consulted (provide input)
-  informed_ids: z.array(z.string().uuid()).optional(), // I - Informed (kept in loop)
 });
 
 // List documents
