@@ -30,7 +30,8 @@ export function useActionItemsQuery() {
   return useQuery<ActionItemsResponse>({
     queryKey: actionItemsKeys.list(),
     queryFn: async () => {
-      const response = await apiGet('/api/issues/action-items');
+      // Use inference-based endpoint - computes items dynamically from project/sprint state
+      const response = await apiGet('/api/accountability/action-items');
       if (!response.ok) {
         throw new Error('Failed to fetch action items');
       }
