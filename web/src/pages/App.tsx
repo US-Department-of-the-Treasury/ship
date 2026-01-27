@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
+import { useRealtimeEvent } from '@/hooks/useRealtimeEvents';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
@@ -13,6 +15,7 @@ import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
 import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
 import { useStandupStatusQuery } from '@/hooks/useStandupStatusQuery';
+import { useActionItemsQuery, actionItemsKeys } from '@/hooks/useActionItemsQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -28,6 +31,8 @@ import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { ContextTreeNav } from '@/components/ContextTreeNav';
 import { ProjectSetupWizard, ProjectSetupData } from '@/components/ProjectSetupWizard';
 import { SelectionPersistenceProvider } from '@/contexts/SelectionPersistenceContext';
+import { ActionItemsModal } from '@/components/ActionItemsModal';
+import { AccountabilityBanner } from '@/components/AccountabilityBanner';
 
 type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week';
 
@@ -46,6 +51,8 @@ export function AppLayout() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
   const [projectSetupWizardOpen, setProjectSetupWizardOpen] = useState(false);
+  const [actionItemsModalOpen, setActionItemsModalOpen] = useState(false);
+  const [actionItemsModalShownOnLoad, setActionItemsModalShownOnLoad] = useState(false);
 
   // Session timeout handling
   const handleSessionTimeout = useCallback(() => {
@@ -64,6 +71,53 @@ export function AppLayout() {
   // Check if user needs to post a standup today
   const { data: standupStatus } = useStandupStatusQuery();
   const standupDue = standupStatus?.due ?? false;
+
+  // Check if user has pending action items (accountability tasks)
+  const { data: actionItemsData } = useActionItemsQuery();
+  const hasActionItems = (actionItemsData?.items?.length ?? 0) > 0;
+  const queryClient = useQueryClient();
+
+  // Celebration state for when user completes an accountability item
+  const [isCelebrating, setIsCelebrating] = useState(false);
+  const celebrationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Listen for realtime accountability updates
+  const handleAccountabilityUpdate = useCallback(() => {
+    // Show celebration banner
+    setIsCelebrating(true);
+
+    // Clear any existing timeout
+    if (celebrationTimeoutRef.current) {
+      clearTimeout(celebrationTimeoutRef.current);
+    }
+
+    // After 4 seconds, invalidate query and hide celebration
+    celebrationTimeoutRef.current = setTimeout(() => {
+      // Invalidate action items to refetch
+      queryClient.invalidateQueries({ queryKey: actionItemsKeys.all });
+      setIsCelebrating(false);
+      celebrationTimeoutRef.current = null;
+    }, 4000);
+  }, [queryClient]);
+
+  useRealtimeEvent('accountability:updated', handleAccountabilityUpdate);
+
+  // Cleanup celebration timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (celebrationTimeoutRef.current) {
+        clearTimeout(celebrationTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Show action items modal on initial load if there are pending items
+  useEffect(() => {
+    if (!actionItemsModalShownOnLoad && hasActionItems && actionItemsData?.items) {
+      setActionItemsModalOpen(true);
+      setActionItemsModalShownOnLoad(true);
+    }
+  }, [actionItemsModalShownOnLoad, hasActionItems, actionItemsData?.items]);
 
   // Accessibility: focus management on navigation
   useFocusOnNavigate();
@@ -220,6 +274,13 @@ export function AppLayout() {
         </div>
       )}
 
+      {/* Accountability banner - persistent until all items complete */}
+      <AccountabilityBanner
+        itemCount={actionItemsData?.items?.length ?? 0}
+        onBannerClick={() => setActionItemsModalOpen(true)}
+        isCelebrating={isCelebrating}
+      />
+
       <div className="flex flex-1 overflow-hidden">
         {/* Icon Rail - Navigation landmark */}
         <nav className="flex w-12 flex-col items-center border-r border-border bg-background py-3" role="navigation" aria-label="Primary navigation">
@@ -318,9 +379,10 @@ export function AppLayout() {
             />
             <RailIcon
               icon={<MyWeekIcon />}
-              label="My Week"
+              label={hasActionItems ? "My Week (action items)" : "My Week"}
               active={activeMode === 'my-week'}
               onClick={() => handleModeClick('my-week')}
+              showBadge={hasActionItems}
             />
             <RailIcon
               icon={<TeamIcon />}
@@ -510,6 +572,12 @@ export function AppLayout() {
 
       {/* Upload Navigation Warning Modal */}
       <UploadNavigationWarning />
+
+      {/* Action Items Modal - shows on login when user has pending accountability tasks */}
+      <ActionItemsModal
+        open={actionItemsModalOpen}
+        onClose={() => setActionItemsModalOpen(false)}
+      />
     </div>
     </SelectionPersistenceProvider>
     </TooltipProvider>

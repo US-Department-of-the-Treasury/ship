@@ -11,6 +11,8 @@ import {
   TRACKED_FIELDS,
   type BelongsToEntry,
 } from '../utils/document-crud.js';
+import { autoCompleteAccountabilityIssue } from '../services/accountability.js';
+import { broadcastToUser } from '../collaboration/index.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -21,6 +23,9 @@ const belongsToEntrySchema = z.object({
   type: z.enum(['program', 'project', 'sprint', 'parent']),
 });
 
+// Accountability types enum for validation
+const accountabilityTypes = ['standup', 'sprint_hypothesis', 'sprint_review', 'sprint_start', 'sprint_issues', 'project_hypothesis', 'project_retro'] as const;
+
 // Validation schemas
 const createIssueSchema = z.object({
   title: z.string().min(1).max(500),
@@ -28,6 +33,15 @@ const createIssueSchema = z.object({
   priority: z.enum(['urgent', 'high', 'medium', 'low', 'none']).optional().default('medium'),
   assignee_id: z.string().uuid().optional().nullable(),
   belongs_to: z.array(belongsToEntrySchema).optional().default([]),
+  // Source for the issue (internal, external, or action_items for system-generated)
+  source: z.enum(['internal', 'external', 'action_items']).optional().default('internal'),
+  // Due date (ISO date string)
+  due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  // System-generated flag (for action_items issues)
+  is_system_generated: z.boolean().optional().default(false),
+  // Accountability tracking for action_items issues
+  accountability_target_id: z.string().uuid().optional().nullable(),
+  accountability_type: z.enum(accountabilityTypes).optional().nullable(),
 });
 
 const updateIssueSchema = z.object({
@@ -77,6 +91,11 @@ function extractIssueFromRow(row: any) {
     estimate: props.estimate ?? null,
     source: props.source || 'internal',
     rejection_reason: props.rejection_reason || null,
+    // Accountability fields for action_items issues
+    due_date: props.due_date || null,
+    is_system_generated: props.is_system_generated || false,
+    accountability_target_id: props.accountability_target_id || null,
+    accountability_type: props.accountability_type || null,
     ticket_number: row.ticket_number,
     content: row.content,
     created_at: row.created_at,
@@ -220,6 +239,91 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     res.json(issues);
   } catch (err) {
     console.error('List issues error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get action items for current user (issues with source='action_items' that are not done)
+router.get('/action-items', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get person document ID for the user
+    const personResult = await pool.query(
+      `SELECT id FROM documents
+       WHERE workspace_id = $1 AND document_type = 'person'
+         AND properties->>'user_id' = $2`,
+      [workspaceId, userId]
+    );
+    const personDocId = personResult.rows[0]?.id;
+
+    // Get action items: issues with source='action_items' assigned to current user, not done
+    const result = await pool.query(
+      `SELECT
+         d.id,
+         d.title,
+         d.properties->>'state' as state,
+         d.properties->>'priority' as priority,
+         d.ticket_number,
+         d.properties->>'due_date' as due_date,
+         (d.properties->>'is_system_generated')::boolean as is_system_generated,
+         d.properties->>'accountability_type' as accountability_type,
+         d.properties->>'accountability_target_id' as accountability_target_id,
+         target.title as target_title
+       FROM documents d
+       LEFT JOIN documents target ON target.id = (d.properties->>'accountability_target_id')::uuid
+       WHERE d.workspace_id = $1
+         AND d.document_type = 'issue'
+         AND d.properties->>'source' = 'action_items'
+         AND d.properties->>'state' NOT IN ('done', 'cancelled')
+         AND (
+           (d.properties->>'assignee_id')::uuid = $2
+           OR ($3::uuid IS NOT NULL AND (d.properties->>'assignee_id')::uuid = $3)
+         )
+       ORDER BY
+         CASE WHEN d.properties->>'due_date' IS NOT NULL THEN 0 ELSE 1 END,
+         d.properties->>'due_date' ASC,
+         d.properties->>'priority' = 'urgent' DESC,
+         d.properties->>'priority' = 'high' DESC,
+         d.created_at ASC`,
+      [workspaceId, userId, personDocId]
+    );
+
+    // Calculate days overdue for each item
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const items = result.rows.map(row => {
+      let daysOverdue = 0;
+      if (row.due_date) {
+        const dueDate = new Date(row.due_date + 'T00:00:00');
+        const diffTime = today.getTime() - dueDate.getTime();
+        daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      }
+
+      return {
+        id: row.id,
+        title: row.title,
+        state: row.state || 'backlog',
+        priority: row.priority || 'medium',
+        ticket_number: row.ticket_number,
+        display_id: `#${row.ticket_number}`,
+        due_date: row.due_date,
+        is_system_generated: row.is_system_generated ?? false,
+        accountability_type: row.accountability_type,
+        accountability_target_id: row.accountability_target_id,
+        target_title: row.target_title,
+        days_overdue: daysOverdue,
+      };
+    });
+
+    res.json({
+      items,
+      total: items.length,
+    });
+  } catch (err) {
+    console.error('Get action items error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -460,7 +564,18 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, state, priority, assignee_id, belongs_to } = parsed.data;
+    const {
+      title,
+      state,
+      priority,
+      assignee_id,
+      belongs_to,
+      source,
+      due_date,
+      is_system_generated,
+      accountability_target_id,
+      accountability_type,
+    } = parsed.data;
 
     await client.query('BEGIN');
 
@@ -484,9 +599,14 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     const properties = {
       state: state || 'backlog',
       priority: priority || 'medium',
-      source: 'internal',
+      source: source || 'internal',
       assignee_id: assignee_id || null,
       rejection_reason: null,
+      // Accountability fields for action_items issues
+      due_date: due_date || null,
+      is_system_generated: is_system_generated || false,
+      accountability_target_id: accountability_target_id || null,
+      accountability_type: accountability_type || null,
     };
 
     const result = await client.query(
@@ -509,6 +629,23 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     }
 
     await client.query('COMMIT');
+
+    // Auto-complete sprint_issues accountability when first issue is created in a sprint
+    const sprintAssociations = belongs_to.filter(bt => bt.type === 'sprint');
+    for (const sprintAssoc of sprintAssociations) {
+      // Check if this is the first issue in the sprint
+      const issueCountResult = await pool.query(
+        `SELECT COUNT(*) as count FROM document_associations
+         WHERE related_id = $1 AND relationship_type = 'sprint'`,
+        [sprintAssoc.id]
+      );
+      const issueCount = parseInt(issueCountResult.rows[0].count, 10);
+
+      // If this is the first issue in the sprint, auto-complete any pending sprint_issues accountability
+      if (issueCount === 1) {
+        await autoCompleteAccountabilityIssue(sprintAssoc.id, 'sprint_issues', req.workspaceId!, req.userId);
+      }
+    }
 
     // Get the belongs_to associations with display info
     const belongsToResult = await getBelongsToAssociations(newIssueId);
@@ -805,6 +942,26 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
           [id, assoc.id, assoc.type]
         );
       }
+
+      // Check if a NEW sprint association was added and this is the first issue in that sprint
+      const oldSprintIds = oldBelongsTo.filter(bt => bt.type === 'sprint').map(bt => bt.id);
+      const newSprintIds = newBelongsTo.filter(bt => bt.type === 'sprint').map(bt => bt.id);
+      const addedSprintIds = newSprintIds.filter(sprintId => !oldSprintIds.includes(sprintId));
+
+      for (const sprintId of addedSprintIds) {
+        // Check if this sprint has only 1 issue (the one we just added)
+        const issueCountResult = await pool.query(
+          `SELECT COUNT(*) as count FROM document_associations
+           WHERE related_id = $1 AND relationship_type = 'sprint'`,
+          [sprintId]
+        );
+        const issueCount = parseInt(issueCountResult.rows[0].count, 10);
+
+        // If this is the first issue in the sprint, auto-complete any pending sprint_issues accountability
+        if (issueCount === 1) {
+          await autoCompleteAccountabilityIssue(sprintId, 'sprint_issues', req.workspaceId!, req.userId);
+        }
+      }
     }
 
     // Fetch the updated issue
@@ -818,6 +975,18 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const issue = extractIssueFromRow(row);
     const belongsTo = await getBelongsToAssociations(id);
+
+    // Broadcast accountability update when an action item issue is completed
+    // This triggers the celebration animation on the frontend
+    if (isClosingIssue && wasNotClosed) {
+      const props = row.properties || {};
+      if (props.source === 'action_items') {
+        // Broadcast to the assignee (or current user if no assignee)
+        const assigneeId = props.assignee_id || req.userId;
+        broadcastToUser(assigneeId, 'accountability:updated', { issueId: id, state: data.state });
+      }
+    }
+
     res.json({ ...issue, display_id: displayId, belongs_to: belongsTo });
   } catch (err) {
     console.error('Update issue error:', err);
@@ -1146,6 +1315,7 @@ router.post('/bulk', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // Delete issue
+// System-generated accountability issues cannot be deleted
 router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -1155,9 +1325,9 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
-    // First verify user can access the issue
+    // First verify user can access the issue and check if system-generated
     const accessCheck = await pool.query(
-      `SELECT id FROM documents
+      `SELECT id, properties FROM documents
        WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
          AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
@@ -1165,6 +1335,17 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     if (accessCheck.rows.length === 0) {
       res.status(404).json({ error: 'Issue not found' });
+      return;
+    }
+
+    const props = accessCheck.rows[0].properties || {};
+
+    // Block deletion of system-generated accountability issues
+    if (props.is_system_generated) {
+      res.status(403).json({
+        error: 'Cannot delete system-generated accountability issues',
+        message: 'This issue was automatically created for accountability tracking. Complete the underlying task to resolve it.',
+      });
       return;
     }
 

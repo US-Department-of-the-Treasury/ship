@@ -50,7 +50,17 @@ export type IssueState = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_rev
 export type IssuePriority = 'low' | 'medium' | 'high' | 'urgent';
 
 // Issue source - provenance, never changes after creation
-export type IssueSource = 'internal' | 'external';
+export type IssueSource = 'internal' | 'external' | 'action_items';
+
+// Accountability types for auto-generated action_items issues
+export type AccountabilityType =
+  | 'standup'
+  | 'sprint_hypothesis'
+  | 'sprint_review'
+  | 'sprint_start'
+  | 'sprint_issues'
+  | 'project_hypothesis'
+  | 'project_retro';
 
 // Sprint status - computed from dates, not stored
 export type SprintStatus = 'active' | 'upcoming' | 'completed';
@@ -64,12 +74,25 @@ export interface IssueProperties {
   estimate?: number | null;
   source: IssueSource;
   rejection_reason?: string | null;
+  // Due date for issues (ISO date string, e.g., "2025-01-26")
+  due_date?: string | null;
+  // System-generated accountability issues (cannot be deleted)
+  is_system_generated?: boolean;
+  // Links to the document this accountability issue is about
+  accountability_target_id?: string | null;
+  // Type of accountability task
+  accountability_type?: AccountabilityType | null;
   [key: string]: unknown;
 }
 
 export interface ProgramProperties {
   color: string;
   emoji?: string | null;  // Optional emoji for visual identification
+  // RACI accountability fields
+  owner_id?: string | null;        // R - Responsible (does the work)
+  accountable_id?: string | null;  // A - Accountable (approver for hypotheses/reviews)
+  consulted_ids?: string[];        // C - Consulted (provide input, stubbed for now)
+  informed_ids?: string[];         // I - Informed (kept in loop, stubbed for now)
   [key: string]: unknown;
 }
 
@@ -81,8 +104,11 @@ export interface ProjectProperties {
   impact: ICEScore | null;      // How much will this move the needle?
   confidence: ICEScore | null;  // How certain are we this will achieve the impact?
   ease: ICEScore | null;        // How easy is this to implement? (inverse of effort)
-  // Owner for accountability (optional - null = unassigned)
-  owner_id?: string | null;
+  // RACI accountability fields
+  owner_id?: string | null;        // R - Responsible (does the work)
+  accountable_id?: string | null;  // A - Accountable (approver for hypotheses/reviews)
+  consulted_ids?: string[];        // C - Consulted (provide input, stubbed for now)
+  informed_ids?: string[];         // I - Informed (kept in loop, stubbed for now)
   // Visual identification
   color: string;
   emoji?: string | null;
@@ -92,6 +118,9 @@ export interface ProjectProperties {
   monetary_impact_actual?: string | null;    // Actual monetary impact after completion
   success_criteria?: string[] | null;        // Array of measurable success criteria
   next_steps?: string | null;                // Recommended follow-up actions
+  // Approval tracking for accountability workflow
+  hypothesis_approval?: ApprovalTracking | null;  // Approval status for project hypothesis
+  retro_approval?: ApprovalTracking | null;       // Approval status for project retro
   [key: string]: unknown;
 }
 
@@ -103,6 +132,17 @@ export interface HypothesisHistoryEntry {
   author_name?: string;
 }
 
+// Approval tracking state for accountability workflows
+export type ApprovalState = null | 'approved' | 'changed_since_approved';
+
+// Approval tracking structure for hypotheses, reviews, and retros
+export interface ApprovalTracking {
+  state: ApprovalState;                   // null = pending, 'approved' = current version approved, 'changed_since_approved' = needs re-review
+  approved_by: string | null;             // User ID who approved
+  approved_at: string | null;             // ISO 8601 timestamp of approval
+  approved_version_id: number | null;     // document_history.id that was approved
+}
+
 export interface SprintProperties {
   sprint_number: number;  // References implicit 1-week window, dates computed from this
   owner_id: string;       // REQUIRED - person accountable for this sprint
@@ -112,6 +152,9 @@ export interface SprintProperties {
   success_criteria?: string[] | null;   // Array of measurable success criteria
   confidence?: number | null;           // Confidence level 0-100
   hypothesis_history?: HypothesisHistoryEntry[] | null;  // History of hypothesis changes
+  // Approval tracking for accountability workflow
+  hypothesis_approval?: ApprovalTracking | null;  // Approval status for sprint hypothesis
+  review_approval?: ApprovalTracking | null;      // Approval status for sprint review
   [key: string]: unknown;
 }
 
@@ -310,6 +353,10 @@ export const DEFAULT_ISSUE_PROPERTIES: IssueProperties = {
   source: 'internal',
   assignee_id: null,
   rejection_reason: null,
+  due_date: null,
+  is_system_generated: false,
+  accountability_target_id: null,
+  accountability_type: null,
 };
 
 export const DEFAULT_PROGRAM_PROPERTIES: Partial<ProgramProperties> = {

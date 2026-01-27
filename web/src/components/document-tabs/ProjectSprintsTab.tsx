@@ -20,8 +20,9 @@ export default function ProjectSprintsTab({ documentId, document, nestedPath }: 
   const navigate = useNavigate();
   const { sprints, loading, workspaceSprintStartDate, refreshSprints } = useProjectSprints(documentId);
 
-  // Get program_id from the project document for sprint creation
-  const programId = (document.program_id as string) || undefined;
+  // Get program_id from belongs_to array (project's parent program via document_associations)
+  const belongsTo = (document as { belongs_to?: Array<{ id: string; type: string }> }).belongs_to;
+  const programId = belongsTo?.find(b => b.type === 'program')?.id;
 
   // If nestedPath is provided and looks like a UUID, show sprint detail
   const isUuid = nestedPath && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nestedPath);

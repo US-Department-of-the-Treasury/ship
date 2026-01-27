@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
-import { handleVisibilityChange, handleDocumentConversion, invalidateDocumentCache } from '../collaboration/index.js';
+import { handleVisibilityChange, handleDocumentConversion, invalidateDocumentCache, broadcastToUser } from '../collaboration/index.js';
 import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, extractVisionFromContent, extractGoalsFromContent, checkDocumentCompleteness } from '../utils/extractHypothesis.js';
 import { loadContentFromYjsState } from '../utils/yjsConverter.js';
 
@@ -86,10 +86,9 @@ const updateDocumentSchema = z.object({
   program_id: z.string().uuid().nullable().optional(),
   sprint_id: z.string().uuid().nullable().optional(),
   // Sprint-specific fields (stored in properties but accepted at top level)
-  start_date: z.string().optional(),
-  end_date: z.string().optional(),
+  // Note: start_date/end_date are computed from sprint_number + workspace.sprint_start_date
   status: z.enum(['planning', 'active', 'completed']).optional(),
-  goal: z.string().optional(),
+  hypothesis: z.string().optional(),
 });
 
 // List documents
@@ -331,11 +330,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Generic properties
       prefix: props.prefix,
       color: props.color,
-      // Sprint properties
-      start_date: props.start_date,
-      end_date: props.end_date,
+      // Sprint properties (dates computed from sprint_number + workspace.sprint_start_date)
       status: props.status,
-      goal: props.goal,
       hypothesis: props.hypothesis,
       // Include belongs_to for issue, wiki, and sprint documents
       ...((doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint') && { belongs_to }),
@@ -541,6 +537,13 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 
     await client.query('COMMIT');
 
+    // Broadcast accountability update for document types that affect action items
+    // Sprint plans clear the "write sprint plan" action item
+    // Documents with outcome property linked to sprints clear the "write retro" action item
+    if (document_type === 'sprint_plan' || (properties && 'outcome' in properties)) {
+      broadcastToUser(req.userId!, 'accountability:updated', { documentId: newDoc.id, documentType: document_type });
+    }
+
     res.status(201).json(newDoc);
   } catch (err) {
     await client.query('ROLLBACK');
@@ -659,10 +662,10 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.owner_id !== undefined && existing.document_type === 'sprint') {
       topLevelProps.assignee_ids = data.owner_id ? [data.owner_id] : [];
     }
-    if (data.start_date !== undefined) topLevelProps.start_date = data.start_date;
-    if (data.end_date !== undefined) topLevelProps.end_date = data.end_date;
+    // Note: start_date/end_date are computed from sprint_number + workspace.sprint_start_date
     if (data.status !== undefined) topLevelProps.status = data.status;
-    if (data.goal !== undefined) topLevelProps.goal = data.goal;
+    // Note: hypothesis can be set via API but content extraction always wins when content is updated
+    if (data.hypothesis !== undefined) topLevelProps.hypothesis = data.hypothesis;
 
     const hasTopLevelProps = Object.keys(topLevelProps).length > 0;
 
@@ -923,11 +926,8 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Generic properties
       prefix: props.prefix,
       color: props.color,
-      // Sprint properties
-      start_date: props.start_date,
-      end_date: props.end_date,
+      // Sprint properties (dates computed from sprint_number + workspace.sprint_start_date)
       status: props.status,
-      goal: props.goal,
       hypothesis: props.hypothesis,
     });
   } catch (err) {

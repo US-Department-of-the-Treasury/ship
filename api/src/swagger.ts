@@ -75,10 +75,9 @@ const options: swaggerJsdoc.Options = {
           properties: {
             id: { type: 'string', format: 'uuid' },
             title: { type: 'string' },
-            start_date: { type: 'string', format: 'date' },
-            end_date: { type: 'string', format: 'date' },
-            hypothesis: { type: 'string', nullable: true },
-            goal: { type: 'string', nullable: true },
+            sprint_number: { type: 'integer', description: 'Sprint sequence number (dates computed from workspace.sprint_start_date)' },
+            hypothesis: { type: 'string', nullable: true, description: 'What will we learn or validate?' },
+            workspace_sprint_start_date: { type: 'string', format: 'date', description: 'Workspace anchor date for computing sprint dates' },
           },
         },
         Project: {

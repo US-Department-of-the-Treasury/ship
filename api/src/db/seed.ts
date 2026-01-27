@@ -437,7 +437,6 @@ async function seed() {
           sprint_number: sprint.number,
           owner_id: owner.id,
           assignee_ids: [owner.id, allUsers[(sprint.ownerIdx + 1) % allUsers.length]!.id], // Owner + one other
-          goal: sprintGoals[sprint.number % sprintGoals.length],
           hypothesis: sprintHypotheses[sprint.number % sprintHypotheses.length],
           success_criteria: sprintSuccessCriteria[sprint.number % sprintSuccessCriteria.length],
           confidence: baseConfidence + (Math.random() * 10 - 5), // Add some variance

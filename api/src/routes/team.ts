@@ -1042,4 +1042,187 @@ router.get('/people/:personId/sprint-metrics', authMiddleware, async (req: Reque
   }
 });
 
+// GET /api/team/accountability-grid - Get accountability grid data (hypothesis/review status)
+// Returns: { sprints, projects, sprintAccountability } for admin accountability view
+router.get('/accountability-grid', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Check if user is admin
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    // Get workspace sprint start date
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
+    const sprintDurationDays = 7;
+    const today = new Date();
+
+    let startDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      startDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      startDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      startDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
+
+    // Calculate current sprint number
+    const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
+
+    // Get sprint range (last 6 sprints + current + next 2)
+    const fromSprint = Math.max(1, currentSprintNumber - 6);
+    const toSprint = currentSprintNumber + 2;
+
+    // Generate sprint info
+    const sprintRange = [];
+    for (let i = fromSprint; i <= toSprint; i++) {
+      const sprintStart = new Date(startDate);
+      sprintStart.setUTCDate(sprintStart.getUTCDate() + (i - 1) * sprintDurationDays);
+      const sprintEnd = new Date(sprintStart);
+      sprintEnd.setUTCDate(sprintEnd.getUTCDate() + sprintDurationDays - 1);
+
+      sprintRange.push({
+        number: i,
+        name: `Sprint ${i}`,
+        startDate: sprintStart.toISOString().split('T')[0],
+        endDate: sprintEnd.toISOString().split('T')[0],
+        isCurrent: i === currentSprintNumber,
+      });
+    }
+
+    // Get all sprint documents with their accountability data
+    const sprintsResult = await pool.query(
+      `SELECT
+         d.id,
+         d.title,
+         d.properties->>'sprint_number' as sprint_number,
+         d.properties->>'hypothesis' as hypothesis,
+         d.properties->'hypothesis_approval' as hypothesis_approval,
+         d.properties->'review_approval' as review_approval,
+         EXISTS(
+           SELECT 1 FROM documents sr
+           WHERE sr.document_type = 'sprint_review'
+           AND sr.properties->>'sprint_id' = d.id::text
+           AND sr.archived_at IS NULL
+         ) as has_review
+       FROM documents d
+       WHERE d.workspace_id = $1
+         AND d.document_type = 'sprint'
+         AND d.archived_at IS NULL
+         AND (d.properties->>'sprint_number')::int BETWEEN $2 AND $3
+       ORDER BY (d.properties->>'sprint_number')::int`,
+      [workspaceId, fromSprint, toSprint]
+    );
+
+    // Build sprint accountability map: sprintNumber -> accountability data
+    const sprintAccountability: Record<number, {
+      id: string;
+      title: string;
+      hasHypothesis: boolean;
+      hypothesisApproval: { state: string | null } | null;
+      hasReview: boolean;
+      reviewApproval: { state: string | null } | null;
+    }> = {};
+
+    for (const sprint of sprintsResult.rows) {
+      const sprintNumber = parseInt(sprint.sprint_number, 10);
+      sprintAccountability[sprintNumber] = {
+        id: sprint.id,
+        title: sprint.title,
+        hasHypothesis: !!sprint.hypothesis && sprint.hypothesis.trim() !== '',
+        hypothesisApproval: sprint.hypothesis_approval,
+        hasReview: sprint.has_review === true,
+        reviewApproval: sprint.review_approval,
+      };
+    }
+
+    // Get all active projects with their program info and accountability data
+    const projectsResult = await pool.query(
+      `SELECT
+         p.id,
+         p.title,
+         p.properties->>'color' as color,
+         p.properties->>'emoji' as emoji,
+         p.content as hypothesis_content,
+         p.properties->'hypothesis_approval' as hypothesis_approval,
+         p.properties->'retro_approval' as retro_approval,
+         prog.id as program_id,
+         prog.title as program_name,
+         prog.properties->>'color' as program_color,
+         prog.properties->>'emoji' as program_emoji,
+         EXISTS(
+           SELECT 1 FROM documents r
+           WHERE r.document_type = 'wiki'
+           AND r.parent_id = p.id
+           AND r.title ILIKE '%retro%'
+           AND r.archived_at IS NULL
+         ) as has_retro
+       FROM documents p
+       LEFT JOIN document_associations da_prog ON da_prog.document_id = p.id AND da_prog.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog.id = da_prog.related_id
+       WHERE p.workspace_id = $1
+         AND p.document_type = 'project'
+         AND p.archived_at IS NULL
+       ORDER BY prog.title NULLS LAST, p.title`,
+      [workspaceId]
+    );
+
+    // Sprint allocations feature not yet implemented in unified document model
+    // TODO: Derive allocations from issue assignments (issues assigned to both project and sprint)
+    // For now, return empty allocations so the endpoint works
+    const projectAllocations: Record<string, Record<number, number>> = {};
+
+    // Build projects array with accountability data
+    const projects = projectsResult.rows.map(p => {
+      // Check if project has hypothesis (non-empty content)
+      let hasHypothesis = false;
+      if (p.hypothesis_content) {
+        const content = typeof p.hypothesis_content === 'string'
+          ? JSON.parse(p.hypothesis_content)
+          : p.hypothesis_content;
+        // Check if content has any text
+        if (content?.content) {
+          hasHypothesis = JSON.stringify(content.content).length > 50; // Reasonable threshold for "has content"
+        }
+      }
+
+      return {
+        id: p.id,
+        title: p.title,
+        color: p.color || p.program_color || '#6b7280',
+        emoji: p.emoji,
+        programId: p.program_id,
+        programName: p.program_name,
+        programColor: p.program_color,
+        programEmoji: p.program_emoji,
+        hasHypothesis,
+        hypothesisApproval: p.hypothesis_approval,
+        hasRetro: p.has_retro === true,
+        retroApproval: p.retro_approval,
+        allocations: projectAllocations[p.id] || {},
+      };
+    });
+
+    res.json({
+      sprints: sprintRange,
+      currentSprintNumber,
+      sprintAccountability,
+      projects,
+    });
+  } catch (err) {
+    console.error('Get accountability grid error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

@@ -11,8 +11,9 @@ import type { DocumentTabProps } from '@/lib/document-tabs';
  * Used when sprint status is 'active' or 'completed'.
  */
 export default function SprintIssuesTab({ documentId, document }: DocumentTabProps) {
-  // Get program_id from document (sprint's parent program)
-  const programId = document.program_id as string | undefined;
+  // Get program_id from belongs_to array (sprint's parent program via document_associations)
+  const belongsTo = (document as { belongs_to?: Array<{ id: string; type: string }> }).belongs_to;
+  const programId = belongsTo?.find(b => b.type === 'program')?.id;
 
   return (
     <div className="flex h-full flex-col">

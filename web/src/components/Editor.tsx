@@ -31,6 +31,7 @@ import { FileAttachmentExtension } from './editor/FileAttachment';
 import { DetailsExtension, DetailsSummary, DetailsContent } from './editor/DetailsExtension';
 import { EmojiExtension } from './editor/EmojiExtension';
 import { TableOfContentsExtension } from './editor/TableOfContents';
+import { HypothesisBlockExtension } from './editor/HypothesisBlockExtension';
 import 'tippy.js/dist/tippy.css';
 
 // Create lowlight instance with common languages
@@ -67,6 +68,8 @@ interface EditorProps {
   documentType?: string;
   /** Callback when the document is converted to a different type by another user */
   onDocumentConverted?: (newDocId: string, newDocType: 'issue' | 'project') => void;
+  /** Callback when hypothesis block content changes (for sprint documents) */
+  onHypothesisChange?: (hypothesis: string) => void;
 }
 
 type SyncStatus = 'connecting' | 'cached' | 'synced' | 'disconnected';
@@ -100,6 +103,43 @@ function extractDocumentMentionIds(content: JSONContent): string[] {
   return [...new Set(mentionIds)]; // Deduplicate
 }
 
+// Extract hypothesis text from hypothesisBlock node in TipTap JSON content
+function extractHypothesisText(content: JSONContent): string | null {
+  let hypothesisText: string | null = null;
+
+  function traverse(node: JSONContent) {
+    if (node.type === 'hypothesisBlock') {
+      // Extract plain text from hypothesis block content
+      const textParts: string[] = [];
+      const extractText = (n: JSONContent) => {
+        if (n.type === 'text' && n.text) {
+          textParts.push(n.text);
+        }
+        if (n.content) {
+          for (const child of n.content) {
+            extractText(child);
+          }
+        }
+      };
+      if (node.content) {
+        for (const child of node.content) {
+          extractText(child);
+        }
+      }
+      hypothesisText = textParts.join('');
+      return; // Stop after first hypothesis block
+    }
+    if (node.content) {
+      for (const child of node.content) {
+        traverse(child);
+      }
+    }
+  }
+
+  traverse(content);
+  return hypothesisText;
+}
+
 export function Editor({
   documentId,
   userName,
@@ -119,6 +159,7 @@ export function Editor({
   secondaryHeader,
   documentType,
   onDocumentConverted,
+  onHypothesisChange,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -371,7 +412,6 @@ export function Editor({
   // Create slash commands extension (memoized to avoid recreation)
   // documentId is in deps to ensure fresh AbortSignal when switching documents
   const slashCommandsExtension = useMemo(() => {
-    if (!onCreateSubDocument) return null;
     return createSlashCommands({
       onCreateSubDocument,
       onNavigateToDocument,
@@ -455,7 +495,8 @@ export function Editor({
     mentionExtension,
     EmojiExtension,
     TableOfContentsExtension,
-    ...(slashCommandsExtension ? [slashCommandsExtension] : []),
+    HypothesisBlockExtension,
+    slashCommandsExtension,
   ];
 
   const extensions = provider
@@ -519,6 +560,41 @@ export function Editor({
       syncLinks();
     };
   }, [editor, documentId]);
+
+  // Sync hypothesis content when HypothesisBlock changes (for sprint documents)
+  const lastSyncedHypothesisRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editor || !onHypothesisChange) return;
+
+    const syncHypothesis = () => {
+      const json = editor.getJSON();
+      const hypothesis = extractHypothesisText(json);
+
+      // Only sync if hypothesis has changed (including when it becomes null/empty)
+      if (hypothesis === lastSyncedHypothesisRef.current) {
+        return;
+      }
+      lastSyncedHypothesisRef.current = hypothesis;
+
+      // Call the callback with the new hypothesis text (empty string if null)
+      onHypothesisChange(hypothesis || '');
+    };
+
+    // Debounce during editing (300ms per PRD spec)
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const debouncedSync = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(syncHypothesis, 300);
+    };
+
+    editor.on('update', debouncedSync);
+    // Don't sync on initial load - let the parent handle initial state
+
+    return () => {
+      clearTimeout(debounceTimer);
+      editor.off('update', debouncedSync);
+    };
+  }, [editor, onHypothesisChange]);
 
   // Handle title changes
   const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {

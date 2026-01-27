@@ -34,13 +34,20 @@ const createProgramSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#6366f1'),
   emoji: z.string().max(10).optional().nullable(),
+  owner_id: z.string().uuid().optional().nullable().default(null), // R - Responsible (does the work)
+  accountable_id: z.string().uuid().optional().nullable().default(null), // A - Accountable (approver)
+  consulted_ids: z.array(z.string().uuid()).optional().default([]), // C - Consulted (provide input)
+  informed_ids: z.array(z.string().uuid()).optional().default([]), // I - Informed (kept in loop)
 });
 
 const updateProgramSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   emoji: z.string().max(10).optional().nullable(),
-  owner_id: z.string().uuid().optional().nullable(),
+  owner_id: z.string().uuid().optional().nullable(), // R - Responsible (can be cleared)
+  accountable_id: z.string().uuid().optional().nullable(), // A - Accountable (can be cleared)
+  consulted_ids: z.array(z.string().uuid()).optional(), // C - Consulted
+  informed_ids: z.array(z.string().uuid()).optional(), // I - Informed
   archived_at: z.string().datetime().optional().nullable(),
 });
 
@@ -135,11 +142,15 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, color, emoji } = parsed.data;
+    const { title, color, emoji, owner_id, accountable_id, consulted_ids, informed_ids } = parsed.data;
 
-    // Build properties JSONB
+    // Build properties JSONB with RACI fields
     const properties: Record<string, unknown> = {
       color: color || '#6366f1',
+      owner_id, // R - Responsible
+      accountable_id, // A - Accountable
+      consulted_ids, // C - Consulted
+      informed_ids, // I - Informed
     };
     if (emoji) {
       properties.emoji = emoji;
@@ -233,6 +244,21 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     if (data.owner_id !== undefined) {
       newProps.owner_id = data.owner_id;
+      propsChanged = true;
+    }
+
+    if (data.accountable_id !== undefined) {
+      newProps.accountable_id = data.accountable_id;
+      propsChanged = true;
+    }
+
+    if (data.consulted_ids !== undefined) {
+      newProps.consulted_ids = data.consulted_ids;
+      propsChanged = true;
+    }
+
+    if (data.informed_ids !== undefined) {
+      newProps.informed_ids = data.informed_ids;
       propsChanged = true;
     }
 
@@ -560,8 +586,8 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
         has_retro: row.has_retro === true || row.has_retro === 't',
         plan_created_at: row.plan_created_at || null,
         retro_created_at: row.retro_created_at || null,
-        // Sprint goal (concise objective, separate from hypothesis)
-        goal: props.goal || null,
+        // Hypothesis tracking - what will we learn/validate?
+        hypothesis: props.hypothesis || null,
       };
     });
 

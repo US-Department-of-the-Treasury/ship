@@ -4,13 +4,15 @@
  * This component consolidates the 4 type-specific sidebars into a single entry point.
  * It adapts based on document_type while maintaining the same rendering patterns.
  */
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
 import { SprintSidebar } from '@/components/sidebars/SprintSidebar';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { useAuth } from '@/hooks/useAuth';
 import type { Person } from '@/components/PersonCombobox';
-import type { BelongsTo } from '@ship/shared';
+import type { BelongsTo, ApprovalTracking } from '@ship/shared';
 
 // Document types that have properties panels
 export type PanelDocumentType = 'wiki' | 'issue' | 'project' | 'sprint';
@@ -62,9 +64,18 @@ interface ProjectDocument extends BaseDocument {
   program_id: string | null;
   owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
+  // RACI fields
+  accountable_id?: string | null;
+  consulted_ids?: string[];
+  informed_ids?: string[];
   sprint_count?: number;
   issue_count?: number;
   converted_from_id?: string | null;
+  // Approval tracking
+  hypothesis?: string | null;
+  hypothesis_approval?: ApprovalTracking | null;
+  retro_approval?: ApprovalTracking | null;
+  has_retro?: boolean;
 }
 
 // Sprint document properties
@@ -75,11 +86,17 @@ interface SprintDocument extends BaseDocument {
   status: 'planning' | 'active' | 'completed';
   program_id: string | null;
   program_name?: string;
+  program_accountable_id?: string | null;
   issue_count?: number;
   completed_count?: number;
   hypothesis?: string;
   owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
+  // Approval tracking
+  hypothesis_approval?: ApprovalTracking | null;
+  review_approval?: ApprovalTracking | null;
+  accountable_id?: string | null;
+  has_review?: boolean;
 }
 
 // Union type for all documents
@@ -113,12 +130,24 @@ interface ProjectPanelProps {
   onUndoConversion?: () => void;
   isConverting?: boolean;
   isUndoing?: boolean;
+  /** Whether current user can approve (is accountable or workspace admin) */
+  canApprove?: boolean;
+  /** Map of user ID to name for displaying approver */
+  userNames?: Record<string, string>;
+  /** Callback when approval state changes */
+  onApprovalUpdate?: () => void;
 }
 
 // Props for sprint panel
 interface SprintPanelProps {
   people?: Array<{ id: string; user_id: string; name: string }>;
   existingSprints?: Array<{ owner?: { id: string; name: string; email: string } | null }>;
+  /** Whether current user can approve (is accountable or workspace admin) */
+  canApprove?: boolean;
+  /** Map of user ID to name for displaying approver */
+  userNames?: Record<string, string>;
+  /** Callback when approval state changes */
+  onApprovalUpdate?: () => void;
 }
 
 // Combined props type that includes all panel-specific props
@@ -154,6 +183,49 @@ export function PropertiesPanel({
   onUpdate,
   highlightedFields = [],
 }: PropertiesPanelProps) {
+  const { isWorkspaceAdmin } = useWorkspace();
+  const { user } = useAuth();
+
+  // Compute canApprove: user is workspace admin OR is the accountable person
+  // For sprints, approval uses program's accountable_id (program_accountable_id)
+  // For projects, approval uses the project's accountable_id
+  const canApprove = useMemo(() => {
+    if (isWorkspaceAdmin) return true;
+    if (!user?.id) return false;
+
+    // Check document's accountable_id (used by projects)
+    const docWithAccountable = document as { accountable_id?: string | null };
+    if (docWithAccountable.accountable_id === user.id) return true;
+
+    // For sprints, also check program_accountable_id (inherited from program)
+    if (document.document_type === 'sprint') {
+      const sprintDoc = document as SprintDocument;
+      if (sprintDoc.program_accountable_id === user.id) return true;
+    }
+
+    return false;
+  }, [isWorkspaceAdmin, user?.id, document]);
+
+  // Build userNames from people in panelProps (for displaying approver names)
+  const userNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    // Try to get people from various panel props
+    const props = panelProps as { people?: Array<{ id?: string; user_id?: string; name: string }> };
+    if (props.people) {
+      props.people.forEach(p => {
+        if (p.user_id) names[p.user_id] = p.name;
+        if (p.id) names[p.id] = p.name;
+      });
+    }
+    return names;
+  }, [panelProps]);
+
+  // Callback for when approval state changes - trigger a refetch
+  const handleApprovalUpdate = useCallback(() => {
+    // The parent component should handle refreshing the document
+    // For now, we rely on optimistic updates in the ApprovalButton
+  }, []);
+
   const panel = useMemo(() => {
     switch (document.document_type) {
       case 'wiki': {
@@ -202,6 +274,9 @@ export function PropertiesPanel({
             isConverting={projectProps.isConverting}
             isUndoing={projectProps.isUndoing}
             highlightedFields={highlightedFields}
+            canApprove={canApprove}
+            userNames={userNames}
+            onApprovalUpdate={handleApprovalUpdate}
           />
         );
       }
@@ -215,6 +290,9 @@ export function PropertiesPanel({
             highlightedFields={highlightedFields}
             people={sprintProps.people}
             existingSprints={sprintProps.existingSprints}
+            canApprove={canApprove}
+            userNames={userNames}
+            onApprovalUpdate={handleApprovalUpdate}
           />
         );
       }
@@ -230,7 +308,7 @@ export function PropertiesPanel({
           </div>
         );
     }
-  }, [document, panelProps, onUpdate, highlightedFields]);
+  }, [document, panelProps, onUpdate, highlightedFields, canApprove, userNames, handleApprovalUpdate]);
 
   return panel;
 }

@@ -225,6 +225,111 @@ describe('extractHypothesisFromContent', () => {
       expect(result).not.toContain('Next Section');
     });
   });
+
+  describe('hypothesisBlock extraction', () => {
+    it('extracts content from hypothesisBlock node', () => {
+      const content = {
+        type: 'doc',
+        content: [
+          {
+            type: 'hypothesisBlock',
+            attrs: { placeholder: 'What will get done this sprint?' },
+            content: [{ type: 'text', text: 'We will complete the authentication feature.' }],
+          },
+          {
+            type: 'heading',
+            attrs: { level: 2 },
+            content: [{ type: 'text', text: 'Success Criteria' }],
+          },
+        ],
+      };
+
+      const result = extractHypothesisFromContent(content);
+      expect(result).toBe('We will complete the authentication feature.');
+    });
+
+    it('prefers hypothesisBlock over H2 heading format', () => {
+      const content = {
+        type: 'doc',
+        content: [
+          {
+            type: 'hypothesisBlock',
+            content: [{ type: 'text', text: 'Block hypothesis content.' }],
+          },
+          {
+            type: 'heading',
+            attrs: { level: 2 },
+            content: [{ type: 'text', text: 'Hypothesis' }],
+          },
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'Legacy heading hypothesis.' }],
+          },
+        ],
+      };
+
+      const result = extractHypothesisFromContent(content);
+      expect(result).toBe('Block hypothesis content.');
+    });
+
+    it('returns null for empty hypothesisBlock', () => {
+      const content = {
+        type: 'doc',
+        content: [
+          {
+            type: 'hypothesisBlock',
+            content: [],
+          },
+        ],
+      };
+
+      const result = extractHypothesisFromContent(content);
+      expect(result).toBeNull();
+    });
+
+    it('handles hypothesisBlock with multiple text nodes', () => {
+      const content = {
+        type: 'doc',
+        content: [
+          {
+            type: 'hypothesisBlock',
+            content: [
+              { type: 'text', text: 'We believe ' },
+              { type: 'text', text: 'this feature ', marks: [{ type: 'bold' }] },
+              { type: 'text', text: 'will improve UX.' },
+            ],
+          },
+        ],
+      };
+
+      const result = extractHypothesisFromContent(content);
+      expect(result).toBe('We believe this feature will improve UX.');
+    });
+
+    it('skips empty hypothesisBlock and falls back to H2 heading', () => {
+      const content = {
+        type: 'doc',
+        content: [
+          {
+            type: 'hypothesisBlock',
+            content: [],
+          },
+          {
+            type: 'heading',
+            attrs: { level: 2 },
+            content: [{ type: 'text', text: 'Hypothesis' }],
+          },
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'Fallback content.' }],
+          },
+        ],
+      };
+
+      const result = extractHypothesisFromContent(content);
+      expect(result).toBe('Fallback content.');
+    });
+  });
 });
 
 describe('extractSuccessCriteriaFromContent', () => {
@@ -484,11 +589,9 @@ describe('checkDocumentCompleteness', () => {
   });
 
   describe('sprint documents', () => {
-    it('returns complete when all fields present and has linked issues', () => {
+    it('returns complete when hypothesis present and has linked issues', () => {
       const properties = {
-        goal: 'Complete authentication feature',
-        start_date: '2024-01-01',
-        end_date: '2024-01-14',
+        hypothesis: 'We believe that implementing OAuth will reduce signup friction by 30%',
       };
 
       const result = checkDocumentCompleteness('sprint', properties, 5);
@@ -496,44 +599,17 @@ describe('checkDocumentCompleteness', () => {
       expect(result.missingFields).toEqual([]);
     });
 
-    it('returns incomplete when goal is missing', () => {
-      const properties = {
-        start_date: '2024-01-01',
-        end_date: '2024-01-14',
-      };
+    it('returns incomplete when hypothesis is missing', () => {
+      const properties = {};
 
       const result = checkDocumentCompleteness('sprint', properties, 1);
       expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toContain('Goal');
-    });
-
-    it('returns incomplete when start_date is missing', () => {
-      const properties = {
-        goal: 'Some goal',
-        end_date: '2024-01-14',
-      };
-
-      const result = checkDocumentCompleteness('sprint', properties, 1);
-      expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toContain('Start Date');
-    });
-
-    it('returns incomplete when end_date is missing', () => {
-      const properties = {
-        goal: 'Some goal',
-        start_date: '2024-01-01',
-      };
-
-      const result = checkDocumentCompleteness('sprint', properties, 1);
-      expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toContain('End Date');
+      expect(result.missingFields).toContain('Hypothesis');
     });
 
     it('returns incomplete when no linked issues', () => {
       const properties = {
-        goal: 'Some goal',
-        start_date: '2024-01-01',
-        end_date: '2024-01-14',
+        hypothesis: 'Some hypothesis about what we will learn',
       };
 
       const result = checkDocumentCompleteness('sprint', properties, 0);
@@ -547,23 +623,19 @@ describe('checkDocumentCompleteness', () => {
       const result = checkDocumentCompleteness('sprint', properties, 0);
       expect(result.isComplete).toBe(false);
       expect(result.missingFields).toEqual([
-        'Goal',
-        'Start Date',
-        'End Date',
+        'Hypothesis',
         'Linked Issues',
       ]);
     });
 
-    it('treats empty goal string as missing', () => {
+    it('treats empty hypothesis string as missing', () => {
       const properties = {
-        goal: '   ',
-        start_date: '2024-01-01',
-        end_date: '2024-01-14',
+        hypothesis: '   ',
       };
 
       const result = checkDocumentCompleteness('sprint', properties, 1);
       expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toContain('Goal');
+      expect(result.missingFields).toContain('Hypothesis');
     });
   });
 

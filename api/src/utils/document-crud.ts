@@ -515,3 +515,103 @@ export async function getUserInfoBatch(
 
   return usersMap;
 }
+
+// =============================================================================
+// Document History Queries
+// =============================================================================
+
+/**
+ * History entry for a tracked document field
+ */
+export interface DocumentFieldHistoryEntry {
+  id: number;
+  documentId: string;
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string | null;
+  changedByName?: string;
+  changedByEmail?: string;
+  automatedBy: string | null;
+  createdAt: Date;
+}
+
+/**
+ * Get the change history for a specific field on a document
+ *
+ * Returns all changes to the field in chronological order (oldest first).
+ * Includes user info for who made each change.
+ *
+ * @example
+ * const history = await getDocumentFieldHistory(sprintId, 'hypothesis');
+ * // Returns array of { id, oldValue, newValue, changedBy, createdAt, ... }
+ */
+export async function getDocumentFieldHistory(
+  documentId: string,
+  field: string
+): Promise<DocumentFieldHistoryEntry[]> {
+  const result = await pool.query(
+    `SELECT dh.id, dh.document_id, dh.field, dh.old_value, dh.new_value,
+            dh.changed_by, dh.automated_by, dh.created_at,
+            u.name as changed_by_name, u.email as changed_by_email
+     FROM document_history dh
+     LEFT JOIN users u ON dh.changed_by = u.id
+     WHERE dh.document_id = $1 AND dh.field = $2
+     ORDER BY dh.created_at ASC`,
+    [documentId, field]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    documentId: row.document_id,
+    field: row.field,
+    oldValue: row.old_value,
+    newValue: row.new_value,
+    changedBy: row.changed_by,
+    changedByName: row.changed_by_name || undefined,
+    changedByEmail: row.changed_by_email || undefined,
+    automatedBy: row.automated_by,
+    createdAt: row.created_at,
+  }));
+}
+
+/**
+ * Get the most recent history entry for a specific field on a document
+ *
+ * Useful for finding the last approved version of a field.
+ *
+ * @example
+ * const lastChange = await getLatestDocumentFieldHistory(sprintId, 'hypothesis');
+ */
+export async function getLatestDocumentFieldHistory(
+  documentId: string,
+  field: string
+): Promise<DocumentFieldHistoryEntry | null> {
+  const result = await pool.query(
+    `SELECT dh.id, dh.document_id, dh.field, dh.old_value, dh.new_value,
+            dh.changed_by, dh.automated_by, dh.created_at,
+            u.name as changed_by_name, u.email as changed_by_email
+     FROM document_history dh
+     LEFT JOIN users u ON dh.changed_by = u.id
+     WHERE dh.document_id = $1 AND dh.field = $2
+     ORDER BY dh.created_at DESC
+     LIMIT 1`,
+    [documentId, field]
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    field: row.field,
+    oldValue: row.old_value,
+    newValue: row.new_value,
+    changedBy: row.changed_by,
+    changedByName: row.changed_by_name || undefined,
+    changedByEmail: row.changed_by_email || undefined,
+    automatedBy: row.automated_by,
+    createdAt: row.created_at,
+  };
+}

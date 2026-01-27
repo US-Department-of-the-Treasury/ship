@@ -151,6 +151,10 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
     isUndoing: updateMutation.isPending,
   }), [programs, teamMembers, handleConvert, handleUndoConversion, updateMutation.isPending]);
 
+  // Get program_id from belongs_to array (project's parent program via document_associations)
+  const belongsTo = (document as { belongs_to?: Array<{ id: string; type: string }> }).belongs_to;
+  const programId = belongsTo?.find(b => b.type === 'program')?.id;
+
   // Transform to UnifiedDocument format
   const unifiedDocument: UnifiedDocument = useMemo(() => ({
     id: document.id,
@@ -165,11 +169,11 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
     ease: (document.ease as number) ?? 5,
     color: (document.color as string) || '#3b82f6',
     emoji: null,
-    program_id: document.program_id as string | undefined,
+    program_id: programId,
     owner: document.owner as { id: string; name: string; email: string } | null,
     owner_id: document.owner_id as string | undefined,
     converted_from_id: document.converted_from_id as string | undefined,
-  }), [document]);
+  }), [document, programId]);
 
   if (!user) return null;
 

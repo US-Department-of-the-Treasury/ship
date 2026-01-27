@@ -12,8 +12,9 @@ import type { DocumentTabProps } from '@/lib/document-tabs';
  * Extracted from SprintViewPage.tsx review tab content.
  */
 export default function SprintReviewTab({ documentId, document }: DocumentTabProps) {
-  // Get program_id from document (sprint's parent program)
-  const programId = document.program_id as string | undefined;
+  // Get program_id from belongs_to array (sprint's parent program via document_associations)
+  const belongsTo = (document as { belongs_to?: Array<{ id: string; type: string }> }).belongs_to;
+  const programId = belongsTo?.find(b => b.type === 'program')?.id;
   // Get sprint properties
   const properties = document.properties as { sprint_number?: number } | undefined;
   const sprintNumber = properties?.sprint_number ?? 1;

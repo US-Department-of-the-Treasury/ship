@@ -122,10 +122,7 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       s.title as sprint_title,
       s.properties->>'sprint_number' as sprint_number,
       s.properties->>'status' as sprint_status,
-      s.properties->>'start_date' as start_date,
-      s.properties->>'end_date' as end_date,
       s.properties->>'hypothesis' as sprint_hypothesis,
-      s.properties->>'goal' as sprint_goal,
       da_prog.related_id as program_id,
       p.title as program_name,
       p.content as program_content,
@@ -134,7 +131,6 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       proj.id as project_id,
       proj.title as project_name,
       proj.properties->>'hypothesis' as project_hypothesis,
-      proj.properties->>'goal' as project_goal,
       proj.properties->>'ice_impact' as ice_impact,
       proj.properties->>'ice_confidence' as ice_confidence,
       proj.properties->>'ice_ease' as ice_ease,
@@ -210,10 +206,7 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       title: sprint.sprint_title,
       number: sprint.sprint_number,
       status: sprint.sprint_status,
-      start_date: sprint.start_date,
-      end_date: sprint.end_date,
       hypothesis: sprint.sprint_hypothesis,
-      goal: sprint.sprint_goal,
     },
     program: sprint.program_id ? {
       id: sprint.program_id,
@@ -225,7 +218,6 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       id: sprint.project_id,
       name: sprint.project_name,
       hypothesis: sprint.project_hypothesis,
-      goal: sprint.project_goal,
       ice_scores: {
         impact: sprint.ice_impact,
         confidence: sprint.ice_confidence,
@@ -259,10 +251,7 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       s.title as sprint_title,
       s.properties->>'sprint_number' as sprint_number,
       s.properties->>'status' as sprint_status,
-      s.properties->>'start_date' as start_date,
-      s.properties->>'end_date' as end_date,
       s.properties->>'hypothesis' as sprint_hypothesis,
-      s.properties->>'goal' as sprint_goal,
       da_prog.related_id as program_id,
       p.title as program_name,
       p.content as program_content,
@@ -271,7 +260,6 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       proj.id as project_id,
       proj.title as project_name,
       proj.properties->>'hypothesis' as project_hypothesis,
-      proj.properties->>'goal' as project_goal,
       proj.properties->>'ice_impact' as ice_impact,
       proj.properties->>'ice_confidence' as ice_confidence,
       proj.properties->>'ice_ease' as ice_ease,
@@ -358,10 +346,7 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       title: sprint.sprint_title,
       number: sprint.sprint_number,
       status: sprint.sprint_status,
-      start_date: sprint.start_date,
-      end_date: sprint.end_date,
       hypothesis: sprint.sprint_hypothesis,
-      goal: sprint.sprint_goal,
     },
     program: sprint.program_id ? {
       id: sprint.program_id,
@@ -373,7 +358,6 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       id: sprint.project_id,
       name: sprint.project_name,
       hypothesis: sprint.project_hypothesis,
-      goal: sprint.project_goal,
       ice_scores: {
         impact: sprint.ice_impact,
         confidence: sprint.ice_confidence,
@@ -408,7 +392,6 @@ async function getRetroContext(projectId: string, workspaceId: string) {
       proj.id as project_id,
       proj.title as project_name,
       proj.properties->>'hypothesis' as project_hypothesis,
-      proj.properties->>'goal' as project_goal,
       proj.properties->>'ice_impact' as ice_impact,
       proj.properties->>'ice_confidence' as ice_confidence,
       proj.properties->>'ice_ease' as ice_ease,
@@ -434,15 +417,14 @@ async function getRetroContext(projectId: string, workspaceId: string) {
   const project = projectResult.rows[0];
 
   // Get all sprints for this project via junction table
+  // Note: dates computed from sprint_number + workspace.sprint_start_date
   const sprintsResult = await pool.query(`
     SELECT
       d.id,
       d.title,
       d.sprint_number,
       d.properties->>'status' as status,
-      d.properties->>'hypothesis' as hypothesis,
-      d.start_date,
-      d.end_date
+      d.properties->>'hypothesis' as hypothesis
     FROM documents d
     JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
     WHERE d.document_type = 'sprint'
@@ -545,7 +527,6 @@ async function getRetroContext(projectId: string, workspaceId: string) {
       id: project.project_id,
       name: project.project_name,
       hypothesis: project.project_hypothesis,
-      goal: project.project_goal,
       ice_scores: {
         impact: project.ice_impact,
         confidence: project.ice_confidence,
@@ -598,9 +579,9 @@ function generateStandupQuestions(sprint: Record<string, unknown>, issueStats: S
     questions.push(`You have ${issueStats.in_progress} issues in progress. What's the status of each?`);
   }
 
-  // Goal alignment
-  if (sprint.sprint_goal) {
-    questions.push(`Are you on track to achieve the sprint goal: "${sprint.sprint_goal}"?`);
+  // Hypothesis alignment
+  if (sprint.sprint_hypothesis) {
+    questions.push(`Are you making progress toward validating the sprint hypothesis: "${sprint.sprint_hypothesis}"?`);
   }
 
   // Blockers

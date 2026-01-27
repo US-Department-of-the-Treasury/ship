@@ -24,11 +24,9 @@ export default function SprintPlanningTab({ documentId, document }: DocumentTabP
   const queryClient = useQueryClient();
   const [isStarting, setIsStarting] = useState(false);
 
-  // Get program_id from document or belongs_to (sprint's parent program)
-  // Sprints store their program association in belongs_to via document_associations
+  // Get program_id from belongs_to array (sprint's parent program via document_associations)
   const belongsTo = (document as { belongs_to?: Array<{ id: string; type: string }> }).belongs_to;
-  const programId = (document.program_id as string | undefined) ||
-    belongsTo?.find(b => b.type === 'program')?.id;
+  const programId = belongsTo?.find(b => b.type === 'program')?.id;
   // Sprint status is stored in properties.status
   const properties = document.properties as { status?: string; issue_count?: number } | undefined;
   const status = properties?.status || 'planning';
