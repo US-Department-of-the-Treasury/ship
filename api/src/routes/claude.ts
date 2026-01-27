@@ -125,7 +125,6 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       s.properties->>'start_date' as start_date,
       s.properties->>'end_date' as end_date,
       s.properties->>'hypothesis' as sprint_hypothesis,
-      s.properties->>'goal' as sprint_goal,
       da_prog.related_id as program_id,
       p.title as program_name,
       p.content as program_content,
@@ -134,7 +133,6 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       proj.id as project_id,
       proj.title as project_name,
       proj.properties->>'hypothesis' as project_hypothesis,
-      proj.properties->>'goal' as project_goal,
       proj.properties->>'ice_impact' as ice_impact,
       proj.properties->>'ice_confidence' as ice_confidence,
       proj.properties->>'ice_ease' as ice_ease,
@@ -213,7 +211,6 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       start_date: sprint.start_date,
       end_date: sprint.end_date,
       hypothesis: sprint.sprint_hypothesis,
-      goal: sprint.sprint_goal,
     },
     program: sprint.program_id ? {
       id: sprint.program_id,
@@ -225,7 +222,6 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
       id: sprint.project_id,
       name: sprint.project_name,
       hypothesis: sprint.project_hypothesis,
-      goal: sprint.project_goal,
       ice_scores: {
         impact: sprint.ice_impact,
         confidence: sprint.ice_confidence,
@@ -262,7 +258,6 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       s.properties->>'start_date' as start_date,
       s.properties->>'end_date' as end_date,
       s.properties->>'hypothesis' as sprint_hypothesis,
-      s.properties->>'goal' as sprint_goal,
       da_prog.related_id as program_id,
       p.title as program_name,
       p.content as program_content,
@@ -271,7 +266,6 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       proj.id as project_id,
       proj.title as project_name,
       proj.properties->>'hypothesis' as project_hypothesis,
-      proj.properties->>'goal' as project_goal,
       proj.properties->>'ice_impact' as ice_impact,
       proj.properties->>'ice_confidence' as ice_confidence,
       proj.properties->>'ice_ease' as ice_ease,
@@ -361,7 +355,6 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       start_date: sprint.start_date,
       end_date: sprint.end_date,
       hypothesis: sprint.sprint_hypothesis,
-      goal: sprint.sprint_goal,
     },
     program: sprint.program_id ? {
       id: sprint.program_id,
@@ -373,7 +366,6 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       id: sprint.project_id,
       name: sprint.project_name,
       hypothesis: sprint.project_hypothesis,
-      goal: sprint.project_goal,
       ice_scores: {
         impact: sprint.ice_impact,
         confidence: sprint.ice_confidence,
@@ -408,7 +400,6 @@ async function getRetroContext(projectId: string, workspaceId: string) {
       proj.id as project_id,
       proj.title as project_name,
       proj.properties->>'hypothesis' as project_hypothesis,
-      proj.properties->>'goal' as project_goal,
       proj.properties->>'ice_impact' as ice_impact,
       proj.properties->>'ice_confidence' as ice_confidence,
       proj.properties->>'ice_ease' as ice_ease,
@@ -545,7 +536,6 @@ async function getRetroContext(projectId: string, workspaceId: string) {
       id: project.project_id,
       name: project.project_name,
       hypothesis: project.project_hypothesis,
-      goal: project.project_goal,
       ice_scores: {
         impact: project.ice_impact,
         confidence: project.ice_confidence,
@@ -598,9 +588,9 @@ function generateStandupQuestions(sprint: Record<string, unknown>, issueStats: S
     questions.push(`You have ${issueStats.in_progress} issues in progress. What's the status of each?`);
   }
 
-  // Goal alignment
-  if (sprint.sprint_goal) {
-    questions.push(`Are you on track to achieve the sprint goal: "${sprint.sprint_goal}"?`);
+  // Hypothesis alignment
+  if (sprint.sprint_hypothesis) {
+    questions.push(`Are you making progress toward validating the sprint hypothesis: "${sprint.sprint_hypothesis}"?`);
   }
 
   // Blockers

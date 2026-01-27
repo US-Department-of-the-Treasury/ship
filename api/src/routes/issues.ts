@@ -630,6 +630,23 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 
     await client.query('COMMIT');
 
+    // Auto-complete sprint_issues accountability when first issue is created in a sprint
+    const sprintAssociations = belongs_to.filter(bt => bt.type === 'sprint');
+    for (const sprintAssoc of sprintAssociations) {
+      // Check if this is the first issue in the sprint
+      const issueCountResult = await pool.query(
+        `SELECT COUNT(*) as count FROM document_associations
+         WHERE related_id = $1 AND relationship_type = 'sprint'`,
+        [sprintAssoc.id]
+      );
+      const issueCount = parseInt(issueCountResult.rows[0].count, 10);
+
+      // If this is the first issue in the sprint, auto-complete any pending sprint_issues accountability
+      if (issueCount === 1) {
+        await autoCompleteAccountabilityIssue(sprintAssoc.id, 'sprint_issues', req.workspaceId!, req.userId);
+      }
+    }
+
     // Get the belongs_to associations with display info
     const belongsToResult = await getBelongsToAssociations(newIssueId);
 

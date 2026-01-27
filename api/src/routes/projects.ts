@@ -1083,7 +1083,6 @@ const createProjectSprintSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
   sprint_number: z.number().int().positive().optional(), // Auto-incremented if not provided
   owner_id: z.string().uuid().optional(),
-  goal: z.string().max(500).optional(),
   hypothesis: z.string().max(2000).optional(),
   success_criteria: z.array(z.string().max(500)).max(20).optional(),
   confidence: z.number().int().min(0).max(100).optional(),
@@ -1111,7 +1110,6 @@ function extractSprintFromRow(row: any) {
     issue_count: parseInt(row.issue_count) || 0,
     completed_count: parseInt(row.completed_count) || 0,
     started_count: parseInt(row.started_count) || 0,
-    goal: props.goal || null,
     hypothesis: props.hypothesis || null,
     success_criteria: props.success_criteria || null,
     confidence: typeof props.confidence === 'number' ? props.confidence : null,
@@ -1284,7 +1282,7 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     }
 
     const project = projectCheck.rows[0];
-    const { title, owner_id, goal, hypothesis, success_criteria, confidence } = parsed.data;
+    const { title, owner_id, hypothesis, success_criteria, confidence } = parsed.data;
     let { sprint_number } = parsed.data;
 
     // If sprint_number not provided, auto-increment based on project's existing sprints
@@ -1332,7 +1330,6 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     // Build properties JSONB
     const properties: Record<string, unknown> = { sprint_number };
     if (owner_id) properties.owner_id = owner_id;
-    if (goal) properties.goal = goal;
     if (hypothesis) {
       properties.hypothesis = hypothesis;
       properties.hypothesis_history = [{
@@ -1413,7 +1410,6 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
       issue_count: 0,
       completed_count: 0,
       started_count: 0,
-      goal: properties.goal || null,
       hypothesis: properties.hypothesis || null,
       success_criteria: properties.success_criteria || null,
       confidence: properties.confidence ?? null,

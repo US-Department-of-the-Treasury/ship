@@ -77,8 +77,7 @@ const options: swaggerJsdoc.Options = {
             title: { type: 'string' },
             start_date: { type: 'string', format: 'date' },
             end_date: { type: 'string', format: 'date' },
-            hypothesis: { type: 'string', nullable: true },
-            goal: { type: 'string', nullable: true },
+            hypothesis: { type: 'string', nullable: true, description: 'What will we learn or validate?' },
           },
         },
         Project: {

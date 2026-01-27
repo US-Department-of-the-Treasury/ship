@@ -14,7 +14,7 @@ export interface SprintDetail {
   owner: { id: string; name: string; email: string } | null;
   issue_count: number;
   completed_count: number;
-  goal: string | null;
+  hypothesis: string | null;
 }
 
 export interface SprintIssue {
@@ -188,10 +188,10 @@ export function SprintDetailView({
             ) : (
               <div className="text-sm text-muted">No estimates yet</div>
             )}
-            {sprint.goal && (
+            {sprint.hypothesis && (
               <div className="mt-4">
-                <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-1">Goal</h4>
-                <p className="text-sm text-foreground">{sprint.goal}</p>
+                <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-1">Hypothesis</h4>
+                <p className="text-sm text-foreground">{sprint.hypothesis}</p>
               </div>
             )}
           </div>

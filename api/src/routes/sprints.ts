@@ -24,9 +24,7 @@ const createSprintSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
   sprint_number: z.number().int().positive(),
   owner_id: z.string().uuid().optional(),
-  // Sprint goal (concise objective, separate from hypothesis)
-  goal: z.string().max(500).optional(),
-  // Hypothesis tracking (optional at creation)
+  // Hypothesis tracking (optional at creation) - what will we learn/validate?
   hypothesis: z.string().max(2000).optional(),
   success_criteria: z.array(z.string().max(500)).max(20).optional(),
   confidence: z.number().int().min(0).max(100).optional(),
@@ -73,9 +71,7 @@ function extractSprintFromRow(row: any) {
     // Retro outcome summary (populated if retro exists)
     retro_outcome: row.retro_outcome || null,
     retro_id: row.retro_id || null,
-    // Sprint goal (concise objective)
-    goal: props.goal || null,
-    // Hypothesis tracking fields
+    // Hypothesis tracking fields - what will we learn/validate?
     hypothesis: props.hypothesis || null,
     success_criteria: props.success_criteria || null,
     confidence: typeof props.confidence === 'number' ? props.confidence : null,
@@ -693,7 +689,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { program_id, title, sprint_number, owner_id, goal, hypothesis, success_criteria, confidence } = parsed.data;
+    const { program_id, title, sprint_number, owner_id, hypothesis, success_criteria, confidence } = parsed.data;
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -776,7 +772,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       ownerData = ownerCheck.rows[0];
     }
 
-    // Build properties JSONB - sprint_number, assignee_ids, goal, and hypothesis fields
+    // Build properties JSONB - sprint_number, assignee_ids, and hypothesis fields
     const properties: Record<string, unknown> = {
       sprint_number,
       assignee_ids: owner_id ? [owner_id] : [],
@@ -784,11 +780,6 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 
     if (owner_id) {
       properties.owner_id = owner_id;
-    }
-
-    // Add goal if provided (concise objective, separate from hypothesis)
-    if (goal !== undefined) {
-      properties.goal = goal;
     }
 
     // Add hypothesis fields if provided
@@ -862,9 +853,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       issue_count: 0,
       completed_count: 0,
       started_count: 0,
-      // Sprint goal (concise objective)
-      goal: properties.goal || null,
-      // Hypothesis tracking fields
+      // Hypothesis tracking fields - what will we learn/validate?
       hypothesis: properties.hypothesis || null,
       success_criteria: properties.success_criteria || null,
       confidence: properties.confidence ?? null,

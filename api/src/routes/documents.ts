@@ -89,7 +89,6 @@ const updateDocumentSchema = z.object({
   start_date: z.string().optional(),
   end_date: z.string().optional(),
   status: z.enum(['planning', 'active', 'completed']).optional(),
-  goal: z.string().optional(),
   hypothesis: z.string().optional(),
 });
 
@@ -670,7 +669,6 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.start_date !== undefined) topLevelProps.start_date = data.start_date;
     if (data.end_date !== undefined) topLevelProps.end_date = data.end_date;
     if (data.status !== undefined) topLevelProps.status = data.status;
-    if (data.goal !== undefined) topLevelProps.goal = data.goal;
     // Note: hypothesis can be set via API but content extraction always wins when content is updated
     if (data.hypothesis !== undefined) topLevelProps.hypothesis = data.hypothesis;
 
