@@ -54,6 +54,8 @@ export interface SlashCommandItem {
   command: (props: { editor: any; range: any }) => void;
   /** If set, command only shows for these document types (e.g., ['program']) */
   documentTypes?: string[];
+  /** If true, command requires onCreateSubDocument callback to function */
+  requiresSubDocumentCallback?: boolean;
 }
 
 interface CommandListProps {
@@ -137,7 +139,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
 CommandList.displayName = 'CommandList';
 
 interface CreateSlashCommandsOptions {
-  onCreateSubDocument: () => Promise<{ id: string; title: string } | null>;
+  onCreateSubDocument?: () => Promise<{ id: string; title: string } | null>;
   onNavigateToDocument?: (id: string) => void;
   /** Document type for filtering document-specific commands */
   documentType?: string;
@@ -261,9 +263,10 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
       description: 'Create a nested document',
       aliases: ['doc', 'document', 'sub-document', 'page', 'sub-page', 'subpage', 'subdoc'],
       icon: icons.document,
+      requiresSubDocumentCallback: true,
       command: async ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).run();
-        const doc = await onCreateSubDocument();
+        const doc = await onCreateSubDocument?.();
         if (doc) {
           // Navigate to the new document immediately
           onNavigateToDocument?.(doc.id);
@@ -602,6 +605,10 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
             const search = query.toLowerCase();
             const filteredCommands = slashCommands.filter(
               (item) => {
+                // Filter out commands that require callback when callback is not provided
+                if (item.requiresSubDocumentCallback && !onCreateSubDocument) {
+                  return false;
+                }
                 // Filter by document type if command has restrictions
                 if (item.documentTypes && item.documentTypes.length > 0) {
                   if (!documentType || !item.documentTypes.includes(documentType)) {

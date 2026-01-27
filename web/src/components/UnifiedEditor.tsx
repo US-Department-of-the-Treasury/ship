@@ -243,6 +243,13 @@ export function UnifiedEditor({
     }
   }, [navigate, onNavigateToDocument]);
 
+  // Handle hypothesis change (for sprint documents)
+  const handleHypothesisChange = useCallback(async (hypothesis: string) => {
+    if (document.document_type !== 'sprint') return;
+    // Update the hypothesis property
+    await onUpdate({ hypothesis } as Partial<UnifiedDocument>);
+  }, [document.document_type, onUpdate]);
+
   // Determine room prefix based on document type if not provided
   const effectiveRoomPrefix = roomPrefix || document.document_type;
 
@@ -374,6 +381,8 @@ export function UnifiedEditor({
       onDocumentConverted={onDocumentConverted}
       headerBadge={headerBadge}
       sidebar={sidebar}
+      documentType={document.document_type}
+      onHypothesisChange={document.document_type === 'sprint' ? handleHypothesisChange : undefined}
     />
   );
 }
