@@ -169,8 +169,8 @@ export function TeamModePage() {
       if (currentSprintIndex >= 0) {
         requestAnimationFrame(() => {
           if (scrollContainerRef.current) {
-            const columnWidth = 140;
-            const scrollPosition = Math.max(0, (currentSprintIndex - 1) * columnWidth);
+            const columnWidth = 180; // matches w-[180px] on sprint columns
+            const scrollPosition = currentSprintIndex * columnWidth;
             scrollContainerRef.current.scrollLeft = scrollPosition;
             hasScrolledToCurrentRef.current = true;
           }
