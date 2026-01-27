@@ -551,11 +551,11 @@ function ICEBadge({ value }: { value: number | null }) {
     return <span className="font-medium text-muted">&mdash;</span>;
   }
   const colors = {
-    1: 'text-red-400',
-    2: 'text-orange-400',
-    3: 'text-yellow-400',
-    4: 'text-lime-400',
-    5: 'text-green-400',
+    1: 'text-red-500',
+    2: 'text-orange-500',
+    3: 'text-yellow-500',
+    4: 'text-lime-500',
+    5: 'text-green-500',
   };
   return (
     <span className={cn('font-medium', colors[value as keyof typeof colors] || 'text-muted')}>

@@ -112,7 +112,9 @@ export function AppLayout() {
   }, []);
 
   // Show action items modal on initial load if there are pending items
+  // Disabled when localStorage flag is set (used by E2E tests to avoid blocking interactions)
   useEffect(() => {
+    if (localStorage.getItem('ship:disableActionItemsModal') === 'true') return;
     if (!actionItemsModalShownOnLoad && hasActionItems && actionItemsData?.items) {
       setActionItemsModalOpen(true);
       setActionItemsModalShownOnLoad(true);

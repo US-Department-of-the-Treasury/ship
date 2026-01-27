@@ -93,6 +93,16 @@ export const test = base.extend<
   { apiServer: { url: string; process: ChildProcess } },
   WorkerFixtures
 >({
+  // Override context to disable action items modal for ALL pages (including multi-page tests)
+  context: async ({ context }, use) => {
+    // Set localStorage flag to disable action items modal before any navigation
+    // This applies to all pages created from this context
+    await context.addInitScript(() => {
+      localStorage.setItem('ship:disableActionItemsModal', 'true');
+    });
+    await use(context);
+  },
+
   // PostgreSQL container - one per worker, starts fresh for each test run
   // CRITICAL: Use try-finally to ensure container cleanup even on errors
   dbContainer: [
