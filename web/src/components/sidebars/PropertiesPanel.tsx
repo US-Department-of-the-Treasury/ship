@@ -9,13 +9,14 @@ import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
 import { SprintSidebar } from '@/components/sidebars/SprintSidebar';
+import { ProgramSidebar } from '@/components/sidebars/ProgramSidebar';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
 import type { Person } from '@/components/PersonCombobox';
 import type { BelongsTo, ApprovalTracking } from '@ship/shared';
 
 // Document types that have properties panels
-export type PanelDocumentType = 'wiki' | 'issue' | 'project' | 'sprint';
+export type PanelDocumentType = 'wiki' | 'issue' | 'project' | 'sprint' | 'program';
 
 // Base document interface
 interface BaseDocument {
@@ -72,8 +73,8 @@ interface ProjectDocument extends BaseDocument {
   issue_count?: number;
   converted_from_id?: string | null;
   // Approval tracking
-  hypothesis?: string | null;
-  hypothesis_approval?: ApprovalTracking | null;
+  plan?: string | null;
+  plan_approval?: ApprovalTracking | null;
   retro_approval?: ApprovalTracking | null;
   has_retro?: boolean;
 }
@@ -87,18 +88,30 @@ interface SprintDocument extends BaseDocument {
   program_accountable_id?: string | null;
   issue_count?: number;
   completed_count?: number;
-  hypothesis?: string;
+  plan?: string;
   owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
   // Approval tracking
-  hypothesis_approval?: ApprovalTracking | null;
+  plan_approval?: ApprovalTracking | null;
   review_approval?: ApprovalTracking | null;
   accountable_id?: string | null;
   has_review?: boolean;
 }
 
+// Program document properties
+interface ProgramDocument extends BaseDocument {
+  document_type: 'program';
+  color?: string;
+  emoji?: string | null;
+  owner_id?: string | null;
+  // RACI fields
+  accountable_id?: string | null;
+  consulted_ids?: string[];
+  informed_ids?: string[];
+}
+
 // Union type for all documents
-export type PanelDocument = WikiDocument | IssueDocument | ProjectDocument | SprintDocument;
+export type PanelDocument = WikiDocument | IssueDocument | ProjectDocument | SprintDocument | ProgramDocument;
 
 // Props for wiki panel
 interface WikiPanelProps {
@@ -148,8 +161,13 @@ interface SprintPanelProps {
   onApprovalUpdate?: () => void;
 }
 
+// Props for program panel
+interface ProgramPanelProps {
+  people: Person[];
+}
+
 // Combined props type that includes all panel-specific props
-type PanelSpecificProps = WikiPanelProps | IssuePanelProps | ProjectPanelProps | SprintPanelProps;
+type PanelSpecificProps = WikiPanelProps | IssuePanelProps | ProjectPanelProps | SprintPanelProps | ProgramPanelProps;
 
 interface PropertiesPanelProps {
   /** The document to render properties for */
@@ -295,6 +313,18 @@ export function PropertiesPanel({
         );
       }
 
+      case 'program': {
+        const programProps = panelProps as ProgramPanelProps;
+        return (
+          <ProgramSidebar
+            program={document as ProgramDocument}
+            people={programProps.people || []}
+            onUpdate={onUpdate as (updates: Partial<ProgramDocument>) => Promise<void>}
+            highlightedFields={highlightedFields}
+          />
+        );
+      }
+
       default:
         // TypeScript narrows to never here since all cases are handled
         // Cast to BaseDocument to access document_type for the fallback display
@@ -317,8 +347,10 @@ export type {
   IssueDocument,
   ProjectDocument,
   SprintDocument,
+  ProgramDocument,
   WikiPanelProps,
   IssuePanelProps,
   ProjectPanelProps,
   SprintPanelProps,
+  ProgramPanelProps,
 };

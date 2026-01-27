@@ -530,9 +530,9 @@ describe('extractGoalsFromContent', () => {
 
 describe('checkDocumentCompleteness', () => {
   describe('project documents', () => {
-    it('returns complete when hypothesis and success_criteria are present', () => {
+    it('returns complete when plan and success_criteria are present', () => {
       const properties = {
-        hypothesis: 'We believe that X will result in Y.',
+        plan: 'We believe that X will result in Y.',
         success_criteria: '80% adoption rate within 3 months.',
       };
 
@@ -541,19 +541,19 @@ describe('checkDocumentCompleteness', () => {
       expect(result.missingFields).toEqual([]);
     });
 
-    it('returns incomplete when hypothesis is missing', () => {
+    it('returns incomplete when plan is missing', () => {
       const properties = {
         success_criteria: 'Some criteria',
       };
 
       const result = checkDocumentCompleteness('project', properties);
       expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toContain('Hypothesis');
+      expect(result.missingFields).toContain('Plan');
     });
 
     it('returns incomplete when success_criteria is missing', () => {
       const properties = {
-        hypothesis: 'Some hypothesis',
+        plan: 'Some plan',
       };
 
       const result = checkDocumentCompleteness('project', properties);
@@ -566,13 +566,13 @@ describe('checkDocumentCompleteness', () => {
 
       const result = checkDocumentCompleteness('project', properties);
       expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toContain('Hypothesis');
+      expect(result.missingFields).toContain('Plan');
       expect(result.missingFields).toContain('Success Criteria');
     });
 
     it('treats empty strings as missing', () => {
       const properties = {
-        hypothesis: '   ',
+        plan: '   ',
         success_criteria: '',
       };
 
@@ -589,9 +589,9 @@ describe('checkDocumentCompleteness', () => {
   });
 
   describe('sprint documents', () => {
-    it('returns complete when hypothesis present and has linked issues', () => {
+    it('returns complete when plan present and has linked issues', () => {
       const properties = {
-        hypothesis: 'We believe that implementing OAuth will reduce signup friction by 30%',
+        plan: 'We believe that implementing OAuth will reduce signup friction by 30%',
       };
 
       const result = checkDocumentCompleteness('sprint', properties, 5);
@@ -599,17 +599,17 @@ describe('checkDocumentCompleteness', () => {
       expect(result.missingFields).toEqual([]);
     });
 
-    it('returns incomplete when hypothesis is missing', () => {
+    it('returns incomplete when plan is missing', () => {
       const properties = {};
 
       const result = checkDocumentCompleteness('sprint', properties, 1);
       expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toContain('Hypothesis');
+      expect(result.missingFields).toContain('Plan');
     });
 
     it('returns incomplete when no linked issues', () => {
       const properties = {
-        hypothesis: 'Some hypothesis about what we will learn',
+        plan: 'Some plan about what we will learn',
       };
 
       const result = checkDocumentCompleteness('sprint', properties, 0);
@@ -623,19 +623,19 @@ describe('checkDocumentCompleteness', () => {
       const result = checkDocumentCompleteness('sprint', properties, 0);
       expect(result.isComplete).toBe(false);
       expect(result.missingFields).toEqual([
-        'Hypothesis',
+        'Plan',
         'Linked Issues',
       ]);
     });
 
-    it('treats empty hypothesis string as missing', () => {
+    it('treats empty plan string as missing', () => {
       const properties = {
-        hypothesis: '   ',
+        plan: '   ',
       };
 
       const result = checkDocumentCompleteness('sprint', properties, 1);
       expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toContain('Hypothesis');
+      expect(result.missingFields).toContain('Plan');
     });
   });
 

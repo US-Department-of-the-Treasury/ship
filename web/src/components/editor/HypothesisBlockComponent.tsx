@@ -1,13 +1,13 @@
 import { NodeViewWrapper, NodeViewContent, NodeViewProps } from '@tiptap/react';
 
 /**
- * HypothesisBlock Component
+ * PlanBlock Component (formerly HypothesisBlock)
  *
- * A visually distinct callout-style block for sprint hypotheses.
+ * A visually distinct callout-style block for sprint plans.
  * Features:
  * - Light background with accent border
- * - Lightbulb icon indicating "hypothesis"
- * - Built-in "Hypothesis" label
+ * - Lightbulb icon indicating "plan"
+ * - Built-in "Plan" label
  * - Editable content area
  */
 export function HypothesisBlockComponent({ node }: NodeViewProps) {
@@ -47,7 +47,7 @@ export function HypothesisBlockComponent({ node }: NodeViewProps) {
             className="text-xs font-semibold uppercase tracking-wider text-amber-500/80 mb-2"
             contentEditable={false}
           >
-            Hypothesis
+            Plan
           </div>
 
           {/* Editable content */}

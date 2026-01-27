@@ -26,11 +26,11 @@ interface Sprint {
   program_name?: string;
   issue_count?: number;
   completed_count?: number;
-  hypothesis?: string;
+  plan?: string;
   owner?: SprintOwner | null;
   owner_id?: string | null;
   // Approval tracking
-  hypothesis_approval?: ApprovalTracking | null;
+  plan_approval?: ApprovalTracking | null;
   review_approval?: ApprovalTracking | null;
   // For RACI - who can approve
   accountable_id?: string | null;
@@ -143,17 +143,17 @@ export function SprintSidebar({
         </select>
       </PropertyRow>
 
-      {/* Hypothesis Approval - only show when hypothesis exists */}
-      {!!sprint.hypothesis?.trim() && (
-        <PropertyRow label="Hypothesis Approval">
+      {/* Plan Approval - only show when plan exists */}
+      {!!sprint.plan?.trim() && (
+        <PropertyRow label="Plan Approval">
           <ApprovalButton
-          type="hypothesis"
-          approval={sprint.hypothesis_approval}
-          hasContent={!!sprint.hypothesis?.trim()}
+          type="plan"
+          approval={sprint.plan_approval}
+          hasContent={!!sprint.plan?.trim()}
           canApprove={canApprove}
-          approveEndpoint={`/api/sprints/${sprint.id}/approve-hypothesis`}
-          approverName={sprint.hypothesis_approval?.approved_by ? userNames[sprint.hypothesis_approval.approved_by] : undefined}
-          currentContent={sprint.hypothesis || ''}
+          approveEndpoint={`/api/sprints/${sprint.id}/approve-plan`}
+          approverName={sprint.plan_approval?.approved_by ? userNames[sprint.plan_approval.approved_by] : undefined}
+          currentContent={sprint.plan || ''}
           onApproved={onApprovalUpdate}
         />
         </PropertyRow>

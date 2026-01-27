@@ -13,7 +13,7 @@ import type { DocumentTabProps } from '@/lib/document-tabs';
  * SprintOverviewTab - Renders the sprint document in the UnifiedEditor
  *
  * This is the "Overview" tab content when viewing a sprint document.
- * Shows the sprint hypothesis and description.
+ * Shows the sprint plan and description.
  */
 export default function SprintOverviewTab({ documentId, document }: DocumentTabProps) {
   const navigate = useNavigate();
@@ -102,7 +102,7 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
     end_date: (document.end_date as string) || '',
     status: ((document.status as string) || 'planning') as 'planning' | 'active' | 'completed',
     program_id: programId,
-    hypothesis: (document.hypothesis as string) || '',
+    plan: (document.plan as string) || '',
     owner_id: document.owner_id as string | null | undefined,
   }), [document, programId]);
 

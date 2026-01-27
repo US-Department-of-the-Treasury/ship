@@ -11,7 +11,7 @@ interface ProjectSetupWizardProps {
 export interface ProjectSetupData {
   title: string;
   program_id: string;
-  hypothesis?: string;
+  plan?: string;
   target_date?: string;
 }
 
@@ -23,7 +23,7 @@ export function ProjectSetupWizard({
   const { programs, loading } = usePrograms();
   const [title, setTitle] = useState('');
   const [programId, setProgramId] = useState('');
-  const [hypothesis, setHypothesis] = useState('');
+  const [plan, setPlan] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [errors, setErrors] = useState<{ title?: string; program?: string }>({});
 
@@ -50,14 +50,14 @@ export function ProjectSetupWizard({
     onSubmit({
       title: title.trim(),
       program_id: programId,
-      hypothesis: hypothesis.trim() || undefined,
+      plan: plan.trim() || undefined,
       target_date: targetDate || undefined,
     });
 
     // Reset form
     setTitle('');
     setProgramId('');
-    setHypothesis('');
+    setPlan('');
     setTargetDate('');
     setErrors({});
   };
@@ -65,7 +65,7 @@ export function ProjectSetupWizard({
   const handleCancel = () => {
     setTitle('');
     setProgramId('');
-    setHypothesis('');
+    setPlan('');
     setTargetDate('');
     setErrors({});
     onCancel();
@@ -149,17 +149,17 @@ export function ProjectSetupWizard({
               )}
             </div>
 
-            {/* Hypothesis (optional) */}
+            {/* Plan (optional) */}
             <div>
-              <label htmlFor="project-hypothesis" className="block text-sm font-medium text-foreground">
-                Hypothesis
+              <label htmlFor="project-plan" className="block text-sm font-medium text-foreground">
+                Plan
                 <span className="ml-1 text-xs font-normal text-muted">(optional)</span>
               </label>
               <textarea
-                id="project-hypothesis"
-                value={hypothesis}
-                onChange={(e) => setHypothesis(e.target.value)}
-                placeholder="What are we trying to learn? e.g., If we simplify onboarding to 3 steps, then conversion will increase by 20%"
+                id="project-plan"
+                value={plan}
+                onChange={(e) => setPlan(e.target.value)}
+                placeholder="What are we trying to achieve? e.g., Simplify onboarding to 3 steps to increase conversion by 20%"
                 rows={3}
                 className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent"
               />

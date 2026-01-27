@@ -3,11 +3,11 @@
  *
  * Detects missing accountability items for a user:
  * 1. Missing standups for active sprints
- * 2. Sprints at/past start without hypothesis
+ * 2. Sprints at/past start without plan
  * 3. Sprints at/past start date not 'started'
  * 4. Sprints at/past start with no issues
  * 5. Completed sprints without review (>1 business day)
- * 6. Projects where user is owner without hypothesis
+ * 6. Projects where user is owner without plan
  * 7. Completed projects without retro
  *
  * Creates action_items issues just-in-time when missing is detected.
@@ -95,9 +95,9 @@ export async function checkMissingAccountability(
     items.push(...reviewItems);
   }
 
-  // 6. Check for projects without hypothesis
-  const projectHypothesisItems = await checkProjectHypothesis(userId, workspaceId);
-  items.push(...projectHypothesisItems);
+  // 6. Check for projects without plan
+  const projectPlanItems = await checkProjectPlan(userId, workspaceId);
+  items.push(...projectPlanItems);
 
   // 7. Check for completed projects without retro
   const projectRetroItems = await checkProjectRetros(userId, workspaceId);
@@ -245,15 +245,15 @@ async function checkSprintAccountability(
 
     const sprintStartStr = sprintStartDate.toISOString().split('T')[0] || null;
 
-    // Check for missing hypothesis
-    if (!props.hypothesis || props.hypothesis.trim() === '') {
+    // Check for missing plan
+    if (!props.plan || props.plan.trim() === '') {
       items.push({
-        type: 'sprint_hypothesis',
+        type: 'sprint_plan',
         targetId: sprint.id,
         targetTitle: sprintTitle,
         targetType: 'sprint',
         dueDate: sprintStartStr,
-        message: `Write hypothesis for ${sprintTitle}`,
+        message: `Write plan for ${sprintTitle}`,
       });
     }
 
@@ -365,15 +365,15 @@ async function checkMissingSprintReviews(
 }
 
 /**
- * Check for projects where user is owner without hypothesis.
+ * Check for projects where user is owner without plan.
  */
-async function checkProjectHypothesis(
+async function checkProjectPlan(
   userId: string,
   workspaceId: string
 ): Promise<MissingAccountabilityItem[]> {
   const items: MissingAccountabilityItem[] = [];
 
-  // Find projects where user is owner without hypothesis
+  // Find projects where user is owner without plan
   const projectsResult = await pool.query(
     `SELECT p.id, p.title, p.properties
      FROM documents p
@@ -382,18 +382,18 @@ async function checkProjectHypothesis(
        AND (p.properties->>'owner_id')::uuid = $2
        AND p.deleted_at IS NULL
        AND p.archived_at IS NULL
-       AND (p.properties->>'hypothesis' IS NULL OR p.properties->>'hypothesis' = '')`,
+       AND (p.properties->>'plan' IS NULL OR p.properties->>'plan' = '')`,
     [workspaceId, userId]
   );
 
   for (const project of projectsResult.rows) {
     items.push({
-      type: 'project_hypothesis',
+      type: 'project_plan',
       targetId: project.id,
       targetTitle: project.title || 'Untitled Project',
       targetType: 'project',
-      dueDate: null, // No specific due date for project hypothesis
-      message: `Write hypothesis for ${project.title || 'project'}`,
+      dueDate: null, // No specific due date for project plan
+      message: `Write plan for ${project.title || 'project'}`,
     });
   }
 
@@ -419,7 +419,7 @@ async function checkProjectRetros(
        AND (p.properties->>'owner_id')::uuid = $2
        AND p.deleted_at IS NULL
        AND p.archived_at IS NULL
-       AND (p.properties->>'hypothesis_validated' IS NULL)
+       AND (p.properties->>'plan_validated' IS NULL)
        AND EXISTS (
          SELECT 1 FROM document_associations da
          JOIN documents i ON i.id = da.document_id
@@ -454,225 +454,7 @@ async function checkProjectRetros(
   return items;
 }
 
-/**
- * Create an accountability issue for a missing item.
- * For standup issues, updates the existing issue with new days-since count.
- * Returns null if an issue already exists for this target and type (non-standup).
- */
-export async function createAccountabilityIssue(
-  type: AccountabilityType,
-  targetId: string,
-  userId: string,
-  workspaceId: string,
-  title: string,
-  dueDate: string | null
-): Promise<AccountabilityIssue | null> {
-  // Check if accountability issue already exists for this target and type
-  const existingResult = await pool.query(
-    `SELECT id, ticket_number FROM documents
-     WHERE workspace_id = $1
-       AND document_type = 'issue'
-       AND properties->>'accountability_target_id' = $2
-       AND properties->>'accountability_type' = $3
-       AND properties->>'state' NOT IN ('done', 'cancelled')
-       AND deleted_at IS NULL`,
-    [workspaceId, targetId, type]
-  );
-
-  if (existingResult.rows.length > 0) {
-    const existingIssue = existingResult.rows[0];
-
-    // For standup issues, UPDATE the existing issue with the new days-since count
-    // This prevents creating duplicate issues for consecutive missed days
-    if (type === 'standup') {
-      await pool.query(
-        `UPDATE documents
-         SET title = $1,
-             properties = jsonb_set(properties, '{due_date}', $2::jsonb),
-             updated_at = NOW()
-         WHERE id = $3`,
-        [title, JSON.stringify(dueDate), existingIssue.id]
-      );
-    }
-
-    // Return existing issue info (now with updated title for standups)
-    return {
-      id: existingIssue.id,
-      title,
-      ticketNumber: existingIssue.ticket_number,
-      type,
-      targetId,
-      dueDate,
-    };
-  }
-
-  // Get next ticket number with advisory lock
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const workspaceIdHex = workspaceId.replace(/-/g, '').substring(0, 15);
-    const lockKey = parseInt(workspaceIdHex, 16);
-    await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
-
-    const ticketResult = await client.query(
-      `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
-       FROM documents
-       WHERE workspace_id = $1 AND document_type = 'issue'`,
-      [workspaceId]
-    );
-    const ticketNumber = ticketResult.rows[0].next_number;
-
-    // Build properties
-    const properties = {
-      state: 'todo',
-      priority: 'high',
-      source: 'action_items',
-      assignee_id: userId,
-      rejection_reason: null,
-      due_date: dueDate,
-      is_system_generated: true,
-      accountability_target_id: targetId,
-      accountability_type: type,
-    };
-
-    const result = await client.query(
-      `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number, created_by)
-       VALUES ($1, 'issue', $2, $3, $4, $5)
-       RETURNING id`,
-      [workspaceId, title, JSON.stringify(properties), ticketNumber, userId]
-    );
-
-    await client.query('COMMIT');
-
-    return {
-      id: result.rows[0].id,
-      title,
-      ticketNumber,
-      type,
-      targetId,
-      dueDate,
-    };
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-}
-
-/**
- * Check accountability and create issues for any missing items.
- * Returns both the missing items found and any issues created.
- */
-export async function checkAndCreateAccountabilityIssues(
-  userId: string,
-  workspaceId: string
-): Promise<{
-  missingItems: MissingAccountabilityItem[];
-  createdIssues: AccountabilityIssue[];
-  existingIssues: AccountabilityIssue[];
-}> {
-  const missingItems = await checkMissingAccountability(userId, workspaceId);
-  const createdIssues: AccountabilityIssue[] = [];
-  const existingIssues: AccountabilityIssue[] = [];
-
-  for (const item of missingItems) {
-    const issue = await createAccountabilityIssue(
-      item.type,
-      item.targetId,
-      userId,
-      workspaceId,
-      item.message,
-      item.dueDate
-    );
-
-    if (issue) {
-      // Check if this was a newly created issue by comparing if it already existed
-      const wasExisting = await pool.query(
-        `SELECT created_at FROM documents WHERE id = $1 AND created_at < NOW() - interval '1 second'`,
-        [issue.id]
-      );
-
-      if (wasExisting.rows.length > 0) {
-        existingIssues.push(issue);
-      } else {
-        createdIssues.push(issue);
-      }
-    }
-  }
-
-  return { missingItems, createdIssues, existingIssues };
-}
-
-/**
- * Auto-complete an accountability issue when the underlying task is done.
- * Called when standups, reviews, retros, etc. are created/completed.
- * Broadcasts 'accountability:updated' event to affected users for real-time UI updates.
- */
-export async function autoCompleteAccountabilityIssue(
-  targetId: string,
-  accountabilityType: AccountabilityType,
-  workspaceId: string,
-  triggerUserId?: string
-): Promise<void> {
-  // First, find issues that will be completed to get their assignees
-  const issuesToComplete = await pool.query(
-    `SELECT id, properties->>'assignee_id' as assignee_id
-     FROM documents
-     WHERE workspace_id = $1
-       AND document_type = 'issue'
-       AND properties->>'accountability_target_id' = $2
-       AND properties->>'accountability_type' = $3
-       AND properties->>'state' NOT IN ('done', 'cancelled')
-       AND deleted_at IS NULL`,
-    [workspaceId, targetId, accountabilityType]
-  );
-
-  if (issuesToComplete.rows.length === 0) {
-    return; // No issues to complete
-  }
-
-  // Complete the issues
-  await pool.query(
-    `UPDATE documents
-     SET properties = jsonb_set(
-       jsonb_set(properties, '{state}', '"done"'),
-       '{completed_at}', to_jsonb(now())
-     ),
-     completed_at = NOW(),
-     updated_at = NOW()
-     WHERE workspace_id = $1
-       AND document_type = 'issue'
-       AND properties->>'accountability_target_id' = $2
-       AND properties->>'accountability_type' = $3
-       AND properties->>'state' NOT IN ('done', 'cancelled')
-       AND deleted_at IS NULL`,
-    [workspaceId, targetId, accountabilityType]
-  );
-
-  // Broadcast to affected users for real-time UI updates
-  // Import dynamically to avoid circular dependencies
-  const { broadcastToUser } = await import('../collaboration/index.js');
-
-  // Collect unique user IDs to notify
-  const userIdsToNotify = new Set<string>();
-  for (const issue of issuesToComplete.rows) {
-    if (issue.assignee_id) {
-      userIdsToNotify.add(issue.assignee_id);
-    }
-  }
-  // Also notify the triggering user if different from assignee
-  if (triggerUserId) {
-    userIdsToNotify.add(triggerUserId);
-  }
-
-  // Broadcast to each affected user
-  for (const userId of userIdsToNotify) {
-    broadcastToUser(userId, 'accountability:updated', {
-      targetId,
-      accountabilityType,
-      action: 'completed',
-    });
-  }
-}
+// NOTE: createAccountabilityIssue, checkAndCreateAccountabilityIssues, and
+// autoCompleteAccountabilityIssue have been removed. Accountability is now
+// computed via inference using checkMissingAccountability() - no issues are
+// created or completed.

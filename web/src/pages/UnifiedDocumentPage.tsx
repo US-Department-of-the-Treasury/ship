@@ -373,14 +373,18 @@ export function UnifiedDocumentPage() {
         }> | undefined,
       }),
       ...(document.document_type === 'project' && {
-        impact: (document.impact as number) ?? 5,
-        confidence: (document.confidence as number) ?? 5,
-        ease: (document.ease as number) ?? 5,
+        impact: (document.impact as number | null) ?? null,
+        confidence: (document.confidence as number | null) ?? null,
+        ease: (document.ease as number | null) ?? null,
         color: (document.color as string) || '#3b82f6',
         emoji: null,
         program_id: programIdFromBelongsTo,
         owner: document.owner as { id: string; name: string; email: string } | null,
         owner_id: document.owner_id as string | undefined,
+        // RACI fields
+        accountable_id: document.accountable_id as string | undefined,
+        consulted_ids: document.consulted_ids as string[] | undefined,
+        informed_ids: document.informed_ids as string[] | undefined,
         converted_from_id: document.converted_from_id as string | undefined,
       }),
       ...(document.document_type === 'sprint' && {
@@ -388,7 +392,7 @@ export function UnifiedDocumentPage() {
         end_date: (document.end_date as string) || '',
         status: ((document.status as string) || 'planning') as 'planning' | 'active' | 'completed',
         program_id: programIdFromBelongsTo,
-        hypothesis: (document.hypothesis as string) || '',
+        plan: (document.plan as string) || '',
       }),
       ...(document.document_type === 'wiki' && {
         parent_id: document.parent_id as string | undefined,

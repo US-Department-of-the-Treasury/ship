@@ -128,7 +128,7 @@ describe('Sprint Reviews API', () => {
       `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility, properties)
        VALUES ($1, 'sprint', 'Test Sprint', $2, 'workspace', $3)
        RETURNING id`,
-      [testWorkspaceId, testUserId, JSON.stringify({ hypothesis: 'Test hypothesis for sprint' })]
+      [testWorkspaceId, testUserId, JSON.stringify({ plan: 'Test plan for sprint' })]
     )
     testSprintId = sprintResult.rows[0].id
     // Create program association for sprint
@@ -159,7 +159,7 @@ describe('Sprint Reviews API', () => {
         .set('x-csrf-token', csrfToken)
         .send({
           content: { type: 'doc', content: [{ type: 'paragraph' }] },
-          hypothesis_validated: true
+          plan_validated: true
         })
 
       // Then GET should return existing review
@@ -169,7 +169,7 @@ describe('Sprint Reviews API', () => {
 
       expect(response.status).toBe(200)
       expect(response.body.is_draft).toBe(false)
-      expect(response.body.hypothesis_validated).toBe(true)
+      expect(response.body.plan_validated).toBe(true)
     })
 
     it('pre-fill content includes issues information', async () => {
@@ -224,13 +224,13 @@ describe('Sprint Reviews API', () => {
         .set('x-csrf-token', csrfToken)
         .send({
           content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Review content' }] }] },
-          hypothesis_validated: true
+          plan_validated: true
         })
 
       expect(response.status).toBe(201)
       expect(response.body.owner_id).toBe(testUserId)
       expect(response.body.sprint_id).toBe(testSprintId)
-      expect(response.body.hypothesis_validated).toBe(true)
+      expect(response.body.plan_validated).toBe(true)
     })
 
     it('returns 403 without auth (CSRF check first)', async () => {
@@ -269,11 +269,11 @@ describe('Sprint Reviews API', () => {
         .set('x-csrf-token', csrfToken)
         .send({
           content: { type: 'doc', content: [] },
-          hypothesis_validated: null
+          plan_validated: null
         })
     })
 
-    it('updates hypothesis_validated and content', async () => {
+    it('updates plan_validated and content', async () => {
       const newContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated' }] }] }
       const response = await request(app)
         .patch(`/api/sprints/${testSprintId}/review`)
@@ -281,11 +281,11 @@ describe('Sprint Reviews API', () => {
         .set('x-csrf-token', csrfToken)
         .send({
           content: newContent,
-          hypothesis_validated: false
+          plan_validated: false
         })
 
       expect(response.status).toBe(200)
-      expect(response.body.hypothesis_validated).toBe(false)
+      expect(response.body.plan_validated).toBe(false)
       expect(response.body.content).toEqual(newContent)
     })
 
@@ -294,7 +294,7 @@ describe('Sprint Reviews API', () => {
         .patch(`/api/sprints/${testSprintId}/review`)
         .set('Cookie', otherSessionCookie)
         .set('x-csrf-token', otherCsrfToken)
-        .send({ hypothesis_validated: true })
+        .send({ plan_validated: true })
 
       expect(response.status).toBe(403)
     })
@@ -310,7 +310,7 @@ describe('Sprint Reviews API', () => {
         .patch(`/api/sprints/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
-        .send({ hypothesis_validated: true })
+        .send({ plan_validated: true })
 
       expect(response.status).toBe(404)
     })

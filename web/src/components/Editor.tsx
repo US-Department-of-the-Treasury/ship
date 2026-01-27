@@ -68,8 +68,8 @@ interface EditorProps {
   documentType?: string;
   /** Callback when the document is converted to a different type by another user */
   onDocumentConverted?: (newDocId: string, newDocType: 'issue' | 'project') => void;
-  /** Callback when hypothesis block content changes (for sprint documents) */
-  onHypothesisChange?: (hypothesis: string) => void;
+  /** Callback when plan block content changes (for sprint documents) */
+  onPlanChange?: (plan: string) => void;
 }
 
 type SyncStatus = 'connecting' | 'cached' | 'synced' | 'disconnected';
@@ -159,7 +159,7 @@ export function Editor({
   secondaryHeader,
   documentType,
   onDocumentConverted,
-  onHypothesisChange,
+  onPlanChange,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -363,11 +363,15 @@ export function Editor({
       });
 
       // Track connected users - store callback reference for proper cleanup
+      // Deduplicate by user name to handle race conditions where stale awareness
+      // states exist briefly during page refresh (before old connection cleanup)
       updateUsersCallback = () => {
         if (cancelled) return; // Don't update state if effect was cleaned up
         const users: { name: string; color: string }[] = [];
+        const seenNames = new Set<string>();
         wsProvider!.awareness.getStates().forEach((state) => {
-          if (state.user) {
+          if (state.user && !seenNames.has(state.user.name)) {
+            seenNames.add(state.user.name);
             users.push(state.user);
           }
         });
@@ -561,30 +565,30 @@ export function Editor({
     };
   }, [editor, documentId]);
 
-  // Sync hypothesis content when HypothesisBlock changes (for sprint documents)
-  const lastSyncedHypothesisRef = useRef<string | null>(null);
+  // Sync plan content when HypothesisBlock changes (for sprint documents)
+  const lastSyncedPlanRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!editor || !onHypothesisChange) return;
+    if (!editor || !onPlanChange) return;
 
-    const syncHypothesis = () => {
+    const syncPlan = () => {
       const json = editor.getJSON();
-      const hypothesis = extractHypothesisText(json);
+      const plan = extractHypothesisText(json);
 
-      // Only sync if hypothesis has changed (including when it becomes null/empty)
-      if (hypothesis === lastSyncedHypothesisRef.current) {
+      // Only sync if plan has changed (including when it becomes null/empty)
+      if (plan === lastSyncedPlanRef.current) {
         return;
       }
-      lastSyncedHypothesisRef.current = hypothesis;
+      lastSyncedPlanRef.current = plan;
 
-      // Call the callback with the new hypothesis text (empty string if null)
-      onHypothesisChange(hypothesis || '');
+      // Call the callback with the new plan text (empty string if null)
+      onPlanChange(plan || '');
     };
 
     // Debounce during editing (300ms per PRD spec)
     let debounceTimer: ReturnType<typeof setTimeout>;
     const debouncedSync = () => {
       clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(syncHypothesis, 300);
+      debounceTimer = setTimeout(syncPlan, 300);
     };
 
     editor.on('update', debouncedSync);
@@ -594,7 +598,7 @@ export function Editor({
       clearTimeout(debounceTimer);
       editor.off('update', debouncedSync);
     };
-  }, [editor, onHypothesisChange]);
+  }, [editor, onPlanChange]);
 
   // Handle title changes
   const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
