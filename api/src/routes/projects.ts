@@ -746,7 +746,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     // Auto-complete any pending project_hypothesis accountability issues if hypothesis was written
     if (hypothesisWasWritten) {
-      await autoCompleteAccountabilityIssue(id as string, 'project_hypothesis', workspaceId as string);
+      await autoCompleteAccountabilityIssue(id as string, 'project_hypothesis', workspaceId as string, userId);
     }
 
     // Log hypothesis changes to document_history for approval workflow tracking
@@ -1039,7 +1039,7 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
     );
 
     // Auto-complete any pending project_retro accountability issues
-    await autoCompleteAccountabilityIssue(id as string, 'project_retro', workspaceId as string);
+    await autoCompleteAccountabilityIssue(id as string, 'project_retro', workspaceId as string, userId);
 
     // Log initial retro content to document_history for approval workflow tracking
     if (content) {

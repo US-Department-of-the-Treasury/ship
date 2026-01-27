@@ -1109,7 +1109,7 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
     );
 
     // Auto-complete any pending sprint_start accountability issues
-    await autoCompleteAccountabilityIssue(id as string, 'sprint_start', workspaceId as string);
+    await autoCompleteAccountabilityIssue(id as string, 'sprint_start', workspaceId as string, req.userId);
 
     // Re-query to get full sprint with owner info
     const result = await pool.query(
@@ -1315,7 +1315,7 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
 
     // Auto-complete any pending hypothesis accountability issues if hypothesis was written
     if (hypothesisWasWritten) {
-      await autoCompleteAccountabilityIssue(id as string, 'sprint_hypothesis', workspaceId as string);
+      await autoCompleteAccountabilityIssue(id as string, 'sprint_hypothesis', workspaceId as string, req.userId);
     }
 
     // Re-query to get full sprint with owner info
@@ -1842,7 +1842,7 @@ router.post('/:id/standups', authMiddleware, async (req: Request, res: Response)
     const author = authorResult.rows[0];
 
     // Auto-complete any pending standup accountability issues for this sprint
-    await autoCompleteAccountabilityIssue(id as string, 'standup', workspaceId as string);
+    await autoCompleteAccountabilityIssue(id as string, 'standup', workspaceId as string, userId);
 
     res.status(201).json({
       id: standup.id,
@@ -2186,7 +2186,7 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
     );
 
     // Auto-complete any pending sprint_review accountability issues
-    await autoCompleteAccountabilityIssue(id as string, 'sprint_review', workspaceId as string);
+    await autoCompleteAccountabilityIssue(id as string, 'sprint_review', workspaceId as string, userId);
 
     // Log initial review content to document_history for approval workflow tracking
     const review = result.rows[0];

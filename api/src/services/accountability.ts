@@ -608,12 +608,32 @@ export async function checkAndCreateAccountabilityIssues(
 /**
  * Auto-complete an accountability issue when the underlying task is done.
  * Called when standups, reviews, retros, etc. are created/completed.
+ * Broadcasts 'accountability:updated' event to affected users for real-time UI updates.
  */
 export async function autoCompleteAccountabilityIssue(
   targetId: string,
   accountabilityType: AccountabilityType,
-  workspaceId: string
+  workspaceId: string,
+  triggerUserId?: string
 ): Promise<void> {
+  // First, find issues that will be completed to get their assignees
+  const issuesToComplete = await pool.query(
+    `SELECT id, properties->>'assignee_id' as assignee_id
+     FROM documents
+     WHERE workspace_id = $1
+       AND document_type = 'issue'
+       AND properties->>'accountability_target_id' = $2
+       AND properties->>'accountability_type' = $3
+       AND properties->>'state' NOT IN ('done', 'cancelled')
+       AND deleted_at IS NULL`,
+    [workspaceId, targetId, accountabilityType]
+  );
+
+  if (issuesToComplete.rows.length === 0) {
+    return; // No issues to complete
+  }
+
+  // Complete the issues
   await pool.query(
     `UPDATE documents
      SET properties = jsonb_set(
@@ -630,4 +650,29 @@ export async function autoCompleteAccountabilityIssue(
        AND deleted_at IS NULL`,
     [workspaceId, targetId, accountabilityType]
   );
+
+  // Broadcast to affected users for real-time UI updates
+  // Import dynamically to avoid circular dependencies
+  const { broadcastToUser } = await import('../collaboration/index.js');
+
+  // Collect unique user IDs to notify
+  const userIdsToNotify = new Set<string>();
+  for (const issue of issuesToComplete.rows) {
+    if (issue.assignee_id) {
+      userIdsToNotify.add(issue.assignee_id);
+    }
+  }
+  // Also notify the triggering user if different from assignee
+  if (triggerUserId) {
+    userIdsToNotify.add(triggerUserId);
+  }
+
+  // Broadcast to each affected user
+  for (const userId of userIdsToNotify) {
+    broadcastToUser(userId, 'accountability:updated', {
+      targetId,
+      accountabilityType,
+      action: 'completed',
+    });
+  }
 }
