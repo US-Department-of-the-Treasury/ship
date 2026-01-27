@@ -82,6 +82,10 @@ const updateDocumentSchema = z.object({
   ease: z.number().min(1).max(10).nullable().optional(),
   color: z.string().optional(),
   owner_id: z.string().uuid().nullable().optional(),
+  // RACI fields for projects (stored in properties)
+  accountable_id: z.string().uuid().nullable().optional(), // A - Accountable (approver)
+  consulted_ids: z.array(z.string().uuid()).optional(), // C - Consulted
+  informed_ids: z.array(z.string().uuid()).optional(), // I - Informed
   // Common association fields (shared across document types)
   program_id: z.string().uuid().nullable().optional(),
   sprint_id: z.string().uuid().nullable().optional(),
@@ -327,6 +331,10 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
         ? props.assignee_ids[0] || null
         : props.owner_id,
       owner,
+      // RACI fields for projects
+      accountable_id: props.accountable_id,
+      consulted_ids: props.consulted_ids,
+      informed_ids: props.informed_ids,
       // Generic properties
       prefix: props.prefix,
       color: props.color,
@@ -658,6 +666,10 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.ease !== undefined) topLevelProps.ease = data.ease;
     if (data.color !== undefined) topLevelProps.color = data.color;
     if (data.owner_id !== undefined) topLevelProps.owner_id = data.owner_id;
+    // RACI fields for projects
+    if (data.accountable_id !== undefined) topLevelProps.accountable_id = data.accountable_id;
+    if (data.consulted_ids !== undefined) topLevelProps.consulted_ids = data.consulted_ids;
+    if (data.informed_ids !== undefined) topLevelProps.informed_ids = data.informed_ids;
     // For sprints, also store owner in assignee_ids array (sprints API reads from assignee_ids[0])
     if (data.owner_id !== undefined && existing.document_type === 'sprint') {
       topLevelProps.assignee_ids = data.owner_id ? [data.owner_id] : [];
@@ -759,10 +771,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       // (don't clear it - it serves as a historical reference)
     }
 
-    // Track if we have association updates (belongs_to)
+    // Track if we have association updates (belongs_to, program_id, sprint_id)
+    // program_id and sprint_id are handled via document_associations table, not the updates array
     const hasBelongsToUpdate = data.belongs_to !== undefined;
+    const hasProgramIdUpdate = data.program_id !== undefined;
+    const hasSprintIdUpdate = data.sprint_id !== undefined;
 
-    if (updates.length === 0 && !hasBelongsToUpdate) {
+    if (updates.length === 0 && !hasBelongsToUpdate && !hasProgramIdUpdate && !hasSprintIdUpdate) {
       res.status(400).json({ error: 'No fields to update' });
       return;
     }

@@ -66,6 +66,10 @@ interface ProjectDocument extends BaseDocument {
   program_id: string | null;
   owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
+  // RACI fields
+  accountable_id?: string | null;
+  consulted_ids?: string[];
+  informed_ids?: string[];
   sprint_count?: number;
   issue_count?: number;
   converted_from_id?: string | null;
