@@ -75,3 +75,9 @@ variable "upload_cors_origins" {
   type        = list(string)
   default     = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"]
 }
+
+variable "cloudfront_waf_web_acl_id" {
+  description = "WAF WebACL ARN to attach to CloudFront distribution (optional, creates managed WAF if empty)"
+  type        = string
+  default     = ""
+}

@@ -44,9 +44,6 @@ if [ -d "$TF_DIR" ] && command -v terraform &> /dev/null; then
   CF_DISTRIBUTION=$(cd "$TF_DIR" && terraform output -raw cloudfront_distribution_id 2>/dev/null || echo "")
 fi
 
-# Get EB CNAME from terraform.tfvars for WebSocket URL (CloudFront doesn't support WebSocket)
-EB_CNAME=$(grep -E '^eb_environment_cname' "$TF_DIR/terraform.tfvars" 2>/dev/null | sed 's/.*= *"\([^"]*\)".*/\1/' || echo "")
-
 S3_BUCKET="${S3_BUCKET:-${DEPLOY_S3_BUCKET:-}}"
 CF_DISTRIBUTION="${CF_DISTRIBUTION:-${DEPLOY_CF_DISTRIBUTION:-}}"
 
@@ -63,16 +60,6 @@ fi
 # Always build fresh to ensure we deploy latest code
 echo "Building frontend..."
 cd "$PROJECT_ROOT"
-
-# Set WebSocket URL to bypass CloudFront (which doesn't support WebSocket)
-# The frontend will connect directly to EB for real-time events
-if [ -n "$EB_CNAME" ]; then
-  echo "WebSocket URL: https://$EB_CNAME"
-  export VITE_WS_URL="https://$EB_CNAME"
-else
-  echo "WARNING: EB_CNAME not found, WebSocket connections may fail through CloudFront"
-fi
-
 pnpm build:web
 
 echo "Syncing to S3: $S3_BUCKET"

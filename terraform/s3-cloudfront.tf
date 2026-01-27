@@ -154,6 +154,30 @@ resource "aws_cloudfront_distribution" "frontend" {
     }
   }
 
+  # WebSocket events endpoint for real-time updates (only when EB is configured)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.eb_environment_cname != "" ? [1] : []
+    content {
+      path_pattern           = "/events"
+      target_origin_id       = "EB-API"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = false
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+
+      forwarded_values {
+        query_string = true
+        headers      = ["*"]
+        cookies {
+          forward = "all"
+        }
+      }
+    }
+  }
+
   # Well-known endpoints for OAuth/OIDC (JWKS, etc.) - only when EB is configured
   dynamic "ordered_cache_behavior" {
     for_each = var.eb_environment_cname != "" ? [1] : []
