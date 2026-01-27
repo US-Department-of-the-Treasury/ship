@@ -6,7 +6,6 @@ import { pool } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { ERROR_CODES, HTTP_STATUS, SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS } from '@ship/shared';
 import { logAuditEvent } from '../services/audit.js';
-import { checkAndCreateAccountabilityIssues } from '../services/accountability.js';
 
 const router: RouterType = Router();
 
@@ -179,18 +178,8 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       req,
     });
 
-    // Check for pending accountability items (only if user has a workspace)
-    let pendingAccountabilityItems: any[] = [];
-    if (workspaceId) {
-      try {
-        const accountabilityResult = await checkAndCreateAccountabilityIssues(user.id, workspaceId);
-        // Combine created and existing issues as pending items
-        pendingAccountabilityItems = [...accountabilityResult.createdIssues, ...accountabilityResult.existingIssues];
-      } catch (err) {
-        // Don't fail login if accountability check fails
-        console.error('Accountability check error during login:', err);
-      }
-    }
+    // Pending accountability items will be fetched via /api/accountability/action-items
+    const pendingAccountabilityItems: any[] = [];
 
     // Set cookie with hardened security options
     res.cookie('session_id', sessionId, {
@@ -319,18 +308,8 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
       }
     }
 
-    // Check for pending accountability items
-    let pendingAccountabilityItems: any[] = [];
-    if (req.workspaceId && req.userId) {
-      try {
-        const accountabilityResult = await checkAndCreateAccountabilityIssues(req.userId, req.workspaceId as string);
-        // Combine created and existing issues as pending items
-        pendingAccountabilityItems = [...accountabilityResult.createdIssues, ...accountabilityResult.existingIssues];
-      } catch (err) {
-        // Don't fail the request if accountability check fails
-        console.error('Accountability check error in /me:', err);
-      }
-    }
+    // Pending accountability items will be fetched via /api/accountability/action-items
+    const pendingAccountabilityItems: any[] = [];
 
     res.json({
       success: true,

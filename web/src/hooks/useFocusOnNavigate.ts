@@ -34,6 +34,7 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/sprints/')) return 'Sprint';
   if (pathname === '/team' || pathname === '/team/allocation') return 'Team Allocation';
   if (pathname === '/team/directory') return 'Team Directory';
+  if (pathname === '/team/status') return 'Status Overview';
   if (pathname === '/settings') return 'Settings';
   return 'Ship';
 }

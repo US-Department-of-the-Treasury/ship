@@ -24,6 +24,7 @@ import { ProgramsPage } from '@/pages/Programs';
 import { SprintsPage } from '@/pages/Sprints';
 import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
+import { PersonEditorPage } from '@/pages/PersonEditor';
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
 import { ProjectsPage } from '@/pages/Projects';
@@ -34,6 +35,7 @@ import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
 import { ConvertedDocumentsPage } from '@/pages/ConvertedDocuments';
 import { UnifiedDocumentPage } from '@/pages/UnifiedDocumentPage';
 import { MyWeekPage } from '@/pages/MyWeekPage';
+import { StatusOverviewPage } from '@/pages/StatusOverviewPage';
 
 import { InviteAcceptPage } from '@/pages/InviteAccept';
 import { SetupPage } from '@/pages/Setup';
@@ -231,8 +233,9 @@ function AppRoutes() {
         <Route path="team" element={<Navigate to="/team/allocation" replace />} />
         <Route path="team/allocation" element={<TeamModePage />} />
         <Route path="team/directory" element={<TeamDirectoryPage />} />
-        {/* Legacy team profile route redirects to /documents/:id */}
-        <Route path="team/:id" element={<DocumentRedirect />} />
+        <Route path="team/status" element={<StatusOverviewPage />} />
+        {/* Person profile stays in Teams context - no redirect to /documents */}
+        <Route path="team/:id" element={<PersonEditorPage />} />
         <Route path="feedback/:id" element={<FeedbackEditorPage />} />
         <Route path="settings" element={<WorkspaceSettingsPage />} />
         <Route path="settings/conversions" element={<ConvertedDocumentsPage />} />

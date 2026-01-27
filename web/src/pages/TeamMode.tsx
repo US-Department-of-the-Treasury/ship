@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ProjectCombobox, Project } from '@/components/ProjectCombobox';
-import { AccountabilityGrid } from '@/components/AccountabilityGrid';
 import { cn } from '@/lib/cn';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
-
-type TeamTab = 'assignments' | 'accountability';
 
 // CSRF token cache
 let csrfToken: string | null = null;
@@ -68,10 +65,6 @@ interface ProgramGroup {
 
 export function TeamModePage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<TeamTab>(
-    (searchParams.get('tab') as TeamTab) || 'assignments'
-  );
   const [data, setData] = useState<TeamGridData | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [assignments, setAssignments] = useState<Record<string, Record<number, Assignment>>>({});
@@ -142,11 +135,6 @@ export function TeamModePage() {
       return next;
     });
   }, []);
-
-  const handleTabChange = (tab: TeamTab) => {
-    setActiveTab(tab);
-    setSearchParams({ tab });
-  };
 
   // Dialog states
   const [lastPersonDialog, setLastPersonDialog] = useState<{
@@ -504,35 +492,9 @@ export function TeamModePage() {
         </div>
       )}
 
-      {/* Header with Tabs */}
+      {/* Header */}
       <header className="flex h-10 items-center justify-between border-b border-border px-4">
-        <div className="flex items-center gap-4">
-          <h1 className="text-sm font-medium text-foreground">Teams</h1>
-          <div className="flex gap-1">
-            <button
-              onClick={() => handleTabChange('assignments')}
-              className={cn(
-                'px-3 py-1 text-xs font-medium rounded-md transition-colors',
-                activeTab === 'assignments'
-                  ? 'bg-accent text-white'
-                  : 'text-muted hover:text-foreground hover:bg-border/50'
-              )}
-            >
-              Assignments
-            </button>
-            <button
-              onClick={() => handleTabChange('accountability')}
-              className={cn(
-                'px-3 py-1 text-xs font-medium rounded-md transition-colors',
-                activeTab === 'accountability'
-                  ? 'bg-accent text-white'
-                  : 'text-muted hover:text-foreground hover:bg-border/50'
-              )}
-            >
-              Accountability
-            </button>
-          </div>
-        </div>
+        <h1 className="text-sm font-medium text-foreground">Allocation</h1>
         <div className="flex items-center gap-4">
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input
@@ -549,15 +511,11 @@ export function TeamModePage() {
         </div>
       </header>
 
-      {/* Tab Content */}
-      {activeTab === 'accountability' ? (
-        <AccountabilityGrid />
-      ) : (
-        /* Assignments Grid - Single scroll container with sticky person column */
-        <div
-          ref={scrollContainerRef}
-          className="flex-1 overflow-auto pb-20"
-        >
+      {/* Assignments Grid - Single scroll container with sticky person column */}
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-auto pb-20"
+      >
           <div className="inline-flex min-w-full">
             {/* Sticky person column */}
             <div className="flex flex-col sticky left-0 z-20 bg-background border-r border-border">
@@ -731,7 +689,6 @@ export function TeamModePage() {
             </div>
           </div>
         </div>
-      )}
 
       {/* Last Person Dialog */}
       <Dialog.Root open={lastPersonDialog?.open || false} onOpenChange={(open: boolean) => !open && setLastPersonDialog(null)}>

@@ -363,11 +363,15 @@ export function Editor({
       });
 
       // Track connected users - store callback reference for proper cleanup
+      // Deduplicate by user name to handle race conditions where stale awareness
+      // states exist briefly during page refresh (before old connection cleanup)
       updateUsersCallback = () => {
         if (cancelled) return; // Don't update state if effect was cleaned up
         const users: { name: string; color: string }[] = [];
+        const seenNames = new Set<string>();
         wsProvider!.awareness.getStates().forEach((state) => {
-          if (state.user) {
+          if (state.user && !seenNames.has(state.user.name)) {
+            seenNames.add(state.user.name);
             users.push(state.user);
           }
         });
