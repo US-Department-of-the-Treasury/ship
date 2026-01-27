@@ -25,6 +25,7 @@ export interface MissingAccountabilityItem {
   targetType: 'sprint' | 'project';
   dueDate: string | null;
   message: string;
+  daysSinceLastStandup?: number; // Only set for standup type
 }
 
 // Created accountability issue
@@ -154,13 +155,38 @@ async function checkMissingStandups(
     );
 
     if (standupResult.rows.length === 0) {
+      // Calculate days since last standup
+      const lastStandupResult = await pool.query(
+        `SELECT MAX(created_at::date) as last_standup_date
+         FROM documents
+         WHERE workspace_id = $1
+           AND document_type = 'standup'
+           AND (properties->>'author_id')::uuid = $2
+           AND parent_id = $3`,
+        [workspaceId, userId, sprint.id]
+      );
+
+      const lastStandupDate = lastStandupResult.rows[0]?.last_standup_date;
+      let daysSinceLastStandup = 0;
+      let message = `Post standup for ${sprint.title || 'current sprint'}`;
+
+      if (lastStandupDate) {
+        const lastDate = new Date(lastStandupDate);
+        const todayDate = new Date(todayStr);
+        daysSinceLastStandup = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+        message = `Post standup (${daysSinceLastStandup} day${daysSinceLastStandup === 1 ? '' : 's'} since last)`;
+      } else {
+        message = `Post standup for ${sprint.title || 'current sprint'} (no previous standups)`;
+      }
+
       items.push({
         type: 'standup',
         targetId: sprint.id,
         targetTitle: sprint.title || `Sprint ${sprint.properties?.sprint_number || 'N'}`,
         targetType: 'sprint',
         dueDate: todayStr,
-        message: `Post standup for ${sprint.title || 'current sprint'}`,
+        message,
+        daysSinceLastStandup,
       });
     }
   }
@@ -420,7 +446,8 @@ async function checkProjectRetros(
 
 /**
  * Create an accountability issue for a missing item.
- * Returns null if an issue already exists for this target and type.
+ * For standup issues, updates the existing issue with new days-since count.
+ * Returns null if an issue already exists for this target and type (non-standup).
  */
 export async function createAccountabilityIssue(
   type: AccountabilityType,
@@ -443,11 +470,26 @@ export async function createAccountabilityIssue(
   );
 
   if (existingResult.rows.length > 0) {
-    // Return existing issue info
+    const existingIssue = existingResult.rows[0];
+
+    // For standup issues, UPDATE the existing issue with the new days-since count
+    // This prevents creating duplicate issues for consecutive missed days
+    if (type === 'standup') {
+      await pool.query(
+        `UPDATE documents
+         SET title = $1,
+             properties = jsonb_set(properties, '{due_date}', $2::jsonb),
+             updated_at = NOW()
+         WHERE id = $3`,
+        [title, JSON.stringify(dueDate), existingIssue.id]
+      );
+    }
+
+    // Return existing issue info (now with updated title for standups)
     return {
-      id: existingResult.rows[0].id,
+      id: existingIssue.id,
       title,
-      ticketNumber: existingResult.rows[0].ticket_number,
+      ticketNumber: existingIssue.ticket_number,
       type,
       targetId,
       dueDate,

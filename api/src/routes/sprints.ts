@@ -1639,9 +1639,11 @@ router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Respo
 // ============================================
 
 // Schema for creating a standup
+// Note: date field is optional but if provided must be today (enforced in handler)
 const createStandupSchema = z.object({
   content: z.record(z.unknown()).default({ type: 'doc', content: [{ type: 'paragraph' }] }),
   title: z.string().max(200).optional().default('Standup Update'),
+  date: z.string().optional(), // ISO date string - must be today if provided
 });
 
 // Helper to format standup response
@@ -1790,7 +1792,21 @@ router.post('/:id/standups', authMiddleware, async (req: Request, res: Response)
       return;
     }
 
-    const { content, title } = parsed.data;
+    const { content, title, date } = parsed.data;
+
+    // Enforce current-day-only standup posting
+    // Users cannot backdate standups - they can only post for today
+    if (date) {
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
+      if (date !== todayStr) {
+        res.status(400).json({
+          error: 'Standups can only be posted for the current day',
+          details: `Attempted to post for ${date}, but today is ${todayStr}`,
+        });
+        return;
+      }
+    }
 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);

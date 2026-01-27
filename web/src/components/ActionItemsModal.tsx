@@ -1,4 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { useActionItemsQuery, ActionItem } from '@/hooks/useActionItemsQuery';
 
@@ -126,9 +127,9 @@ function ActionItemRow({ item, onItemClick }: { item: ActionItem; onItemClick: (
         {dueText}
       </span>
 
-      {/* External link indicator */}
+      {/* Arrow indicator */}
       <svg className="w-4 h-4 text-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
       </svg>
     </button>
   );
@@ -140,11 +141,14 @@ interface ActionItemsModalProps {
 }
 
 export function ActionItemsModal({ open, onClose }: ActionItemsModalProps) {
+  const navigate = useNavigate();
   const { data, isLoading } = useActionItemsQuery();
 
   const handleItemClick = (url: string) => {
-    // Open in new tab so user can return to modal
-    window.open(url, '_blank');
+    // Close modal and navigate in same window
+    // User can reopen modal via the persistent banner
+    onClose();
+    navigate(url);
   };
 
   const items = data?.items ?? [];
@@ -224,7 +228,7 @@ export function ActionItemsModal({ open, onClose }: ActionItemsModalProps) {
           {/* Footer */}
           <div className="border-t border-border px-6 py-4 flex items-center justify-between">
             <p className="text-xs text-muted">
-              Click items to open in a new tab
+              Click the banner to reopen this list
             </p>
             <button
               onClick={onClose}
