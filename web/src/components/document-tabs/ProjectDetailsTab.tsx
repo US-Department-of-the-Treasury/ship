@@ -211,9 +211,9 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
     updated_at: document.updated_at,
     created_by: document.created_by as string | undefined,
     properties: document.properties as Record<string, unknown> | undefined,
-    impact: (document.impact as number | null) ?? null,
-    confidence: (document.confidence as number | null) ?? null,
-    ease: (document.ease as number | null) ?? null,
+    impact: (document.impact as number) ?? 5,
+    confidence: (document.confidence as number) ?? 5,
+    ease: (document.ease as number) ?? 5,
     color: (document.color as string) || '#3b82f6',
     emoji: null,
     program_id: programId,
@@ -221,8 +221,8 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
     owner_id: document.owner_id as string | undefined,
     // RACI fields
     accountable_id: document.accountable_id as string | undefined,
-    consulted_ids: (document.consulted_ids as string[]) || [],
-    informed_ids: (document.informed_ids as string[]) || [],
+    consulted_ids: document.consulted_ids as string[] | undefined,
+    informed_ids: document.informed_ids as string[] | undefined,
     converted_from_id: document.converted_from_id as string | undefined,
   }), [document, programId]);
 

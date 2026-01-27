@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { businessDaysBetween } from '../utils/business-days.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -1042,19 +1043,16 @@ router.get('/people/:personId/sprint-metrics', authMiddleware, async (req: Reque
   }
 });
 
-// GET /api/team/accountability-grid - Get accountability grid data (hypothesis/review status)
-// Returns: { sprints, projects, sprintAccountability } for admin accountability view
+// GET /api/team/accountability-grid - Get accountability grid data organized by program -> people
+// Returns: { sprints, currentSprintNumber, todayStr, programs } for accountability view
+// Each program contains people with their sprint assignments and projects with timelines
 router.get('/accountability-grid', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
-    // Check if user is admin
-    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
-    if (!isAdmin) {
-      res.status(403).json({ error: 'Admin access required' });
-      return;
-    }
+    // Accountability grid is visible to all authenticated users (interview decision: full visibility)
+    await getVisibilityContext(userId, workspaceId);
 
     // Get workspace sprint start date
     const workspaceResult = await pool.query(
@@ -1065,6 +1063,7 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
     const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
     const sprintDurationDays = 7;
     const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
 
     let startDate: Date;
     if (rawSprintStartDate instanceof Date) {
@@ -1079,12 +1078,24 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
     const daysSinceStart = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
     const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
 
-    // Get sprint range (last 6 sprints + current + next 2)
-    const fromSprint = Math.max(1, currentSprintNumber - 6);
-    const toSprint = currentSprintNumber + 2;
+    // Parse query params for sprint range (same as allocation page)
+    const defaultBack = 7;
+    const defaultForward = 7;
+    const fromSprint = req.query.fromSprint
+      ? Math.max(1, parseInt(req.query.fromSprint as string, 10))
+      : Math.max(1, currentSprintNumber - defaultBack);
+    const toSprint = req.query.toSprint
+      ? parseInt(req.query.toSprint as string, 10)
+      : currentSprintNumber + defaultForward;
 
-    // Generate sprint info
-    const sprintRange = [];
+    // Generate sprint info with computed dates
+    const sprintRange: Array<{
+      number: number;
+      name: string;
+      startDate: string;
+      endDate: string;
+      isCurrent: boolean;
+    }> = [];
     for (let i = fromSprint; i <= toSprint; i++) {
       const sprintStart = new Date(startDate);
       sprintStart.setUTCDate(sprintStart.getUTCDate() + (i - 1) * sprintDurationDays);
@@ -1094,21 +1105,32 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       sprintRange.push({
         number: i,
         name: `Sprint ${i}`,
-        startDate: sprintStart.toISOString().split('T')[0],
-        endDate: sprintEnd.toISOString().split('T')[0],
+        startDate: sprintStart.toISOString().split('T')[0]!,
+        endDate: sprintEnd.toISOString().split('T')[0]!,
         isCurrent: i === currentSprintNumber,
       });
     }
 
-    // Get all sprint documents with their accountability data
+    // Create map of sprint number to computed dates for quick lookup
+    const sprintDates: Record<number, { startDate: string; endDate: string }> = {};
+    for (const s of sprintRange) {
+      sprintDates[s.number] = { startDate: s.startDate, endDate: s.endDate };
+    }
+
+    // Get all sprint documents with their accountability data and assignee_ids
     const sprintsResult = await pool.query(
       `SELECT
          d.id,
          d.title,
-         d.properties->>'sprint_number' as sprint_number,
+         (d.properties->>'sprint_number')::int as sprint_number,
          d.properties->>'hypothesis' as hypothesis,
          d.properties->'hypothesis_approval' as hypothesis_approval,
          d.properties->'review_approval' as review_approval,
+         d.properties->'assignee_ids' as assignee_ids,
+         prog_da.related_id as program_id,
+         prog.title as program_name,
+         prog.properties->>'color' as program_color,
+         prog.properties->>'emoji' as program_emoji,
          EXISTS(
            SELECT 1 FROM documents sr
            WHERE sr.document_type = 'sprint_review'
@@ -1116,6 +1138,8 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
            AND sr.archived_at IS NULL
          ) as has_review
        FROM documents d
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog.id = prog_da.related_id
        WHERE d.workspace_id = $1
          AND d.document_type = 'sprint'
          AND d.archived_at IS NULL
@@ -1124,27 +1148,102 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       [workspaceId, fromSprint, toSprint]
     );
 
-    // Build sprint accountability map: sprintNumber -> accountability data
-    const sprintAccountability: Record<number, {
-      id: string;
-      title: string;
+    // Get all people in the workspace
+    const peopleResult = await pool.query(
+      `SELECT d.id, d.title as name
+       FROM documents d
+       WHERE d.workspace_id = $1
+         AND d.document_type = 'person'
+         AND d.archived_at IS NULL
+       ORDER BY d.title`,
+      [workspaceId]
+    );
+
+    // Build person ID to name map
+    const peopleMap: Record<string, string> = {};
+    for (const p of peopleResult.rows) {
+      peopleMap[p.id] = p.name;
+    }
+
+    // Build program -> people -> sprint assignments structure
+    // Structure: programId -> { info, people: personId -> { info, sprints: sprintNumber -> assignment } }
+    type SprintAssignment = {
+      sprintDocId: string;
       hasHypothesis: boolean;
       hypothesisApproval: { state: string | null } | null;
       hasReview: boolean;
       reviewApproval: { state: string | null } | null;
-    }> = {};
+    };
 
+    type PersonData = {
+      id: string;
+      name: string;
+      sprintAssignments: Record<number, SprintAssignment>;
+    };
+
+    type ProgramData = {
+      id: string | null;
+      name: string;
+      color: string | null;
+      emoji: string | null;
+      people: PersonData[];
+    };
+
+    const programsMap: Map<string | null, {
+      info: { id: string | null; name: string; color: string | null; emoji: string | null };
+      peopleMap: Map<string, { name: string; sprints: Map<number, SprintAssignment> }>;
+    }> = new Map();
+
+    // Process sprint documents - group by program and collect person assignments
     for (const sprint of sprintsResult.rows) {
-      const sprintNumber = parseInt(sprint.sprint_number, 10);
-      sprintAccountability[sprintNumber] = {
-        id: sprint.id,
-        title: sprint.title,
-        hasHypothesis: !!sprint.hypothesis && sprint.hypothesis.trim() !== '',
+      const programId = sprint.program_id || null;
+      const programKey = programId || '__no_program__';
+
+      // Initialize program if not exists
+      if (!programsMap.has(programKey)) {
+        programsMap.set(programKey, {
+          info: {
+            id: programId,
+            name: sprint.program_name || 'No Program',
+            color: sprint.program_color || null,
+            emoji: sprint.program_emoji || null,
+          },
+          peopleMap: new Map(),
+        });
+      }
+
+      const programEntry = programsMap.get(programKey)!;
+
+      // Get assignee_ids from sprint
+      const assigneeIds: string[] = Array.isArray(sprint.assignee_ids)
+        ? sprint.assignee_ids
+        : [];
+
+      // Sprint accountability data
+      const hasHypothesis = !!sprint.hypothesis && sprint.hypothesis.trim() !== '';
+      const assignment: SprintAssignment = {
+        sprintDocId: sprint.id,
+        hasHypothesis,
         hypothesisApproval: sprint.hypothesis_approval,
         hasReview: sprint.has_review === true,
         reviewApproval: sprint.review_approval,
       };
+
+      // Add each person to this program with this sprint assignment
+      for (const personId of assigneeIds) {
+        if (!programEntry.peopleMap.has(personId)) {
+          programEntry.peopleMap.set(personId, {
+            name: peopleMap[personId] || 'Unknown',
+            sprints: new Map(),
+          });
+        }
+        programEntry.peopleMap.get(personId)!.sprints.set(sprint.sprint_number, assignment);
+      }
     }
+
+    // Also need to include people in programs even if they have no sprint assignments
+    // Get all people's program associations via their sprint assignments (already done above)
+    // Per interview decision: person with no assignments shows row with empty cells
 
     // Get all active projects with their program info and accountability data
     const projectsResult = await pool.query(
@@ -1152,7 +1251,6 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
          p.id,
          p.title,
          p.properties->>'color' as color,
-         p.properties->>'emoji' as emoji,
          p.content as hypothesis_content,
          p.properties->'hypothesis_approval' as hypothesis_approval,
          p.properties->'retro_approval' as retro_approval,
@@ -1177,47 +1275,138 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       [workspaceId]
     );
 
-    // Sprint allocations feature not yet implemented in unified document model
-    // TODO: Derive allocations from issue assignments (issues assigned to both project and sprint)
-    // For now, return empty allocations so the endpoint works
-    const projectAllocations: Record<string, Record<number, number>> = {};
+    // Get project sprint allocations (which sprints have issues for each project)
+    const projectAllocationsResult = await pool.query(
+      `SELECT
+         proj_da.related_id as project_id,
+         sprint_da.related_id as sprint_id,
+         (s.properties->>'sprint_number')::int as sprint_number
+       FROM documents i
+       JOIN document_associations proj_da ON proj_da.document_id = i.id AND proj_da.relationship_type = 'project'
+       JOIN document_associations sprint_da ON sprint_da.document_id = i.id AND sprint_da.relationship_type = 'sprint'
+       JOIN documents s ON s.id = sprint_da.related_id AND s.document_type = 'sprint'
+       WHERE i.workspace_id = $1
+         AND i.document_type = 'issue'
+         AND i.archived_at IS NULL
+         AND (s.properties->>'sprint_number')::int BETWEEN $2 AND $3
+       GROUP BY proj_da.related_id, sprint_da.related_id, s.properties->>'sprint_number'`,
+      [workspaceId, fromSprint, toSprint]
+    );
 
-    // Build projects array with accountability data
-    const projects = projectsResult.rows.map(p => {
+    // Build project -> sprint numbers map
+    const projectSprintAllocations: Record<string, Set<number>> = {};
+    for (const row of projectAllocationsResult.rows) {
+      let sprintSet = projectSprintAllocations[row.project_id];
+      if (!sprintSet) {
+        sprintSet = new Set();
+        projectSprintAllocations[row.project_id] = sprintSet;
+      }
+      sprintSet.add(row.sprint_number);
+    }
+
+    // Group projects by program
+    type ProjectData = {
+      id: string;
+      title: string;
+      color: string;
+      hasHypothesis: boolean;
+      hypothesisApproval: { state: string | null } | null;
+      hasRetro: boolean;
+      retroApproval: { state: string | null } | null;
+      sprintAllocations: number[];
+    };
+
+    const projectsByProgram: Map<string, ProjectData[]> = new Map();
+
+    for (const p of projectsResult.rows) {
+      const programKey = p.program_id || '__no_program__';
+
       // Check if project has hypothesis (non-empty content)
       let hasHypothesis = false;
       if (p.hypothesis_content) {
         const content = typeof p.hypothesis_content === 'string'
           ? JSON.parse(p.hypothesis_content)
           : p.hypothesis_content;
-        // Check if content has any text
         if (content?.content) {
-          hasHypothesis = JSON.stringify(content.content).length > 50; // Reasonable threshold for "has content"
+          hasHypothesis = JSON.stringify(content.content).length > 50;
         }
       }
 
-      return {
+      const projectData: ProjectData = {
         id: p.id,
         title: p.title,
         color: p.color || p.program_color || '#6b7280',
-        emoji: p.emoji,
-        programId: p.program_id,
-        programName: p.program_name,
-        programColor: p.program_color,
-        programEmoji: p.program_emoji,
         hasHypothesis,
         hypothesisApproval: p.hypothesis_approval,
         hasRetro: p.has_retro === true,
         retroApproval: p.retro_approval,
-        allocations: projectAllocations[p.id] || {},
+        sprintAllocations: Array.from(projectSprintAllocations[p.id] || []).sort((a, b) => a - b),
       };
+
+      if (!projectsByProgram.has(programKey)) {
+        projectsByProgram.set(programKey, []);
+      }
+      projectsByProgram.get(programKey)!.push(projectData);
+
+      // Ensure the program exists in programsMap (might have projects but no sprint assignments)
+      if (!programsMap.has(programKey)) {
+        programsMap.set(programKey, {
+          info: {
+            id: p.program_id || null,
+            name: p.program_name || 'No Program',
+            color: p.program_color || null,
+            emoji: p.program_emoji || null,
+          },
+          peopleMap: new Map(),
+        });
+      }
+    }
+
+    // Convert maps to arrays for response
+    const programs: Array<ProgramData & { projects: ProjectData[] }> = [];
+
+    for (const [programKey, programEntry] of programsMap.entries()) {
+      const people: PersonData[] = [];
+
+      for (const [personId, personEntry] of programEntry.peopleMap.entries()) {
+        const sprintAssignments: Record<number, SprintAssignment> = {};
+        for (const [sprintNum, assignment] of personEntry.sprints.entries()) {
+          sprintAssignments[sprintNum] = assignment;
+        }
+        people.push({
+          id: personId,
+          name: personEntry.name,
+          sprintAssignments,
+        });
+      }
+
+      // Sort people by name
+      people.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Convert null key to match projectsByProgram's string key pattern
+      const projectsKey = programKey || '__no_program__';
+      programs.push({
+        id: programEntry.info.id,
+        name: programEntry.info.name,
+        color: programEntry.info.color,
+        emoji: programEntry.info.emoji,
+        people,
+        projects: projectsByProgram.get(projectsKey) || [],
+      });
+    }
+
+    // Sort programs alphabetically, with "No Program" last
+    programs.sort((a, b) => {
+      if (a.id === null) return 1;
+      if (b.id === null) return -1;
+      return a.name.localeCompare(b.name);
     });
 
     res.json({
       sprints: sprintRange,
       currentSprintNumber,
-      sprintAccountability,
-      projects,
+      todayStr,
+      programs,
     });
   } catch (err) {
     console.error('Get accountability grid error:', err);
