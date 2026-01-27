@@ -226,7 +226,7 @@ export function UnifiedDocumentPage() {
     navigate(`/documents/${newDocId}`, { replace: true });
   }, [navigate]);
 
-  // Update mutation
+  // Update mutation with optimistic updates
   const updateMutation = useMutation({
     mutationFn: async ({ documentId, updates }: { documentId: string; updates: Partial<DocumentResponse> }) => {
       const response = await apiPatch(`/api/documents/${documentId}`, updates);
@@ -234,6 +234,27 @@ export function UnifiedDocumentPage() {
         throw new Error('Failed to update document');
       }
       return response.json();
+    },
+    onMutate: async ({ documentId, updates }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['document', documentId] });
+
+      // Snapshot the previous value
+      const previousDocument = queryClient.getQueryData<Record<string, unknown>>(['document', documentId]);
+
+      // Optimistically update the document cache
+      if (previousDocument) {
+        queryClient.setQueryData(['document', documentId], { ...previousDocument, ...updates });
+      }
+
+      // Return context with the previous value for rollback
+      return { previousDocument, documentId };
+    },
+    onError: (_err, _variables, context) => {
+      // Rollback to the previous value on error
+      if (context?.previousDocument && context?.documentId) {
+        queryClient.setQueryData(['document', context.documentId], context.previousDocument);
+      }
     },
     onSuccess: (_, { documentId }) => {
       queryClient.invalidateQueries({ queryKey: ['document', documentId] });

@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/Toast';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { projectKeys } from '@/hooks/useProjectsQuery';
 import type { DocumentTabProps } from '@/lib/document-tabs';
+import { computeICEScore } from '@ship/shared';
 
 /**
  * ProjectDetailsTab - Renders the project document in the UnifiedEditor
@@ -45,7 +46,7 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
     emoji: p.emoji,
   })), [programsData]);
 
-  // Update mutation
+  // Update mutation with optimistic updates
   const updateMutation = useMutation({
     mutationFn: async (updates: Partial<UnifiedDocument>) => {
       const response = await apiPatch(`/api/documents/${documentId}`, updates);
@@ -53,6 +54,40 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
         throw new Error('Failed to update document');
       }
       return response.json();
+    },
+    onMutate: async (updates) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['document', documentId] });
+      await queryClient.cancelQueries({ queryKey: projectKeys.lists() });
+
+      // Snapshot the previous value
+      const previousDocument = queryClient.getQueryData<Record<string, unknown>>(['document', documentId]);
+
+      // Optimistically update the document cache
+      if (previousDocument) {
+        // Cast updates to Record since we're in ProjectDetailsTab and know these fields exist
+        const projectUpdates = updates as Record<string, unknown>;
+        const updatedDocument = { ...previousDocument, ...projectUpdates };
+
+        // Recompute ICE score if any ICE property changed
+        if ('impact' in projectUpdates || 'confidence' in projectUpdates || 'ease' in projectUpdates) {
+          const impact = (projectUpdates.impact ?? previousDocument.impact) as number | null;
+          const confidence = (projectUpdates.confidence ?? previousDocument.confidence) as number | null;
+          const ease = (projectUpdates.ease ?? previousDocument.ease) as number | null;
+          updatedDocument.ice_score = computeICEScore(impact, confidence, ease);
+        }
+
+        queryClient.setQueryData(['document', documentId], updatedDocument);
+      }
+
+      // Return context with the previous value for rollback
+      return { previousDocument };
+    },
+    onError: (_err, _updates, context) => {
+      // Rollback to the previous value on error
+      if (context?.previousDocument) {
+        queryClient.setQueryData(['document', documentId], context.previousDocument);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['document', documentId] });
