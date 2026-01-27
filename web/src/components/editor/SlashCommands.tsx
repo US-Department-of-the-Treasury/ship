@@ -256,6 +256,7 @@ const icons = {
 };
 
 export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument, documentType, abortSignal }: CreateSlashCommandsOptions) {
+  console.log('[SlashCommands] createSlashCommands called with documentType:', documentType);
   const slashCommands: SlashCommandItem[] = [
     // Sub-document (requires async callback)
     {
@@ -481,23 +482,26 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
           .run();
       },
     },
-    // Plan block (for Sprint documents only - syncs with properties.plan)
+    // Plan block (for Sprint and Project documents - syncs with properties.plan)
     {
       title: 'Plan',
       description: 'Add a plan block',
       aliases: ['plan', 'hypothesis', 'hypo', 'theory'],
       icon: icons.plan,
-      documentTypes: ['sprint'],
+      documentTypes: ['sprint', 'project'],
       command: ({ editor, range }) => {
-        editor
+        console.log('[SlashCommands] Plan command executing', { range });
+        const result = editor
           .chain()
           .focus()
           .deleteRange(range)
           .insertContent({
             type: 'hypothesisBlock',
-            attrs: { placeholder: 'What will get done this sprint?' },
+            attrs: { placeholder: 'What is the plan?' },
           })
           .run();
+        console.log('[SlashCommands] Plan command result:', result);
+        console.log('[SlashCommands] Editor content after:', editor.getJSON());
       },
     },
     // Success Criteria section (for Project and Sprint documents)
@@ -612,7 +616,13 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
                 // Filter by document type if command has restrictions
                 if (item.documentTypes && item.documentTypes.length > 0) {
                   if (!documentType || !item.documentTypes.includes(documentType)) {
+                    if (item.title === 'Plan') {
+                      console.log('[SlashCommands] Plan filtered OUT - documentType:', documentType, 'allowed:', item.documentTypes);
+                    }
                     return false;
+                  }
+                  if (item.title === 'Plan') {
+                    console.log('[SlashCommands] Plan INCLUDED - documentType:', documentType);
                   }
                 }
                 // Filter by search query

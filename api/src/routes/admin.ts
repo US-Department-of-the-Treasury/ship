@@ -4,6 +4,7 @@ import { pool } from '../db/client.js';
 import { authMiddleware, superAdminMiddleware } from '../middleware/auth.js';
 import { ERROR_CODES, HTTP_STATUS } from '@ship/shared';
 import { logAuditEvent } from '../services/audit.js';
+import { invalidateAllDocumentCaches } from '../collaboration/index.js';
 
 const router: RouterType = Router();
 
@@ -1794,6 +1795,40 @@ router.delete('/debug/users/:id', async (req: Request, res: Response): Promise<v
       error: {
         code: ERROR_CODES.INTERNAL_ERROR,
         message: 'Failed to delete user',
+      },
+    });
+  }
+});
+
+// ============================================================================
+// Cache Management
+// ============================================================================
+
+// POST /api/admin/cache/invalidate - Invalidate all collaboration document caches
+// This endpoint is called by seed.ts after clearing yjs_state to ensure the
+// collaboration server reloads content from the database instead of using stale cache.
+router.post('/cache/invalidate', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const count = invalidateAllDocumentCaches();
+
+    await logAuditEvent({
+      actorUserId: req.userId!,
+      action: 'admin.cache_invalidate',
+      details: { documentsInvalidated: count },
+      req,
+    });
+
+    res.json({
+      success: true,
+      data: { documentsInvalidated: count },
+    });
+  } catch (error) {
+    console.error('Invalidate cache error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to invalidate cache',
       },
     });
   }

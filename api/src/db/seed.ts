@@ -6,6 +6,7 @@ import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import { loadProductionSecrets } from '../config/ssm.js';
 import { WELCOME_DOCUMENT_TITLE, WELCOME_DOCUMENT_CONTENT } from './welcomeDocument.js';
+import { contentToYjsState } from '../utils/yjsConverter.js';
 
 const { Pool } = pg;
 
@@ -248,7 +249,6 @@ async function seed() {
         impact: 5,
         confidence: 4,
         ease: 3,
-        hypothesis: 'Building core features will establish the product foundation and attract early adopters.',
         monetary_impact_expected: 50000,
       },
       {
@@ -258,7 +258,6 @@ async function seed() {
         impact: 4,
         confidence: 5,
         ease: 4,
-        hypothesis: 'Fixing bugs will improve user retention and reduce support costs.',
         monetary_impact_expected: 15000,
       },
       {
@@ -268,7 +267,6 @@ async function seed() {
         impact: 4,
         confidence: 3,
         ease: 2,
-        hypothesis: 'Performance improvements will increase user satisfaction and enable scale.',
         monetary_impact_expected: 25000,
       },
     ];
@@ -312,7 +310,6 @@ async function seed() {
             impact: template.impact,
             confidence: template.confidence,
             ease: template.ease,
-            hypothesis: template.hypothesis,
             monetary_impact_expected: template.monetary_impact_expected,
             target_date: targetDate.toISOString().split('T')[0],
           };
@@ -461,7 +458,7 @@ async function seed() {
         const thisSprintStart = new Date(sprintStartDate);
         thisSprintStart.setDate(thisSprintStart.getDate() + (sprint.number - 1) * 7);
 
-        const sprintHypotheses = [
+        const sprintPlans = [
           'If we complete these features, we will unblock the next milestone.',
           'Fixing these issues will reduce user-reported problems by 50%.',
           'Performance gains will improve user engagement metrics.',
@@ -471,24 +468,24 @@ async function seed() {
           'Incremental shipping will maintain momentum and user trust.',
         ];
 
-        // Determine state, hypothesis, and approval based on offset
+        // Determine status, plan, and approval based on offset
         let expectedState: 'completed' | 'active' | 'planning' = 'planning';
-        let hasHypothesis = false;
-        let hypothesisApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
+        let hasPlan = false;
+        let planApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
         let reviewApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
         let hasReview = false;
 
         if (sprintOffset < -1) {
-          // Past sprints: completed with approved hypotheses and reviews
+          // Past sprints: completed with approved plans and reviews
           expectedState = 'completed';
-          hasHypothesis = sprint.number % 5 !== 0;
+          hasPlan = true; // All past sprints should have plans
           hasReview = sprint.number % 7 !== 0;
-          if (hasHypothesis) {
+          if (hasPlan) {
             // Some have changed_since_approved to test the warning UI
             if (sprint.number % 8 === 0) {
-              hypothesisApproval = { state: 'changed_since_approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+              planApproval = { state: 'changed_since_approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
             } else {
-              hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+              planApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
             }
           }
           if (hasReview) {
@@ -497,40 +494,46 @@ async function seed() {
         } else if (sprintOffset === -1) {
           // Just completed sprint
           expectedState = 'completed';
-          hasHypothesis = true;
+          hasPlan = true;
           hasReview = sprint.number % 3 !== 0;
-          // Some have hypothesis that changed since approval (to test manager warning)
+          // Some have plan that changed since approval (to test manager warning)
           if (sprint.number % 4 === 0) {
-            hypothesisApproval = { state: 'changed_since_approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+            planApproval = { state: 'changed_since_approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
           } else {
-            hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+            planApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
           }
           if (hasReview) {
             reviewApproval = { state: 'pending' };
           }
         } else if (sprintOffset === 0) {
+          // Current sprint: all should have plans, variety in approval state
           const variant = sprint.number % 4;
-          expectedState = variant === 3 ? 'planning' : 'active';
-          hasHypothesis = variant < 2;
-          if (hasHypothesis) {
-            // One variant has changed_since_approved for current sprint
-            if (variant === 0 && sprint.number % 3 === 0) {
-              hypothesisApproval = { state: 'changed_since_approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
-            } else if (variant === 0) {
-              hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
-            } else {
-              hypothesisApproval = { state: 'pending' };
-            }
+          expectedState = 'active';
+          hasPlan = true; // All current sprints need plans
+          if (variant === 0) {
+            planApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+          } else if (variant === 1) {
+            planApproval = { state: 'pending' };
+          } else if (variant === 2) {
+            planApproval = { state: 'changed_since_approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+          } else {
+            planApproval = { state: 'pending' };
           }
         } else if (sprintOffset === 1) {
-          hasHypothesis = sprint.number % 5 < 2;
-          if (hasHypothesis) {
-            hypothesisApproval = { state: 'pending' };
-          }
+          // Next sprint: all should have plans
+          hasPlan = true;
+          planApproval = { state: 'pending' };
         } else if (sprintOffset <= 3) {
-          hasHypothesis = sprint.number % 5 === 0;
-          if (hasHypothesis) {
-            hypothesisApproval = { state: 'pending' };
+          // Near future: most have plans
+          hasPlan = sprint.number % 3 !== 0; // 67% have plans
+          if (hasPlan) {
+            planApproval = { state: 'pending' };
+          }
+        } else {
+          // Far future: some have plans
+          hasPlan = sprint.number % 2 === 0; // 50% have plans
+          if (hasPlan) {
+            planApproval = { state: 'pending' };
           }
         }
 
@@ -540,24 +543,25 @@ async function seed() {
           status: expectedState,
         };
 
-        if (hasHypothesis) {
-          updatedProps.hypothesis = sprintHypotheses[sprint.number % sprintHypotheses.length];
+        if (hasPlan) {
+          updatedProps.plan = sprintPlans[sprint.number % sprintPlans.length];
         }
 
         if (expectedState === 'active' || expectedState === 'completed') {
           updatedProps.started_at = thisSprintStart.toISOString();
         }
 
-        if (hypothesisApproval) {
-          updatedProps.hypothesis_approval = hypothesisApproval;
+        if (planApproval) {
+          updatedProps.plan_approval = planApproval;
         }
 
         if (reviewApproval) {
           updatedProps.review_approval = reviewApproval;
         }
 
-        // Build content with hypothesisBlock if needed
-        const updatedContent = hasHypothesis ? {
+        // Build content with hypothesisBlock if plan exists
+        // (the TipTap node is still called hypothesisBlock)
+        const updatedContent = hasPlan ? {
           type: 'doc',
           content: [
             {
@@ -566,7 +570,7 @@ async function seed() {
               content: [
                 {
                   type: 'paragraph',
-                  content: [{ type: 'text', text: updatedProps.hypothesis as string }],
+                  content: [{ type: 'text', text: updatedProps.plan as string }],
                 },
               ],
             },
@@ -574,9 +578,12 @@ async function seed() {
           ],
         } : { type: 'doc', content: [{ type: 'paragraph', content: [] }] };
 
+        // Pre-compute yjs_state from content to ensure authoritative state
+        // This prevents stale browser IndexedDB from overriding seeded content via CRDT merge
+        const yjsState = contentToYjsState(updatedContent);
         await pool.query(
-          `UPDATE documents SET properties = $1, content = $2 WHERE id = $3`,
-          [JSON.stringify(updatedProps), JSON.stringify(updatedContent), existingId]
+          `UPDATE documents SET properties = $1, content = $2, yjs_state = $3 WHERE id = $4`,
+          [JSON.stringify(updatedProps), JSON.stringify(updatedContent), yjsState, existingId]
         );
         sprintsCreated++;
 
@@ -590,7 +597,7 @@ async function seed() {
         // Sprint properties with full planning details
         // Dates and status are computed at runtime from sprint_number + workspace.sprint_start_date
         // Confidence is 0-100 scale (different from project ICE scores which are 1-10)
-        const sprintHypotheses = [
+        const sprintPlans = [
           'If we complete these features, we will unblock the next milestone.',
           'Fixing these issues will reduce user-reported problems by 50%.',
           'Performance gains will improve user engagement metrics.',
@@ -612,13 +619,13 @@ async function seed() {
         // Calculate sprint offset from current
         const sprintOffset = sprint.number - currentSprintNumber;
 
-        // Determine sprint status and hypothesis/review presence based on timing
+        // Determine sprint status and plan/review presence based on timing
         // This creates realistic data for testing the accountability grid
         let status: 'completed' | 'active' | 'planning' = 'planning';
         let started_at: string | null = null;
-        let hasHypothesis = false;
+        let hasPlan = false;
         let hasReview = false;
-        let hypothesisApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
+        let planApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
         let reviewApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
 
         // Calculate sprint start date for this sprint
@@ -626,19 +633,19 @@ async function seed() {
         thisSprintStart.setDate(thisSprintStart.getDate() + (sprint.number - 1) * 7);
 
         if (sprintOffset < -1) {
-          // Past sprints (more than 1 sprint ago): mostly completed with hypothesis + review
+          // Past sprints (more than 1 sprint ago): completed with plan + review
           status = 'completed';
           started_at = thisSprintStart.toISOString();
 
-          // 80% of past sprints have hypothesis, 20% missing for testing
-          hasHypothesis = sprint.number % 5 !== 0; // Every 5th sprint missing hypothesis
+          // All past sprints should have plans
+          hasPlan = true;
           // 85% of past sprints have review, 15% missing for testing
           hasReview = sprint.number % 7 !== 0; // Every 7th sprint missing review
 
-          // If they have hypothesis/review, most are approved
-          if (hasHypothesis) {
+          // If they have plan/review, most are approved
+          if (hasPlan) {
             // 90% approved, 10% pending
-            hypothesisApproval = sprint.number % 10 === 0
+            planApproval = sprint.number % 10 === 0
               ? { state: 'pending' }
               : { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
           }
@@ -649,62 +656,50 @@ async function seed() {
               : { state: 'approved', approved_by: owner.id, approved_at: new Date(thisSprintStart.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() };
           }
         } else if (sprintOffset === -1) {
-          // Just completed sprint: should have hypothesis, review may be missing
+          // Just completed sprint: should have plan, review may be missing
           status = 'completed';
           started_at = thisSprintStart.toISOString();
-          hasHypothesis = true;
+          hasPlan = true;
           // 60% have review (some people are behind)
           hasReview = sprint.number % 3 !== 0;
-          hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+          planApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
           if (hasReview) {
             reviewApproval = { state: 'pending' }; // Recently submitted, not yet approved
           }
         } else if (sprintOffset === 0) {
-          // Current sprint: mix of states for testing
-          // Use sprint number to create variety across programs
+          // Current sprint: all should have plans, variety in approval state
           const currentSprintVariant = sprint.number % 4;
+          status = 'active';
+          started_at = thisSprintStart.toISOString();
+          hasPlan = true; // All current sprints need plans
           if (currentSprintVariant === 0) {
-            // Started with hypothesis and approved
-            status = 'active';
-            started_at = thisSprintStart.toISOString();
-            hasHypothesis = true;
-            hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+            planApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
           } else if (currentSprintVariant === 1) {
-            // Started with hypothesis pending approval
-            status = 'active';
-            started_at = thisSprintStart.toISOString();
-            hasHypothesis = true;
-            hypothesisApproval = { state: 'pending' };
+            planApproval = { state: 'pending' };
           } else if (currentSprintVariant === 2) {
-            // Started but no hypothesis (should show warning/error)
-            status = 'active';
-            started_at = thisSprintStart.toISOString();
-            hasHypothesis = false;
+            planApproval = { state: 'changed_since_approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
           } else {
-            // Not yet started (should show "not started" indicator)
-            status = 'planning';
-            hasHypothesis = false;
+            planApproval = { state: 'pending' };
           }
         } else if (sprintOffset === 1) {
-          // Next sprint: some proactive teams have hypothesis already
+          // Next sprint: most teams should have plans
           status = 'planning';
-          // 40% have hypothesis written early
-          hasHypothesis = sprint.number % 5 < 2;
-          if (hasHypothesis) {
-            hypothesisApproval = { state: 'pending' };
-          }
+          hasPlan = true; // 100% have plan for next sprint (good planning)
+          planApproval = { state: 'pending' };
         } else if (sprintOffset <= 3) {
-          // Near future (2-3 sprints out): occasional early planning
+          // Near future (2-3 sprints out): most have plans
           status = 'planning';
-          // 20% have hypothesis
-          hasHypothesis = sprint.number % 5 === 0;
-          if (hasHypothesis) {
-            hypothesisApproval = { state: 'pending' };
+          hasPlan = sprint.number % 3 !== 0; // 67% have plans
+          if (hasPlan) {
+            planApproval = { state: 'pending' };
           }
         } else {
-          // Far future: no hypothesis yet (normal)
+          // Far future: some have plans
           status = 'planning';
-          hasHypothesis = false;
+          hasPlan = sprint.number % 2 === 0; // 50% have plans
+          if (hasPlan) {
+            planApproval = { state: 'pending' };
+          }
         }
 
         // Calculate confidence based on sprint timing
@@ -728,36 +723,36 @@ async function seed() {
           sprintProperties.started_at = started_at;
         }
 
-        // Add hypothesis if present
-        if (hasHypothesis) {
-          sprintProperties.hypothesis = sprintHypotheses[sprint.number % sprintHypotheses.length];
+        // Add plan if present
+        if (hasPlan) {
+          sprintProperties.plan = sprintPlans[sprint.number % sprintPlans.length];
         }
 
         // Add approval states
-        if (hypothesisApproval) {
-          sprintProperties.hypothesis_approval = hypothesisApproval;
+        if (planApproval) {
+          sprintProperties.plan_approval = planApproval;
         }
         if (reviewApproval) {
           sprintProperties.review_approval = reviewApproval;
         }
 
-        // Build document content - include hypothesisBlock if sprint has hypothesis
-        // This is important because the editor syncs hypothesis from content to properties
-        // If we only set properties.hypothesis but not content, it gets overwritten to null
-        const hypothesisText = hasHypothesis
-          ? sprintHypotheses[sprint.number % sprintHypotheses.length]
+        // Build document content - include hypothesisBlock if sprint has plan
+        // This is important because the editor syncs plan from content to properties
+        // If we only set properties.plan but not content, it gets overwritten to null
+        const planText = hasPlan
+          ? sprintPlans[sprint.number % sprintPlans.length]
           : null;
 
         const sprintContent: Record<string, unknown> = {
           type: 'doc',
-          content: hasHypothesis ? [
+          content: hasPlan ? [
             {
               type: 'hypothesisBlock',
               attrs: { placeholder: 'What will get done this sprint?' },
               content: [
                 {
                   type: 'paragraph',
-                  content: [{ type: 'text', text: hypothesisText }],
+                  content: [{ type: 'text', text: planText }],
                 },
               ],
             },
@@ -773,12 +768,16 @@ async function seed() {
           ],
         };
 
+        // Pre-compute yjs_state from content to ensure authoritative state
+        // This prevents stale browser IndexedDB from overriding seeded content via CRDT merge
+        const sprintYjsState = contentToYjsState(sprintContent);
+
         // Create sprint document without legacy project_id and program_id columns
         const sprintResult = await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, properties, content)
-           VALUES ($1, 'sprint', $2, $3, $4)
+          `INSERT INTO documents (workspace_id, document_type, title, properties, content, yjs_state)
+           VALUES ($1, 'sprint', $2, $3, $4, $5)
            RETURNING id`,
-          [workspaceId, `Sprint ${sprint.number}`, JSON.stringify(sprintProperties), JSON.stringify(sprintContent)]
+          [workspaceId, `Sprint ${sprint.number}`, JSON.stringify(sprintProperties), JSON.stringify(sprintContent), sprintYjsState]
         );
         const sprintId = sprintResult.rows[0].id;
 
@@ -1055,12 +1054,14 @@ async function seed() {
 
     let tutorialDocId: string;
     if (!existingTutorial.rows[0]) {
+      // Pre-compute yjs_state to prevent stale browser IndexedDB issues
+      const tutorialYjsState = contentToYjsState(WELCOME_DOCUMENT_CONTENT);
       // Insert the tutorial document with position=0 to ensure it appears first
       const tutorialResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, content, position)
-         VALUES ($1, 'wiki', $2, $3, 0)
+        `INSERT INTO documents (workspace_id, document_type, title, content, yjs_state, position)
+         VALUES ($1, 'wiki', $2, $3, $4, 0)
          RETURNING id`,
-        [workspaceId, WELCOME_DOCUMENT_TITLE, JSON.stringify(WELCOME_DOCUMENT_CONTENT)]
+        [workspaceId, WELCOME_DOCUMENT_TITLE, JSON.stringify(WELCOME_DOCUMENT_CONTENT), tutorialYjsState]
       );
       tutorialDocId = tutorialResult.rows[0].id;
       console.log('✅ Created welcome tutorial document');
@@ -1118,10 +1119,12 @@ async function seed() {
           type: 'doc',
           content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.content }] }]
         };
+        // Pre-compute yjs_state to prevent stale browser IndexedDB issues
+        const wikiYjsState = contentToYjsState(contentJson);
         await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, content, position)
-           VALUES ($1, 'wiki', $2, $3, $4)`,
-          [workspaceId, doc.title, JSON.stringify(contentJson), i + 1]
+          `INSERT INTO documents (workspace_id, document_type, title, content, yjs_state, position)
+           VALUES ($1, 'wiki', $2, $3, $4, $5)`,
+          [workspaceId, doc.title, JSON.stringify(contentJson), wikiYjsState, i + 1]
         );
         standaloneDocsCreated++;
       }
@@ -1189,13 +1192,15 @@ async function seed() {
 
             const daysAgo = i; // Stagger the standups over recent days
             const properties = { author_id: author.id };
+            // Pre-compute yjs_state to prevent stale browser IndexedDB issues
+            const standupYjsState = contentToYjsState(content);
 
             // Create standup document
             const standupResult = await pool.query(
-              `INSERT INTO documents (workspace_id, document_type, title, content, created_by, properties, created_at)
-               VALUES ($1, 'standup', $2, $3, $4, $5, NOW() - INTERVAL '${daysAgo} days')
+              `INSERT INTO documents (workspace_id, document_type, title, content, yjs_state, created_by, properties, created_at)
+               VALUES ($1, 'standup', $2, $3, $4, $5, $6, NOW() - INTERVAL '${daysAgo} days')
                RETURNING id`,
-              [workspaceId, `Standup - ${author.name}`, JSON.stringify(content), author.id, JSON.stringify(properties)]
+              [workspaceId, `Standup - ${author.name}`, JSON.stringify(content), standupYjsState, author.id, JSON.stringify(properties)]
             );
             const standupId = standupResult.rows[0].id;
 
@@ -1282,12 +1287,14 @@ async function seed() {
           };
 
           const owner = allUsers[sprint.number % allUsers.length]!;
+          // Pre-compute yjs_state to prevent stale browser IndexedDB issues
+          const reviewYjsState = contentToYjsState(reviewContent);
           // Create sprint review document
           const reviewResult = await pool.query(
-            `INSERT INTO documents (workspace_id, document_type, title, content, created_by)
-             VALUES ($1, 'sprint_review', $2, $3, $4)
+            `INSERT INTO documents (workspace_id, document_type, title, content, yjs_state, created_by)
+             VALUES ($1, 'sprint_review', $2, $3, $4, $5)
              RETURNING id`,
-            [workspaceId, `Sprint ${sprint.number} Review`, JSON.stringify(reviewContent), owner.id]
+            [workspaceId, `Sprint ${sprint.number} Review`, JSON.stringify(reviewContent), reviewYjsState, owner.id]
           );
           const reviewId = reviewResult.rows[0].id;
 
@@ -1315,6 +1322,24 @@ async function seed() {
       console.log(`✅ Created ${sprintReviewsCreated} sprint reviews`);
     } else {
       console.log('ℹ️  All sprint reviews already exist');
+    }
+
+    // Try to invalidate collaboration server cache if API is running
+    // This ensures the server reloads yjs_state from database after seeding
+    const apiPort = process.env.API_PORT || '3000';
+    const cacheInvalidateUrl = `http://localhost:${apiPort}/api/dev/cache/invalidate`;
+
+    try {
+      const response = await fetch(cacheInvalidateUrl, { method: 'POST' });
+      if (response.ok) {
+        const result = await response.json() as { documentsInvalidated: number };
+        console.log(`✅ Invalidated ${result.documentsInvalidated} cached documents`);
+      } else {
+        console.log('ℹ️  API not running or cache invalidation failed - restart dev server to clear cache');
+      }
+    } catch {
+      // API not running - this is fine, cache will be empty on startup
+      console.log('ℹ️  API not running - cache will be fresh on startup');
     }
 
     console.log('');

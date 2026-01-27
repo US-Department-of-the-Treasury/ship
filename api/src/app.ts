@@ -162,6 +162,24 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
     res.json({ status: 'ok' });
   });
 
+  // Development-only: Cache invalidation endpoint for seed.ts
+  // This allows the seed script to clear collaboration server cache after updating yjs_state
+  // Only available in development - production must use authenticated admin endpoint
+  if (process.env.NODE_ENV !== 'production') {
+    // Dynamic import to avoid loading collaboration module at app startup
+    app.post('/api/dev/cache/invalidate', async (_req, res) => {
+      try {
+        const { invalidateAllDocumentCaches } = await import('./collaboration/index.js');
+        const count = invalidateAllDocumentCaches();
+        console.log(`[Dev] Cache invalidated: ${count} documents`);
+        res.json({ success: true, documentsInvalidated: count });
+      } catch (error) {
+        console.error('[Dev] Cache invalidation failed:', error);
+        res.status(500).json({ success: false, error: 'Cache invalidation failed' });
+      }
+    });
+  }
+
   // API documentation (no auth needed)
   setupSwagger(app);
 

@@ -88,6 +88,10 @@ const docs = new Map<string, Y.Doc>();
 const awareness = new Map<string, awarenessProtocol.Awareness>();
 const conns = new Map<WebSocket, { docName: string; awarenessClientId: number; userId: string; workspaceId: string }>();
 
+// Track documents loaded from content fallback (not yet saved to yjs_state)
+// These should not persist empty states from stale client IndexedDB syncs
+const loadedFromContentFallback = new Set<string>();
+
 // Global events connections (separate from document collaboration)
 // These persist across navigation and are used for real-time notifications
 const eventConns = new Map<WebSocket, { userId: string; workspaceId: string }>();
@@ -303,9 +307,48 @@ function schedulePersist(docName: string, doc: Y.Doc) {
   if (existing) clearTimeout(existing);
 
   pendingSaves.set(docName, setTimeout(() => {
+    // If document was loaded from content fallback, check if it has meaningful content
+    // This prevents stale client IndexedDB state from overwriting good content
+    if (loadedFromContentFallback.has(docName)) {
+      const fragment = doc.getXmlFragment('default');
+      const hasContent = fragment.length > 0 && !isFragmentEffectivelyEmpty(fragment);
+      if (!hasContent) {
+        console.log(`[Collaboration] Skipping persist for ${docName} - content would be empty (protecting content fallback)`);
+        pendingSaves.delete(docName);
+        return;
+      }
+      // Has meaningful content - allow this persist but KEEP the protection
+      // Protection is only cleared when the document is explicitly closed or after manual cache invalidation
+      // This ensures we never persist empty state from late-arriving stale IndexedDB syncs
+      console.log(`[Collaboration] ${docName} has meaningful content, persisting (protection remains active)`);
+    }
     persistDocument(docName, doc);
     pendingSaves.delete(docName);
   }, 2000));
+}
+
+// Check if a fragment is effectively empty (just whitespace or empty paragraphs)
+// This recursively checks for actual text content, including inside special blocks
+function isFragmentEffectivelyEmpty(fragment: Y.XmlFragment): boolean {
+  if (fragment.length === 0) return true;
+
+  // Recursively check if an element or fragment has any real text content
+  // Only Y.XmlText nodes contain actual text - XmlElement.toString() returns XML with tags
+  function hasTextContent(node: Y.XmlElement | Y.XmlFragment): boolean {
+    for (let i = 0; i < node.length; i++) {
+      const child = node.get(i);
+      if (child instanceof Y.XmlText) {
+        // XmlText.toString() returns just the text content
+        if (child.toString().trim().length > 0) return true;
+      } else if (child instanceof Y.XmlElement) {
+        // Recursively check element children
+        if (hasTextContent(child)) return true;
+      }
+    }
+    return false;
+  }
+
+  return !hasTextContent(fragment);
 }
 
 async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
@@ -326,9 +369,14 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
 
     if (result.rows[0]?.yjs_state) {
       // Load from binary Yjs state
+      console.log(`[Collaboration] Loading from yjs_state for ${docName}`);
+      // Protect against stale browser IndexedDB emptying this content
+      // (Same protection as content fallback docs)
+      loadedFromContentFallback.add(docName);
       Y.applyUpdate(doc, result.rows[0].yjs_state);
     } else if (result.rows[0]?.content) {
       // Fallback: convert JSON content to Yjs (for seeded documents)
+      console.log(`[Collaboration] Loading from content fallback for ${docName}`);
       try {
         let jsonContent = result.rows[0].content;
 
@@ -344,15 +392,21 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
         }
 
         if (jsonContent && jsonContent.type === 'doc' && Array.isArray(jsonContent.content)) {
+          console.log(`[Collaboration] Converting JSON to Yjs, ${jsonContent.content.length} nodes`);
+          // Mark as loaded from content fallback BEFORE conversion
+          // This is critical because jsonToYjs triggers update events synchronously,
+          // and those events call schedulePersist which needs to know about this protection
+          loadedFromContentFallback.add(docName);
           const fragment = doc.getXmlFragment('default');
           jsonToYjs(doc, fragment, jsonContent);
-          // Persist the converted state so this only happens once
-          schedulePersist(docName, doc);
+          console.log(`[Collaboration] Converted, fragment length: ${fragment.length}`);
         }
       } catch (parseErr) {
         console.error('Failed to parse JSON content:', parseErr);
         // Start with empty document if content is corrupted
       }
+    } else {
+      console.log(`[Collaboration] No yjs_state or content for ${docName}`);
     }
   } catch (err) {
     console.error('Failed to load document:', err);
@@ -376,6 +430,81 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
   });
 
   return doc;
+}
+
+// Restore document content from database after stale client sync emptied it
+// This is called when a content-fallback doc becomes empty after CRDT merge
+async function restoreContentFromDatabase(docName: string, doc: Y.Doc): Promise<void> {
+  const docId = parseDocId(docName);
+
+  try {
+    const result = await pool.query(
+      'SELECT yjs_state, content FROM documents WHERE id = $1',
+      [docId]
+    );
+
+    // Prefer yjs_state if available (authoritative source)
+    if (result.rows[0]?.yjs_state) {
+      console.log(`[Collaboration] Restoring from yjs_state for ${docName}`);
+      const fragment = doc.getXmlFragment('default');
+
+      // Clear the fragment first
+      while (fragment.length > 0) {
+        fragment.delete(0, 1);
+      }
+
+      // Apply the stored yjs_state
+      Y.applyUpdate(doc, result.rows[0].yjs_state);
+      console.log(`[Collaboration] Restored from yjs_state, fragment length: ${fragment.length}`);
+
+      // Broadcast the restored state to all clients
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, messageSync);
+      syncProtocol.writeUpdate(encoder, Y.encodeStateAsUpdate(doc));
+      const message = encoding.toUint8Array(encoder);
+
+      conns.forEach((conn, ws) => {
+        if (conn.docName === docName && ws.readyState === WebSocket.OPEN) {
+          ws.send(message);
+        }
+      });
+    } else if (result.rows[0]?.content) {
+      // Fallback to JSON content
+      let jsonContent = result.rows[0].content;
+
+      if (typeof jsonContent === 'string' && !jsonContent.trim().startsWith('<')) {
+        jsonContent = JSON.parse(jsonContent);
+      }
+
+      if (jsonContent && jsonContent.type === 'doc' && Array.isArray(jsonContent.content)) {
+        console.log(`[Collaboration] Restoring ${jsonContent.content.length} nodes from content for ${docName}`);
+        const fragment = doc.getXmlFragment('default');
+
+        // Clear the fragment first
+        while (fragment.length > 0) {
+          fragment.delete(0, 1);
+        }
+
+        // Re-apply the content
+        jsonToYjs(doc, fragment, jsonContent);
+        console.log(`[Collaboration] Restored content, fragment length: ${fragment.length}`);
+
+        // Broadcast the restored state to all clients
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, messageSync);
+        syncProtocol.writeUpdate(encoder, Y.encodeStateAsUpdate(doc));
+        const message = encoding.toUint8Array(encoder);
+
+        conns.forEach((conn, ws) => {
+          if (conn.docName === docName && ws.readyState === WebSocket.OPEN) {
+            ws.send(message);
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`[Collaboration] Failed to restore content for ${docName}:`, err);
+  }
 }
 
 function getAwareness(docName: string, doc: Y.Doc): awarenessProtocol.Awareness {
@@ -403,16 +532,34 @@ function getAwareness(docName: string, doc: Y.Doc): awarenessProtocol.Awareness 
   return aw;
 }
 
-function handleMessage(ws: WebSocket, message: Uint8Array, docName: string, doc: Y.Doc, aw: awarenessProtocol.Awareness) {
+async function handleMessage(ws: WebSocket, message: Uint8Array, docName: string, doc: Y.Doc, aw: awarenessProtocol.Awareness) {
   const decoder = decoding.createDecoder(message);
   const messageType = decoding.readVarUint(decoder);
 
   switch (messageType) {
     case messageSync: {
+      // For content-fallback docs, check if we had content before sync
+      // This protects against stale browser IndexedDB emptying server content
+      const wasLoadedFromFallback = loadedFromContentFallback.has(docName);
+      const fragmentBefore = doc.getXmlFragment('default');
+      const emptyBefore = isFragmentEffectivelyEmpty(fragmentBefore);
+      const hadContentBefore = wasLoadedFromFallback && !emptyBefore;
+
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, messageSync);
       // Pass ws as origin so broadcast excludes the sender
       syncProtocol.readSyncMessage(decoder, encoder, doc, ws);
+
+      // If content became empty after sync for a content-fallback doc, restore it
+      // This handles stale client IndexedDB with deletion markers
+      if (hadContentBefore) {
+        const fragment = doc.getXmlFragment('default');
+        const emptyAfter = isFragmentEffectivelyEmpty(fragment);
+        if (emptyAfter) {
+          console.log(`[Collaboration] Content became empty after sync for ${docName}, restoring from database`);
+          await restoreContentFromDatabase(docName, doc);
+        }
+      }
 
       if (encoding.length(encoder) > 1) {
         ws.send(encoding.toUint8Array(encoder));
@@ -589,6 +736,44 @@ export function invalidateDocumentCache(docId: string): void {
 
     console.log(`[Collaboration] Invalidated cache for ${docName}`);
   }
+}
+
+/**
+ * Invalidate all document caches.
+ * Call this after seeding to force the collaboration server to reload from database.
+ * This is useful when seed.ts clears yjs_state and updates content.
+ */
+export function invalidateAllDocumentCaches(): number {
+  const docNames = Array.from(docs.keys());
+
+  if (docNames.length === 0) {
+    console.log('[Collaboration] No cached documents to invalidate');
+    return 0;
+  }
+
+  for (const docName of docNames) {
+    // Close any active connections
+    conns.forEach((conn, ws) => {
+      if (conn.docName === docName && ws.readyState === WebSocket.OPEN) {
+        ws.close(4101, 'Content updated');
+      }
+    });
+
+    // Clear pending saves
+    const pendingSave = pendingSaves.get(docName);
+    if (pendingSave) {
+      clearTimeout(pendingSave);
+      pendingSaves.delete(docName);
+    }
+
+    // Remove from cache
+    docs.delete(docName);
+    awareness.delete(docName);
+    loadedFromContentFallback.delete(docName);
+  }
+
+  console.log(`[Collaboration] Invalidated ${docNames.length} cached documents`);
+  return docNames.length;
 }
 
 export function handleDocumentConversion(
@@ -830,7 +1015,10 @@ export function setupCollaboration(server: Server) {
       rateLimitViolations.delete(ws);
       recordMessage(ws);
 
-      handleMessage(ws, new Uint8Array(data), docName, doc, aw);
+      // Await handleMessage since it may need to restore content from database
+      handleMessage(ws, new Uint8Array(data), docName, doc, aw).catch((err) => {
+        console.error(`[Collaboration] Error handling message for ${docName}:`, err);
+      });
     });
 
     ws.on('close', () => {

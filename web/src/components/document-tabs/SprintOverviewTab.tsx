@@ -102,6 +102,15 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
     await deleteMutation.mutateAsync();
   }, [deleteMutation]);
 
+  // Handle plan change (uses dedicated sprint plan endpoint with history tracking)
+  const handlePlanChange = useCallback(async (plan: string) => {
+    const response = await apiPatch(`/api/sprints/${documentId}/plan`, { plan });
+    if (response.ok) {
+      queryClient.invalidateQueries({ queryKey: ['document', documentId] });
+      queryClient.invalidateQueries({ queryKey: ['sprints'] });
+    }
+  }, [documentId, queryClient]);
+
   // Build sidebar data with people and existing sprints for owner selection
   const sidebarData: SidebarData = useMemo(() => ({
     people,
@@ -140,6 +149,7 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
       backLabel="Back to sprints"
       onDelete={handleDelete}
       showTypeSelector={false}
+      onPlanChange={handlePlanChange}
     />
   );
 }

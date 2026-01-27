@@ -243,3 +243,25 @@ export function loadContentFromYjsState(yjsState: Buffer): any | null {
     return null;
   }
 }
+
+/**
+ * Convert TipTap JSON content to Yjs binary state
+ * Returns a Buffer that can be stored directly in PostgreSQL BYTEA column
+ *
+ * This is critical for seeding because:
+ * 1. Browser IndexedDB may have stale Yjs state from previous sessions
+ * 2. If yjs_state is NULL, server converts content JSON to Yjs at runtime
+ * 3. But stale browser state can CRDT-merge and show incorrect content
+ * 4. By pre-computing yjs_state during seeding, we ensure authoritative state
+ */
+export function contentToYjsState(content: any): Buffer {
+  const doc = new Y.Doc();
+  const fragment = doc.getXmlFragment('default');
+
+  jsonToYjs(doc, fragment, content);
+
+  // Encode the full Yjs state as binary
+  const state = Y.encodeStateAsUpdate(doc);
+
+  return Buffer.from(state);
+}

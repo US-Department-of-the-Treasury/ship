@@ -159,6 +159,8 @@ interface UnifiedEditorProps {
   showTypeSelector?: boolean;
   /** Handler for document type changes (if different from onUpdate) */
   onTypeChange?: (newType: DocumentType) => Promise<void>;
+  /** Handler for plan changes (from hypothesisBlock in editor) - parent provides type-specific API call */
+  onPlanChange?: (plan: string) => Promise<void>;
 }
 
 /**
@@ -193,6 +195,7 @@ export function UnifiedEditor({
   headerBadge,
   showTypeSelector = false,
   onTypeChange,
+  onPlanChange,
 }: UnifiedEditorProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -251,13 +254,6 @@ export function UnifiedEditor({
       navigate(`/documents/${docId}`);
     }
   }, [navigate, onNavigateToDocument]);
-
-  // Handle plan change (for sprint documents)
-  const handlePlanChange = useCallback(async (plan: string) => {
-    if (document.document_type !== 'sprint') return;
-    // Update the plan property
-    await onUpdate({ plan } as Partial<UnifiedDocument>);
-  }, [document.document_type, onUpdate]);
 
   // Determine room prefix based on document type if not provided
   const effectiveRoomPrefix = roomPrefix || document.document_type;
@@ -397,7 +393,7 @@ export function UnifiedEditor({
       headerBadge={headerBadge}
       sidebar={sidebar}
       documentType={document.document_type}
-      onPlanChange={document.document_type === 'sprint' ? handlePlanChange : undefined}
+      onPlanChange={onPlanChange}
     />
   );
 }

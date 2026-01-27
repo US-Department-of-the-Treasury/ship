@@ -188,6 +188,15 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
     await deleteMutation.mutateAsync();
   }, [deleteMutation]);
 
+  // Handle plan change (uses project update endpoint which accepts plan)
+  const handlePlanChange = useCallback(async (plan: string) => {
+    const response = await apiPatch(`/api/projects/${documentId}`, { plan });
+    if (response.ok) {
+      queryClient.invalidateQueries({ queryKey: ['document', documentId] });
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+    }
+  }, [documentId, queryClient]);
+
   // Build sidebar data
   const sidebarData: SidebarData = useMemo(() => ({
     programs,
@@ -239,6 +248,7 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
       backLabel="Back to projects"
       onDelete={handleDelete}
       showTypeSelector={true}
+      onPlanChange={handlePlanChange}
     />
   );
 }
