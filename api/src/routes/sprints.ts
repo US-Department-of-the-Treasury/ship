@@ -32,7 +32,7 @@ const createSprintSchema = z.object({
 
 const updateSprintSchema = z.object({
   title: z.string().min(1).max(200).optional(),
-  owner_id: z.string().uuid().optional(),
+  owner_id: z.string().uuid().optional().nullable(), // Allow clearing owner
   sprint_number: z.number().int().positive().optional(),
   status: z.enum(['planning', 'active', 'completed']).optional(),
 });
@@ -917,21 +917,26 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     let propsChanged = false;
 
     if (data.owner_id !== undefined) {
-      // Verify owner exists in workspace
-      const ownerCheck = await pool.query(
-        `SELECT u.id FROM users u
-         JOIN workspace_memberships wm ON wm.user_id = u.id
-         WHERE u.id = $1 AND wm.workspace_id = $2`,
-        [data.owner_id, req.workspaceId]
-      );
+      // Only validate if owner_id is not null (i.e., setting a new owner, not clearing)
+      if (data.owner_id) {
+        // Verify owner exists in workspace
+        const ownerCheck = await pool.query(
+          `SELECT u.id FROM users u
+           JOIN workspace_memberships wm ON wm.user_id = u.id
+           WHERE u.id = $1 AND wm.workspace_id = $2`,
+          [data.owner_id, req.workspaceId]
+        );
 
-      if (ownerCheck.rows.length === 0) {
-        res.status(400).json({ error: 'Owner not found in workspace' });
-        return;
+        if (ownerCheck.rows.length === 0) {
+          res.status(400).json({ error: 'Owner not found in workspace' });
+          return;
+        }
       }
 
       // Store as assignee_ids array (migration converted owner_id to assignee_ids)
+      // Also store owner_id directly for accountability checks
       newProps.assignee_ids = data.owner_id ? [data.owner_id] : [];
+      newProps.owner_id = data.owner_id || null;
       propsChanged = true;
     }
 
