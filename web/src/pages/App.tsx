@@ -152,7 +152,7 @@ export function AppLayout() {
       if (currentDocumentType === 'issue') return 'issues';
       if (currentDocumentType === 'project') return 'projects';
       if (currentDocumentType === 'program') return 'programs';
-      if (currentDocumentType === 'sprint') return 'sprints';
+      if (currentDocumentType === 'sprint') return 'docs'; // Sprint documents open without special sidebar
       // Default to docs while loading or for unknown types
       return 'docs';
     }
@@ -365,13 +365,6 @@ export function AppLayout() {
               onClick={() => handleModeClick('projects')}
             />
             <RailIcon
-              icon={<SprintsIcon />}
-              label={standupDue ? "Sprints (standup due)" : "Sprints"}
-              active={activeMode === 'sprints'}
-              onClick={() => handleModeClick('sprints')}
-              showBadge={standupDue}
-            />
-            <RailIcon
               icon={<IssuesIcon />}
               label="Issues"
               active={activeMode === 'issues'}
@@ -521,9 +514,6 @@ export function AppLayout() {
                   onSelect={(id) => navigate(`/documents/${id}`)}
                   onUpdateProgram={updateProgram}
                 />
-              )}
-              {activeMode === 'sprints' && (
-                <SprintsList />
               )}
               {activeMode === 'team' && (
                 <TeamSidebar />
