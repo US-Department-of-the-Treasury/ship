@@ -9,6 +9,7 @@ import {
   batchLookupIssues,
 } from '../utils/transformIssueLinks.js';
 import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
+import { broadcastToUser } from '../collaboration/index.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -1096,7 +1097,8 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
       [JSON.stringify(newProps), id]
     );
 
-    // sprint_start accountability is now computed via inference - no issue completion needed
+    // Broadcast celebration when sprint is started
+    broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_start', targetId: id as string });
 
     // Re-query to get full sprint with owner info
     const result = await pool.query(
@@ -1300,7 +1302,10 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
       }
     }
 
-    // sprint_hypothesis accountability is now computed via inference - no issue completion needed
+    // Broadcast celebration when hypothesis is added
+    if (data.hypothesis && data.hypothesis.trim() !== '') {
+      broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_hypothesis', targetId: id as string });
+    }
 
     // Re-query to get full sprint with owner info
     const result = await pool.query(
@@ -1825,7 +1830,8 @@ router.post('/:id/standups', authMiddleware, async (req: Request, res: Response)
     const standup = result.rows[0];
     const author = authorResult.rows[0];
 
-    // standup accountability is now computed via inference - no issue completion needed
+    // Broadcast celebration when standup is created
+    broadcastToUser(userId, 'accountability:updated', { type: 'standup', targetId: id as string });
 
     res.status(201).json({
       id: standup.id,
@@ -2168,7 +2174,8 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
       [userId]
     );
 
-    // sprint_review accountability is now computed via inference - no issue completion needed
+    // Broadcast celebration when sprint review is created
+    broadcastToUser(userId, 'accountability:updated', { type: 'sprint_review', targetId: id as string });
 
     // Log initial review content to document_history for approval workflow tracking
     const review = result.rows[0];

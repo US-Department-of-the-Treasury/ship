@@ -640,7 +640,10 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       );
       const issueCount = parseInt(issueCountResult.rows[0].count, 10);
 
-      // sprint_issues accountability is now computed via inference - no issue completion needed
+      // Broadcast celebration when first issue is added to sprint
+      if (issueCount === 1) {
+        broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_issues', targetId: sprintAssoc.id });
+      }
     }
 
     // Get the belongs_to associations with display info
@@ -953,7 +956,10 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         );
         const issueCount = parseInt(issueCountResult.rows[0].count, 10);
 
-        // sprint_issues accountability is now computed via inference - no issue completion needed
+        // Broadcast celebration when first issue is added to sprint
+        if (issueCount === 1) {
+          broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_issues', targetId: sprintId });
+        }
       }
     }
 

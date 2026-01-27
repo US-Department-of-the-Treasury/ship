@@ -6,6 +6,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { DEFAULT_PROJECT_PROPERTIES, computeICEScore } from '@ship/shared';
 import { checkDocumentCompleteness } from '../utils/extractHypothesis.js';
 import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
+import { broadcastToUser } from '../collaboration/index.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -740,7 +741,10 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       );
     }
 
-    // project_hypothesis accountability is now computed via inference - no issue completion needed
+    // Broadcast celebration when hypothesis is added
+    if (data.hypothesis && data.hypothesis.trim() !== '') {
+      broadcastToUser(userId, 'accountability:updated', { type: 'project_hypothesis', targetId: id as string });
+    }
 
     // Log hypothesis changes to document_history for approval workflow tracking
     if (data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis) {
@@ -1029,7 +1033,8 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
       [...values, id, workspaceId]
     );
 
-    // project_retro accountability is now computed via inference - no issue completion needed
+    // Broadcast celebration when project retro is completed
+    broadcastToUser(userId, 'accountability:updated', { type: 'project_retro', targetId: id as string });
 
     // Log initial retro content to document_history for approval workflow tracking
     if (content) {
