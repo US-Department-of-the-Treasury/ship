@@ -8,8 +8,8 @@ import {
   extractTicketNumbersFromContents,
   batchLookupIssues,
 } from '../utils/transformIssueLinks.js';
-import { autoCompleteAccountabilityIssue } from '../services/accountability.js';
 import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
+import { broadcastToUser } from '../collaboration/index.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -32,7 +32,7 @@ const createSprintSchema = z.object({
 
 const updateSprintSchema = z.object({
   title: z.string().min(1).max(200).optional(),
-  owner_id: z.string().uuid().optional(),
+  owner_id: z.string().uuid().optional().nullable(), // Allow clearing owner
   sprint_number: z.number().int().positive().optional(),
   status: z.enum(['planning', 'active', 'completed']).optional(),
 });
@@ -917,21 +917,26 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     let propsChanged = false;
 
     if (data.owner_id !== undefined) {
-      // Verify owner exists in workspace
-      const ownerCheck = await pool.query(
-        `SELECT u.id FROM users u
-         JOIN workspace_memberships wm ON wm.user_id = u.id
-         WHERE u.id = $1 AND wm.workspace_id = $2`,
-        [data.owner_id, req.workspaceId]
-      );
+      // Only validate if owner_id is not null (i.e., setting a new owner, not clearing)
+      if (data.owner_id) {
+        // Verify owner exists in workspace
+        const ownerCheck = await pool.query(
+          `SELECT u.id FROM users u
+           JOIN workspace_memberships wm ON wm.user_id = u.id
+           WHERE u.id = $1 AND wm.workspace_id = $2`,
+          [data.owner_id, req.workspaceId]
+        );
 
-      if (ownerCheck.rows.length === 0) {
-        res.status(400).json({ error: 'Owner not found in workspace' });
-        return;
+        if (ownerCheck.rows.length === 0) {
+          res.status(400).json({ error: 'Owner not found in workspace' });
+          return;
+        }
       }
 
       // Store as assignee_ids array (migration converted owner_id to assignee_ids)
+      // Also store owner_id directly for accountability checks
       newProps.assignee_ids = data.owner_id ? [data.owner_id] : [];
+      newProps.owner_id = data.owner_id || null;
       propsChanged = true;
     }
 
@@ -1097,8 +1102,8 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
       [JSON.stringify(newProps), id]
     );
 
-    // Auto-complete any pending sprint_start accountability issues
-    await autoCompleteAccountabilityIssue(id as string, 'sprint_start', workspaceId as string, req.userId);
+    // Broadcast celebration when sprint is started
+    broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_start', targetId: id as string });
 
     // Re-query to get full sprint with owner info
     const result = await pool.query(
@@ -1302,9 +1307,9 @@ router.patch('/:id/hypothesis', authMiddleware, async (req: Request, res: Respon
       }
     }
 
-    // Auto-complete any pending hypothesis accountability issues if hypothesis was written
-    if (hypothesisWasWritten) {
-      await autoCompleteAccountabilityIssue(id as string, 'sprint_hypothesis', workspaceId as string, req.userId);
+    // Broadcast celebration when hypothesis is added
+    if (data.hypothesis && data.hypothesis.trim() !== '') {
+      broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_hypothesis', targetId: id as string });
     }
 
     // Re-query to get full sprint with owner info
@@ -1830,8 +1835,8 @@ router.post('/:id/standups', authMiddleware, async (req: Request, res: Response)
     const standup = result.rows[0];
     const author = authorResult.rows[0];
 
-    // Auto-complete any pending standup accountability issues for this sprint
-    await autoCompleteAccountabilityIssue(id as string, 'standup', workspaceId as string, userId);
+    // Broadcast celebration when standup is created
+    broadcastToUser(userId, 'accountability:updated', { type: 'standup', targetId: id as string });
 
     res.status(201).json({
       id: standup.id,
@@ -2174,8 +2179,8 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
       [userId]
     );
 
-    // Auto-complete any pending sprint_review accountability issues
-    await autoCompleteAccountabilityIssue(id as string, 'sprint_review', workspaceId as string, userId);
+    // Broadcast celebration when sprint review is created
+    broadcastToUser(userId, 'accountability:updated', { type: 'sprint_review', targetId: id as string });
 
     // Log initial review content to document_history for approval workflow tracking
     const review = result.rows[0];

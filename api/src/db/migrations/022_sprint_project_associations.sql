@@ -1,24 +1,45 @@
 -- Migration: Associate existing sprints with projects
 -- Sprints now belong to projects via the junction table.
 -- This migration creates associations based on the issues in each sprint.
+--
+-- This migration is idempotent - it checks for column existence before migrating.
+-- This is necessary because schema.sql may not include these legacy columns
+-- (sprint_id and project_id were removed in later migrations).
 
--- For each sprint, find the projects of its issues and create associations
-INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
-SELECT DISTINCT
-  sprint.id AS document_id,
-  issue.project_id AS related_id,
-  'project'::relationship_type AS relationship_type,
-  jsonb_build_object(
-    'migrated_from', 'sprint_issue_project_id',
-    'migrated_at', NOW(),
-    'migration', '022_sprint_project_associations'
-  )
-FROM documents sprint
-JOIN documents issue ON issue.sprint_id = sprint.id
-  AND issue.document_type = 'issue'
-  AND issue.project_id IS NOT NULL
-WHERE sprint.document_type = 'sprint'
-ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING;
+DO $$
+BEGIN
+  -- Only run if both sprint_id and project_id columns exist on documents table
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'documents' AND column_name = 'sprint_id'
+  ) AND EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'documents' AND column_name = 'project_id'
+  ) THEN
+    -- For each sprint, find the projects of its issues and create associations
+    EXECUTE '
+      INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
+      SELECT DISTINCT
+        sprint.id AS document_id,
+        issue.project_id AS related_id,
+        ''project''::relationship_type AS relationship_type,
+        jsonb_build_object(
+          ''migrated_from'', ''sprint_issue_project_id'',
+          ''migrated_at'', NOW(),
+          ''migration'', ''022_sprint_project_associations''
+        )
+      FROM documents sprint
+      JOIN documents issue ON issue.sprint_id = sprint.id
+        AND issue.document_type = ''issue''
+        AND issue.project_id IS NOT NULL
+      WHERE sprint.document_type = ''sprint''
+      ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING
+    ';
+  ELSE
+    RAISE NOTICE 'Skipping 022 migration - legacy columns (sprint_id, project_id) do not exist';
+  END IF;
+END
+$$;
 
 -- Log migration stats
 DO $$

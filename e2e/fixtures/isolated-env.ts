@@ -458,13 +458,12 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
       : null;
 
     const issueResult = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, ticket_number, created_by)
-       VALUES ($1, 'issue', $2, $3, $4, $5, $6)
+      `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number, created_by)
+       VALUES ($1, 'issue', $2, $3, $4, $5)
        RETURNING id`,
       [
         workspaceId,
         issue.title,
-        programIds['SHIP'],
         JSON.stringify({
           state: issue.state,
           priority: issue.priority,
@@ -477,12 +476,21 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
       ]
     );
 
+    const issueId = issueResult.rows[0].id;
+
+    // Create program association via document_associations (replaces legacy program_id column)
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type)
+       VALUES ($1, $2, 'program')`,
+      [issueId, programIds['SHIP']]
+    );
+
     // Create sprint association via document_associations
     if (sprintId) {
       await pool.query(
         `INSERT INTO document_associations (document_id, related_id, relationship_type)
          VALUES ($1, $2, 'sprint')`,
-        [issueResult.rows[0].id, sprintId]
+        [issueId, sprintId]
       );
     }
   }
@@ -492,17 +500,25 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     ticketNumber++;
     const progSprintId = sprintIds[prog.key][currentSprintNumber] || null;
     const progIssueResult = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, ticket_number, created_by)
-       VALUES ($1, 'issue', $2, $3, $4, $5, $6)
+      `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number, created_by)
+       VALUES ($1, 'issue', $2, $3, $4, $5)
        RETURNING id`,
       [
         workspaceId,
         `${prog.name} initial setup`,
-        programIds[prog.key],
         JSON.stringify({ state: 'in_progress', priority: 'medium', source: 'internal', assignee_id: userId, estimate: 8 }),
         ticketNumber,
         userId,
       ]
+    );
+
+    const progIssueId = progIssueResult.rows[0].id;
+
+    // Create program association via document_associations
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type)
+       VALUES ($1, $2, 'program')`,
+      [progIssueId, programIds[prog.key]]
     );
 
     // Create sprint association via document_associations
@@ -510,7 +526,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
       await pool.query(
         `INSERT INTO document_associations (document_id, related_id, relationship_type)
          VALUES ($1, $2, 'sprint')`,
-        [progIssueResult.rows[0].id, progSprintId]
+        [progIssueId, progSprintId]
       );
     }
   }
@@ -536,10 +552,18 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     if (issue.rejection_reason) {
       properties.rejection_reason = issue.rejection_reason;
     }
+    const extIssueResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number, created_by)
+       VALUES ($1, 'issue', $2, $3, $4, $5)
+       RETURNING id`,
+      [workspaceId, issue.title, JSON.stringify(properties), ticketNumber, userId]
+    );
+
+    // Create program association via document_associations
     await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, ticket_number, created_by)
-       VALUES ($1, 'issue', $2, $3, $4, $5, $6)`,
-      [workspaceId, issue.title, programIds['SHIP'], JSON.stringify(properties), ticketNumber, userId]
+      `INSERT INTO document_associations (document_id, related_id, relationship_type)
+       VALUES ($1, $2, 'program')`,
+      [extIssueResult.rows[0].id, programIds['SHIP']]
     );
   }
 
