@@ -72,8 +72,8 @@ interface ProjectDocument extends BaseDocument {
   issue_count?: number;
   converted_from_id?: string | null;
   // Approval tracking
-  hypothesis?: string | null;
-  hypothesis_approval?: ApprovalTracking | null;
+  plan?: string | null;
+  plan_approval?: ApprovalTracking | null;
   retro_approval?: ApprovalTracking | null;
   has_retro?: boolean;
 }
@@ -87,11 +87,11 @@ interface SprintDocument extends BaseDocument {
   program_accountable_id?: string | null;
   issue_count?: number;
   completed_count?: number;
-  hypothesis?: string;
+  plan?: string;
   owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
   // Approval tracking
-  hypothesis_approval?: ApprovalTracking | null;
+  plan_approval?: ApprovalTracking | null;
   review_approval?: ApprovalTracking | null;
   accountable_id?: string | null;
   has_review?: boolean;

@@ -13,7 +13,7 @@ interface ReviewData {
   id?: string;
   content: JSONContent;
   is_draft: boolean;
-  hypothesis_validated?: boolean | null;
+  plan_validated?: boolean | null;
 }
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -76,7 +76,7 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
   const [reviewData, setReviewData] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [hypothesisValidated, setHypothesisValidated] = useState<boolean | null>(null);
+  const [planValidated, setPlanValidated] = useState<boolean | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const { showToast } = useToast();
 
@@ -99,7 +99,7 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
       if (res.ok) {
         const data: ReviewData = await res.json();
         setReviewData(data);
-        setHypothesisValidated(data.hypothesis_validated ?? null);
+        setPlanValidated(data.plan_validated ?? null);
         if (editor && data.content) {
           editor.commands.setContent(data.content);
         }
@@ -131,7 +131,7 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
         // POST to create new review
         const res = await postWithCsrf(`${API_URL}/api/sprints/${sprintId}/review`, {
           content,
-          hypothesis_validated: hypothesisValidated,
+          plan_validated: planValidated,
         });
         if (res.ok) {
           const data = await res.json();
@@ -150,7 +150,7 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
         // PATCH to update existing review
         const res = await patchWithCsrf(`${API_URL}/api/sprints/${sprintId}/review`, {
           content,
-          hypothesis_validated: hypothesisValidated,
+          plan_validated: planValidated,
         });
         if (res.ok) {
           setIsDirty(false);
@@ -202,17 +202,17 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
           <div className="w-64 border-l border-border p-4">
             <h3 className="text-sm font-medium text-foreground mb-4">Properties</h3>
 
-            {/* Hypothesis Validation */}
+            {/* Plan Validation */}
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted uppercase tracking-wide">
-                Hypothesis Validation
+                Plan Validation
               </label>
               <div className="flex flex-col gap-2">
                 <button
-                  onClick={() => setHypothesisValidated(true)}
+                  onClick={() => setPlanValidated(true)}
                   className={cn(
                     'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                    hypothesisValidated === true
+                    planValidated === true
                       ? 'bg-green-500/20 text-green-600 border border-green-500'
                       : 'bg-border/50 text-muted hover:bg-border'
                   )}
@@ -223,10 +223,10 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
                   Validated
                 </button>
                 <button
-                  onClick={() => setHypothesisValidated(false)}
+                  onClick={() => setPlanValidated(false)}
                   className={cn(
                     'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                    hypothesisValidated === false
+                    planValidated === false
                       ? 'bg-red-500/20 text-red-600 border border-red-500'
                       : 'bg-border/50 text-muted hover:bg-border'
                   )}
@@ -236,9 +236,9 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
                   </svg>
                   Invalidated
                 </button>
-                {hypothesisValidated !== null && (
+                {planValidated !== null && (
                   <button
-                    onClick={() => setHypothesisValidated(null)}
+                    onClick={() => setPlanValidated(null)}
                     className="text-xs text-muted hover:text-foreground transition-colors"
                   >
                     Clear selection

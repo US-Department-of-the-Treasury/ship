@@ -72,7 +72,7 @@ test.describe('Accountability Owner Change', () => {
     });
     expect(setOwnerResponse.ok()).toBe(true);
 
-    // Step 2: Check action items - should include project_hypothesis for this project
+    // Step 2: Check action items - should include project_plan for this project
     const actionItemsResponse = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse.ok()).toBe(true);
     const actionItems = await actionItemsResponse.json();
@@ -82,9 +82,9 @@ test.describe('Accountability Owner Change', () => {
       (item: { accountability_target_id: string }) => item.accountability_target_id === projectId
     );
 
-    // Should have at least project_hypothesis action item
+    // Should have at least project_plan action item
     expect(projectItems.length).toBeGreaterThan(0);
-    expect(projectItems.some((i: { accountability_type: string }) => i.accountability_type === 'project_hypothesis')).toBe(true);
+    expect(projectItems.some((i: { accountability_type: string }) => i.accountability_type === 'project_plan')).toBe(true);
 
     // Step 3: Remove owner from the project
     const removeOwnerResponse = await page.request.patch(`${apiServer.url}/api/projects/${projectId}`, {
@@ -160,7 +160,7 @@ test.describe('Accountability Owner Change', () => {
       (item: { accountability_target_id: string }) => item.accountability_target_id === sprintId
     );
 
-    // Should have at least sprint_hypothesis action item (new sprint without hypothesis)
+    // Should have at least sprint_plan action item (new sprint without plan)
     expect(sprintItems.length).toBeGreaterThan(0);
 
     // Step 3: Remove owner from the sprint

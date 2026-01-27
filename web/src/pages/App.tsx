@@ -227,7 +227,7 @@ export function AppLayout() {
       owner_id: user.id,
       title: data.title,
       program_id: data.program_id,
-      hypothesis: data.hypothesis,
+      plan: data.plan,
       target_date: data.target_date ? new Date(data.target_date).toISOString() : undefined,
     });
     if (project) {

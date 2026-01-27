@@ -108,7 +108,7 @@ interface CreateProjectData {
   ease?: number | null;
   color?: string;
   program_id?: string;
-  hypothesis?: string;
+  plan?: string;
   target_date?: string;
 }
 
@@ -298,7 +298,7 @@ export interface CreateProjectOptions {
   consulted_ids?: string[];        // C - Consulted
   informed_ids?: string[];         // I - Informed
   program_id?: string;
-  hypothesis?: string;
+  plan?: string;
   target_date?: string;
 }
 

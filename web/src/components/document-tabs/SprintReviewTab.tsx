@@ -7,7 +7,7 @@ import type { DocumentTabProps } from '@/lib/document-tabs';
  *
  * This tab shows the sprint review interface with:
  * - Sprint reconciliation for handling incomplete issues
- * - Sprint review editor for notes and hypothesis validation
+ * - Sprint review editor for notes and plan validation
  *
  * Extracted from SprintViewPage.tsx review tab content.
  */

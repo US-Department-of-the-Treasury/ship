@@ -85,7 +85,7 @@ interface SprintDocument extends BaseDocument {
   program_name?: string;
   issue_count?: number;
   completed_count?: number;
-  hypothesis?: string;
+  plan?: string;
 }
 
 // Union type for all document types
@@ -247,11 +247,11 @@ export function UnifiedEditor({
     }
   }, [navigate, onNavigateToDocument]);
 
-  // Handle hypothesis change (for sprint documents)
-  const handleHypothesisChange = useCallback(async (hypothesis: string) => {
+  // Handle plan change (for sprint documents)
+  const handlePlanChange = useCallback(async (plan: string) => {
     if (document.document_type !== 'sprint') return;
-    // Update the hypothesis property
-    await onUpdate({ hypothesis } as Partial<UnifiedDocument>);
+    // Update the plan property
+    await onUpdate({ plan } as Partial<UnifiedDocument>);
   }, [document.document_type, onUpdate]);
 
   // Determine room prefix based on document type if not provided
@@ -386,7 +386,7 @@ export function UnifiedEditor({
       headerBadge={headerBadge}
       sidebar={sidebar}
       documentType={document.document_type}
-      onHypothesisChange={document.document_type === 'sprint' ? handleHypothesisChange : undefined}
+      onPlanChange={document.document_type === 'sprint' ? handlePlanChange : undefined}
     />
   );
 }

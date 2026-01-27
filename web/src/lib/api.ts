@@ -306,7 +306,7 @@ export interface UserInfo {
 export interface AccountabilityItem {
   id: string;
   title: string;
-  accountability_type: 'standup' | 'sprint_hypothesis' | 'sprint_review' | 'sprint_start' | 'sprint_issues' | 'project_hypothesis' | 'project_retro';
+  accountability_type: 'standup' | 'sprint_plan' | 'sprint_review' | 'sprint_start' | 'sprint_issues' | 'project_plan' | 'project_retro';
   accountability_target_id: string;
   due_date: string | null;
   is_system_generated: boolean;

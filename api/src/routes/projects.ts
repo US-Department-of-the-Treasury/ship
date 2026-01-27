@@ -61,8 +61,8 @@ function extractProjectFromRow(row: any) {
     consulted_ids: props.consulted_ids || [],
     informed_ids: props.informed_ids || [],
     // Hypothesis and approval tracking
-    hypothesis: props.hypothesis || null,
-    hypothesis_approval: props.hypothesis_approval || null,
+    plan: props.plan || null,
+    plan_approval: props.plan_approval || null,
     retro_approval: props.retro_approval || null,
     has_retro: props.has_retro ?? false,
     target_date: props.target_date || null,
@@ -84,7 +84,7 @@ const createProjectSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#6366f1'),
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
-  hypothesis: z.string().max(2000).optional().nullable(),
+  plan: z.string().max(2000).optional().nullable(),
   target_date: z.string().datetime().optional().nullable(),
 });
 
@@ -101,13 +101,13 @@ const updateProjectSchema = z.object({
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
   archived_at: z.string().datetime().optional().nullable(),
-  hypothesis: z.string().max(2000).optional().nullable(),
+  plan: z.string().max(2000).optional().nullable(),
   target_date: z.string().datetime().optional().nullable(),
 });
 
 // Schema for project retro
 const projectRetroSchema = z.object({
-  hypothesis_validated: z.boolean().nullable().optional(),
+  plan_validated: z.boolean().nullable().optional(),
   monetary_impact_actual: z.string().max(500).nullable().optional(),
   success_criteria: z.array(z.string().max(500)).nullable().optional(),
   next_steps: z.string().max(2000).nullable().optional(),
@@ -254,7 +254,7 @@ async function generatePrefilledRetroContent(projectData: any, sprints: any[], i
     });
   }
 
-  // Add hypothesis validation section
+  // Add plan validation section
   content.content.push({
     type: 'heading',
     attrs: { level: 3 },
@@ -262,7 +262,7 @@ async function generatePrefilledRetroContent(projectData: any, sprints: any[], i
   });
   content.content.push({
     type: 'paragraph',
-    content: [{ type: 'text', text: 'Was the hypothesis validated? (Set in properties)' }],
+    content: [{ type: 'text', text: 'Was the plan validated? (Set in properties)' }],
   });
 
   // Add monetary impact actual section
@@ -345,7 +345,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     const inferredStatusSubquery = `
       CASE
         WHEN d.archived_at IS NOT NULL THEN 'archived'
-        WHEN d.properties->>'hypothesis_validated' IS NOT NULL THEN 'completed'
+        WHEN d.properties->>'plan_validated' IS NOT NULL THEN 'completed'
         ELSE COALESCE(
           (
             SELECT
@@ -425,7 +425,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     const inferredStatusSubquery = `
       CASE
         WHEN d.archived_at IS NOT NULL THEN 'archived'
-        WHEN d.properties->>'hypothesis_validated' IS NOT NULL THEN 'completed'
+        WHEN d.properties->>'plan_validated' IS NOT NULL THEN 'completed'
         ELSE COALESCE(
           (
             SELECT
@@ -518,7 +518,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, impact, confidence, ease, owner_id, accountable_id, consulted_ids, informed_ids, color, emoji, program_id, hypothesis, target_date } = parsed.data;
+    const { title, impact, confidence, ease, owner_id, accountable_id, consulted_ids, informed_ids, color, emoji, program_id, plan, target_date } = parsed.data;
 
     // Build properties JSONB with RACI fields
     const properties: Record<string, unknown> = {
@@ -534,8 +534,8 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     if (emoji) {
       properties.emoji = emoji;
     }
-    if (hypothesis) {
-      properties.hypothesis = hypothesis;
+    if (plan) {
+      properties.plan = plan;
     }
     if (target_date) {
       properties.target_date = target_date;
@@ -685,21 +685,21 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
-    // Track if hypothesis was written for the first time
-    let hypothesisWasWritten = false;
-    if (data.hypothesis !== undefined) {
-      // Check if this is the first time writing a non-empty hypothesis
-      if (data.hypothesis && !currentProps.hypothesis) {
-        hypothesisWasWritten = true;
+    // Track if plan was written for the first time
+    let planWasWritten = false;
+    if (data.plan !== undefined) {
+      // Check if this is the first time writing a non-empty plan
+      if (data.plan && !currentProps.plan) {
+        planWasWritten = true;
       }
-      newProps.hypothesis = data.hypothesis;
+      newProps.plan = data.plan;
       propsChanged = true;
 
-      // If hypothesis changed and was previously approved, transition to 'changed_since_approved'
-      if (data.hypothesis !== currentProps.hypothesis &&
-          currentProps.hypothesis_approval?.state === 'approved') {
-        newProps.hypothesis_approval = {
-          ...currentProps.hypothesis_approval,
+      // If plan changed and was previously approved, transition to 'changed_since_approved'
+      if (data.plan !== currentProps.plan &&
+          currentProps.plan_approval?.state === 'approved') {
+        newProps.plan_approval = {
+          ...currentProps.plan_approval,
           state: 'changed_since_approved',
         };
       }
@@ -741,18 +741,18 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       );
     }
 
-    // Broadcast celebration when hypothesis is added
-    if (data.hypothesis && data.hypothesis.trim() !== '') {
-      broadcastToUser(userId, 'accountability:updated', { type: 'project_hypothesis', targetId: id as string });
+    // Broadcast celebration when plan is added
+    if (data.plan && data.plan.trim() !== '') {
+      broadcastToUser(userId, 'accountability:updated', { type: 'project_plan', targetId: id as string });
     }
 
-    // Log hypothesis changes to document_history for approval workflow tracking
-    if (data.hypothesis !== undefined && data.hypothesis !== currentProps.hypothesis) {
+    // Log plan changes to document_history for approval workflow tracking
+    if (data.plan !== undefined && data.plan !== currentProps.plan) {
       await logDocumentChange(
         id as string,
-        'hypothesis',
-        currentProps.hypothesis || null,
-        data.hypothesis || null,
+        'plan',
+        currentProps.plan || null,
+        data.plan || null,
         userId
       );
     }
@@ -779,7 +779,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     const updateInferredStatusSubquery = `
       CASE
         WHEN d.archived_at IS NOT NULL THEN 'archived'
-        WHEN d.properties->>'hypothesis_validated' IS NOT NULL THEN 'completed'
+        WHEN d.properties->>'plan_validated' IS NOT NULL THEN 'completed'
         ELSE COALESCE(
           (
             SELECT
@@ -904,8 +904,8 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
     const projectData = projectResult.rows[0];
     const props = projectData.properties || {};
 
-    // Check if retro has been filled (has hypothesis_validated set)
-    const hasRetro = props.hypothesis_validated !== undefined && props.hypothesis_validated !== null;
+    // Check if retro has been filled (has plan_validated set)
+    const hasRetro = props.plan_validated !== undefined && props.plan_validated !== null;
 
     // Get sprints for this project via junction table
     const sprintsResult = await pool.query(
@@ -932,7 +932,7 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
       // Return existing retro data
       res.json({
         is_draft: false,
-        hypothesis_validated: props.hypothesis_validated,
+        plan_validated: props.plan_validated,
         monetary_impact_expected: props.monetary_impact_expected || null,
         monetary_impact_actual: props.monetary_impact_actual || null,
         success_criteria: props.success_criteria || [],
@@ -956,7 +956,7 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
 
       res.json({
         is_draft: true,
-        hypothesis_validated: null,
+        plan_validated: null,
         monetary_impact_expected: props.monetary_impact_expected || null,
         monetary_impact_actual: null,
         success_criteria: [],
@@ -1007,12 +1007,12 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
     }
 
     const currentProps = existing.rows[0].properties || {};
-    const { hypothesis_validated, monetary_impact_actual, success_criteria, next_steps, content } = parsed.data;
+    const { plan_validated, monetary_impact_actual, success_criteria, next_steps, content } = parsed.data;
 
     // Update properties with retro data
     const newProps = {
       ...currentProps,
-      hypothesis_validated: hypothesis_validated ?? currentProps.hypothesis_validated,
+      plan_validated: plan_validated ?? currentProps.plan_validated,
       monetary_impact_actual: monetary_impact_actual ?? currentProps.monetary_impact_actual,
       success_criteria: success_criteria ?? currentProps.success_criteria,
       next_steps: next_steps ?? currentProps.next_steps,
@@ -1056,7 +1056,7 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
     const updatedProps = result.rows[0].properties || {};
     res.status(201).json({
       is_draft: false,
-      hypothesis_validated: updatedProps.hypothesis_validated,
+      plan_validated: updatedProps.plan_validated,
       monetary_impact_expected: updatedProps.monetary_impact_expected || null,
       monetary_impact_actual: updatedProps.monetary_impact_actual || null,
       success_criteria: updatedProps.success_criteria || [],
@@ -1078,7 +1078,7 @@ const createProjectSprintSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
   sprint_number: z.number().int().positive().optional(), // Auto-incremented if not provided
   owner_id: z.string().uuid().optional(),
-  hypothesis: z.string().max(2000).optional(),
+  plan: z.string().max(2000).optional(),
   success_criteria: z.array(z.string().max(500)).max(20).optional(),
   confidence: z.number().int().min(0).max(100).optional(),
 });
@@ -1105,7 +1105,7 @@ function extractSprintFromRow(row: any) {
     issue_count: parseInt(row.issue_count) || 0,
     completed_count: parseInt(row.completed_count) || 0,
     started_count: parseInt(row.started_count) || 0,
-    hypothesis: props.hypothesis || null,
+    plan: props.plan || null,
     success_criteria: props.success_criteria || null,
     confidence: typeof props.confidence === 'number' ? props.confidence : null,
   };
@@ -1277,7 +1277,7 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     }
 
     const project = projectCheck.rows[0];
-    const { title, owner_id, hypothesis, success_criteria, confidence } = parsed.data;
+    const { title, owner_id, plan, success_criteria, confidence } = parsed.data;
     let { sprint_number } = parsed.data;
 
     // If sprint_number not provided, auto-increment based on project's existing sprints
@@ -1325,10 +1325,10 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     // Build properties JSONB
     const properties: Record<string, unknown> = { sprint_number };
     if (owner_id) properties.owner_id = owner_id;
-    if (hypothesis) {
-      properties.hypothesis = hypothesis;
-      properties.hypothesis_history = [{
-        hypothesis,
+    if (plan) {
+      properties.plan = plan;
+      properties.plan_history = [{
+        plan,
         timestamp: new Date().toISOString(),
         author_id: userId,
       }];
@@ -1356,7 +1356,7 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
         },
         {
           type: 'paragraph',
-          content: [{ type: 'text', text: 'How will we know if the hypothesis is validated? What metrics or outcomes will we measure?' }]
+          content: [{ type: 'text', text: 'How will we know if the plan is validated? What metrics or outcomes will we measure?' }]
         }
       ]
     };
@@ -1405,7 +1405,7 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
       issue_count: 0,
       completed_count: 0,
       started_count: 0,
-      hypothesis: properties.hypothesis || null,
+      plan: properties.plan || null,
       success_criteria: properties.success_criteria || null,
       confidence: properties.confidence ?? null,
     });
@@ -1446,12 +1446,12 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
 
     const currentProps = existing.rows[0].properties || {};
     const currentContent = existing.rows[0].content;
-    const { hypothesis_validated, monetary_impact_actual, success_criteria, next_steps, content } = parsed.data;
+    const { plan_validated, monetary_impact_actual, success_criteria, next_steps, content } = parsed.data;
 
     // Update properties with retro data (only update fields that are provided)
     const newProps = { ...currentProps };
-    if (hypothesis_validated !== undefined) {
-      newProps.hypothesis_validated = hypothesis_validated;
+    if (plan_validated !== undefined) {
+      newProps.plan_validated = plan_validated;
     }
     if (monetary_impact_actual !== undefined) {
       newProps.monetary_impact_actual = monetary_impact_actual;
@@ -1464,7 +1464,7 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
     }
 
     // If any retro fields changed and was previously approved, transition to 'changed_since_approved'
-    const retroFieldsChanged = hypothesis_validated !== undefined ||
+    const retroFieldsChanged = plan_validated !== undefined ||
       monetary_impact_actual !== undefined ||
       success_criteria !== undefined ||
       next_steps !== undefined ||
@@ -1516,7 +1516,7 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
     const updatedProps = result.rows[0].properties || {};
     res.json({
       is_draft: false,
-      hypothesis_validated: updatedProps.hypothesis_validated,
+      plan_validated: updatedProps.plan_validated,
       monetary_impact_expected: updatedProps.monetary_impact_expected || null,
       monetary_impact_actual: updatedProps.monetary_impact_actual || null,
       success_criteria: updatedProps.success_criteria || [],
@@ -1529,8 +1529,8 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
   }
 });
 
-// POST /api/projects/:id/approve-hypothesis - Approve project hypothesis
-router.post('/:id/approve-hypothesis', authMiddleware, async (req: Request, res: Response) => {
+// POST /api/projects/:id/approve-plan - Approve project plan
+router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.userId!;
@@ -1558,18 +1558,18 @@ router.post('/:id/approve-hypothesis', authMiddleware, async (req: Request, res:
 
     // Check authorization: must be project's accountable_id OR workspace admin
     if (accountableId !== userId && !isAdmin) {
-      res.status(403).json({ error: 'Only the project accountable person or admin can approve hypotheses' });
+      res.status(403).json({ error: 'Only the project accountable person or admin can approve plans' });
       return;
     }
 
-    // Get the latest hypothesis history entry for version tracking
-    const historyEntry = await getLatestDocumentFieldHistory(id as string, 'hypothesis');
+    // Get the latest plan history entry for version tracking
+    const historyEntry = await getLatestDocumentFieldHistory(id as string, 'plan');
     const versionId = historyEntry?.id || null;
 
     // Update project properties with approval
     const newProps = {
       ...currentProps,
-      hypothesis_approval: {
+      plan_approval: {
         state: 'approved',
         approved_by: userId,
         approved_at: new Date().toISOString(),
@@ -1585,10 +1585,10 @@ router.post('/:id/approve-hypothesis', authMiddleware, async (req: Request, res:
 
     res.json({
       success: true,
-      approval: newProps.hypothesis_approval,
+      approval: newProps.plan_approval,
     });
   } catch (err) {
-    console.error('Approve project hypothesis error:', err);
+    console.error('Approve project plan error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

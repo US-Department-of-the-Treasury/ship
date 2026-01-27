@@ -3,11 +3,11 @@
  *
  * Detects missing accountability items for a user:
  * 1. Missing standups for active sprints
- * 2. Sprints at/past start without hypothesis
+ * 2. Sprints at/past start without plan
  * 3. Sprints at/past start date not 'started'
  * 4. Sprints at/past start with no issues
  * 5. Completed sprints without review (>1 business day)
- * 6. Projects where user is owner without hypothesis
+ * 6. Projects where user is owner without plan
  * 7. Completed projects without retro
  *
  * Creates action_items issues just-in-time when missing is detected.
@@ -95,9 +95,9 @@ export async function checkMissingAccountability(
     items.push(...reviewItems);
   }
 
-  // 6. Check for projects without hypothesis
-  const projectHypothesisItems = await checkProjectHypothesis(userId, workspaceId);
-  items.push(...projectHypothesisItems);
+  // 6. Check for projects without plan
+  const projectPlanItems = await checkProjectPlan(userId, workspaceId);
+  items.push(...projectPlanItems);
 
   // 7. Check for completed projects without retro
   const projectRetroItems = await checkProjectRetros(userId, workspaceId);
@@ -245,15 +245,15 @@ async function checkSprintAccountability(
 
     const sprintStartStr = sprintStartDate.toISOString().split('T')[0] || null;
 
-    // Check for missing hypothesis
-    if (!props.hypothesis || props.hypothesis.trim() === '') {
+    // Check for missing plan
+    if (!props.plan || props.plan.trim() === '') {
       items.push({
-        type: 'sprint_hypothesis',
+        type: 'sprint_plan',
         targetId: sprint.id,
         targetTitle: sprintTitle,
         targetType: 'sprint',
         dueDate: sprintStartStr,
-        message: `Write hypothesis for ${sprintTitle}`,
+        message: `Write plan for ${sprintTitle}`,
       });
     }
 
@@ -365,15 +365,15 @@ async function checkMissingSprintReviews(
 }
 
 /**
- * Check for projects where user is owner without hypothesis.
+ * Check for projects where user is owner without plan.
  */
-async function checkProjectHypothesis(
+async function checkProjectPlan(
   userId: string,
   workspaceId: string
 ): Promise<MissingAccountabilityItem[]> {
   const items: MissingAccountabilityItem[] = [];
 
-  // Find projects where user is owner without hypothesis
+  // Find projects where user is owner without plan
   const projectsResult = await pool.query(
     `SELECT p.id, p.title, p.properties
      FROM documents p
@@ -382,18 +382,18 @@ async function checkProjectHypothesis(
        AND (p.properties->>'owner_id')::uuid = $2
        AND p.deleted_at IS NULL
        AND p.archived_at IS NULL
-       AND (p.properties->>'hypothesis' IS NULL OR p.properties->>'hypothesis' = '')`,
+       AND (p.properties->>'plan' IS NULL OR p.properties->>'plan' = '')`,
     [workspaceId, userId]
   );
 
   for (const project of projectsResult.rows) {
     items.push({
-      type: 'project_hypothesis',
+      type: 'project_plan',
       targetId: project.id,
       targetTitle: project.title || 'Untitled Project',
       targetType: 'project',
-      dueDate: null, // No specific due date for project hypothesis
-      message: `Write hypothesis for ${project.title || 'project'}`,
+      dueDate: null, // No specific due date for project plan
+      message: `Write plan for ${project.title || 'project'}`,
     });
   }
 
@@ -419,7 +419,7 @@ async function checkProjectRetros(
        AND (p.properties->>'owner_id')::uuid = $2
        AND p.deleted_at IS NULL
        AND p.archived_at IS NULL
-       AND (p.properties->>'hypothesis_validated' IS NULL)
+       AND (p.properties->>'plan_validated' IS NULL)
        AND EXISTS (
          SELECT 1 FROM document_associations da
          JOIN documents i ON i.id = da.document_id
