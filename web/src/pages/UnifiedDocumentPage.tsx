@@ -373,9 +373,9 @@ export function UnifiedDocumentPage() {
         }> | undefined,
       }),
       ...(document.document_type === 'project' && {
-        impact: (document.impact as number) ?? 5,
-        confidence: (document.confidence as number) ?? 5,
-        ease: (document.ease as number) ?? 5,
+        impact: (document.impact as number | null) ?? null,
+        confidence: (document.confidence as number | null) ?? null,
+        ease: (document.ease as number | null) ?? null,
         color: (document.color as string) || '#3b82f6',
         emoji: null,
         program_id: programIdFromBelongsTo,
