@@ -8,6 +8,7 @@ import type {
   IssuePanelProps,
   ProjectPanelProps,
   SprintPanelProps,
+  ProgramPanelProps,
 } from '@/components/sidebars/PropertiesPanel';
 import { DocumentTypeSelector, getMissingRequiredFields } from '@/components/sidebars/DocumentTypeSelector';
 import type { DocumentType as SelectableDocumentType } from '@/components/sidebars/DocumentTypeSelector';
@@ -66,6 +67,10 @@ interface ProjectDocument extends BaseDocument {
   program_id: string | null;
   owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
+  // RACI fields
+  accountable_id?: string | null;
+  consulted_ids?: string[];
+  informed_ids?: string[];
   sprint_count?: number;
   issue_count?: number;
   converted_from_id?: string | null;
@@ -119,7 +124,11 @@ interface SprintSidebarData {
   existingSprints?: Array<{ owner?: { id: string; name: string; email: string } | null }>;
 }
 
-export type SidebarData = WikiSidebarData | IssueSidebarData | ProjectSidebarData | SprintSidebarData;
+interface ProgramSidebarData {
+  people: Array<{ id: string; user_id: string; name: string; email: string }>;
+}
+
+export type SidebarData = WikiSidebarData | IssueSidebarData | ProjectSidebarData | SprintSidebarData | ProgramSidebarData;
 
 interface UnifiedEditorProps {
   /** The document to edit */
@@ -302,6 +311,12 @@ export function UnifiedEditor({
           existingSprints: sprintData.existingSprints || [],
         } as SprintPanelProps;
       }
+      case 'program': {
+        const programData = sidebarData as ProgramSidebarData;
+        return {
+          people: programData.people || [],
+        } as ProgramPanelProps;
+      }
       default:
         return {};
     }
@@ -310,7 +325,7 @@ export function UnifiedEditor({
   // Render the type-specific sidebar content via unified PropertiesPanel
   const typeSpecificSidebar = useMemo(() => {
     // Check if document type has a properties panel
-    if (!['wiki', 'issue', 'project', 'sprint'].includes(document.document_type)) {
+    if (!['wiki', 'issue', 'project', 'sprint', 'program'].includes(document.document_type)) {
       return (
         <div className="p-4">
           <p className="text-xs text-muted">

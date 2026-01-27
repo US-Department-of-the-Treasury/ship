@@ -24,6 +24,7 @@ import { ProgramsPage } from '@/pages/Programs';
 import { SprintsPage } from '@/pages/Sprints';
 import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
+import { PersonEditorPage } from '@/pages/PersonEditor';
 import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
 import { ProjectsPage } from '@/pages/Projects';
@@ -221,7 +222,7 @@ function AppRoutes() {
         <Route path="programs" element={<ProgramsPage />} />
         <Route path="programs/:programId/sprints/:id" element={<DocumentRedirect />} />
         <Route path="programs/:id/*" element={<ProgramTabRedirect />} />
-        <Route path="sprints" element={<SprintsPage />} />
+        <Route path="sprints" element={<Navigate to="/team/allocation" replace />} />
         {/* Sprint routes - redirect legacy views to /documents/:id, keep planning workflow */}
         <Route path="sprints/:id" element={<DocumentRedirect />} />
         <Route path="sprints/:id/view" element={<SprintTabRedirect tab="view" />} />
@@ -233,8 +234,8 @@ function AppRoutes() {
         <Route path="team/allocation" element={<TeamModePage />} />
         <Route path="team/directory" element={<TeamDirectoryPage />} />
         <Route path="team/status" element={<StatusOverviewPage />} />
-        {/* Legacy team profile route redirects to /documents/:id */}
-        <Route path="team/:id" element={<DocumentRedirect />} />
+        {/* Person profile stays in Teams context - no redirect to /documents */}
+        <Route path="team/:id" element={<PersonEditorPage />} />
         <Route path="feedback/:id" element={<FeedbackEditorPage />} />
         <Route path="settings" element={<WorkspaceSettingsPage />} />
         <Route path="settings/conversions" element={<ConvertedDocumentsPage />} />

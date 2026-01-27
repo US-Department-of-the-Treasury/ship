@@ -11,7 +11,6 @@ import {
   TRACKED_FIELDS,
   type BelongsToEntry,
 } from '../utils/document-crud.js';
-import { autoCompleteAccountabilityIssue } from '../services/accountability.js';
 import { broadcastToUser } from '../collaboration/index.js';
 
 type RouterType = ReturnType<typeof Router>;
@@ -641,9 +640,9 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       );
       const issueCount = parseInt(issueCountResult.rows[0].count, 10);
 
-      // If this is the first issue in the sprint, auto-complete any pending sprint_issues accountability
+      // Broadcast celebration when first issue is added to sprint
       if (issueCount === 1) {
-        await autoCompleteAccountabilityIssue(sprintAssoc.id, 'sprint_issues', req.workspaceId!, req.userId);
+        broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_issues', targetId: sprintAssoc.id });
       }
     }
 
@@ -957,9 +956,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         );
         const issueCount = parseInt(issueCountResult.rows[0].count, 10);
 
-        // If this is the first issue in the sprint, auto-complete any pending sprint_issues accountability
+        // Broadcast celebration when first issue is added to sprint
         if (issueCount === 1) {
-          await autoCompleteAccountabilityIssue(sprintId, 'sprint_issues', req.workspaceId!, req.userId);
+          broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_issues', targetId: sprintId });
         }
       }
     }

@@ -60,7 +60,7 @@ If you have outstanding items, a banner appears at the top of Ship that cannot b
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-The banner rotates through messages on navigation to keep your attention. It only disappears when all items are complete.
+The banner only disappears when all items are complete.
 
 **Click the banner** to reopen the action items modal at any time.
 

@@ -5,8 +5,8 @@ import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visib
 import { authMiddleware } from '../middleware/auth.js';
 import { DEFAULT_PROJECT_PROPERTIES, computeICEScore } from '@ship/shared';
 import { checkDocumentCompleteness } from '../utils/extractHypothesis.js';
-import { autoCompleteAccountabilityIssue } from '../services/accountability.js';
 import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
+import { broadcastToUser } from '../collaboration/index.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -741,9 +741,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       );
     }
 
-    // Auto-complete any pending project_hypothesis accountability issues if hypothesis was written
-    if (hypothesisWasWritten) {
-      await autoCompleteAccountabilityIssue(id as string, 'project_hypothesis', workspaceId as string, userId);
+    // Broadcast celebration when hypothesis is added
+    if (data.hypothesis && data.hypothesis.trim() !== '') {
+      broadcastToUser(userId, 'accountability:updated', { type: 'project_hypothesis', targetId: id as string });
     }
 
     // Log hypothesis changes to document_history for approval workflow tracking
@@ -1033,8 +1033,8 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
       [...values, id, workspaceId]
     );
 
-    // Auto-complete any pending project_retro accountability issues
-    await autoCompleteAccountabilityIssue(id as string, 'project_retro', workspaceId as string, userId);
+    // Broadcast celebration when project retro is completed
+    broadcastToUser(userId, 'accountability:updated', { type: 'project_retro', targetId: id as string });
 
     // Log initial retro content to document_history for approval workflow tracking
     if (content) {

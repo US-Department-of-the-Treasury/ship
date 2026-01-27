@@ -73,7 +73,7 @@ export default function ProgramOverviewTab({ documentId, document }: DocumentTab
 
   // Build sidebar data
   const sidebarData: SidebarData = useMemo(() => ({
-    teamMembers,
+    people: teamMembers,
   }), [teamMembers]);
 
   // Transform to UnifiedDocument format
@@ -87,6 +87,11 @@ export default function ProgramOverviewTab({ documentId, document }: DocumentTab
     properties: document.properties as Record<string, unknown> | undefined,
     color: (document.color as string) || '#6366f1',
     emoji: (document.emoji as string) || null,
+    owner_id: document.owner_id as string | undefined,
+    // RACI fields
+    accountable_id: document.accountable_id as string | undefined,
+    consulted_ids: (document.consulted_ids as string[]) || [],
+    informed_ids: (document.informed_ids as string[]) || [],
   }), [document]);
 
   if (!user) return null;

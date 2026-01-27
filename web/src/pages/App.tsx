@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
@@ -13,9 +13,9 @@ import { useCurrentDocumentType, useCurrentDocument } from '@/contexts/CurrentDo
 import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
-import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
 import { useStandupStatusQuery } from '@/hooks/useStandupStatusQuery';
 import { useActionItemsQuery, actionItemsKeys } from '@/hooks/useActionItemsQuery';
+import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -152,7 +152,8 @@ export function AppLayout() {
       if (currentDocumentType === 'issue') return 'issues';
       if (currentDocumentType === 'project') return 'projects';
       if (currentDocumentType === 'program') return 'programs';
-      if (currentDocumentType === 'sprint') return 'sprints';
+      if (currentDocumentType === 'sprint') return 'docs'; // Sprint documents open without special sidebar
+      if (currentDocumentType === 'person') return 'team';
       // Default to docs while loading or for unknown types
       return 'docs';
     }
@@ -365,13 +366,6 @@ export function AppLayout() {
               onClick={() => handleModeClick('projects')}
             />
             <RailIcon
-              icon={<SprintsIcon />}
-              label={standupDue ? "Sprints (standup due)" : "Sprints"}
-              active={activeMode === 'sprints'}
-              onClick={() => handleModeClick('sprints')}
-              showBadge={standupDue}
-            />
-            <RailIcon
               icon={<IssuesIcon />}
               label="Issues"
               active={activeMode === 'issues'}
@@ -386,9 +380,10 @@ export function AppLayout() {
             />
             <RailIcon
               icon={<TeamIcon />}
-              label="Teams"
+              label={standupDue ? "Teams (standup due)" : "Teams"}
               active={activeMode === 'team'}
               onClick={() => handleModeClick('team')}
+              showBadge={standupDue}
             />
           </div>
 
@@ -521,9 +516,6 @@ export function AppLayout() {
                   onSelect={(id) => navigate(`/documents/${id}`)}
                   onUpdateProgram={updateProgram}
                 />
-              )}
-              {activeMode === 'sprints' && (
-                <SprintsList />
               )}
               {activeMode === 'team' && (
                 <TeamSidebar />
@@ -1418,159 +1410,111 @@ function ArchiveIcon({ className }: { className?: string }) {
   );
 }
 
-function SprintsList() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { data, isLoading, error } = useActiveSprintsQuery();
-
-  // Extract active sprint ID from URL if viewing a sprint
-  const getActiveSprintId = (): string | undefined => {
-    // Match /sprints/:id or /programs/:programId/sprints/:id
-    const sprintMatch = location.pathname.match(/\/sprints\/([^/]+)/);
-    return sprintMatch ? sprintMatch[1] : undefined;
-  };
-
-  const activeId = getActiveSprintId();
-
-  if (isLoading) {
-    return <div className="px-3 py-2 text-sm text-muted">Loading sprints...</div>;
-  }
-
-  if (error) {
-    return <div className="px-3 py-2 text-sm text-muted">Failed to load sprints</div>;
-  }
-
-  const sprints = data?.sprints || [];
-
-  if (sprints.length === 0) {
-    return (
-      <div className="px-3 py-2 text-sm text-muted">
-        <p>No active sprints</p>
-        <p className="mt-1 text-xs">Check Programs to see upcoming sprints</p>
-      </div>
-    );
-  }
-
-  return (
-    <ul className="space-y-0.5 px-2" data-testid="sprints-list">
-      {sprints.map((sprint) => {
-        const isEnded = sprint.days_remaining <= 0;
-        const isEndingSoon = !isEnded && sprint.days_remaining <= 2;
-        const showReviewIndicator = isEnded || isEndingSoon;
-        return (
-          <li key={sprint.id} data-testid="sprint-item">
-            <div
-              className={cn(
-                'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                activeId === sprint.id
-                  ? 'bg-border/50 text-foreground'
-                  : 'text-muted hover:bg-border/30 hover:text-foreground'
-              )}
-            >
-              {/* Owner avatar */}
-              <button
-                onClick={() => navigate(`/documents/${sprint.id}`)}
-                className="flex items-center gap-2 flex-1 min-w-0"
-              >
-                {sprint.owner ? (
-                  <span
-                    className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent/80 text-[10px] font-medium text-white"
-                    title={sprint.owner.name}
-                  >
-                    {sprint.owner.name?.charAt(0).toUpperCase() || '?'}
-                  </span>
-                ) : (
-                  <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-border text-[10px] text-muted">
-                    ?
-                  </span>
-                )}
-                {/* Program name (sprint number is redundant since all active sprints are the same) */}
-                <span className="flex-1 truncate">{sprint.program_name || 'Untitled'}</span>
-              </button>
-              {/* Sprint ended / Review due badge and quick action */}
-              {showReviewIndicator && (
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <span className={cn(
-                    'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                    isEnded
-                      ? 'bg-red-500/20 text-red-400'
-                      : 'bg-amber-500/20 text-amber-400'
-                  )}>
-                    {isEnded ? 'Sprint ended' : 'Review due'}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/documents/${sprint.id}/review`);
-                    }}
-                    className="hidden group-hover:inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/20"
-                    title="Go to sprint review"
-                  >
-                    Review
-                  </button>
-                </div>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 function TeamSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { currentDocumentType } = useCurrentDocument();
+  const { id: personIdFromUrl } = useParams<{ id: string }>();
+
+  // Check if we're viewing a person profile (at /team/:personId)
+  const isViewingPerson = location.pathname.startsWith('/team/') &&
+    location.pathname !== '/team/allocation' &&
+    location.pathname !== '/team/directory' &&
+    location.pathname !== '/team/status';
 
   const isAllocation = location.pathname === '/team/allocation' || location.pathname === '/team';
-  const isDirectory = location.pathname === '/team/directory';
+  // Directory is active when on /team/directory OR viewing a person document
+  const isDirectory = location.pathname === '/team/directory' ||
+    isViewingPerson ||
+    (location.pathname.startsWith('/documents/') && currentDocumentType === 'person');
   const isStatusOverview = location.pathname === '/team/status';
 
+  // Fetch people for the sidebar list when viewing a person
+  const { data: people = [] } = useTeamMembersQuery();
+
+  // Filter out pending users for the sidebar list
+  const activePeople = people.filter(p => !p.isPending);
+
   return (
-    <ul className="space-y-0.5 px-2">
-      <li>
-        <button
-          onClick={() => navigate('/team/allocation')}
-          className={cn(
-            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-            isAllocation
-              ? 'bg-border/50 text-foreground'
-              : 'text-muted hover:bg-border/30 hover:text-foreground'
-          )}
-        >
-          <GridIcon />
-          <span>Allocation</span>
-        </button>
-      </li>
-      <li>
-        <button
-          onClick={() => navigate('/team/directory')}
-          className={cn(
-            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-            isDirectory
-              ? 'bg-border/50 text-foreground'
-              : 'text-muted hover:bg-border/30 hover:text-foreground'
-          )}
-        >
-          <PeopleIcon />
-          <span>Directory</span>
-        </button>
-      </li>
-      <li>
-        <button
-          onClick={() => navigate('/team/status')}
-          className={cn(
-            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-            isStatusOverview
-              ? 'bg-border/50 text-foreground'
-              : 'text-muted hover:bg-border/30 hover:text-foreground'
-          )}
-        >
-          <ActivityIcon />
-          <span>Status Overview</span>
-        </button>
-      </li>
-    </ul>
+    <div className="space-y-3 px-2">
+      {/* Navigation buttons */}
+      <ul className="space-y-0.5">
+        <li>
+          <button
+            onClick={() => navigate('/team/allocation')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              isAllocation
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <GridIcon />
+            <span>Allocation</span>
+          </button>
+        </li>
+        <li>
+          <button
+            onClick={() => navigate('/team/directory')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              isDirectory
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <PeopleIcon />
+            <span>Directory</span>
+          </button>
+        </li>
+        <li>
+          <button
+            onClick={() => navigate('/team/status')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              isStatusOverview
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <ActivityIcon />
+            <span>Status Overview</span>
+          </button>
+        </li>
+      </ul>
+
+      {/* People list when viewing a person */}
+      {isViewingPerson && activePeople.length > 0 && (
+        <div className="border-t border-border pt-3">
+          <div className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted">
+            Team Members
+          </div>
+          <ul className="space-y-0.5">
+            {activePeople.map(person => (
+              <li key={person.id}>
+                <button
+                  onClick={() => navigate(`/team/${person.id}`)}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                    personIdFromUrl === person.id
+                      ? 'bg-border/50 text-foreground'
+                      : 'text-muted hover:bg-border/30 hover:text-foreground'
+                  )}
+                >
+                  <div className={cn(
+                    'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white',
+                    personIdFromUrl === person.id ? 'bg-accent' : 'bg-accent/60'
+                  )}>
+                    {person.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="truncate">{person.name}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1627,15 +1571,6 @@ function ProjectsIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-    </svg>
-  );
-}
-
-function SprintsIcon() {
-  // Lightning bolt icon (Zap - represents velocity/sprints)
-  return (
-    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
     </svg>
   );
 }
