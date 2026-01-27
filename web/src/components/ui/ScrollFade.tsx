@@ -44,10 +44,10 @@ export function ScrollFade({ children, className, fadeHeight = 40 }: ScrollFadeP
   }, []);
 
   return (
-    <div className={cn('relative h-full', className)}>
+    <div className={cn('relative', className)}>
       <div
         ref={containerRef}
-        className="h-full overflow-auto"
+        className="absolute inset-0 overflow-auto"
       >
         {children}
       </div>

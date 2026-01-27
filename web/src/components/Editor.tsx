@@ -21,6 +21,7 @@ import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { ScrollFade } from '@/components/ui/ScrollFade';
 import { apiPost } from '@/lib/api';
 import { createSlashCommands } from './editor/SlashCommands';
 import { DocumentEmbed } from './editor/DocumentEmbed';
@@ -785,9 +786,11 @@ export function Editor({
               </Tooltip>
             </div>
             {/* Sidebar content */}
-            <div className="flex-1 overflow-auto pb-20">
-              {sidebar}
-            </div>
+            <ScrollFade className="flex-1">
+              <div className="pb-20">
+                {sidebar}
+              </div>
+            </ScrollFade>
           </div>
 
           {/* Expand button when right sidebar is collapsed */}
