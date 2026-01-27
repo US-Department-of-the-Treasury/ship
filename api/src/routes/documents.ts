@@ -294,9 +294,9 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
-    // Get belongs_to associations from junction table (for issues, wikis, and sprints)
+    // Get belongs_to associations from junction table (for issues, wikis, sprints, and projects)
     let belongs_to: Array<{ id: string; type: string; title?: string; color?: string }> = [];
-    if (doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint') {
+    if (doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint' || doc.document_type === 'project') {
       const assocResult = await pool.query(
         `SELECT da.related_id as id, da.relationship_type as type,
                 d.title, (d.properties->>'color') as color
@@ -341,8 +341,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Sprint properties (dates computed from sprint_number + workspace.sprint_start_date)
       status: props.status,
       hypothesis: props.hypothesis,
-      // Include belongs_to for issue, wiki, and sprint documents
-      ...((doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint') && { belongs_to }),
+      // Include belongs_to for issue, wiki, sprint, and project documents
+      ...((doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint' || doc.document_type === 'project') && { belongs_to }),
     });
   } catch (err) {
     console.error('Get document error:', err);
