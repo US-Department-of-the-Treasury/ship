@@ -1148,9 +1148,10 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       [workspaceId, fromSprint, toSprint]
     );
 
-    // Get all people in the workspace
+    // Get all people in the workspace with their user_id
+    // Note: assignee_ids in sprints contain USER IDs, not person document IDs
     const peopleResult = await pool.query(
-      `SELECT d.id, d.title as name
+      `SELECT d.id, d.title as name, d.properties->>'user_id' as user_id
        FROM documents d
        WHERE d.workspace_id = $1
          AND d.document_type = 'person'
@@ -1159,10 +1160,14 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       [workspaceId]
     );
 
-    // Build person ID to name map
-    const peopleMap: Record<string, string> = {};
+    // Build user_id to person name map (since assignee_ids contains user IDs)
+    const userIdToPersonName: Record<string, string> = {};
+    const userIdToPersonId: Record<string, string> = {};
     for (const p of peopleResult.rows) {
-      peopleMap[p.id] = p.name;
+      if (p.user_id) {
+        userIdToPersonName[p.user_id] = p.name;
+        userIdToPersonId[p.user_id] = p.id;
+      }
     }
 
     // Build program -> people -> sprint assignments structure
@@ -1230,14 +1235,15 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       };
 
       // Add each person to this program with this sprint assignment
-      for (const personId of assigneeIds) {
-        if (!programEntry.peopleMap.has(personId)) {
-          programEntry.peopleMap.set(personId, {
-            name: peopleMap[personId] || 'Unknown',
+      // Note: assigneeIds contains USER IDs, so we look up person name via userIdToPersonName
+      for (const userId of assigneeIds) {
+        if (!programEntry.peopleMap.has(userId)) {
+          programEntry.peopleMap.set(userId, {
+            name: userIdToPersonName[userId] || 'Unknown',
             sprints: new Map(),
           });
         }
-        programEntry.peopleMap.get(personId)!.sprints.set(sprint.sprint_number, assignment);
+        programEntry.peopleMap.get(userId)!.sprints.set(sprint.sprint_number, assignment);
       }
     }
 
