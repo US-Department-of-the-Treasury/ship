@@ -138,17 +138,26 @@ async function seed() {
     for (const user of allUsersForMembership.rows) {
       // Check for existing membership
       const existingMembership = await pool.query(
-        'SELECT id FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
+        'SELECT id, role FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
         [workspaceId, user.id]
       );
 
+      // Determine expected role
+      const expectedRole = user.email === 'dev@ship.local' ? 'admin' : 'member';
+
       if (!existingMembership.rows[0]) {
-        // Make dev user an admin, others are members
-        const role = user.email === 'dev@ship.local' ? 'admin' : 'member';
+        // Create new membership
         await pool.query(
           `INSERT INTO workspace_memberships (workspace_id, user_id, role)
            VALUES ($1, $2, $3)`,
-          [workspaceId, user.id, role]
+          [workspaceId, user.id, expectedRole]
+        );
+        membershipsCreated++;
+      } else if (existingMembership.rows[0].role !== expectedRole && user.email === 'dev@ship.local') {
+        // Update dev user to admin if they're not already
+        await pool.query(
+          `UPDATE workspace_memberships SET role = $1 WHERE workspace_id = $2 AND user_id = $3`,
+          [expectedRole, workspaceId, user.id]
         );
         membershipsCreated++;
       }
@@ -345,26 +354,75 @@ async function seed() {
     const daysSinceStart = Math.floor((today.getTime() - sprintStartDate.getTime()) / (1000 * 60 * 60 * 24));
     const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
 
-    // Create sprints for each program (current-3 to current+3)
-    // Each sprint gets assigned an owner from the team (rotating assignment)
+    // Create stable person-to-program assignments
+    // People generally stay on the same program, with occasional switches
+    // This creates more realistic team structures
+    const personProgramAssignments: Record<string, string[]> = {};
+    const programIds = programs.map(p => p.id);
+
+    for (let i = 0; i < allUsers.length; i++) {
+      const user = allUsers[i]!;
+      // Primary program assignment (most people stay on one program)
+      const primaryProgramIdx = i % programs.length;
+      const primaryProgram = programIds[primaryProgramIdx]!;
+
+      // 30% of people work on a secondary program occasionally
+      const hasSecondaryProgram = i % 3 === 0;
+      const secondaryProgramIdx = (primaryProgramIdx + 1) % programs.length;
+      const secondaryProgram = programIds[secondaryProgramIdx]!;
+
+      personProgramAssignments[user.id] = hasSecondaryProgram
+        ? [primaryProgram, secondaryProgram]
+        : [primaryProgram];
+    }
+
+    // Create sprints for each program (current-6 to current+10 for better historical data)
+    // Each sprint gets assigned people who belong to that program
     // Sprints are distributed among the program's projects
-    const sprintsToCreate: Array<{ programId: string; projectId: string; number: number; ownerIdx: number }> = [];
-    let ownerRotation = 0;
+    interface SprintToCreate {
+      programId: string;
+      projectId: string;
+      number: number;
+      assigneeIds: string[];
+    }
+    const sprintsToCreate: SprintToCreate[] = [];
+
     for (const program of programs) {
       // Get projects for this program to distribute sprints among them
       const programProjects = projects.filter(p => p.programId === program.id);
+
+      // Get people assigned to this program
+      const programPeople = allUsers.filter(u =>
+        personProgramAssignments[u.id]?.includes(program.id)
+      );
+
       let projectIdx = 0;
-      for (let sprintNum = currentSprintNumber - 3; sprintNum <= currentSprintNumber + 3; sprintNum++) {
+      for (let sprintNum = currentSprintNumber - 6; sprintNum <= currentSprintNumber + 10; sprintNum++) {
         if (sprintNum > 0) {
           // Round-robin assign sprints to projects within the program
           const project = programProjects[projectIdx % programProjects.length]!;
+
+          // Assign 2-4 people to each sprint from those in this program
+          // People tend to stay on the same project within a program
+          const numAssignees = 2 + (sprintNum % 3); // 2-4 people
+          const sprintAssignees: string[] = [];
+
+          for (let i = 0; i < Math.min(numAssignees, programPeople.length); i++) {
+            // Rotate through program people, but with some consistency
+            // (same person tends to be on consecutive sprints)
+            const personIdx = (projectIdx + i) % programPeople.length;
+            const person = programPeople[personIdx];
+            if (person && !sprintAssignees.includes(person.id)) {
+              sprintAssignees.push(person.id);
+            }
+          }
+
           sprintsToCreate.push({
             programId: program.id,
             projectId: project.id,
             number: sprintNum,
-            ownerIdx: ownerRotation % allUsers.length
+            assigneeIds: sprintAssignees,
           });
-          ownerRotation++;
           projectIdx++;
         }
       }
@@ -374,7 +432,8 @@ async function seed() {
     let sprintsCreated = 0;
 
     for (const sprint of sprintsToCreate) {
-      const owner = allUsers[sprint.ownerIdx]!;
+      // Pick an owner from the assignees
+      const owner = allUsers.find(u => sprint.assigneeIds.includes(u.id)) || allUsers[0]!;
 
       // Check for existing sprint by sprint_number and project (via junction table)
       const existingSprint = await pool.query(
@@ -387,8 +446,142 @@ async function seed() {
       );
 
       if (existingSprint.rows[0]) {
+        // Existing sprint - ALWAYS update to ensure correct state
+        const existingId = existingSprint.rows[0].id;
+
+        // Get current properties
+        const currentDoc = await pool.query(
+          `SELECT properties, content FROM documents WHERE id = $1`,
+          [existingId]
+        );
+        const currentProps = currentDoc.rows[0]?.properties || {};
+
+        // Calculate what properties should be for this sprint
+        const sprintOffset = sprint.number - currentSprintNumber;
+        const thisSprintStart = new Date(sprintStartDate);
+        thisSprintStart.setDate(thisSprintStart.getDate() + (sprint.number - 1) * 7);
+
+        const sprintHypotheses = [
+          'If we complete these features, we will unblock the next milestone.',
+          'Fixing these issues will reduce user-reported problems by 50%.',
+          'Performance gains will improve user engagement metrics.',
+          'New features will increase user activation rate.',
+          'These changes will enable the team to move faster.',
+          'Better docs will reduce onboarding time for new developers.',
+          'Incremental shipping will maintain momentum and user trust.',
+        ];
+
+        // Determine state, hypothesis, and approval based on offset
+        let expectedState: 'completed' | 'in_progress' | 'planning' = 'planning';
+        let hasHypothesis = false;
+        let hypothesisApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
+        let reviewApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
+        let hasReview = false;
+
+        if (sprintOffset < -1) {
+          // Past sprints: completed with approved hypotheses and reviews
+          expectedState = 'completed';
+          hasHypothesis = sprint.number % 5 !== 0;
+          hasReview = sprint.number % 7 !== 0;
+          if (hasHypothesis) {
+            // Some have changed_since_approved to test the warning UI
+            if (sprint.number % 8 === 0) {
+              hypothesisApproval = { state: 'changed_since_approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+            } else {
+              hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+            }
+          }
+          if (hasReview) {
+            reviewApproval = { state: 'approved', approved_by: owner.id, approved_at: new Date(thisSprintStart.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() };
+          }
+        } else if (sprintOffset === -1) {
+          // Just completed sprint
+          expectedState = 'completed';
+          hasHypothesis = true;
+          hasReview = sprint.number % 3 !== 0;
+          // Some have hypothesis that changed since approval (to test manager warning)
+          if (sprint.number % 4 === 0) {
+            hypothesisApproval = { state: 'changed_since_approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+          } else {
+            hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+          }
+          if (hasReview) {
+            reviewApproval = { state: 'pending' };
+          }
+        } else if (sprintOffset === 0) {
+          const variant = sprint.number % 4;
+          expectedState = variant === 3 ? 'planning' : 'in_progress';
+          hasHypothesis = variant < 2;
+          if (hasHypothesis) {
+            // One variant has changed_since_approved for current sprint
+            if (variant === 0 && sprint.number % 3 === 0) {
+              hypothesisApproval = { state: 'changed_since_approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+            } else if (variant === 0) {
+              hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+            } else {
+              hypothesisApproval = { state: 'pending' };
+            }
+          }
+        } else if (sprintOffset === 1) {
+          hasHypothesis = sprint.number % 5 < 2;
+          if (hasHypothesis) {
+            hypothesisApproval = { state: 'pending' };
+          }
+        } else if (sprintOffset <= 3) {
+          hasHypothesis = sprint.number % 5 === 0;
+          if (hasHypothesis) {
+            hypothesisApproval = { state: 'pending' };
+          }
+        }
+
+        // Build updated properties
+        const updatedProps: Record<string, unknown> = {
+          ...currentProps,
+          state: expectedState,
+        };
+
+        if (hasHypothesis) {
+          updatedProps.hypothesis = sprintHypotheses[sprint.number % sprintHypotheses.length];
+        }
+
+        if (expectedState === 'in_progress' || expectedState === 'completed') {
+          updatedProps.started_at = thisSprintStart.toISOString();
+        }
+
+        if (hypothesisApproval) {
+          updatedProps.hypothesis_approval = hypothesisApproval;
+        }
+
+        if (reviewApproval) {
+          updatedProps.review_approval = reviewApproval;
+        }
+
+        // Build content with hypothesisBlock if needed
+        const updatedContent = hasHypothesis ? {
+          type: 'doc',
+          content: [
+            {
+              type: 'hypothesisBlock',
+              attrs: { placeholder: 'What will get done this sprint?' },
+              content: [
+                {
+                  type: 'paragraph',
+                  content: [{ type: 'text', text: updatedProps.hypothesis as string }],
+                },
+              ],
+            },
+            { type: 'paragraph', content: [] },
+          ],
+        } : { type: 'doc', content: [{ type: 'paragraph', content: [] }] };
+
+        await pool.query(
+          `UPDATE documents SET properties = $1, content = $2 WHERE id = $3`,
+          [JSON.stringify(updatedProps), JSON.stringify(updatedContent), existingId]
+        );
+        sprintsCreated++;
+
         sprints.push({
-          id: existingSprint.rows[0].id,
+          id: existingId,
           programId: sprint.programId,
           projectId: sprint.projectId,
           number: sprint.number,
@@ -397,15 +590,6 @@ async function seed() {
         // Sprint properties with full planning details
         // Dates and status are computed at runtime from sprint_number + workspace.sprint_start_date
         // Confidence is 0-100 scale (different from project ICE scores which are 1-10)
-        const sprintGoals = [
-          'Complete core feature implementation and initial testing',
-          'Deliver bug fixes and stability improvements',
-          'Optimize performance and reduce technical debt',
-          'Build out user-facing features with accessibility',
-          'Finalize integrations and prepare for release',
-          'Focus on documentation and developer experience',
-          'Ship incremental improvements based on feedback',
-        ];
         const sprintHypotheses = [
           'If we complete these features, we will unblock the next milestone.',
           'Fixing these issues will reduce user-reported problems by 50%.',
@@ -425,28 +609,176 @@ async function seed() {
           'User feedback incorporated in next sprint planning',
         ];
 
-        // Calculate confidence based on sprint timing (future sprints have lower confidence)
+        // Calculate sprint offset from current
         const sprintOffset = sprint.number - currentSprintNumber;
+
+        // Determine sprint state and hypothesis/review presence based on timing
+        // This creates realistic data for testing the accountability grid
+        let state: 'completed' | 'in_progress' | 'planning' = 'planning';
+        let started_at: string | null = null;
+        let hasHypothesis = false;
+        let hasReview = false;
+        let hypothesisApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
+        let reviewApproval: { state: string; approved_by?: string; approved_at?: string } | null = null;
+
+        // Calculate sprint start date for this sprint
+        const thisSprintStart = new Date(sprintStartDate);
+        thisSprintStart.setDate(thisSprintStart.getDate() + (sprint.number - 1) * 7);
+
+        if (sprintOffset < -1) {
+          // Past sprints (more than 1 sprint ago): mostly completed with hypothesis + review
+          state = 'completed';
+          started_at = thisSprintStart.toISOString();
+
+          // 80% of past sprints have hypothesis, 20% missing for testing
+          hasHypothesis = sprint.number % 5 !== 0; // Every 5th sprint missing hypothesis
+          // 85% of past sprints have review, 15% missing for testing
+          hasReview = sprint.number % 7 !== 0; // Every 7th sprint missing review
+
+          // If they have hypothesis/review, most are approved
+          if (hasHypothesis) {
+            // 90% approved, 10% pending
+            hypothesisApproval = sprint.number % 10 === 0
+              ? { state: 'pending' }
+              : { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+          }
+          if (hasReview) {
+            // 85% approved, 15% pending
+            reviewApproval = sprint.number % 7 === 1
+              ? { state: 'pending' }
+              : { state: 'approved', approved_by: owner.id, approved_at: new Date(thisSprintStart.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() };
+          }
+        } else if (sprintOffset === -1) {
+          // Just completed sprint: should have hypothesis, review may be missing
+          state = 'completed';
+          started_at = thisSprintStart.toISOString();
+          hasHypothesis = true;
+          // 60% have review (some people are behind)
+          hasReview = sprint.number % 3 !== 0;
+          hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+          if (hasReview) {
+            reviewApproval = { state: 'pending' }; // Recently submitted, not yet approved
+          }
+        } else if (sprintOffset === 0) {
+          // Current sprint: mix of states for testing
+          // Use sprint number to create variety across programs
+          const currentSprintVariant = sprint.number % 4;
+          if (currentSprintVariant === 0) {
+            // Started with hypothesis and approved
+            state = 'in_progress';
+            started_at = thisSprintStart.toISOString();
+            hasHypothesis = true;
+            hypothesisApproval = { state: 'approved', approved_by: owner.id, approved_at: thisSprintStart.toISOString() };
+          } else if (currentSprintVariant === 1) {
+            // Started with hypothesis pending approval
+            state = 'in_progress';
+            started_at = thisSprintStart.toISOString();
+            hasHypothesis = true;
+            hypothesisApproval = { state: 'pending' };
+          } else if (currentSprintVariant === 2) {
+            // Started but no hypothesis (should show warning/error)
+            state = 'in_progress';
+            started_at = thisSprintStart.toISOString();
+            hasHypothesis = false;
+          } else {
+            // Not yet started (should show "not started" indicator)
+            state = 'planning';
+            hasHypothesis = false;
+          }
+        } else if (sprintOffset === 1) {
+          // Next sprint: some proactive teams have hypothesis already
+          state = 'planning';
+          // 40% have hypothesis written early
+          hasHypothesis = sprint.number % 5 < 2;
+          if (hasHypothesis) {
+            hypothesisApproval = { state: 'pending' };
+          }
+        } else if (sprintOffset <= 3) {
+          // Near future (2-3 sprints out): occasional early planning
+          state = 'planning';
+          // 20% have hypothesis
+          hasHypothesis = sprint.number % 5 === 0;
+          if (hasHypothesis) {
+            hypothesisApproval = { state: 'pending' };
+          }
+        } else {
+          // Far future: no hypothesis yet (normal)
+          state = 'planning';
+          hasHypothesis = false;
+        }
+
+        // Calculate confidence based on sprint timing
         let baseConfidence = 80;
         if (sprintOffset < 0) baseConfidence = 95; // Past sprints - high confidence (actual results)
         else if (sprintOffset === 0) baseConfidence = 75; // Current sprint - medium-high
         else if (sprintOffset === 1) baseConfidence = 60; // Next sprint - medium
         else baseConfidence = 40; // Future sprints - lower confidence
 
-        const sprintProperties = {
+        const sprintProperties: Record<string, unknown> = {
           sprint_number: sprint.number,
           owner_id: owner.id,
-          assignee_ids: [owner.id, allUsers[(sprint.ownerIdx + 1) % allUsers.length]!.id], // Owner + one other
-          hypothesis: sprintHypotheses[sprint.number % sprintHypotheses.length],
+          assignee_ids: sprint.assigneeIds,
+          state: state,
           success_criteria: sprintSuccessCriteria[sprint.number % sprintSuccessCriteria.length],
           confidence: baseConfidence + (Math.random() * 10 - 5), // Add some variance
         };
+
+        // Add started_at if sprint was started
+        if (started_at) {
+          sprintProperties.started_at = started_at;
+        }
+
+        // Add hypothesis if present
+        if (hasHypothesis) {
+          sprintProperties.hypothesis = sprintHypotheses[sprint.number % sprintHypotheses.length];
+        }
+
+        // Add approval states
+        if (hypothesisApproval) {
+          sprintProperties.hypothesis_approval = hypothesisApproval;
+        }
+        if (reviewApproval) {
+          sprintProperties.review_approval = reviewApproval;
+        }
+
+        // Build document content - include hypothesisBlock if sprint has hypothesis
+        // This is important because the editor syncs hypothesis from content to properties
+        // If we only set properties.hypothesis but not content, it gets overwritten to null
+        const hypothesisText = hasHypothesis
+          ? sprintHypotheses[sprint.number % sprintHypotheses.length]
+          : null;
+
+        const sprintContent: Record<string, unknown> = {
+          type: 'doc',
+          content: hasHypothesis ? [
+            {
+              type: 'hypothesisBlock',
+              attrs: { placeholder: 'What will get done this sprint?' },
+              content: [
+                {
+                  type: 'paragraph',
+                  content: [{ type: 'text', text: hypothesisText }],
+                },
+              ],
+            },
+            {
+              type: 'paragraph',
+              content: [],
+            },
+          ] : [
+            {
+              type: 'paragraph',
+              content: [],
+            },
+          ],
+        };
+
         // Create sprint document without legacy project_id and program_id columns
         const sprintResult = await pool.query(
-          `INSERT INTO documents (workspace_id, document_type, title, properties)
-           VALUES ($1, 'sprint', $2, $3)
+          `INSERT INTO documents (workspace_id, document_type, title, properties, content)
+           VALUES ($1, 'sprint', $2, $3, $4)
            RETURNING id`,
-          [workspaceId, `Sprint ${sprint.number}`, JSON.stringify(sprintProperties)]
+          [workspaceId, `Sprint ${sprint.number}`, JSON.stringify(sprintProperties), JSON.stringify(sprintContent)]
         );
         const sprintId = sprintResult.rows[0].id;
 
@@ -465,9 +797,9 @@ async function seed() {
     }
 
     if (sprintsCreated > 0) {
-      console.log(`✅ Created ${sprintsCreated} sprints`);
+      console.log(`✅ Created/updated ${sprintsCreated} sprints`);
     } else {
-      console.log('ℹ️  All sprints already exist');
+      console.log('ℹ️  All sprints already exist and up to date');
     }
 
     // Get Ship Core program for comprehensive sprint testing
@@ -799,12 +1131,22 @@ async function seed() {
       console.log(`✅ Created ${standaloneDocsCreated} standalone wiki documents`);
     }
 
-    // Create sample standups for Ship Core sprints (tests the standup feed feature)
-    const shipCoreSprints = sprints.filter(s => s.programId === shipCoreProgram.id);
+    // Create sample standups for current and recent sprints across all programs
+    // Standups are realistic: people on a sprint post standups during that sprint
     let standupsCreated = 0;
 
-    // Add standups to current and recent sprints
-    for (const sprint of shipCoreSprints) {
+    const standupMessages = [
+      { yesterday: 'Finished implementing the sprint timeline UI component.', today: 'Working on the progress chart integration.', blockers: 'None' },
+      { yesterday: 'Code review and bug fixes.', today: 'Starting on issue assignment flow.', blockers: 'Waiting on API spec clarification.' },
+      { yesterday: 'Team sync and planning session.', today: 'Documentation and testing.', blockers: 'None' },
+      { yesterday: 'Completed authentication flow.', today: 'Working on error handling.', blockers: 'Need design review.' },
+      { yesterday: 'Fixed critical bug in data sync.', today: 'Adding unit tests.', blockers: 'None' },
+      { yesterday: 'Set up monitoring dashboard.', today: 'Investigating performance issue.', blockers: 'Waiting on prod access.' },
+      { yesterday: 'Reviewed PRs and merged features.', today: 'Starting new feature work.', blockers: 'None' },
+    ];
+
+    // Add standups to current and recent sprints (across all programs)
+    for (const sprint of sprints) {
       if (sprint.number >= currentSprintNumber - 1 && sprint.number <= currentSprintNumber) {
         // Check if standups already exist for this sprint (via junction table)
         const existingStandups = await pool.query(
@@ -816,53 +1158,44 @@ async function seed() {
         );
 
         if (existingStandups.rows.length === 0) {
-          // Create 2-3 standups per sprint from different team members
-          const standupAuthors = allUsers.slice(0, 3);
-          const standupMessages = [
-            {
-              content: {
-                type: 'doc',
-                content: [
-                  { type: 'paragraph', content: [{ type: 'text', text: 'Yesterday: Finished implementing the sprint timeline UI component.' }] },
-                  { type: 'paragraph', content: [{ type: 'text', text: 'Today: Working on the progress chart integration.' }] },
-                  { type: 'paragraph', content: [{ type: 'text', text: 'Blockers: None' }] },
-                ],
-              },
-            },
-            {
-              content: {
-                type: 'doc',
-                content: [
-                  { type: 'paragraph', content: [{ type: 'text', text: 'Yesterday: Code review and bug fixes.' }] },
-                  { type: 'paragraph', content: [{ type: 'text', text: 'Today: Starting on issue assignment flow.' }] },
-                  { type: 'paragraph', content: [{ type: 'text', text: 'Blockers: Waiting on API spec clarification.' }] },
-                ],
-              },
-            },
-            {
-              content: {
-                type: 'doc',
-                content: [
-                  { type: 'paragraph', content: [{ type: 'text', text: 'Yesterday: Team sync and planning session.' }] },
-                  { type: 'paragraph', content: [{ type: 'text', text: 'Today: Documentation and testing.' }] },
-                  { type: 'paragraph', content: [{ type: 'text', text: 'Blockers: None' }] },
-                ],
-              },
-            },
-          ];
+          // Get sprint properties to find assignees
+          const sprintDoc = await pool.query(
+            `SELECT properties FROM documents WHERE id = $1`,
+            [sprint.id]
+          );
+          const sprintProps = sprintDoc.rows[0]?.properties || {};
+          const assigneeIds = sprintProps.assignee_ids || [];
 
-          for (let i = 0; i < standupAuthors.length; i++) {
-            const author = standupAuthors[i]!;
-            const message = standupMessages[i]!;
+          // Create standups from people assigned to this sprint
+          // Not everyone posts every day (realistic)
+          const numStandups = Math.min(assigneeIds.length, 2 + (sprint.number % 2)); // 2-3 standups
+
+          for (let i = 0; i < numStandups; i++) {
+            const authorId = assigneeIds[i];
+            if (!authorId) continue;
+
+            const author = allUsers.find(u => u.id === authorId);
+            if (!author) continue;
+
+            const messageTemplate = standupMessages[(sprint.number + i) % standupMessages.length]!;
+            const content = {
+              type: 'doc',
+              content: [
+                { type: 'paragraph', content: [{ type: 'text', text: `Yesterday: ${messageTemplate.yesterday}` }] },
+                { type: 'paragraph', content: [{ type: 'text', text: `Today: ${messageTemplate.today}` }] },
+                { type: 'paragraph', content: [{ type: 'text', text: `Blockers: ${messageTemplate.blockers}` }] },
+              ],
+            };
+
             const daysAgo = i; // Stagger the standups over recent days
             const properties = { author_id: author.id };
 
-            // Create standup document without legacy sprint_id column
+            // Create standup document
             const standupResult = await pool.query(
               `INSERT INTO documents (workspace_id, document_type, title, content, created_by, properties, created_at)
                VALUES ($1, 'standup', $2, $3, $4, $5, NOW() - INTERVAL '${daysAgo} days')
                RETURNING id`,
-              [workspaceId, `Standup - ${author.name}`, JSON.stringify(message.content), author.id, JSON.stringify(properties)]
+              [workspaceId, `Standup - ${author.name}`, JSON.stringify(content), author.id, JSON.stringify(properties)]
             );
             const standupId = standupResult.rows[0].id;
 
@@ -881,12 +1214,27 @@ async function seed() {
       console.log('ℹ️  All standups already exist');
     }
 
-    // Create sample sprint reviews for completed sprints
+    // Create sample sprint reviews for completed sprints across ALL programs
+    // Reviews are created based on realistic patterns:
+    // - Past sprints (>1 ago): ~85% have reviews
+    // - Just completed (-1): ~60% have reviews
+    // - Current and future: no reviews yet
     let sprintReviewsCreated = 0;
 
-    for (const sprint of shipCoreSprints) {
-      // Only add reviews to completed sprints (before current)
-      if (sprint.number < currentSprintNumber && sprint.number >= currentSprintNumber - 2) {
+    for (const sprint of sprints) {
+      const sprintOffset = sprint.number - currentSprintNumber;
+
+      // Determine if this sprint should have a review based on timing
+      let shouldHaveReview = false;
+      if (sprintOffset < -1) {
+        // Past sprints: 85% have review (every 7th missing)
+        shouldHaveReview = sprint.number % 7 !== 0;
+      } else if (sprintOffset === -1) {
+        // Just completed: 60% have review
+        shouldHaveReview = sprint.number % 3 !== 0;
+      }
+
+      if (shouldHaveReview) {
         // Check if review exists (via junction table)
         const existingReview = await pool.query(
           `SELECT d.id FROM documents d
@@ -897,24 +1245,44 @@ async function seed() {
         );
 
         if (!existingReview.rows[0]) {
+          // Variety of review content based on sprint number
+          const reviewVariants = [
+            {
+              wentWell: ['Team collaboration was excellent', 'Met most of our sprint goals', 'Good code review coverage'],
+              toImprove: ['Better estimation on complex tasks', 'More frequent check-ins'],
+            },
+            {
+              wentWell: ['Shipped all planned features', 'Zero production incidents', 'Great testing coverage'],
+              toImprove: ['Documentation could be more thorough', 'Need more pair programming'],
+            },
+            {
+              wentWell: ['Successfully integrated new API', 'Performance improvements measurable', 'Strong stakeholder communication'],
+              toImprove: ['Technical debt accumulating', 'Need dedicated refactoring time'],
+            },
+            {
+              wentWell: ['User feedback incorporated quickly', 'Team morale is high', 'Good velocity this sprint'],
+              toImprove: ['Some scope creep occurred', 'Need clearer acceptance criteria upfront'],
+            },
+          ];
+
+          const variant = reviewVariants[sprint.number % reviewVariants.length]!;
+
           const reviewContent = {
             type: 'doc',
             content: [
               { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'What went well' }] },
-              { type: 'bulletList', content: [
-                { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Team collaboration was excellent' }] }] },
-                { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Met most of our sprint goals' }] }] },
-              ]},
+              { type: 'bulletList', content: variant.wentWell.map(item => ({
+                type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: item }] }]
+              }))},
               { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'What could be improved' }] },
-              { type: 'bulletList', content: [
-                { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Better estimation on complex tasks' }] }] },
-                { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'More frequent check-ins' }] }] },
-              ]},
+              { type: 'bulletList', content: variant.toImprove.map(item => ({
+                type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: item }] }]
+              }))},
             ],
           };
 
           const owner = allUsers[sprint.number % allUsers.length]!;
-          // Create sprint review document without legacy sprint_id column
+          // Create sprint review document
           const reviewResult = await pool.query(
             `INSERT INTO documents (workspace_id, document_type, title, content, created_by)
              VALUES ($1, 'sprint_review', $2, $3, $4)
@@ -926,7 +1294,19 @@ async function seed() {
           // Create association to sprint via junction table
           await createAssociation(pool, reviewId, sprint.id, 'sprint');
 
+          // Update sprint to set has_review flag
+          await pool.query(
+            `UPDATE documents SET properties = properties || '{"has_review": true}'::jsonb WHERE id = $1`,
+            [sprint.id]
+          );
+
           sprintReviewsCreated++;
+        } else {
+          // Review exists - ensure sprint has has_review flag
+          await pool.query(
+            `UPDATE documents SET properties = properties || '{"has_review": true}'::jsonb WHERE id = $1`,
+            [sprint.id]
+          );
         }
       }
     }

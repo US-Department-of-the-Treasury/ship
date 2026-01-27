@@ -5,6 +5,18 @@ import { DiffViewer, tipTapToPlainText } from '@/components/DiffViewer';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
+// CSRF token cache
+let csrfToken: string | null = null;
+
+async function getCsrfToken(): Promise<string> {
+  if (!csrfToken) {
+    const response = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
+    const data = await response.json();
+    csrfToken = data.token;
+  }
+  return csrfToken!;
+}
+
 // Inline SVG icons
 function CheckCircleIcon({ className }: { className?: string }) {
   return (
@@ -90,11 +102,23 @@ export function ApprovalButton({
 
     setIsLoading(true);
     try {
-      const response = await fetch(`${API_URL}${approveEndpoint}`, {
+      const token = await getCsrfToken();
+      let response = await fetch(`${API_URL}${approveEndpoint}`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
       });
+
+      // Retry with fresh token on 403 (token may have expired)
+      if (response.status === 403) {
+        csrfToken = null;
+        const newToken = await getCsrfToken();
+        response = await fetch(`${API_URL}${approveEndpoint}`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': newToken },
+        });
+      }
 
       if (!response.ok) {
         const error = await response.json();
