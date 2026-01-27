@@ -172,6 +172,10 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
     program_id: programId,
     owner: document.owner as { id: string; name: string; email: string } | null,
     owner_id: document.owner_id as string | undefined,
+    // RACI fields
+    accountable_id: document.accountable_id as string | undefined,
+    consulted_ids: document.consulted_ids as string[] | undefined,
+    informed_ids: document.informed_ids as string[] | undefined,
     converted_from_id: document.converted_from_id as string | undefined,
   }), [document, programId]);
 
