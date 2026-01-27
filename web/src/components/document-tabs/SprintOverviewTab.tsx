@@ -85,6 +85,10 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
     existingSprints,
   }), [people, existingSprints]);
 
+  // Get program_id from belongs_to array (sprint's parent program via document_associations)
+  const belongsTo = (document as { belongs_to?: Array<{ id: string; type: string }> }).belongs_to;
+  const programId = belongsTo?.find(b => b.type === 'program')?.id;
+
   // Transform to UnifiedDocument format
   const unifiedDocument: UnifiedDocument = useMemo(() => ({
     id: document.id,
@@ -97,10 +101,10 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
     start_date: (document.start_date as string) || '',
     end_date: (document.end_date as string) || '',
     status: ((document.status as string) || 'planning') as 'planning' | 'active' | 'completed',
-    program_id: document.program_id as string | undefined,
+    program_id: programId,
     hypothesis: (document.hypothesis as string) || '',
     owner_id: document.owner_id as string | null | undefined,
-  }), [document]);
+  }), [document, programId]);
 
   if (!user) return null;
 

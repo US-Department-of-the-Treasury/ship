@@ -340,6 +340,11 @@ export function UnifiedDocumentPage() {
   const unifiedDocument: UnifiedDocument | null = useMemo(() => {
     if (!document) return null;
 
+    // Extract program_id from belongs_to array (via document_associations)
+    const belongsTo = document.belongs_to as Array<{ id: string; type: string }> | undefined;
+    const programIdFromBelongsTo = belongsTo?.find(b => b.type === 'program')?.id;
+    const sprintIdFromBelongsTo = belongsTo?.find(b => b.type === 'sprint')?.id;
+
     return {
       id: document.id,
       title: document.title,
@@ -355,8 +360,8 @@ export function UnifiedDocumentPage() {
         estimate: document.estimate as number | undefined,
         assignee_id: document.assignee_id as string | undefined,
         assignee_name: document.assignee_name as string | undefined,
-        program_id: document.program_id as string | undefined,
-        sprint_id: document.sprint_id as string | undefined,
+        program_id: programIdFromBelongsTo,
+        sprint_id: sprintIdFromBelongsTo,
         source: document.source as 'internal' | 'external' | undefined,
         converted_from_id: document.converted_from_id as string | undefined,
         display_id: (document.ticket_number as number) ? `#${document.ticket_number}` : undefined,
@@ -373,7 +378,7 @@ export function UnifiedDocumentPage() {
         ease: (document.ease as number) ?? 5,
         color: (document.color as string) || '#3b82f6',
         emoji: null,
-        program_id: document.program_id as string | undefined,
+        program_id: programIdFromBelongsTo,
         owner: document.owner as { id: string; name: string; email: string } | null,
         owner_id: document.owner_id as string | undefined,
         converted_from_id: document.converted_from_id as string | undefined,
@@ -382,7 +387,7 @@ export function UnifiedDocumentPage() {
         start_date: (document.start_date as string) || '',
         end_date: (document.end_date as string) || '',
         status: ((document.status as string) || 'planning') as 'planning' | 'active' | 'completed',
-        program_id: document.program_id as string | undefined,
+        program_id: programIdFromBelongsTo,
         hypothesis: (document.hypothesis as string) || '',
       }),
       ...(document.document_type === 'wiki' && {

@@ -7,6 +7,10 @@ import type { DocumentTabProps } from '@/lib/document-tabs';
  * This is the "Issues" tab content when viewing a project document.
  */
 export default function ProjectIssuesTab({ documentId, document }: DocumentTabProps) {
+  // Get program_id from belongs_to array (project's parent program via document_associations)
+  const belongsTo = (document as { belongs_to?: Array<{ id: string; type: string }> }).belongs_to;
+  const programId = belongsTo?.find(b => b.type === 'program')?.id;
+
   return (
     <IssuesList
       lockedProjectId={documentId}
@@ -18,7 +22,7 @@ export default function ProjectIssuesTab({ documentId, document }: DocumentTabPr
       allowShowAllIssues={true}
       inheritedContext={{
         projectId: documentId,
-        programId: (document.program_id as string) || undefined,
+        programId,
       }}
     />
   );
