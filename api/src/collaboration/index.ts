@@ -696,9 +696,12 @@ export function broadcastToUser(userId: string, eventType: string, data?: Record
   }
 }
 
+// DDoS protection: Max WebSocket message size (10MB, matches REST API limit)
+const MAX_WS_MESSAGE_SIZE = 10 * 1024 * 1024;
+
 export function setupCollaboration(server: Server) {
-  const wss = new WebSocketServer({ noServer: true });
-  const eventsWss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_MESSAGE_SIZE });
+  const eventsWss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_MESSAGE_SIZE });
 
   server.on('upgrade', async (request, socket, head) => {
     const url = new URL(request.url || '', `http://${request.headers.host}`);
@@ -797,6 +800,12 @@ export function setupCollaboration(server: Server) {
     }
 
     ws.on('message', (data: Buffer) => {
+      // DDoS protection: Defense-in-depth size check (WS server also enforces maxPayload)
+      if (data.length > MAX_WS_MESSAGE_SIZE) {
+        ws.close(1009, 'Message too large');
+        return;
+      }
+
       // Rate limit messages to prevent message floods
       if (isMessageRateLimited(ws)) {
         // Drop message silently - client will retry via Yjs sync protocol
