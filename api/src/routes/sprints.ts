@@ -1307,8 +1307,11 @@ router.patch('/:id/plan', authMiddleware, async (req: Request, res: Response) =>
       }
     }
 
-    // Broadcast celebration when plan is added
-    if (data.plan && data.plan.trim() !== '') {
+    // Broadcast celebration ONLY when plan is FIRST added (not on every update)
+    // This prevents the green "task completed" banner from showing on every edit
+    const hadPlanBefore = currentProps.plan && currentProps.plan.trim() !== '';
+    const hasPlanNow = data.plan && data.plan.trim() !== '';
+    if (!hadPlanBefore && hasPlanNow) {
       broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_plan', targetId: id as string });
     }
 

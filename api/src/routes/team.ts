@@ -3,6 +3,7 @@ import { pool } from '../db/client.js';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { businessDaysBetween } from '../utils/business-days.js';
+import { extractHypothesisFromContent } from '../utils/extractHypothesis.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -1122,8 +1123,9 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       `SELECT
          d.id,
          d.title,
+         d.content,
          (d.properties->>'sprint_number')::int as sprint_number,
-         d.properties->>'hypothesis' as hypothesis,
+         d.properties->>'hypothesis' as props_hypothesis,
          d.properties->'hypothesis_approval' as hypothesis_approval,
          d.properties->'review_approval' as review_approval,
          d.properties->'assignee_ids' as assignee_ids,
@@ -1224,8 +1226,10 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
         ? sprint.assignee_ids
         : [];
 
-      // Sprint accountability data
-      const hasHypothesis = !!sprint.hypothesis && sprint.hypothesis.trim() !== '';
+      // Sprint accountability data - extract hypothesis from content (source of truth)
+      // Note: properties.hypothesis may be empty for seed data, so we check content
+      const extractedHypothesis = extractHypothesisFromContent(sprint.content);
+      const hasHypothesis = !!extractedHypothesis && extractedHypothesis.trim() !== '';
       const assignment: SprintAssignment = {
         sprintDocId: sprint.id,
         hasHypothesis,

@@ -128,13 +128,13 @@ export function AccountabilityBanner({ itemCount, onBannerClick, isCelebrating =
         {getMessage()}
       </span>
 
-      {/* Badge count */}
-      <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-white/20 px-2 text-xs font-bold">
+      {/* Badge count - using bg-red-800 for WCAG 4.5:1 contrast with white text */}
+      <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-red-800 px-2 text-xs font-bold">
         {itemCount}
       </span>
 
-      {/* Click hint */}
-      <span className="text-xs opacity-75 hidden sm:inline">Click to view</span>
+      {/* Click hint - full opacity white for WCAG 4.5:1 contrast compliance */}
+      <span className="text-xs hidden sm:inline">Click to view</span>
     </button>
   );
 }
