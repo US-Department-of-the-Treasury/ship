@@ -881,8 +881,24 @@ export function setupCollaboration(server: Server) {
     // Send initial connected message
     ws.send(JSON.stringify({ type: 'connected', data: {} }));
 
-    // Handle ping/pong for keepalive
+    // Handle ping/pong for keepalive with rate limiting
     ws.on('message', (data: Buffer) => {
+      // DDoS protection: Rate limit events WebSocket messages
+      if (isMessageRateLimited(ws)) {
+        const violations = (rateLimitViolations.get(ws) || 0) + 1;
+        rateLimitViolations.set(ws, violations);
+
+        if (violations >= RATE_LIMIT_VIOLATION_THRESHOLD) {
+          console.log(`[Events] Rate limit violations exceeded for user ${sessionData.userId}, closing connection`);
+          ws.close(1008, 'Rate limit exceeded');
+        }
+        return;
+      }
+
+      // Reset violations on successful message
+      rateLimitViolations.delete(ws);
+      recordMessage(ws);
+
       try {
         const message = JSON.parse(data.toString());
         if (message.type === 'ping') {
@@ -895,6 +911,8 @@ export function setupCollaboration(server: Server) {
 
     ws.on('close', () => {
       eventConns.delete(ws);
+      rateLimitViolations.delete(ws);
+      messageTimestamps.delete(ws);
       console.log(`[Events] User ${sessionData.userId} disconnected (${eventConns.size} total connections)`);
     });
   });
