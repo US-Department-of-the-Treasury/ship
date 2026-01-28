@@ -1106,8 +1106,8 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
          d.id,
          d.title,
          d.properties->>'sprint_number' as sprint_number,
-         d.properties->>'hypothesis' as hypothesis,
-         d.properties->'hypothesis_approval' as hypothesis_approval,
+         d.properties->>'plan' as plan,
+         d.properties->'plan_approval' as plan_approval,
          d.properties->'review_approval' as review_approval,
          EXISTS(
            SELECT 1 FROM documents sr
@@ -1128,8 +1128,8 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
     const sprintAccountability: Record<number, {
       id: string;
       title: string;
-      hasHypothesis: boolean;
-      hypothesisApproval: { state: string | null } | null;
+      hasPlan: boolean;
+      planApproval: { state: string | null } | null;
       hasReview: boolean;
       reviewApproval: { state: string | null } | null;
     }> = {};
@@ -1139,8 +1139,8 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       sprintAccountability[sprintNumber] = {
         id: sprint.id,
         title: sprint.title,
-        hasHypothesis: !!sprint.hypothesis && sprint.hypothesis.trim() !== '',
-        hypothesisApproval: sprint.hypothesis_approval,
+        hasPlan: !!sprint.plan && sprint.plan.trim() !== '',
+        planApproval: sprint.plan_approval,
         hasReview: sprint.has_review === true,
         reviewApproval: sprint.review_approval,
       };
@@ -1153,8 +1153,8 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
          p.title,
          p.properties->>'color' as color,
          p.properties->>'emoji' as emoji,
-         p.content as hypothesis_content,
-         p.properties->'hypothesis_approval' as hypothesis_approval,
+         p.content as plan_content,
+         p.properties->'plan_approval' as plan_approval,
          p.properties->'retro_approval' as retro_approval,
          prog.id as program_id,
          prog.title as program_name,
@@ -1184,15 +1184,15 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
 
     // Build projects array with accountability data
     const projects = projectsResult.rows.map(p => {
-      // Check if project has hypothesis (non-empty content)
-      let hasHypothesis = false;
-      if (p.hypothesis_content) {
-        const content = typeof p.hypothesis_content === 'string'
-          ? JSON.parse(p.hypothesis_content)
-          : p.hypothesis_content;
+      // Check if project has plan (non-empty content)
+      let hasPlan = false;
+      if (p.plan_content) {
+        const content = typeof p.plan_content === 'string'
+          ? JSON.parse(p.plan_content)
+          : p.plan_content;
         // Check if content has any text
         if (content?.content) {
-          hasHypothesis = JSON.stringify(content.content).length > 50; // Reasonable threshold for "has content"
+          hasPlan = JSON.stringify(content.content).length > 50; // Reasonable threshold for "has content"
         }
       }
 
@@ -1205,8 +1205,8 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
         programName: p.program_name,
         programColor: p.program_color,
         programEmoji: p.program_emoji,
-        hasHypothesis,
-        hypothesisApproval: p.hypothesis_approval,
+        hasPlan,
+        planApproval: p.plan_approval,
         hasRetro: p.has_retro === true,
         retroApproval: p.retro_approval,
         allocations: projectAllocations[p.id] || {},

@@ -93,6 +93,7 @@ const updateDocumentSchema = z.object({
   // Note: start_date/end_date are computed from sprint_number + workspace.sprint_start_date
   status: z.enum(['planning', 'active', 'completed']).optional(),
   hypothesis: z.string().optional(),
+  plan: z.string().optional(), // Alias for hypothesis (frontend sends 'plan', stored as 'plan' in properties)
 });
 
 // List documents
@@ -340,7 +341,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       color: props.color,
       // Sprint properties (dates computed from sprint_number + workspace.sprint_start_date)
       status: props.status,
-      hypothesis: props.hypothesis,
+      plan: props.plan,
+      plan_approval: props.plan_approval,
       // Include belongs_to for issue, wiki, sprint, and project documents
       ...((doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint' || doc.document_type === 'project') && { belongs_to }),
     });
@@ -441,10 +443,11 @@ router.patch('/:id/content', authMiddleware, async (req: Request, res: Response)
     const extractedGoals = extractGoalsFromContent(content);
 
     // Merge with existing properties (extracted values always win)
+    // Note: 'plan' is the canonical field name (renamed from 'hypothesis' in migration 032)
     const currentProps = existing.properties || {};
     const newProps = {
       ...currentProps,
-      hypothesis: extractedHypothesis,
+      plan: extractedHypothesis,
       success_criteria: extractedCriteria,
       vision: extractedVision,
       goals: extractedGoals,
@@ -676,8 +679,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
     // Note: start_date/end_date are computed from sprint_number + workspace.sprint_start_date
     if (data.status !== undefined) topLevelProps.status = data.status;
-    // Note: hypothesis can be set via API but content extraction always wins when content is updated
-    if (data.hypothesis !== undefined) topLevelProps.hypothesis = data.hypothesis;
+    // Note: hypothesis/plan can be set via API but content extraction always wins when content is updated
+    // Accept both 'hypothesis' (legacy) and 'plan' (current), store as 'plan'
+    if (data.hypothesis !== undefined) topLevelProps.plan = data.hypothesis;
+    // Plan field (frontend sends 'plan' for sprint documents, stored in properties.plan)
+    if (data.plan !== undefined) topLevelProps.plan = data.plan;
     // RACI fields (for projects and programs)
     if (data.accountable_id !== undefined) topLevelProps.accountable_id = data.accountable_id;
     if (data.consulted_ids !== undefined) topLevelProps.consulted_ids = data.consulted_ids;
@@ -695,8 +701,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         ...dataProps,
         ...topLevelProps,
         // Extracted values always win (content is source of truth)
+        // Note: 'plan' is the canonical field name (renamed from 'hypothesis' in migration 032)
         ...(contentUpdated ? {
-          hypothesis: extractedHypothesis,
+          plan: extractedHypothesis,
           success_criteria: extractedCriteria,
           vision: extractedVision,
           goals: extractedGoals,
@@ -947,7 +954,8 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       color: props.color,
       // Sprint properties (dates computed from sprint_number + workspace.sprint_start_date)
       status: props.status,
-      hypothesis: props.hypothesis,
+      plan: props.plan,
+      plan_approval: props.plan_approval,
     });
   } catch (err) {
     console.error('Update document error:', err);

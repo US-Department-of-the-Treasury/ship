@@ -125,9 +125,10 @@ async function persistDocument(docName: string, doc: Y.Doc) {
     const existingProps = existingResult.rows[0]?.properties || {};
 
     // Update properties with extracted values (null clears the property)
+    // Note: 'plan' is the canonical field name (renamed from 'hypothesis' in migration 032)
     const updatedProps = {
       ...existingProps,
-      hypothesis: hypothesis,
+      plan: hypothesis,
       success_criteria: successCriteria,
       vision: vision,
       goals: goals,
