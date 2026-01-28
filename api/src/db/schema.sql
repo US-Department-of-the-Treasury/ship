@@ -104,12 +104,8 @@ CREATE TABLE IF NOT EXISTS documents (
   position INTEGER DEFAULT 0,
 
   -- Associations: program, project, and sprint relationships are stored in document_associations table
-  -- These legacy columns exist so migrations 020-029 can run on fresh databases (e.g., E2E tests).
-  -- They are dropped by migrations 027 (project_id, sprint_id) and 029 (program_id).
-  -- DO NOT USE in application code - use document_associations table instead.
-  project_id UUID REFERENCES documents(id) ON DELETE SET NULL,
-  sprint_id UUID REFERENCES documents(id) ON DELETE SET NULL,
-  program_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+  -- Legacy columns (project_id, sprint_id, program_id) were removed by migrations 027 and 029.
+  -- Use document_associations table for all relationship queries.
 
   -- Type-specific properties stored as JSONB
   -- Issue properties: state, priority, assignee_id, source, rejection_reason, feedback_status
@@ -145,10 +141,7 @@ CREATE INDEX IF NOT EXISTS idx_users_last_workspace_id ON users(last_workspace_i
 CREATE INDEX IF NOT EXISTS idx_documents_workspace_id ON documents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_documents_parent_id ON documents(parent_id);
 CREATE INDEX IF NOT EXISTS idx_documents_document_type ON documents(document_type);
--- Legacy indexes for migrations to drop (027, 029) - DO NOT USE in application code
-CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id);
-CREATE INDEX IF NOT EXISTS idx_documents_sprint_id ON documents(sprint_id);
-CREATE INDEX IF NOT EXISTS idx_documents_program_id ON documents(program_id);
+-- Legacy indexes (project_id, sprint_id, program_id) were removed by migrations 027 and 029.
 -- GIN index for efficient JSONB property queries
 CREATE INDEX IF NOT EXISTS idx_documents_properties ON documents USING GIN (properties);
 
