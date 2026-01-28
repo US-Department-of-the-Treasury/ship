@@ -57,6 +57,17 @@ pnpm test             # Runs api unit tests via vitest
 
 **Empty test footgun:** Tests with only TODO comments pass silently. Use `test.fixme()` for unimplemented tests. Pre-commit hook (`scripts/check-empty-tests.sh`) catches these.
 
+**Seed data requirements:** When writing E2E tests that require specific data:
+1. ALWAYS update `e2e/fixtures/isolated-env.ts` to create required data
+2. NEVER use conditional `test.skip()` for missing data - use assertions with clear messages instead:
+   ```typescript
+   // BAD: skips silently
+   if (rowCount < 4) { test.skip(true, 'Not enough rows'); return; }
+   // GOOD: fails with actionable message
+   expect(rowCount, 'Seed data should provide at least 4 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(4);
+   ```
+3. If a test needs N rows, ensure fixtures create at least N+2 rows
+
 ## Architecture
 
 **Monorepo Structure** (pnpm workspaces):

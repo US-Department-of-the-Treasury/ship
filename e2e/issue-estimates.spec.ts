@@ -12,7 +12,7 @@ import { test, expect } from './fixtures/isolated-env'
  */
 
 // FIXME: Tests timeout waiting for API responses - issue creation flow may be broken
-test.describe.fixme('Issue Estimates', () => {
+test.describe('Issue Estimates', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/login')
     await page.locator('#email').fill('dev@ship.local')
@@ -184,7 +184,7 @@ test.describe.fixme('Issue Estimates', () => {
 })
 
 // FIXME: Tests timeout waiting for API responses - issue creation flow may be broken
-test.describe.fixme('Status Change Tracking', () => {
+test.describe('Status Change Tracking', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/login')
     await page.locator('#email').fill('dev@ship.local')
@@ -383,7 +383,7 @@ test.describe.fixme('Status Change Tracking', () => {
 })
 
 // FIXME: Tests timeout waiting for API responses - issue creation flow may be broken
-test.describe.fixme('Progress Chart Integration', () => {
+test.describe('Progress Chart Integration', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/login')
     await page.locator('#email').fill('dev@ship.local')

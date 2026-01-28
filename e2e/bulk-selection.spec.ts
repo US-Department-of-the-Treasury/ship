@@ -194,10 +194,7 @@ test.describe('Bulk Selection - List View', () => {
 
       // Need at least 4 rows for this test
       const rowCount = await rows.count();
-      if (rowCount < 4) {
-        test.skip(true, 'Not enough rows for range selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 4 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(4);
 
       // Select first row
       await rows.nth(0).hover();
@@ -222,10 +219,7 @@ test.describe('Bulk Selection - List View', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 4) {
-        test.skip(true, 'Not enough rows for range selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 4 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(4);
 
       // Select fourth row first
       await rows.nth(3).hover();
@@ -250,10 +244,7 @@ test.describe('Bulk Selection - List View', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 6) {
-        test.skip(true, 'Not enough rows for additive selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 6 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(6);
 
       // Select first row, shift+click third (selects 0-2)
       await rows.nth(0).hover();
@@ -293,10 +284,7 @@ test.describe('Bulk Selection - List View', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for cmd+click test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Select first row
       await rows.nth(0).hover();
@@ -321,10 +309,7 @@ test.describe('Bulk Selection - List View', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for cmd+click toggle test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Select rows 0, 1, 2 using cmd+click for each
       await rows.nth(0).hover();
@@ -377,10 +362,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for focus navigation test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Hover + checkbox click to establish React focus (without navigating)
       await rows.nth(0).hover();
@@ -406,10 +388,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for focus navigation test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Hover + checkbox click on second row to establish React focus (without navigating)
       await rows.nth(1).hover();
@@ -435,10 +414,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for focus navigation test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Select first row via checkbox (this also sets focus to row 0)
       await rows.nth(0).hover();
@@ -470,10 +446,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for Home key test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Hover + checkbox click to establish React focus state (without navigating)
       await rows.nth(2).hover();
@@ -499,10 +472,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for End key test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Hover + checkbox click to establish React focus state (without navigating)
       await rows.nth(0).hover();
@@ -579,10 +549,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for Shift+Arrow test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Select first row via checkbox
       await rows.nth(0).hover();
@@ -608,10 +575,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for Shift+Arrow test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Select second row via checkbox
       await rows.nth(1).hover();
@@ -637,10 +601,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 4) {
-        test.skip(true, 'Not enough rows for incremental selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 4 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(4);
 
       // Select first row via checkbox
       await rows.nth(0).hover();
@@ -669,10 +630,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 4) {
-        test.skip(true, 'Not enough rows for contract selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 4 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(4);
 
       // Select row 1 (second row) via checkbox
       await rows.nth(1).hover();
@@ -708,10 +666,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for Shift+End test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Select first row via checkbox
       await rows.nth(0).hover();
@@ -738,10 +693,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for Shift+Home test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Select last row via checkbox
       const lastIdx = rowCount - 1;
@@ -792,10 +744,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for clear selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Select multiple items via checkbox
       await rows.nth(0).hover();
@@ -891,10 +840,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for k navigation test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Move mouse outside the list to prevent hover-to-focus interference
       await page.mouse.move(0, 0);
@@ -986,7 +932,8 @@ test.describe('Global j/k Vim-Style Navigation', () => {
         // Input should contain 'j', not trigger navigation
         await expect(searchInput).toHaveValue('j');
       } else {
-        test.skip(true, 'No text input found to test input exclusion');
+        // If no search input exists, the test cannot run - fail explicitly
+        expect(await searchInput.count(), 'Page should have a text input for testing input exclusion').toBeGreaterThan(0);
       }
     });
 
@@ -1002,10 +949,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for hover-to-focus test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Hover over the third row (not first, to verify it's setting focus correctly)
       await rows.nth(2).hover();
@@ -1032,10 +976,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for hover+shift test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Hover over first row
       await rows.nth(0).hover();
@@ -1077,10 +1018,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       // Check if there are issues in this program
       const issueRows = page.locator('tbody tr');
       const rowCount = await issueRows.count();
-      if (rowCount === 0) {
-        test.skip(true, 'No issues in this program');
-        return;
-      }
+      expect(rowCount, 'Program should have issues. Run: pnpm db:seed').toBeGreaterThan(0);
 
       // Click on an issue
       await issueRows.first().click();
@@ -1107,10 +1045,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       const idMatch = rowText.match(/Select item ([a-f0-9-]{36})/);
       const issueId = idMatch?.[1];
 
-      if (!issueId) {
-        test.skip(true, 'Could not extract issue ID');
-        return;
-      }
+      expect(issueId, 'Should be able to extract issue ID from row aria-label').toBeTruthy();
 
       // Navigate directly to issue via URL (no navigation context)
       await page.goto(`/issues/${issueId}`);
@@ -1159,10 +1094,7 @@ test.describe('Bulk Selection - Tab/Filter Behavior', () => {
     await expect(rows.first()).toBeVisible();
 
     const rowCount = await rows.count();
-    if (rowCount === 0) {
-      test.skip(true, 'No backlog issues to test with');
-      return;
-    }
+    expect(rowCount, 'Seed data should provide backlog issues. Run: pnpm db:seed').toBeGreaterThan(0);
 
     // Select first row via checkbox
     await rows.nth(0).hover();
@@ -1191,16 +1123,10 @@ test.describe('Bulk Selection - Tab/Filter Behavior', () => {
     // Wait for rows to load
     const filteredRows = page.locator('tbody tr');
 
-    // Skip if no backlog items or if all items are backlog
+    // Verify we have backlog issues and not all issues are backlog
     const filteredCount = await filteredRows.count();
-    if (filteredCount === 0) {
-      test.skip(true, 'No backlog issues to test with');
-      return;
-    }
-    if (filteredCount === totalCount) {
-      test.skip(true, 'All issues are backlog - cannot verify filter scoping');
-      return;
-    }
+    expect(filteredCount, 'Seed data should provide backlog issues. Run: pnpm db:seed').toBeGreaterThan(0);
+    expect(filteredCount, 'Seed data should have non-backlog issues too to verify filter scoping').toBeLessThan(totalCount);
 
     // Focus table and press Cmd+A to select all
     const table = page.locator('table[role="grid"]');
@@ -1255,10 +1181,8 @@ test.describe('Bulk Action Bar', () => {
 
       const rows = page.locator('tbody tr');
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip();
-        return;
-      }
+      // Seed data should have enough rows - fail if it doesn't
+      expect(rowCount).toBeGreaterThanOrEqual(3)
 
       // Select 3 items - first click starts selection, subsequent Cmd+clicks add to it
       await rows.nth(0).hover();
@@ -1777,10 +1701,8 @@ test.describe('Bulk Actions - Change Status', () => {
 
     const rows = page.locator('tbody tr');
     const rowCount = await rows.count();
-    if (rowCount < 2) {
-      test.skip();
-      return;
-    }
+    // Seed data should have enough backlog rows - fail if it doesn't
+    expect(rowCount).toBeGreaterThanOrEqual(2)
 
     // Select 2 items
     await rows.nth(0).hover();
@@ -1837,10 +1759,8 @@ test.describe('Bulk Actions - Change Status', () => {
 
     const rows = page.locator('tbody tr');
     const initialCount = await rows.count();
-    if (initialCount === 0) {
-      test.skip();
-      return;
-    }
+    // Seed data should have backlog rows - fail if it doesn't
+    expect(initialCount).toBeGreaterThan(0)
 
     const issueTitle = await rows.nth(0).locator('td').nth(1).textContent();
 
@@ -2120,12 +2040,9 @@ test.describe('Bulk Selection - Kanban View', () => {
       const backlogColumn = page.locator('ul[aria-label="Backlog issues"]');
       const backlogCards = backlogColumn.locator('[data-issue]');
 
-      // Skip if no cards in Backlog
+      // Seed data should have backlog cards - fail if it doesn't
       const backlogCount = await backlogCards.count();
-      if (backlogCount === 0) {
-        test.skip();
-        return;
-      }
+      expect(backlogCount).toBeGreaterThan(0)
 
       const cardToMove = backlogCards.first();
       const cardTitle = await cardToMove.locator('.text-foreground').textContent();
@@ -2306,11 +2223,8 @@ test.describe('Bulk Selection - Performance', () => {
     const rows = page.locator('tbody tr');
     const rowCount = await rows.count();
 
-    // Skip if not enough rows for meaningful performance test
-    if (rowCount < 5) {
-      test.skip(true, 'Not enough issues for performance test');
-      return;
-    }
+    // Need at least 5 rows for meaningful performance test
+    expect(rowCount, 'Seed data should provide at least 5 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(5);
 
     // Focus the table
     await table.focus();

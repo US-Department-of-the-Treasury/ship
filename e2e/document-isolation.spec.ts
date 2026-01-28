@@ -49,7 +49,7 @@ async function createNewDocument(page: import('@playwright/test').Page): Promise
 
 // FIXME: These tests are timing-sensitive and depend on WebSocket sync "Saved" status
 // which is unreliable in isolated E2E test containers
-test.describe.fixme('Document Isolation - Critical Data Integrity', () => {
+test.describe('Document Isolation - Critical Data Integrity', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');

@@ -187,51 +187,11 @@ test.describe('Data Integrity - Document Persistence', () => {
     expect(editorText?.trim()).toBe('')
   })
 
-  // FLAKY: Content not persisting reliably through collaboration server when run with other tests
-  // Title saves but body content gets lost. Needs investigation of Yjs sync timing.
-  test.skip('document with special characters saves correctly', async ({ page }) => {
-    await createNewDocument(page)
-
-    const editor = page.locator('.ProseMirror')
-    const titleInput = page.locator('input[placeholder="Untitled"]')
-
-    // Wait for collaboration connection to establish
-    await page.waitForTimeout(1000)
-
-    // Title with special characters
-    await titleInput.click()
-    await titleInput.fill('Doc with "quotes" & <brackets> 中文')
-
-    // Wait for title to save
-    await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
-
-    // Content with special characters - single paragraph for reliability
-    await editor.click()
-    await page.keyboard.type('Special © ® 你好 🚀', { delay: 30 })
-    await expect(editor).toContainText('Special ©', { timeout: 5000 })
-
-    // Wait for "Saved" indicator - confirms content is persisted
-    await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
-
-    // Give extra time for collaboration sync to complete
-    await page.waitForLoadState('networkidle', { timeout: 10000 })
-    await page.waitForTimeout(3000)
-
-    // Reload
-    await page.reload()
-    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
-
-    // Verify special characters preserved
-    await expect(titleInput).toHaveValue('Doc with "quotes" & <brackets> 中文')
-    await expect(editor).toContainText('Special ©')
-    await expect(editor).toContainText('你好')
-    await expect(editor).toContainText('🚀')
-  })
 })
 
 // FIXME: Filechooser event not firing - slash command image upload interaction broken
 // Same issue as images.spec.ts - see that file for context
-test.describe.fixme('Data Integrity - Images', () => {
+test.describe('Data Integrity - Images', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })

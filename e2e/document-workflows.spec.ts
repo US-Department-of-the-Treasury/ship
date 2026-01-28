@@ -67,7 +67,7 @@ async function createIssue(page: Page, title: string) {
 // =============================================================================
 
 // FIXME: Tests use dev-server fixture - New Issue navigation broken
-test.describe.fixme('Issue Program Assignment', () => {
+test.describe('Issue Program Assignment', () => {
   test.slow() // 3x timeout for dev server
 
   test.beforeEach(async ({ page }) => {
@@ -98,7 +98,7 @@ test.describe.fixme('Issue Program Assignment', () => {
 // =============================================================================
 
 // FIXME: Tests use dev-server fixture - login sometimes stuck
-test.describe.fixme('Issue Week Assignment', () => {
+test.describe('Issue Week Assignment', () => {
   test.slow() // 3x timeout for dev server
 
   test.beforeEach(async ({ page }) => {
@@ -143,7 +143,7 @@ test.describe.fixme('Issue Week Assignment', () => {
 // =============================================================================
 
 // FIXME: Tests use dev-server fixture - login fails in isolated E2E environment
-test.describe.fixme('Issue to Project Conversion', () => {
+test.describe('Issue to Project Conversion', () => {
   test.slow() // 3x timeout for dev server
 
   test.beforeEach(async ({ page }) => {
@@ -182,7 +182,7 @@ test.describe.fixme('Issue to Project Conversion', () => {
 // =============================================================================
 
 // FIXME: Tests use dev-server fixture - login fails in isolated E2E environment
-test.describe.fixme('Week Planning Board', () => {
+test.describe('Week Planning Board', () => {
   test.slow() // 3x timeout for dev server
 
   test.beforeEach(async ({ page }) => {

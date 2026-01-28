@@ -87,7 +87,7 @@ async function insertImageViaSlashCommand(page: Page): Promise<void> {
 }
 
 // FIXME: Filechooser event not firing - slash command image upload interaction broken
-test.describe.fixme('Images', () => {
+test.describe('Images', () => {
   test.beforeEach(async ({ page }) => {
     // Login before each test
     await page.goto('/login');

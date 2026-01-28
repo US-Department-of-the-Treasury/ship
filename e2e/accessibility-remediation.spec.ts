@@ -932,9 +932,8 @@ test.describe('Phase 2: Serious Violations', () => {
       const expandableItem = page.locator('[aria-expanded]').first()
       const hasExpandable = await expandableItem.count() > 0
 
-      // SKIP this test if no nested documents exist in test data
-      // This is a valid skip because the feature only applies to nested docs
-      test.skip(!hasExpandable, 'No nested documents in test data - feature not applicable')
+      // Seed data must provide nested documents for this test
+      expect(hasExpandable, 'Seed data should provide nested documents. Run: pnpm db:seed').toBe(true)
 
       // Expand to find a nested document
       const isExpanded = await expandableItem.getAttribute('aria-expanded')

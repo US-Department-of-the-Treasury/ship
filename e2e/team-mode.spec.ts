@@ -317,11 +317,8 @@ test.describe('Team Mode (Phase 7)', () => {
       const projectOptions = page.getByRole('option').filter({ hasNotText: 'None' })
       const projectCount = await projectOptions.count()
 
-      if (projectCount === 0) {
-        // No projects in test database - skip this test
-        test.skip()
-        return
-      }
+      // Projects should exist in seed data - fail if they don't
+      expect(projectCount).toBeGreaterThan(0)
 
       // Select the first project option
       const projectName = await projectOptions.first().textContent()
@@ -352,11 +349,8 @@ test.describe('Team Mode (Phase 7)', () => {
       const projectOptions = page.getByRole('option').filter({ hasNotText: 'None' })
       const projectCount = await projectOptions.count()
 
-      if (projectCount === 0) {
-        // No projects in test database - skip this test
-        test.skip()
-        return
-      }
+      // Projects should exist in seed data - fail if they don't
+      expect(projectCount).toBeGreaterThan(0)
 
       // Select a project
       await projectOptions.first().click()
@@ -495,11 +489,8 @@ test.describe('Team Mode (Phase 7)', () => {
         const projectOptions = page.getByRole('option').filter({ hasNotText: 'None' })
         const projectCount = await projectOptions.count()
 
-        if (projectCount === 0) {
-          // No projects in test database - skip this test
-          test.skip()
-          return
-        }
+        // Projects should exist in seed data - fail if they don't
+        expect(projectCount).toBeGreaterThan(0)
 
         // Select a project
         await projectOptions.first().click()

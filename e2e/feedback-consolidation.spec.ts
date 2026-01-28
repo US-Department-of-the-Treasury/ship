@@ -222,13 +222,8 @@ test.describe('Program View: Feedback Tab Removed', () => {
     // Check if we have a "No issues found" message
     const hasNoIssues = await noIssuesMessage.isVisible().catch(() => false);
 
-    if (hasNoIssues) {
-      // No issues in this program - this could be a seed data issue
-      // Skip gracefully rather than fail
-      console.log('No issues found in program - seed data may not have created issues for this program');
-      test.skip();
-      return;
-    }
+    // Issues should exist in seed data - fail if they don't
+    expect(hasNoIssues).toBe(false)
 
     // Wait for issues table to load and verify issues are displayed
     await expect(tableRows.first()).toBeVisible({ timeout: 10000 });

@@ -37,7 +37,7 @@ async function setDocumentTitle(page: Page, title: string) {
 }
 
 // FIXME: Backlinks tests need update after unified document model changes
-test.describe.fixme('Backlinks', () => {
+test.describe('Backlinks', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })

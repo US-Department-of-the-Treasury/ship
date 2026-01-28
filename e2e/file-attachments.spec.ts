@@ -46,7 +46,7 @@ function createTestFile(filename: string, content: string): string {
 }
 
 // FIXME: Filechooser event not firing - slash command file upload interaction broken
-test.describe.fixme('File Attachments', () => {
+test.describe('File Attachments', () => {
   test.beforeEach(async ({ page }) => {
     // Login before each test
     await page.goto('/login');

@@ -52,7 +52,7 @@ async function navigateToSprintPlanningView(page: Page) {
 // =============================================================================
 
 // FIXME: Sprint planning workflow broken - Plan Week button and /sprints/:id/view route don't exist
-test.describe.fixme('Week Planning Kanban Layout', () => {
+test.describe('Week Planning Kanban Layout', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
     await navigateToSprintPlanningView(page)
@@ -92,7 +92,7 @@ test.describe.fixme('Week Planning Kanban Layout', () => {
 // =============================================================================
 
 // FIXME: Sprint planning workflow broken - Plan Week button and /sprints/:id/view route don't exist
-test.describe.fixme('Add Issue to Week', () => {
+test.describe('Add Issue to Week', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
     await navigateToSprintPlanningView(page)
@@ -181,7 +181,7 @@ test.describe.fixme('Add Issue to Week', () => {
 // =============================================================================
 
 // FIXME: Sprint planning workflow broken - Plan Week button and /sprints/:id/view route don't exist
-test.describe.fixme('Remove Issue from Week', () => {
+test.describe('Remove Issue from Week', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
     await navigateToSprintPlanningView(page)
@@ -252,7 +252,7 @@ test.describe.fixme('Remove Issue from Week', () => {
 // =============================================================================
 
 // FIXME: Sprint planning workflow broken - Plan Week button and /sprints/:id/view route don't exist
-test.describe.fixme('Week Planning Kanban Integration', () => {
+test.describe('Week Planning Kanban Integration', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
     await navigateToSprintPlanningView(page)

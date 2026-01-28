@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures/isolated-env';
 
 // FIXME: Issue display ID UI has changed - font-mono class no longer used
-test.describe.fixme('Issue Display IDs', () => {
+test.describe('Issue Display IDs', () => {
   test.beforeEach(async ({ page }) => {
     // Login before each test
     await page.goto('/login')
