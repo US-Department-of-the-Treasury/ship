@@ -30,6 +30,10 @@ const connectionAttempts = new Map<string, number[]>();
 // Track message timestamps per WebSocket connection
 const messageTimestamps = new Map<WebSocket, number[]>();
 
+// DDoS protection: Track rate limit violations per connection for progressive penalties
+const rateLimitViolations = new Map<WebSocket, number>();
+const RATE_LIMIT_VIOLATION_THRESHOLD = 50; // Close connection after 50 violations
+
 // Clean up old connection attempts periodically
 setInterval(() => {
   const now = Date.now();
@@ -808,9 +812,22 @@ export function setupCollaboration(server: Server) {
 
       // Rate limit messages to prevent message floods
       if (isMessageRateLimited(ws)) {
+        // DDoS protection: Track violations and apply progressive penalties
+        const violations = (rateLimitViolations.get(ws) || 0) + 1;
+        rateLimitViolations.set(ws, violations);
+
+        // After repeated violations, terminate the connection
+        if (violations >= RATE_LIMIT_VIOLATION_THRESHOLD) {
+          ws.close(1008, 'Rate limit exceeded');
+          return;
+        }
+
         // Drop message silently - client will retry via Yjs sync protocol
         return;
       }
+
+      // Reset violation count on successful (non-rate-limited) messages
+      rateLimitViolations.delete(ws);
       recordMessage(ws);
 
       handleMessage(ws, new Uint8Array(data), docName, doc, aw);
@@ -824,6 +841,7 @@ export function setupCollaboration(server: Server) {
       }
       // Clean up rate limiting data for this connection
       messageTimestamps.delete(ws);
+      rateLimitViolations.delete(ws);
 
       // Clean up if no more connections to this doc
       let hasConnections = false;
