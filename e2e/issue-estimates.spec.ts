@@ -76,7 +76,7 @@ test.describe.fixme('Issue Estimates', () => {
     })
   })
 
-  test.describe('Sprint Assignment Validation', () => {
+  test.describe('Week Assignment Validation', () => {
     test('allows adding issue without estimate to backlog', async ({ page }) => {
       await page.goto('/issues')
       await page.getByRole('button', { name: 'New Issue', exact: true }).click()
@@ -107,9 +107,9 @@ test.describe.fixme('Issue Estimates', () => {
       await page.waitForResponse(resp => resp.url().includes('/api/programs/') && resp.url().includes('/sprints'))
 
       // Try to assign to sprint without estimate - should show error or be disabled
-      await page.getByRole('combobox').filter({ hasText: 'No Sprint' }).click()
+      await page.getByRole('combobox').filter({ hasText: 'No Week' }).click()
       await page.waitForTimeout(300)
-      const sprintOption = page.locator('[cmdk-item]').filter({ hasText: /Sprint \d+/ }).first()
+      const sprintOption = page.locator('[cmdk-item]').filter({ hasText: /Week \d+/ }).first()
 
       // Either sprint options are disabled, or clicking shows validation error
       const isDisabled = await sprintOption.isDisabled().catch(() => false)
@@ -141,25 +141,25 @@ test.describe.fixme('Issue Estimates', () => {
       await page.waitForResponse(resp => resp.url().includes('/api/programs/') && resp.url().includes('/sprints'))
 
       // Now sprint assignment should work
-      await page.getByRole('combobox').filter({ hasText: 'No Sprint' }).click()
+      await page.getByRole('combobox').filter({ hasText: 'No Week' }).click()
       await page.waitForTimeout(300)
-      await page.locator('[cmdk-item]').filter({ hasText: /Sprint \d+/ }).first().click()
+      await page.locator('[cmdk-item]').filter({ hasText: /Week \d+/ }).first().click()
       await page.waitForResponse(resp => resp.url().includes('/api/issues/') && resp.request().method() === 'PATCH')
 
       // Should show sprint selected
-      await expect(page.getByRole('combobox').filter({ hasText: /Sprint \d+/ })).toBeVisible({ timeout: 5000 })
+      await expect(page.getByRole('combobox').filter({ hasText: /Week \d+/ })).toBeVisible({ timeout: 5000 })
     })
   })
 
-  test.describe('Sprint Capacity Display', () => {
+  test.describe('Week Capacity Display', () => {
     test('sprint header shows total estimated hours', async ({ page }) => {
       // Navigate to a program with sprints
       await page.goto('/programs')
       await page.locator('tr[role="row"]', { hasText: /API Platform/i }).first().click()
       await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-      // Go to Sprints tab (it's a tab, not a button)
-      await page.getByRole('tab', { name: 'Sprints' }).click()
+      // Go to Weeks tab (it's a tab, not a button)
+      await page.getByRole('tab', { name: 'Weeks' }).click()
 
       // Should see estimated hours in active sprint section or timeline
       await expect(page.getByText(/\d+h|\d+ hours|estimated/i).first()).toBeVisible({ timeout: 5000 })
@@ -170,10 +170,10 @@ test.describe.fixme('Issue Estimates', () => {
       await page.locator('tr[role="row"]', { hasText: /API Platform/i }).first().click()
       await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-      await page.getByRole('tab', { name: 'Sprints' }).click()
+      await page.getByRole('tab', { name: 'Weeks' }).click()
 
       // Timeline cards should be visible
-      const sprintCard = page.locator('button').filter({ hasText: /Sprint \d+/ }).first()
+      const sprintCard = page.locator('button').filter({ hasText: /Week \d+/ }).first()
       await expect(sprintCard).toBeVisible({ timeout: 5000 })
 
       // Sprint cards show issue counts (hours only show when estimates exist)
@@ -397,7 +397,7 @@ test.describe.fixme('Progress Chart Integration', () => {
     await page.locator('tr[role="row"]', { hasText: /API Platform/i }).first().click()
     await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
 
-    await page.getByRole('tab', { name: 'Sprints' }).click()
+    await page.getByRole('tab', { name: 'Weeks' }).click()
 
     // The progress chart should include hours-based visualization
     // Look for the chart container

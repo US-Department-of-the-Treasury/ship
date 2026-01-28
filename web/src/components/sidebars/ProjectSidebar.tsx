@@ -308,7 +308,7 @@ export function ProjectSidebar({
       {/* Stats */}
       <div className="pt-4 border-t border-border space-y-2">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-muted">Sprints</span>
+          <span className="text-muted">Weeks</span>
           <span className="text-foreground">{project.sprint_count ?? 0}</span>
         </div>
         <div className="flex items-center justify-between text-xs">

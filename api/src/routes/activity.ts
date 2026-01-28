@@ -60,7 +60,7 @@ router.get('/:entityType/:entityId', authMiddleware, async (req: Request, res: R
     // Validate entity type
     const typeResult = entityTypeSchema.safeParse(entityType);
     if (!typeResult.success) {
-      res.status(400).json({ error: 'Invalid entity type. Must be program, project, or sprint.' });
+      res.status(400).json({ error: 'Invalid entity type. Must be program, project, or week.' });
       return;
     }
 

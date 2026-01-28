@@ -4,10 +4,10 @@ Comprehensive architecture documentation for the Ship project management applica
 
 ## System Overview
 
-Ship is a government-focused project management application built for teams that need real-time collaborative editing, offline-tolerant operation, and Section 508 accessibility compliance. It follows Notion's "everything is a document" paradigm where all content types (wikis, issues, programs, projects, sprints) share a unified data structure.
+Ship is a government-focused project management application built for teams that need real-time collaborative editing, offline-tolerant operation, and Section 508 accessibility compliance. It follows Notion's "everything is a document" paradigm where all content types (wikis, issues, programs, projects, weeks) share a unified data structure.
 
 **Core Purpose:**
-- Project and sprint management with real-time collaboration
+- Project and week-based planning with real-time collaboration
 - Unified document model for consistent UX across content types
 - Offline-tolerant architecture (works on planes/subways)
 - Government compliance (Section 508, PIV authentication support)
@@ -20,7 +20,7 @@ Ship uses a pnpm workspace monorepo with three packages:
 ship/
 ├── api/                    # Express backend
 │   ├── src/
-│   │   ├── routes/         # REST endpoints (documents, issues, sprints, etc.)
+│   │   ├── routes/         # REST endpoints (documents, issues, weeks, etc.)
 │   │   ├── db/             # PostgreSQL client + schema
 │   │   ├── collaboration/  # WebSocket + Yjs handlers
 │   │   ├── middleware/     # Auth, CSRF, visibility checks
@@ -58,6 +58,7 @@ All content lives in a single `documents` table with a `document_type` discrimin
 
 ```sql
 -- api/src/db/schema.sql:83-87
+-- Note: document_type enum uses 'sprint' for historical compatibility
 CREATE TYPE document_type AS ENUM (
   'wiki', 'issue', 'program', 'project', 'sprint',
   'person', 'sprint_plan', 'sprint_retro'
@@ -70,7 +71,7 @@ CREATE TYPE document_type AS ENUM (
 | `issue` | Work items (tasks/bugs) | state, priority, assignee_id, ticket_number |
 | `program` | Long-lived product/initiative | color, emoji |
 | `project` | Time-bounded deliverable | impact, confidence, ease (ICE scores), owner_id |
-| `sprint` | Program's sprint container | sprint_number, owner_id |
+| `sprint` | Week container (historical name) | sprint_number, owner_id |
 | `person` | User profile document | email, role, capacity_hours |
 
 ### Document Schema
@@ -231,7 +232,7 @@ Documents connect to rooms by type prefix:
 - `issue:{uuid}` - Issues
 - `program:{uuid}` - Programs
 - `project:{uuid}` - Projects
-- `sprint:{uuid}` - Sprints
+- `sprint:{uuid}` - Weeks (historical room prefix)
 
 ## Data Flow
 
@@ -331,13 +332,13 @@ Offline-tolerant, not offline-first. Mutations require network; optimistic updat
 
 **Why:** Simpler than offline mutation queues. Editor content (Yjs) still works offline via y-indexeddb.
 
-### 3. Computed Sprint Dates/Status
+### 3. Computed Week Dates/Status
 
-Sprint dates computed from `sprint_number` + workspace `sprint_start_date`. Status computed from dates.
+Week dates computed from `sprint_number` (historical field name) + workspace `sprint_start_date`. Status computed from dates.
 
 ```typescript
 // shared/src/types/document.ts:341-366
-export function computeSprintDates(sprintNumber: number, workspaceStartDate: Date) {
+export function computeWeekDates(sprintNumber: number, workspaceStartDate: Date) {
   const start = new Date(workspaceStartDate);
   start.setDate(start.getDate() + (sprintNumber - 1) * 7);
   const end = new Date(start);
@@ -406,4 +407,4 @@ const RATE_LIMIT = {
 - `docs/unified-document-model.md` - Data model details
 - `docs/application-architecture.md` - Full tech stack decisions
 - `docs/document-model-conventions.md` - Terminology, UI patterns
-- `docs/sprint-documentation-philosophy.md` - Sprint workflow
+- `docs/week-documentation-philosophy.md` - Week workflow and documentation philosophy

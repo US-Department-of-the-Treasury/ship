@@ -4,9 +4,9 @@ import { test, expect } from './fixtures/isolated-env';
  * E2E test for sprint accountability items flow.
  *
  * Tests sprint-related accountability types:
- * 1. sprint_plan - Sprint without plan shows action item
- * 2. sprint_start - Sprint not started (but should be) shows item
- * 3. sprint_issues - Sprint without issues shows action item
+ * 1. weekly_plan - Sprint without plan shows action item
+ * 2. week_start - Sprint not started (but should be) shows item
+ * 3. week_issues - Sprint without issues shows action item
  *
  * These tests use API calls directly to avoid UI flakiness and
  * test the actual inference logic.
@@ -20,7 +20,7 @@ async function getCsrfToken(page: import('@playwright/test').Page, apiUrl: strin
   return token;
 }
 
-test.describe('Sprint Accountability Flow', () => {
+test.describe('Week Accountability Flow', () => {
   test('sprint without plan shows action item, adding plan removes it', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
@@ -51,8 +51,8 @@ test.describe('Sprint Accountability Flow', () => {
     const programId = program.id;
 
     // Create a sprint without plan, owned by user
-    // Use sprint_number: 1 which has already started (workspace sprint_start_date is 3 months ago)
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    // Use sprint_number: 1 which has already started (workspace week_start_date is 3 months ago)
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Test Sprint Without Plan',
@@ -65,37 +65,37 @@ test.describe('Sprint Accountability Flow', () => {
     const sprint = await sprintResponse.json();
     const sprintId = sprint.id;
 
-    // Step 1: Check action items - should include sprint_plan for this sprint
+    // Step 1: Check action items - should include weekly_plan for this sprint
     const actionItemsResponse1 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse1.ok()).toBe(true);
     const actionItems1 = await actionItemsResponse1.json();
 
     const planItems1 = actionItems1.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === sprintId && item.accountability_type === 'sprint_plan'
+        item.accountability_target_id === sprintId && item.accountability_type === 'weekly_plan'
     );
 
-    // Should have sprint_plan action item
+    // Should have weekly_plan action item
     expect(planItems1.length).toBe(1);
 
     // Step 2: Add plan to the sprint (uses separate /plan endpoint)
-    const addPlanResponse = await page.request.patch(`${apiServer.url}/api/sprints/${sprintId}/plan`, {
+    const addPlanResponse = await page.request.patch(`${apiServer.url}/api/weeks/${sprintId}/plan`, {
       headers: { 'x-csrf-token': csrfToken },
       data: { plan: 'This is a test plan for the sprint.' },
     });
     expect(addPlanResponse.ok()).toBe(true);
 
-    // Step 3: Check action items again - sprint_plan should be GONE
+    // Step 3: Check action items again - weekly_plan should be GONE
     const actionItemsResponse2 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse2.ok()).toBe(true);
     const actionItems2 = await actionItemsResponse2.json();
 
     const planItems2 = actionItems2.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === sprintId && item.accountability_type === 'sprint_plan'
+        item.accountability_target_id === sprintId && item.accountability_type === 'weekly_plan'
     );
 
-    // After adding plan, no sprint_plan item should exist
+    // After adding plan, no weekly_plan item should exist
     expect(planItems2.length).toBe(0);
   });
 
@@ -129,8 +129,8 @@ test.describe('Sprint Accountability Flow', () => {
     const programId = program.id;
 
     // Create a sprint in planning status (default)
-    // Sprint 1 has started per workspace dates, so it should show sprint_start action
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    // Sprint 1 has started per workspace dates, so it should show week_start action
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Test Sprint Not Started',
@@ -143,37 +143,37 @@ test.describe('Sprint Accountability Flow', () => {
     const sprint = await sprintResponse.json();
     const sprintId = sprint.id;
 
-    // Step 1: Check for sprint_start action item (sprint should be started but isn't)
+    // Step 1: Check for week_start action item (sprint should be started but isn't)
     const actionItemsResponse1 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse1.ok()).toBe(true);
     const actionItems1 = await actionItemsResponse1.json();
 
     const startItems1 = actionItems1.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === sprintId && item.accountability_type === 'sprint_start'
+        item.accountability_target_id === sprintId && item.accountability_type === 'week_start'
     );
 
-    // Should have sprint_start action item
+    // Should have week_start action item
     expect(startItems1.length).toBe(1);
 
     // Step 2: Start the sprint
-    const startSprintResponse = await page.request.patch(`${apiServer.url}/api/sprints/${sprintId}`, {
+    const startSprintResponse = await page.request.patch(`${apiServer.url}/api/weeks/${sprintId}`, {
       headers: { 'x-csrf-token': csrfToken },
       data: { status: 'active' },
     });
     expect(startSprintResponse.ok()).toBe(true);
 
-    // Step 3: Check action items again - sprint_start should be GONE
+    // Step 3: Check action items again - week_start should be GONE
     const actionItemsResponse2 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse2.ok()).toBe(true);
     const actionItems2 = await actionItemsResponse2.json();
 
     const startItems2 = actionItems2.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === sprintId && item.accountability_type === 'sprint_start'
+        item.accountability_target_id === sprintId && item.accountability_type === 'week_start'
     );
 
-    // After starting sprint, no sprint_start item should exist
+    // After starting sprint, no week_start item should exist
     expect(startItems2.length).toBe(0);
   });
 
@@ -207,7 +207,7 @@ test.describe('Sprint Accountability Flow', () => {
     const programId = program.id;
 
     // Create a sprint (sprint 1 has started)
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Test Sprint Without Issues',
@@ -220,17 +220,17 @@ test.describe('Sprint Accountability Flow', () => {
     const sprint = await sprintResponse.json();
     const sprintId = sprint.id;
 
-    // Step 1: Check for sprint_issues action item (no issues in sprint)
+    // Step 1: Check for week_issues action item (no issues in sprint)
     const actionItemsResponse1 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse1.ok()).toBe(true);
     const actionItems1 = await actionItemsResponse1.json();
 
     const issuesItems1 = actionItems1.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === sprintId && item.accountability_type === 'sprint_issues'
+        item.accountability_target_id === sprintId && item.accountability_type === 'week_issues'
     );
 
-    // Should have sprint_issues action item
+    // Should have week_issues action item
     expect(issuesItems1.length).toBe(1);
 
     // Step 2: Create an issue and associate it with the sprint via belongs_to
@@ -243,17 +243,17 @@ test.describe('Sprint Accountability Flow', () => {
     });
     expect(issueResponse.ok()).toBe(true);
 
-    // Step 3: Check action items again - sprint_issues should be GONE
+    // Step 3: Check action items again - week_issues should be GONE
     const actionItemsResponse2 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse2.ok()).toBe(true);
     const actionItems2 = await actionItemsResponse2.json();
 
     const issuesItems2 = actionItems2.items.filter(
       (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === sprintId && item.accountability_type === 'sprint_issues'
+        item.accountability_target_id === sprintId && item.accountability_type === 'week_issues'
     );
 
-    // After adding issue, no sprint_issues item should exist
+    // After adding issue, no week_issues item should exist
     expect(issuesItems2.length).toBe(0);
   });
 
@@ -287,7 +287,7 @@ test.describe('Sprint Accountability Flow', () => {
     const programId = program.id;
 
     // Create a sprint very far in future (sprint 1000 - about 19 years from workspace start)
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Test Future Sprint',

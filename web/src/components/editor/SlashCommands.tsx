@@ -495,7 +495,7 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
           .deleteRange(range)
           .insertContent({
             type: 'hypothesisBlock',
-            attrs: { placeholder: 'What will get done this sprint?' },
+            attrs: { placeholder: 'What will get done this week?' },
           })
           .run();
       },

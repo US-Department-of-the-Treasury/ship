@@ -17,7 +17,7 @@ interface RetroData {
   success_criteria: string[];
   next_steps: string | null;
   content: JSONContent;
-  sprints: { id: string; title: string; sprint_number: string }[];
+  weeks: { id: string; title: string; sprint_number: string }[];
   issues_summary: {
     total: number;
     completed: number;
@@ -381,13 +381,13 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
             </div>
 
             {/* Sprints */}
-            {retroData?.sprints && retroData.sprints.length > 0 && (
+            {retroData?.weeks && retroData.weeks.length > 0 && (
               <div className="space-y-2 mb-6">
                 <label className="text-xs font-medium text-muted uppercase tracking-wide">
-                  Sprints ({retroData.sprints.length})
+                  Sprints ({retroData.weeks.length})
                 </label>
                 <div className="space-y-1">
-                  {retroData.sprints.map((sprint) => (
+                  {retroData.weeks.map((sprint) => (
                     <div key={sprint.id} className="text-sm text-foreground">
                       Sprint {sprint.sprint_number}: {sprint.title}
                     </div>

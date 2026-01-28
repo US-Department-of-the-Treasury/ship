@@ -2,7 +2,7 @@
 
 This document explains Ship's core philosophy and organizational hierarchy.
 
-> **Related**: See [Sprint Documentation Philosophy](./sprint-documentation-philosophy.md) for sprint workflow details and [Unified Document Model](./unified-document-model.md) for data model implementation.
+> **Related**: See [Week Documentation Philosophy](./week-documentation-philosophy.md) for week workflow details and [Unified Document Model](./unified-document-model.md) for data model implementation.
 
 ## The Hierarchy
 
@@ -11,7 +11,7 @@ Ship organizes work in four levels:
 ```
 Programs (long-lived initiatives)
 └── Projects (scientific experiments with ICE scoring)
-    └── Sprints (accountability windows)
+    └── Weeks (accountability windows)
         └── Issues (work units)
 ```
 
@@ -101,32 +101,32 @@ Even invalidated projects generate value through learning. The project retrospec
 - Actual monetary impact (vs. expected)
 - Recommended next steps (which may be a new project)
 
-## Sprints: Accountability Windows
+## Weeks: Accountability Windows
 
-**Sprints are time-boxed periods for tracking issue completion.**
+**Weeks are derived 7-day time windows for tracking issue completion.**
 
-Sprints provide the rhythm for execution:
+Weeks provide the rhythm for execution:
 
-- Fixed 7-day windows (workspace-wide)
+- Fixed 7-day windows (calculated from workspace start date)
 - Shared cadence across all programs
 - Clear boundaries for planning and retrospection
 
-### Sprint Owner Accountability
+### Week Owner Accountability
 
-Every sprint has an owner - a single person accountable for:
+Every week has an owner - a single person accountable for:
 
-- Sprint planning (what will we commit to?)
+- Weekly planning (what will we commit to?)
 - Execution oversight (are we on track?)
-- Sprint review (what did we actually deliver?)
+- Weekly review (what did we actually deliver?)
 
 **Only people can be held accountable, not projects.**
 
-### Sprint Reviews vs. Project Retros
+### Weekly Reviews vs. Project Retros
 
-| Aspect | Sprint Review | Project Retro |
+| Aspect | Weekly Review | Project Retro |
 |--------|---------------|---------------|
-| Frequency | Every sprint (weekly) | End of project |
-| Scope | What happened this sprint | Did the hypothesis validate |
+| Frequency | Every week | End of project |
+| Scope | What happened this week | Did the hypothesis validate |
 | Focus | Issues completed/carried | Business outcome achieved |
 | Validation | N/A (execution tracking) | Validated or Invalidated |
 
@@ -143,14 +143,14 @@ An issue represents a discrete piece of work:
 
 ### Issue Relationships
 
-Issues belong to **programs** (always) and can be assigned to **sprints** (when planned):
+Issues belong to **programs** (always) and can be assigned to **weeks** (when planned):
 
 ```
 Program: Platform Security
-├── Issue: Fix SQL injection vulnerability    ← sprint_id: Sprint 5
-├── Issue: Implement rate limiting            ← sprint_id: Sprint 5
-├── Issue: Research OAuth alternatives        ← sprint_id: null (backlog)
-└── Issue: Update security docs               ← sprint_id: null (backlog)
+├── Issue: Fix SQL injection vulnerability    ← Week of Jan 27
+├── Issue: Implement rate limiting            ← Week of Jan 27
+├── Issue: Research OAuth alternatives        ← (backlog)
+└── Issue: Update security docs               ← (backlog)
 ```
 
 Issues can also be associated with **projects** to track which experiment they support.
@@ -165,7 +165,7 @@ triage → backlog → todo → in_progress → in_review → done
 
 - **triage**: New issues awaiting categorization
 - **backlog**: Accepted but not yet scheduled
-- **todo**: Planned for current sprint
+- **todo**: Planned for current week
 - **in_progress**: Active work
 - **in_review**: Complete, awaiting verification
 - **done**: Finished
@@ -175,16 +175,16 @@ triage → backlog → todo → in_progress → in_review → done
 
 1. **Program Setup**: Create programs for long-lived initiatives
 2. **Project Planning**: Define projects with hypotheses and ICE scores
-3. **Sprint Planning**: Pull issues into the sprint backlog
+3. **Weekly Planning**: Pull issues into the week backlog
 4. **Execution**: Work issues through states (todo → done)
-5. **Sprint Review**: Document what was delivered
+5. **Weekly Review**: Document what was delivered
 6. **Project Retro**: Validate or invalidate the hypothesis
 
 ## Standups: Asynchronous Progress Updates
 
-Standups in Ship are **comment-like entries on sprints**:
+Standups in Ship are **comment-like entries on weeks**:
 
-- Anyone can post a standup to any sprint at any time
+- Anyone can post a standup to any week at any time
 - Multiple standups per person per day are allowed
 - Entries appear in a timeline feed with timestamps
 - Content is free-form (planned work, completed items, blockers)
@@ -202,7 +202,7 @@ This differs from traditional standup meetings:
 
 Ship provides a cross-program dashboard for managers and stakeholders:
 
-- All active sprints with progress indicators
+- All active weeks with progress indicators
 - Recent standups across programs
 - Project status summary (in progress, pending retro, completed)
 
@@ -229,7 +229,7 @@ This enables:
 
 ## References
 
-- [Sprint Documentation Philosophy](./sprint-documentation-philosophy.md) - Sprint workflow details
+- [Week Documentation Philosophy](./week-documentation-philosophy.md) - Week workflow details
 - [Document Model Conventions](./document-model-conventions.md) - Data model terminology
 - [Unified Document Model](./unified-document-model.md) - Technical implementation
 - [Ship Claude CLI Integration](./ship-claude-cli-integration.md) - API and CLI usage

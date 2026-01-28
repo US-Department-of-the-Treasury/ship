@@ -30,7 +30,7 @@ export interface ReconciliationDecision {
   timestamp: string;
 }
 
-interface SprintReconciliationProps {
+interface WeekReconciliationProps {
   sprintId: string;
   sprintNumber: number;
   programId: string;
@@ -55,12 +55,12 @@ const STATE_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-export function SprintReconciliation({
+export function WeekReconciliation({
   sprintId,
   sprintNumber,
   programId,
   onDecisionMade,
-}: SprintReconciliationProps) {
+}: WeekReconciliationProps) {
   const queryClient = useQueryClient();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
@@ -71,7 +71,7 @@ export function SprintReconciliation({
   const { data: issues = [], isLoading } = useQuery<Issue[]>({
     queryKey: ['sprint-issues', sprintId],
     queryFn: async () => {
-      const response = await apiGet(`/api/sprints/${sprintId}/issues`);
+      const response = await apiGet(`/api/weeks/${sprintId}/issues`);
       if (!response.ok) throw new Error('Failed to fetch issues');
       return response.json();
     },
@@ -91,8 +91,8 @@ export function SprintReconciliation({
       if (!response.ok) return null;
 
       const data = await response.json();
-      // API returns { workspace_sprint_start_date, sprints: [...] } object
-      const sprints: Sprint[] = data.sprints || [];
+      // API returns { workspace_sprint_start_date, weeks: [...] } object
+      const sprints: Sprint[] = data.weeks || [];
       const next = sprints.find(s => s.sprint_number === sprintNumber + 1);
       return next || null;
     },
@@ -105,14 +105,14 @@ export function SprintReconciliation({
 
       // If next sprint doesn't exist, create it
       if (!targetSprintId) {
-        const createResponse = await apiPost('/api/sprints', {
+        const createResponse = await apiPost('/api/weeks', {
           program_id: programId,
           sprint_number: sprintNumber + 1,
-          title: `Sprint ${sprintNumber + 1}`,
+          title: `Week ${sprintNumber + 1}`,
         });
 
         if (!createResponse.ok) {
-          throw new Error('Failed to create next sprint');
+          throw new Error('Failed to create next week');
         }
 
         const newSprint = await createResponse.json();
@@ -131,7 +131,7 @@ export function SprintReconciliation({
       });
 
       if (!response.ok) {
-        throw new Error('Failed to move issue to next sprint');
+        throw new Error('Failed to move issue to next week');
       }
 
       return { issue, targetSprintId };
@@ -378,9 +378,9 @@ export function SprintReconciliation({
                     onClick={() => handleNextSprint(issue)}
                     disabled={isPending || bulkPending}
                     className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                    title="Move to next sprint"
+                    title="Move to next week"
                   >
-                    {isPending && moveToNextSprintMutation.isPending ? '...' : 'Next Sprint'}
+                    {isPending && moveToNextSprintMutation.isPending ? '...' : 'Next Week'}
                   </button>
                   <button
                     onClick={() => handleBacklog(issue)}

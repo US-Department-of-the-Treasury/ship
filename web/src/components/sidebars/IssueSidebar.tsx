@@ -189,10 +189,10 @@ export function IssueSidebar({
     let cancelled = false;
 
     fetch(`${API_URL}/api/programs/${programId}/sprints`, { credentials: 'include' })
-      .then(res => res.ok ? res.json() : { sprints: [], workspace_sprint_start_date: null })
+      .then(res => res.ok ? res.json() : { weeks: [], workspace_sprint_start_date: null })
       .then(data => {
         if (!cancelled) {
-          setSprints(data.sprints || []);
+          setSprints(data.weeks || []);
           if (data.workspace_sprint_start_date) {
             setWorkspaceSprintStartDate(new Date(data.workspace_sprint_start_date));
           }
@@ -244,7 +244,7 @@ export function IssueSidebar({
   // Legacy sprint change handler
   const handleSprintChange = async (sprintId: string | null) => {
     if (sprintId && !issue.estimate) {
-      setSprintError('Please add an estimate before assigning to a sprint');
+      setSprintError('Please add an estimate before assigning to a week');
       return;
     }
     setSprintError(null);
@@ -451,9 +451,9 @@ export function IssueSidebar({
         />
       </PropertyRow>
 
-      {/* Sprint - still uses single-select since sprints depend on program selection */}
+      {/* Week - still uses single-select since weeks depend on program selection */}
       {currentProgramId && (
-        <PropertyRow label="Sprint">
+        <PropertyRow label="Week">
           <Combobox
             options={sprints.map((s) => {
               let dateRange = '';
@@ -465,11 +465,11 @@ export function IssueSidebar({
             })}
             value={currentSprintId}
             onChange={(value) => handleSprintChange(value)}
-            placeholder="No Sprint"
-            clearLabel="No Sprint"
-            searchPlaceholder="Search sprints..."
-            emptyText="No sprints found"
-            aria-label="Sprint"
+            placeholder="No Week"
+            clearLabel="No Week"
+            searchPlaceholder="Search weeks..."
+            emptyText="No weeks found"
+            aria-label="Week"
           />
           {sprintError && (
             <p className="mt-1 text-xs text-red-500">{sprintError}</p>

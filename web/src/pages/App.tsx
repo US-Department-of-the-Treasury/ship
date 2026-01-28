@@ -438,7 +438,7 @@ export function AppLayout() {
                 {activeMode === 'issues' && 'Issues'}
                 {activeMode === 'projects' && 'Projects'}
                 {activeMode === 'programs' && 'Programs'}
-                {activeMode === 'sprints' && 'Sprints'}
+                {activeMode === 'sprints' && 'Weeks'}
                 {activeMode === 'team' && 'Teams'}
                 {activeMode === 'settings' && 'Settings'}
               </h2>
@@ -529,7 +529,7 @@ export function AppLayout() {
                 <DashboardSidebar />
               )}
               {activeMode === 'my-week' && (
-                <div className="px-3 py-2 text-sm text-muted">Your sprint assignments</div>
+                <div className="px-3 py-2 text-sm text-muted">Your week assignments</div>
               )}
             </div>
 

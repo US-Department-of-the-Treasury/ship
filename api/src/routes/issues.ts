@@ -23,7 +23,7 @@ const belongsToEntrySchema = z.object({
 });
 
 // Accountability types enum for validation
-const accountabilityTypes = ['standup', 'sprint_plan', 'sprint_review', 'sprint_start', 'sprint_issues', 'project_plan', 'project_retro'] as const;
+const accountabilityTypes = ['standup', 'weekly_plan', 'weekly_review', 'week_start', 'week_issues', 'project_plan', 'project_retro'] as const;
 
 // Validation schemas
 const createIssueSchema = z.object({
@@ -648,7 +648,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 
       // Broadcast celebration when first issue is added to sprint
       if (issueCount === 1) {
-        broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_issues', targetId: sprintAssoc.id });
+        broadcastToUser(req.userId!, 'accountability:updated', { type: 'week_issues', targetId: sprintAssoc.id });
       }
     }
 
@@ -715,7 +715,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       if (hasSprintAssociation) {
         const effectiveEstimate = data.estimate !== undefined ? data.estimate : currentProps.estimate;
         if (!effectiveEstimate) {
-          res.status(400).json({ error: 'Estimate is required before assigning to a sprint' });
+          res.status(400).json({ error: 'Estimate is required before assigning to a week' });
           return;
         }
       }
@@ -964,7 +964,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
         // Broadcast celebration when first issue is added to sprint
         if (issueCount === 1) {
-          broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_issues', targetId: sprintId });
+          broadcastToUser(req.userId!, 'accountability:updated', { type: 'week_issues', targetId: sprintId });
         }
       }
     }

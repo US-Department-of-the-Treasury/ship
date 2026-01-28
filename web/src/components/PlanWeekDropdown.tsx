@@ -14,10 +14,10 @@ interface PlanSprintDropdownProps {
 }
 
 /**
- * PlanSprintDropdown - Dropdown for selecting a sprint to plan or creating a new one
+ * PlanSprintDropdown - Dropdown for selecting a week to plan or creating a new one
  *
- * If no planning sprints exist, shows "Create Sprint Plan" button.
- * If planning sprints exist, shows "Plan Sprint" button with dropdown.
+ * If no planning weeks exist, shows "Create Week Plan" button.
+ * If planning weeks exist, shows "Plan Week" button with dropdown.
  */
 export function PlanSprintDropdown({
   sprints,
@@ -46,7 +46,7 @@ export function PlanSprintDropdown({
         className="rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-border/50 transition-colors flex items-center gap-1.5"
       >
         <CalendarPlanIcon />
-        Create Sprint Plan
+        Create Week Plan
       </button>
     );
   }
@@ -58,7 +58,7 @@ export function PlanSprintDropdown({
         className="rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-border/50 transition-colors flex items-center gap-1.5"
       >
         <CalendarPlanIcon />
-        Plan Sprint
+        Plan Week
         <ChevronDownIcon className={cn('transition-transform', isOpen && 'rotate-180')} />
       </button>
 
@@ -89,7 +89,7 @@ export function PlanSprintDropdown({
                 className="w-full px-3 py-2 text-left text-sm text-accent hover:bg-border/50 transition-colors flex items-center gap-2"
               >
                 <PlusIcon />
-                Create New Sprint
+                Create New Week
               </button>
             </div>
           </div>

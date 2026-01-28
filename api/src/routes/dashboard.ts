@@ -236,7 +236,7 @@ router.get('/my-work', authMiddleware, async (req: Request, res: Response) => {
     for (const row of sprintsResult.rows) {
       workItems.push({
         id: row.id,
-        title: row.title || `Sprint ${row.sprint_number}`,
+        title: row.title || `Week ${row.sprint_number}`,
         type: 'sprint',
         urgency: 'this_sprint',
         sprint_number: row.sprint_number,

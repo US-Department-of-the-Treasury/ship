@@ -47,7 +47,7 @@ interface Assignment {
 
 interface TeamGridData {
   users: User[];
-  sprints: Sprint[];
+  weeks: Sprint[];
   currentSprintNumber: number;
 }
 
@@ -165,7 +165,7 @@ export function TeamModePage() {
   // Scroll to current sprint on initial load
   useEffect(() => {
     if (data && scrollContainerRef.current && !hasScrolledToCurrentRef.current) {
-      const currentSprintIndex = data.sprints.findIndex(s => s.isCurrent);
+      const currentSprintIndex = data.weeks.findIndex(s => s.isCurrent);
       if (currentSprintIndex >= 0) {
         requestAnimationFrame(() => {
           if (scrollContainerRef.current) {
@@ -191,10 +191,10 @@ export function TeamModePage() {
       if (!res.ok) throw new Error('Failed to fetch team grid');
       const json: TeamGridData = await res.json();
 
-      if (json.sprints.length > 0) {
+      if (json.weeks.length > 0) {
         setSprintRange({
-          min: json.sprints[0].number,
-          max: json.sprints[json.sprints.length - 1].number,
+          min: json.weeks[0].number,
+          max: json.weeks[json.weeks.length - 1].number,
         });
       }
 
@@ -409,8 +409,8 @@ export function TeamModePage() {
       setData(prev => {
         if (!prev) return newData;
         const mergedSprints = direction === 'left'
-          ? [...newData.sprints, ...prev.sprints]
-          : [...prev.sprints, ...newData.sprints];
+          ? [...newData.weeks, ...prev.weeks]
+          : [...prev.weeks, ...newData.weeks];
         return { ...prev, sprints: mergedSprints };
       });
 
@@ -607,7 +607,7 @@ export function TeamModePage() {
                 </div>
               )}
 
-              {data.sprints.map((sprint) => (
+              {data.weeks.map((sprint) => (
                 <div key={sprint.number} className="flex flex-col">
                   {/* Sprint header */}
                   <div
@@ -730,7 +730,7 @@ export function TeamModePage() {
                 }}
                 className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
               >
-                Remove & Delete Sprint
+                Remove & Delete Week
               </button>
             </div>
           </Dialog.Content>

@@ -69,9 +69,9 @@ The `document_type` field describes **what kind** of document it is:
 | `issue`        | Work item (tracked task)   | State, assignees, priority, ticket number, dates |
 | `program`      | Product/Initiative         | Long-lived container, has members, ticket prefix |
 | `project`      | Time-bounded deliverable   | Groups issues, has dates, belongs to program     |
-| `sprint`       | Program's sprint container | Sprint number, program_id, contains sprint work  |
-| `sprint_plan`  | Sprint planning doc        | Child of sprint, required before sprint starts   |
-| `sprint_retro` | Sprint retrospective       | Child of sprint, required after sprint ends      |
+| `sprint`       | Program's week container   | Week number, program_id, contains week's work    |
+| `weekly_plan`  | Weekly planning doc        | Child of week, required before week starts       |
+| `weekly_retro` | Weekly retrospective       | Child of week, required after week ends          |
 | `person`       | User profile page          | `properties.user_id` links to auth user, capacity, skills |
 | `view`         | Saved filter/query         | Query, filters, display options (future)         |
 
@@ -84,58 +84,58 @@ The `program_id` field describes **where** the document lives:
 | `null`         | Workspace-level | Org documentation like "Engineering Onboarding" |
 | `<program_id>` | Program-level   | Program specs, program issues                   |
 
-## Sprint Model
+## Week Model
 
-### Sprint Windows (Implicit)
+### Week Windows (Derived)
 
-Sprints are **implicit 2-week time windows**, not stored entities:
+Weeks are **derived 7-day time windows** calculated from the workspace start date, not stored entities:
 
-- Workspace has `sprint_start_date` setting
-- Sprint 1 = days 1-14 from start date
-- Sprint 2 = days 15-28
-- Sprint N = computed from date
+- Workspace has `sprint_start_date` setting (historical name retained in database)
+- Week 1 = days 1-7 from start date
+- Week 2 = days 8-14
+- Week N = computed from date
 
-**No Sprint table exists.** The sprint window is calculated.
+**No Week table exists.** The week window is calculated.
 
-### Sprint Documents (Explicit)
+### Week Documents (Explicit)
 
-What IS stored is the **Sprint document** - one per program per sprint window:
+What IS stored is the **Week document** - one per program per week window:
 
 ```
 Program (AUTH)
 ├── Project (Login Revamp)
 │   └── Issues (backlog)
-└── Sprint (AUTH's Sprint 5)       ← document_type: 'sprint'
-    ├── Sprint Plan                ← document_type: 'sprint_plan'
-    ├── Sprint Retro               ← document_type: 'sprint_retro'
-    └── Issues (active work)       ← assigned to this sprint
+└── Week (AUTH's Week of Jan 27)   ← document_type: 'sprint'
+    ├── Weekly Plan                ← document_type: 'weekly_plan'
+    ├── Weekly Retro               ← document_type: 'weekly_retro'
+    └── Issues (active work)       ← assigned to this week
 ```
 
-Sprint documents have:
+Week documents have:
 
 - `program_id`: which program
-- `properties.sprint_number`: which 2-week window (REQUIRED)
-- `properties.owner_id`: person accountable for this sprint (REQUIRED)
-- Document body: sprint goals, context, description (everything is a document)
-- Children: sprint plan, sprint retro, assigned issues
+- `properties.sprint_number`: which 7-day window (REQUIRED, historical field name)
+- `properties.owner_id`: person accountable for this week (REQUIRED)
+- Document body: week goals, context, description (everything is a document)
+- Children: weekly plan, weekly retro, assigned issues
 
-**Creating a sprint is intentional.** It means "we commit to doing work on this program during this 2-week window." Programs may skip sprint windows if no work is planned.
+**Creating a week document is intentional.** It means "we commit to doing work on this program during this 7-day window." Programs may skip week windows if no work is planned.
 
-### Sprint Dates (Computed)
+### Week Dates (Computed)
 
-Sprint dates are **computed from sprint_number + workspace start date**, not stored:
+Week dates are **computed from sprint_number + workspace start date**, not stored:
 
 ```typescript
-function computeSprintDates(sprintNumber: number, workspaceStartDate: Date) {
-  const start = addDays(workspaceStartDate, (sprintNumber - 1) * 7);
+function computeWeekDates(weekNumber: number, workspaceStartDate: Date) {
+  const start = addDays(workspaceStartDate, (weekNumber - 1) * 7);
   const end = addDays(start, 6); // 7 days total
   return { start, end };
 }
 ```
 
-### Sprint Status (Computed)
+### Week Status (Computed)
 
-Sprint status is **computed from the computed dates**, not stored:
+Week status is **computed from the computed dates**, not stored:
 
 | Condition | Status |
 |-----------|--------|
@@ -143,23 +143,23 @@ Sprint status is **computed from the computed dates**, not stored:
 | `start <= today <= end` | `active` |
 | `today > end` | `completed` |
 
-This eliminates the need for manual "Start Sprint" / "Complete Sprint" workflows and avoids storing redundant data.
+This eliminates the need for manual "Start Week" / "Complete Week" workflows and avoids storing redundant data.
 
-### Sprint Owner Constraint
+### Week Owner Constraint
 
-Each sprint requires exactly **one owner** (`owner_id`). A person can only own one sprint per sprint window across all programs. This ensures:
+Each week requires exactly **one owner** (`owner_id`). A person can only own one week per week window across all programs. This ensures:
 - Clear accountability
 - Resource visibility
 - No overallocation
 
-### Sprint Iterations (Claude Code Integration)
+### Week Iterations (Claude Code Integration)
 
-The `sprint_iterations` table tracks story completion attempts during Claude Code `/work` sessions:
+The `sprint_iterations` table (historical name) tracks story completion attempts during Claude Code `/work` sessions:
 
 ```
 sprint_iterations
 ├── id: UUID
-├── sprint_id: UUID (FK → documents)
+├── sprint_id: UUID (FK → documents, points to week document)
 ├── workspace_id: UUID
 ├── story_id: VARCHAR(200) - PRD story ID
 ├── story_title: VARCHAR(500)
@@ -172,30 +172,30 @@ sprint_iterations
 
 **Use cases:**
 - Real-time progress visibility during `/work` execution
-- Sprint velocity analysis (iterations per story)
+- Week velocity analysis (iterations per story)
 - Learning extraction from failed attempts
 - Historical record for retrospectives
 
 **API endpoints:**
-- `POST /api/sprints/:id/iterations` - Log an iteration
-- `GET /api/sprints/:id/iterations` - List iterations (filterable by status, story_id)
+- `POST /api/weeks/:id/iterations` - Log an iteration
+- `GET /api/weeks/:id/iterations` - List iterations (filterable by status, story_id)
 
 ## Issue Lifecycle
 
-Issues flow from backlog to sprint (the "conveyor belt"):
+Issues flow from backlog to week (the "conveyor belt"):
 
 ```
-Backlog (in Project)  →  Assigned to Sprint  →  Done
+Backlog (in Project)  →  Assigned to Week  →  Done
      ↓                         ↓
-  project_id: "proj_1"    sprint_id: "sprint_5"
-  sprint_id: null         project_id: "proj_1" (kept)
+  project_id: "proj_1"    week assignment set
+  week: null              project_id: "proj_1" (kept)
 ```
 
 Issues maintain **multiple associations**:
 
 - `program_id` - always set (required)
 - `project_id` - set when belongs to a project
-- `sprint_id` - set when assigned to active sprint work
+- Week assignment - set when assigned to active week work
 
 ## Data Model
 
@@ -211,7 +211,7 @@ interface Document {
   // Location/associations (columns, not in properties)
   program_id: string | null; // null = workspace-level
   project_id: string | null; // for issues
-  sprint_id: string | null; // when assigned to sprint
+  sprint_id: string | null; // when assigned to week (historical field name)
   parent_id: string | null; // document tree nesting
 
   // Content
@@ -262,9 +262,9 @@ interface ClaudeMetadata {
   };
 }
 
-interface SprintProperties {
-  sprint_number: number;  // References implicit 2-week window - REQUIRED
-  owner_id: string;       // Person who owns this sprint - REQUIRED
+interface WeekProperties {
+  sprint_number: number;  // References 7-day week window - REQUIRED (historical field name)
+  owner_id: string;       // Person who owns this week - REQUIRED
   // That's it. Dates computed from sprint_number + workspace start date.
   // Goal/description goes in document body (everything is a document).
   // Status computed from dates. See document-model-conventions.md.
@@ -302,7 +302,7 @@ Issues have a `state` property with **4 required states** that every workspace h
 | State | Description |
 |-------|-------------|
 | `backlog` | Not yet planned |
-| `todo` | Planned for current sprint |
+| `todo` | Planned for current week |
 | `in_progress` | Actively being worked |
 | `done` | Completed |
 
@@ -315,7 +315,7 @@ Roll-ups are **computed on-demand client-side**:
 | Computation        | Description        | Example                  |
 | ------------------ | ------------------ | ------------------------ |
 | `count`            | Count children     | Project: "12 issues"     |
-| `sum`              | Sum child property | Sprint: "40 hours total" |
+| `sum`              | Sum child property | Week: "40 hours total"   |
 | `percent_complete` | % with status=done | Project: "70% complete"  |
 
 No precomputation or caching - compute when rendering. Optimize later if needed.
@@ -465,15 +465,15 @@ Shows documents where `program_id = <current_program>`:
 
 - Program documentation (wikis)
 - Projects and their issues
-- Sprint documents and their contents
+- Week documents and their contents
 
-### Sprint View
+### Week View
 
-Shows current sprint across programs:
+Shows current week across programs:
 
-- Filter by computed sprint window (current date)
+- Filter by computed week window (current date)
 - Group by program or assignee
-- Show sprint docs, plans, retros, issues
+- Show week docs, plans, retros, issues
 
 ### Resource View
 
@@ -489,8 +489,8 @@ Modes are **different lenses on the same data** for different personas:
 
 | Mode         | Use Case       | Mental Model                                    |
 | ------------ | -------------- | ----------------------------------------------- |
-| **Programs** | Engineering/PM | "What are we building? How's it going?"         |
-| **Sprint**   | Daily standup  | "What's happening this sprint? What's blocked?" |
+| **Programs** | Engineering/PM | "What are we building? How's it going?"       |
+| **Weeks**    | Daily standup  | "What's happening this week? What's blocked?" |
 | **Resource** | Manager/Lead   | "Who's doing what? Who's overloaded?"           |
 | **Docs**     | Anyone         | "Where's that document?"                        |
 
@@ -535,4 +535,4 @@ Saved filters/queries as `document_type: 'view'`:
 ## References
 
 - [Document Model Conventions](./document-model-conventions.md) - Architectural decisions and terminology
-- [Sprint Documentation Philosophy](./sprint-documentation-philosophy.md) - Sprint workflow and documentation requirements
+- [Week Documentation Philosophy](./week-documentation-philosophy.md) - Week workflow and documentation requirements

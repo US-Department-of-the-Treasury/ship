@@ -69,7 +69,7 @@ Examples:
   /collaboration/program:a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
 ```
 
-**Room name format:** `{docType}:{uuid}` where docType is `doc`, `issue`, `program`, `project`, or `sprint`.
+**Room name format:** `{docType}:{uuid}` where docType is `doc`, `issue`, `program`, `project`, or `sprint` (historical name for weeks).
 
 ### Message Types
 

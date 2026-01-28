@@ -11,7 +11,7 @@ const CELEBRATION_MESSAGES = [
   "Progress feels good, doesn't it?",
   "One down, excellence achieved.",
   "Plan-driven development in action!",
-  "The sprint gods are pleased.",
+  "The planning gods are pleased.",
 ];
 
 // Rotating messages - mix of urgency and humor
@@ -23,7 +23,7 @@ const MESSAGES = [
   "The accountability police are watching. (It's us. We're the police.)",
   "{count} tasks remain. Zero excuses accepted.",
   "Procrastination is the thief of time. And credibility.",
-  "Your sprint needs you. Don't leave it hanging.",
+  "Your week needs you. Don't leave it hanging.",
   "Remember: done is better than perfect. But started is better than nothing.",
   "The retro won't write itself. Trust us, we tried.",
   "Plan-driven development starts with... a plan.",
@@ -35,7 +35,7 @@ const MESSAGES = [
   "Achievement unlocked: Accountability Avoider. (Please un-unlock it.)",
   "Fun fact: completing tasks makes them disappear from this banner.",
   "These items have been waiting patiently. Their patience is running out.",
-  "Sprint review: where plans meet reality. Please schedule the meeting.",
+  "Week review: where plans meet reality. Please schedule the meeting.",
 ];
 
 interface AccountabilityBannerProps {
@@ -129,12 +129,12 @@ export function AccountabilityBanner({ itemCount, onBannerClick, isCelebrating =
       </span>
 
       {/* Badge count */}
-      <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-white/20 px-2 text-xs font-bold">
+      <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-red-800 px-2 text-xs font-bold">
         {itemCount}
       </span>
 
       {/* Click hint */}
-      <span className="text-xs opacity-75 hidden sm:inline">Click to view</span>
+      <span className="text-xs hidden sm:inline">Click to view</span>
     </button>
   );
 }

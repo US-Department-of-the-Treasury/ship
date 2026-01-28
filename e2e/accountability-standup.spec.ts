@@ -76,7 +76,7 @@ test.describe('Standup Accountability Flow', () => {
     const currentSprintNumber = Math.floor(daysSinceStart / 7) + 1;
 
     // Create a sprint that's current (should be started)
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Current Sprint for Standup',
@@ -163,7 +163,7 @@ test.describe('Standup Accountability Flow', () => {
     const currentSprintNumber = Math.floor(daysSinceStart / 7) + 1;
 
     // Create current sprint
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Current Sprint for Standup Creation',
@@ -198,7 +198,7 @@ test.describe('Standup Accountability Flow', () => {
     expect(standupItems1.length).toBe(1);
 
     // Step 2: Create a standup for this sprint (via sprint standups endpoint)
-    const standupResponse = await page.request.post(`${apiServer.url}/api/sprints/${sprintId}/standups`, {
+    const standupResponse = await page.request.post(`${apiServer.url}/api/weeks/${sprintId}/standups`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Daily Standup',
@@ -262,7 +262,7 @@ test.describe('Standup Accountability Flow', () => {
     const currentSprintNumber = Math.floor(daysSinceStart / 7) + 1;
 
     // Create current sprint with user as owner
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Empty Sprint No Assigned Issues',

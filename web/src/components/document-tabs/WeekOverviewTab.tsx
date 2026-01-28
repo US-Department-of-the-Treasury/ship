@@ -5,7 +5,7 @@ import { UnifiedEditor } from '@/components/UnifiedEditor';
 import type { UnifiedDocument, SidebarData } from '@/components/UnifiedEditor';
 import { useAuth } from '@/hooks/useAuth';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
-import { useActiveSprintsQuery } from '@/hooks/useSprintsQuery';
+import { useActiveWeeksQuery } from '@/hooks/useWeeksQuery';
 import { apiPatch, apiDelete } from '@/lib/api';
 import type { DocumentTabProps } from '@/lib/document-tabs';
 
@@ -29,9 +29,9 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
   })), [teamMembersData]);
 
   // Fetch active sprints for availability calculation
-  const { data: activeSprintsData } = useActiveSprintsQuery();
+  const { data: activeSprintsData } = useActiveWeeksQuery();
   const existingSprints = useMemo(() =>
-    (activeSprintsData?.sprints ?? []).map(s => ({ owner: s.owner })),
+    (activeSprintsData?.weeks ?? []).map(s => ({ owner: s.owner })),
     [activeSprintsData]
   );
 
@@ -82,13 +82,13 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
       }
     },
     onSuccess: () => {
-      navigate('/sprints');
+      navigate('/team/allocation');
     },
   });
 
   // Handle back navigation
   const handleBack = useCallback(() => {
-    navigate('/sprints');
+    navigate('/team/allocation');
   }, [navigate]);
 
   // Handle update
@@ -98,7 +98,7 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
 
   // Handle delete
   const handleDelete = useCallback(async () => {
-    if (!window.confirm('Are you sure you want to delete this sprint?')) return;
+    if (!window.confirm('Are you sure you want to delete this week?')) return;
     await deleteMutation.mutateAsync();
   }, [deleteMutation]);
 
@@ -137,7 +137,7 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
       sidebarData={sidebarData}
       onUpdate={handleUpdate}
       onBack={handleBack}
-      backLabel="Back to sprints"
+      backLabel="Back to weeks"
       onDelete={handleDelete}
       showTypeSelector={false}
     />

@@ -28,7 +28,7 @@ export interface Sprint {
 
 export interface SprintsResponse {
   workspace_sprint_start_date: string;
-  sprints: Sprint[];
+  weeks: Sprint[];
 }
 
 // Query keys
@@ -44,7 +44,7 @@ export const sprintKeys = {
 };
 
 // Extended Sprint type for active sprints endpoint
-export interface ActiveSprint extends Sprint {
+export interface ActiveWeek extends Sprint {
   program_id: string;
   program_name: string;
   program_prefix?: string;
@@ -52,8 +52,8 @@ export interface ActiveSprint extends Sprint {
   status: 'active';
 }
 
-export interface ActiveSprintsResponse {
-  sprints: ActiveSprint[];
+export interface ActiveWeeksResponse {
+  weeks: ActiveWeek[];
   current_sprint_number: number;
   days_remaining: number;
   sprint_start_date: string;
@@ -61,8 +61,8 @@ export interface ActiveSprintsResponse {
 }
 
 // Fetch all active sprints across workspace
-async function fetchActiveSprints(): Promise<ActiveSprintsResponse> {
-  const res = await apiGet('/api/sprints');
+async function fetchActiveWeeks(): Promise<ActiveWeeksResponse> {
+  const res = await apiGet('/api/weeks');
   if (!res.ok) {
     const error = new Error('Failed to fetch active sprints') as Error & { status: number };
     error.status = res.status;
@@ -72,10 +72,10 @@ async function fetchActiveSprints(): Promise<ActiveSprintsResponse> {
 }
 
 // Hook to get all active sprints across the workspace
-export function useActiveSprintsQuery() {
+export function useActiveWeeksQuery() {
   return useQuery({
     queryKey: sprintKeys.active(),
-    queryFn: fetchActiveSprints,
+    queryFn: fetchActiveWeeks,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 }
@@ -91,7 +91,7 @@ async function fetchSprints(programId: string): Promise<SprintsResponse> {
   return res.json();
 }
 
-// Create sprint
+// Week creation API (unused - weeks are derived from workspace start date)
 interface CreateSprintData {
   program_id: string;
   title: string;
@@ -100,7 +100,7 @@ interface CreateSprintData {
 }
 
 async function createSprintApi(data: CreateSprintData): Promise<Sprint> {
-  const res = await apiPost('/api/sprints', data);
+  const res = await apiPost('/api/weeks', data);
   if (!res.ok) {
     const error = new Error('Failed to create sprint') as Error & { status: number };
     error.status = res.status;
@@ -111,7 +111,7 @@ async function createSprintApi(data: CreateSprintData): Promise<Sprint> {
 
 // Update sprint
 async function updateSprintApi(id: string, updates: Partial<Sprint> & { owner_id?: string }): Promise<Sprint> {
-  const res = await apiPatch(`/api/sprints/${id}`, updates);
+  const res = await apiPatch(`/api/weeks/${id}`, updates);
   if (!res.ok) {
     const error = new Error('Failed to update sprint') as Error & { status: number };
     error.status = res.status;
@@ -122,7 +122,7 @@ async function updateSprintApi(id: string, updates: Partial<Sprint> & { owner_id
 
 // Delete sprint
 async function deleteSprintApi(id: string): Promise<void> {
-  const res = await apiDelete(`/api/sprints/${id}`);
+  const res = await apiDelete(`/api/weeks/${id}`);
   if (!res.ok) {
     const error = new Error('Failed to delete sprint') as Error & { status: number };
     error.status = res.status;
@@ -136,7 +136,7 @@ export function useSprintsQuery(programId: string | undefined) {
     queryKey: programId ? sprintKeys.list(programId) : sprintKeys.lists(),
     queryFn: () => {
       if (!programId) {
-        return { workspace_sprint_start_date: new Date().toISOString(), sprints: [] };
+        return { workspace_sprint_start_date: new Date().toISOString(), weeks: [] };
       }
       return fetchSprints(programId);
     },
@@ -172,10 +172,10 @@ export function useCreateSprint() {
         sprintKeys.list(programId),
         (old) => old ? {
           ...old,
-          sprints: [...old.sprints, optimisticSprint].sort((a, b) => a.sprint_number - b.sprint_number),
+          weeks: [...old.weeks, optimisticSprint].sort((a, b) => a.sprint_number - b.sprint_number),
         } : {
           workspace_sprint_start_date: new Date().toISOString(),
-          sprints: [optimisticSprint],
+          weeks: [optimisticSprint],
         }
       );
 
@@ -192,8 +192,8 @@ export function useCreateSprint() {
           sprintKeys.list(context.programId),
           (old) => old ? {
             ...old,
-            sprints: old.sprints.map(s => s.id === context.optimisticId ? data : s),
-          } : { workspace_sprint_start_date: new Date().toISOString(), sprints: [data] }
+            weeks: old.weeks.map(s => s.id === context.optimisticId ? data : s),
+          } : { workspace_sprint_start_date: new Date().toISOString(), weeks: [data] }
         );
       }
     },
@@ -220,7 +220,7 @@ export function useUpdateSprint() {
       let previousData: SprintsResponse | undefined;
 
       for (const [queryKey, data] of allProgramCaches) {
-        if (data?.sprints.some(s => s.id === id)) {
+        if (data?.weeks.some(s => s.id === id)) {
           programId = queryKey[2] as string;
           previousData = data;
           break;
@@ -237,7 +237,7 @@ export function useUpdateSprint() {
         sprintKeys.list(programId),
         (old) => old ? {
           ...old,
-          sprints: old.sprints.map(s => s.id === id ? { ...s, ...updates } : s),
+          weeks: old.weeks.map(s => s.id === id ? { ...s, ...updates } : s),
         } : old
       );
 
@@ -254,7 +254,7 @@ export function useUpdateSprint() {
           sprintKeys.list(context.programId),
           (old) => old ? {
             ...old,
-            sprints: old.sprints.map(s => s.id === id ? data : s),
+            weeks: old.weeks.map(s => s.id === id ? data : s),
           } : old
         );
       }
@@ -283,7 +283,7 @@ export function useDeleteSprint() {
       let previousData: SprintsResponse | undefined;
 
       for (const [queryKey, data] of allProgramCaches) {
-        if (data?.sprints.some(s => s.id === id)) {
+        if (data?.weeks.some(s => s.id === id)) {
           programId = queryKey[2] as string;
           previousData = data;
           break;
@@ -300,7 +300,7 @@ export function useDeleteSprint() {
         sprintKeys.list(programId),
         (old) => old ? {
           ...old,
-          sprints: old.sprints.filter(s => s.id !== id),
+          weeks: old.weeks.filter(s => s.id !== id),
         } : old
       );
 
@@ -326,7 +326,7 @@ export function useSprints(programId: string | undefined) {
   const updateMutation = useUpdateSprint();
   const deleteMutation = useDeleteSprint();
 
-  const sprints = data?.sprints ?? [];
+  const sprints = data?.weeks ?? [];
   const workspaceSprintStartDate = data?.workspace_sprint_start_date
     ? new Date(data.workspace_sprint_start_date)
     : new Date();
@@ -341,7 +341,7 @@ export function useSprints(programId: string | undefined) {
     try {
       return await createMutation.mutateAsync({
         program_id: programId,
-        title: title || `Sprint ${sprintNumber}`,
+        title: title || `Week ${sprintNumber}`,
         sprint_number: sprintNumber,
         owner_id: ownerId,
       });

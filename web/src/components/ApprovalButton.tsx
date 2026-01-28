@@ -56,7 +56,7 @@ interface ApprovalButtonProps {
   hasContent: boolean;
   /** Whether current user can approve (is accountable or workspace admin) */
   canApprove: boolean;
-  /** API endpoint to call for approval (e.g., '/api/sprints/123/approve-plan') */
+  /** API endpoint to call for approval (e.g., '/api/weeks/123/approve-plan') */
   approveEndpoint: string;
   /** Name of the person who approved (for display) */
   approverName?: string;

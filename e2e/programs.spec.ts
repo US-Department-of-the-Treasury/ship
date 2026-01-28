@@ -59,25 +59,7 @@ test.describe('Programs', () => {
     expect(newCount).toBeGreaterThanOrEqual(initialCount)
   })
 
-  // FIXME: Icon and Color properties are not visible in the current UI
-  test.fixme('program editor has Overview tab with icon and color properties', async ({ page }) => {
-    await page.goto('/programs')
-
-    // Create new program
-    await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Should see Overview tab (default tab)
-    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
-
-    // Should see icon label in properties sidebar (emoji picker)
-    await expect(page.getByText('Icon')).toBeVisible({ timeout: 5000 })
-
-    // Should see color label for color picker
-    await expect(page.getByText('Color')).toBeVisible({ timeout: 5000 })
-  })
-
-  test('program editor has tabbed navigation (Overview, Issues, Sprints)', async ({ page }) => {
+  test('program editor has tabbed navigation (Overview, Issues, Weeks)', async ({ page }) => {
     await page.goto('/programs')
 
     // Create new program
@@ -88,7 +70,7 @@ test.describe('Programs', () => {
     const main = page.locator('main')
     await expect(main.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
     await expect(main.getByRole('tab', { name: 'Issues' })).toBeVisible({ timeout: 5000 })
-    await expect(main.getByRole('tab', { name: 'Sprints' })).toBeVisible({ timeout: 5000 })
+    await expect(main.getByRole('tab', { name: 'Weeks' })).toBeVisible({ timeout: 5000 })
   })
 
   test('can switch between program tabs', async ({ page }) => {
@@ -107,11 +89,11 @@ test.describe('Programs', () => {
     // Should see New Issue button in issues tab
     await expect(page.getByRole('button', { name: 'New Issue' })).toBeVisible({ timeout: 5000 })
 
-    // Click Sprints tab
-    await main.getByRole('tab', { name: 'Sprints' }).click()
+    // Click Weeks tab
+    await main.getByRole('tab', { name: 'Weeks' }).click()
 
-    // Should see Create sprint link in the timeline
-    await expect(page.getByText(/\+ Create sprint/).first()).toBeVisible({ timeout: 5000 })
+    // Should see Timeline heading in the Weeks tab (weeks are auto-generated)
+    await expect(page.getByRole('heading', { name: 'Timeline', level: 3 })).toBeVisible({ timeout: 5000 })
   })
 
   test('Issues tab shows list and kanban view toggle', async ({ page }) => {
@@ -159,46 +141,22 @@ test.describe('Programs', () => {
     await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+$/, { timeout: 5000 })
   })
 
-  test('can create sprint from program Sprints tab', async ({ page }) => {
+  test('Weeks tab shows auto-generated week timeline', async ({ page }) => {
     await page.goto('/programs')
 
     // Create new program
     await page.getByRole('button', { name: /new program/i }).click()
     await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Click Sprints tab (scope to main to avoid icon rail)
-    await page.locator('main').getByRole('tab', { name: 'Sprints' }).click()
+    // Click Weeks tab (scope to main to avoid icon rail)
+    await page.locator('main').getByRole('tab', { name: 'Weeks' }).click()
 
-    // Click Create sprint in the timeline - this creates directly via API (no modal)
-    await page.getByText(/\+ Create sprint/).first().click()
+    // Should see Timeline heading
+    await expect(page.getByRole('heading', { name: 'Timeline', level: 3 })).toBeVisible({ timeout: 5000 })
 
-    // Should navigate to the new sprint document
-    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
-
-    // Should see the sprint editor with Plan tab (sprints in 'planning' status show 'Plan' tab)
-    await expect(page.getByRole('tab', { name: 'Plan' })).toBeVisible({ timeout: 5000 })
-  })
-
-  // FIXME: Sprint creation modal UI has changed
-  test.fixme('sprint creation modal can be closed', async ({ page }) => {
-    await page.goto('/programs')
-
-    // Create new program
-    await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Click Sprints tab
-    await page.getByRole('tab', { name: 'Sprints' }).click()
-
-    // Open sprint creation modal
-    await page.getByText(/\+ Create sprint/).first().click()
-    await expect(page.getByRole('heading', { name: /create sprint/i })).toBeVisible({ timeout: 5000 })
-
-    // Click Cancel
-    await page.getByRole('button', { name: /cancel/i }).click()
-
-    // Modal should be closed
-    await expect(page.getByRole('heading', { name: /create sprint/i })).not.toBeVisible({ timeout: 2000 })
+    // Should see auto-generated week cards (weeks are created automatically)
+    // Look for any "Week of" text which indicates week cards are visible
+    await expect(page.getByText(/Week of/).first()).toBeVisible({ timeout: 5000 })
   })
 
   test('program list shows issue and sprint counts', async ({ page }) => {
@@ -235,30 +193,6 @@ test.describe('Programs', () => {
     if (await sidebarItems.count() >= 2) {
       await sidebarItems.first().click()
       await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/)
-    }
-  })
-
-  // FIXME: Color picker UI is not visible in the current program editor - properties sidebar was simplified
-  test.fixme('can change program color in Overview tab', async ({ page }) => {
-    await page.goto('/programs')
-
-    // Create new program
-    await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Should be on Overview tab by default
-    await expect(page.getByText('Color')).toBeVisible({ timeout: 5000 })
-
-    // Find color buttons (small circular buttons)
-    const colorButtons = page.locator('button.rounded-full')
-    const colorCount = await colorButtons.count()
-    expect(colorCount).toBeGreaterThan(0)
-
-    // Click a color button to change color
-    if (colorCount > 1) {
-      await colorButtons.nth(1).click()
-      // Wait for update
-      await page.waitForTimeout(500)
     }
   })
 
@@ -320,7 +254,7 @@ test.describe('Programs', () => {
     await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
   })
 
-  test('Plan Sprint button navigates to sprint planning page', async ({ page }) => {
+  test('Plan Week button navigates to week planning page', async ({ page }) => {
     await page.goto('/programs')
 
     // Create new program
@@ -329,40 +263,18 @@ test.describe('Programs', () => {
     const programUrl = page.url()
     const programId = programUrl.split('/documents/')[1]
 
-    // Click Sprints tab
-    await page.locator('main').getByRole('tab', { name: 'Sprints' }).click()
+    // Click Weeks tab
+    await page.locator('main').getByRole('tab', { name: 'Weeks' }).click()
 
-    // Look for Plan Sprint button (may appear if sprints exist)
-    const planSprintButton = page.getByRole('button', { name: /plan sprint/i })
+    // Look for Plan Week button (may appear if weeks exist)
+    const planWeekButton = page.getByRole('button', { name: /plan week/i })
 
     // If button exists, click it
-    if (await planSprintButton.count() > 0) {
-      await planSprintButton.click()
-      // Should navigate to sprint planning page
+    if (await planWeekButton.count() > 0) {
+      await planWeekButton.click()
+      // Should navigate to week planning page
       await expect(page).toHaveURL(/\/sprints\/.+\/plan/, { timeout: 5000 })
     }
   })
 
-  // FIXME: Inline sprint creation route /sprints/new/plan doesn't exist in unified document model
-  test.fixme('inline sprint creation shows form when navigating to new plan', async ({ page }) => {
-    await page.goto('/programs')
-
-    // Create new program
-    await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
-    const programUrl = page.url()
-    const programId = programUrl.split('/documents/')[1]
-
-    // Navigate directly to the inline sprint creation URL
-    await page.goto(`/sprints/new/plan?program=${programId}`)
-
-    // Should see Create Sprint heading
-    await expect(page.getByRole('heading', { name: /create sprint/i })).toBeVisible({ timeout: 5000 })
-
-    // Should see Sprint Name input
-    await expect(page.getByLabelText(/sprint name/i)).toBeVisible({ timeout: 5000 })
-
-    // Should see Create Sprint button
-    await expect(page.getByRole('button', { name: /create sprint/i })).toBeVisible({ timeout: 5000 })
-  })
 })

@@ -50,7 +50,7 @@ graph TB
 │ - Issue│ - Issue list │ - Slash commands        │ - Status         │
 │ - Prj  │ - Filters    │ - Mentions              │ - Priority       │
 │ - Team │              │ - Collaboration         │ - Assignee       │
-│        │              │                         │ - Sprint         │
+│        │              │                         │ - Week           │
 └────────┴──────────────┴─────────────────────────┴──────────────────┘
 ```
 
@@ -138,7 +138,7 @@ graph LR
     subgraph "Container Types"
         Program[Program]
         Project[Project]
-        Sprint[Sprint]
+        Week[Week]
     end
 
     subgraph "People Types"
@@ -146,10 +146,10 @@ graph LR
     end
 
     Program --> Project
-    Project --> Sprint
+    Project --> Week
     Project --> Issue
-    Sprint --> Issue
-    Sprint --> Standup
+    Week --> Issue
+    Week --> Standup
 ```
 
 ## Authentication Flow
@@ -260,19 +260,19 @@ graph LR
     TQ -.->|Persist| IDB
 ```
 
-## Sprint Timeline
+## Week Timeline
 
 ```mermaid
 gantt
-    title Sprint Lifecycle
+    title Week Lifecycle
     dateFormat  YYYY-MM-DD
     section Planning
-    Sprint Planning    :a1, 2024-01-08, 1d
+    Week Planning      :a1, 2024-01-08, 1d
     section Active
-    Development        :a2, after a1, 12d
-    Daily Standups     :a3, after a1, 12d
+    Development        :a2, after a1, 5d
+    Daily Standups     :a3, after a1, 5d
     section Review
-    Sprint Review      :a4, after a2, 1d
+    Week Review        :a4, after a2, 1d
     Retrospective      :a5, after a4, 1d
 ```
 

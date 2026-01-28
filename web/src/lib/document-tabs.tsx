@@ -44,26 +44,26 @@ export interface DocumentTabConfig {
 
 export interface TabCounts {
   issues?: number;
-  sprints?: number;
+  weeks?: number;
   projects?: number;
 }
 
 // Lazy load tab components to avoid circular dependencies
 const ProjectDetailsTab = React.lazy(() => import('@/components/document-tabs/ProjectDetailsTab'));
 const ProjectIssuesTab = React.lazy(() => import('@/components/document-tabs/ProjectIssuesTab'));
-const ProjectSprintsTab = React.lazy(() => import('@/components/document-tabs/ProjectSprintsTab'));
+const ProjectWeeksTab = React.lazy(() => import('@/components/document-tabs/ProjectWeeksTab'));
 const ProjectRetroTab = React.lazy(() => import('@/components/document-tabs/ProjectRetroTab'));
 
 const ProgramOverviewTab = React.lazy(() => import('@/components/document-tabs/ProgramOverviewTab'));
 const ProgramIssuesTab = React.lazy(() => import('@/components/document-tabs/ProgramIssuesTab'));
 const ProgramProjectsTab = React.lazy(() => import('@/components/document-tabs/ProgramProjectsTab'));
-const ProgramSprintsTab = React.lazy(() => import('@/components/document-tabs/ProgramSprintsTab'));
+const ProgramWeeksTab = React.lazy(() => import('@/components/document-tabs/ProgramWeeksTab'));
 
-const SprintOverviewTab = React.lazy(() => import('@/components/document-tabs/SprintOverviewTab'));
-const SprintPlanningTab = React.lazy(() => import('@/components/document-tabs/SprintPlanningTab'));
-const SprintIssuesTab = React.lazy(() => import('@/components/document-tabs/SprintIssuesTab'));
-const SprintReviewTab = React.lazy(() => import('@/components/document-tabs/SprintReviewTab'));
-const SprintStandupsTab = React.lazy(() => import('@/components/document-tabs/SprintStandupsTab'));
+const WeekOverviewTab = React.lazy(() => import('@/components/document-tabs/WeekOverviewTab'));
+const WeekPlanningTab = React.lazy(() => import('@/components/document-tabs/WeekPlanningTab'));
+const WeekIssuesTab = React.lazy(() => import('@/components/document-tabs/WeekIssuesTab'));
+const WeekReviewTab = React.lazy(() => import('@/components/document-tabs/WeekReviewTab'));
+const WeekStandupsTab = React.lazy(() => import('@/components/document-tabs/WeekStandupsTab'));
 
 /**
  * Tab configurations for each document type.
@@ -85,8 +85,8 @@ export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
     },
     {
       id: 'sprints',
-      label: (_, counts) => counts?.sprints ? `Sprints (${counts.sprints})` : 'Sprints',
-      component: ProjectSprintsTab,
+      label: (_, counts) => counts?.weeks ? `Weeks (${counts.weeks})` : 'Weeks',
+      component: ProjectWeeksTab,
     },
     {
       id: 'retro',
@@ -113,8 +113,8 @@ export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
     },
     {
       id: 'sprints',
-      label: (_, counts) => counts?.sprints ? `Sprints (${counts.sprints})` : 'Sprints',
-      component: ProgramSprintsTab,
+      label: (_, counts) => counts?.weeks ? `Weeks (${counts.weeks})` : 'Weeks',
+      component: ProgramWeeksTab,
     },
   ],
 
@@ -124,22 +124,22 @@ export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
     {
       id: 'overview',
       label: 'Overview',
-      component: SprintOverviewTab,
+      component: WeekOverviewTab,
     },
     {
       id: 'plan',
       label: 'Plan',
-      component: SprintPlanningTab,
+      component: WeekPlanningTab,
     },
     {
       id: 'review',
       label: 'Review',
-      component: SprintReviewTab,
+      component: WeekReviewTab,
     },
     {
       id: 'standups',
       label: 'Standups',
-      component: SprintStandupsTab,
+      component: WeekStandupsTab,
     },
   ],
   // Planning sprint tabs (status = 'planning')
@@ -147,12 +147,12 @@ export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
     {
       id: 'overview',
       label: 'Overview',
-      component: SprintOverviewTab,
+      component: WeekOverviewTab,
     },
     {
       id: 'plan',
       label: 'Plan',
-      component: SprintPlanningTab,
+      component: WeekPlanningTab,
     },
   ],
   // Active/completed sprint tabs (status = 'active' or 'completed')
@@ -160,22 +160,22 @@ export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
     {
       id: 'overview',
       label: 'Overview',
-      component: SprintOverviewTab,
+      component: WeekOverviewTab,
     },
     {
       id: 'issues',
       label: 'Issues',
-      component: SprintIssuesTab,
+      component: WeekIssuesTab,
     },
     {
       id: 'review',
       label: 'Review',
-      component: SprintReviewTab,
+      component: WeekReviewTab,
     },
     {
       id: 'standups',
       label: 'Standups',
-      component: SprintStandupsTab,
+      component: WeekStandupsTab,
     },
   ],
 

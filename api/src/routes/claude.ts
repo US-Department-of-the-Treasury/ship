@@ -146,7 +146,7 @@ async function getStandupContext(sprintId: string, workspaceId: string) {
   `, [sprintId, workspaceId]);
 
   if (sprintResult.rows.length === 0) {
-    throw new Error('Sprint not found');
+    throw new Error('Week not found');
   }
 
   const sprint = sprintResult.rows[0];
@@ -275,7 +275,7 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
   `, [sprintId, workspaceId]);
 
   if (sprintResult.rows.length === 0) {
-    throw new Error('Sprint not found');
+    throw new Error('Week not found');
   }
 
   const sprint = sprintResult.rows[0];
@@ -332,7 +332,7 @@ async function getReviewContext(sprintId: string, workspaceId: string) {
       d.properties->>'owner_id' as owner_id
     FROM documents d
     JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
-    WHERE d.document_type = 'sprint_review'
+    WHERE d.document_type = 'weekly_review'
       AND d.workspace_id = $2
     LIMIT 1
   `, [sprintId, workspaceId]);
@@ -445,7 +445,7 @@ async function getRetroContext(projectId: string, workspaceId: string) {
       FROM documents d
       JOIN document_associations da ON da.document_id = d.id AND da.relationship_type = 'sprint'
       WHERE da.related_id = ANY($1)
-        AND d.document_type = 'sprint_review'
+        AND d.document_type = 'weekly_review'
         AND d.workspace_id = $2
     `, [sprintIds, workspaceId]);
     reviewsData = reviewsResult.rows;
@@ -543,7 +543,7 @@ async function getRetroContext(projectId: string, workspaceId: string) {
       description: project.program_description,
       goals: project.program_goals,
     } : null,
-    sprints: sprintOutcomes,
+    weeks: sprintOutcomes,
     sprint_reviews: reviewsData.map(r => ({
       sprint_id: r.sprint_id,
       plan_validated: r.plan_validated,

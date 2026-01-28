@@ -170,7 +170,7 @@ describe('Activity API', () => {
           .expect(400);
 
         expect(response.body).toEqual({
-          error: 'Invalid entity type. Must be program, project, or sprint.',
+          error: 'Invalid entity type. Must be program, project, or week.',
         });
 
         // Should not query database for invalid type

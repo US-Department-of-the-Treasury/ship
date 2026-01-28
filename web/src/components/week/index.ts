@@ -1,5 +1,5 @@
-export { SprintDetailView } from './SprintDetailView';
-export type { SprintDetailViewProps, SprintDetail, SprintIssue } from './SprintDetailView';
+export { WeekDetailView } from './WeekDetailView';
+export type { WeekDetailViewProps, WeekDetail, WeekIssue } from './WeekDetailView';
 
-export { SprintProgressGraph } from './SprintProgressGraph';
-export type { SprintProgressGraphProps } from './SprintProgressGraph';
+export { WeekProgressGraph } from './WeekProgressGraph';
+export type { WeekProgressGraphProps } from './WeekProgressGraph';

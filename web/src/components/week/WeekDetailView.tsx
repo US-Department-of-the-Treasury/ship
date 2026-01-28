@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { StandupFeed } from '@/components/StandupFeed';
 import { IssuesList } from '@/components/IssuesList';
-import { SprintProgressGraph } from './SprintProgressGraph';
+import { WeekProgressGraph } from './WeekProgressGraph';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
-export interface SprintDetail {
+export interface WeekDetail {
   id: string;
   name: string;
   sprint_number: number;
@@ -17,7 +17,7 @@ export interface SprintDetail {
   plan: string | null;
 }
 
-export interface SprintIssue {
+export interface WeekIssue {
   id: string;
   title: string;
   state: string;
@@ -31,7 +31,7 @@ export interface SprintIssue {
   estimate: number | null;
 }
 
-export interface SprintDetailViewProps {
+export interface WeekDetailViewProps {
   sprintId: string;
   programId?: string;
   projectId?: string;
@@ -39,17 +39,17 @@ export interface SprintDetailViewProps {
 }
 
 /**
- * SprintDetailView - Three-column layout showing sprint burndown, standups, and issues.
+ * WeekDetailView - Three-column layout showing week burndown, standups, and issues.
  * Used in both ProgramSprintsTab and ProjectSprintsTab for viewing sprint details.
  */
-export function SprintDetailView({
+export function WeekDetailView({
   sprintId,
   programId,
   projectId,
   onBack,
-}: SprintDetailViewProps) {
-  const [sprint, setSprint] = useState<SprintDetail | null>(null);
-  const [issues, setIssues] = useState<SprintIssue[]>([]);
+}: WeekDetailViewProps) {
+  const [sprint, setSprint] = useState<WeekDetail | null>(null);
+  const [issues, setIssues] = useState<WeekIssue[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Fetch sprint details and issues
@@ -59,8 +59,8 @@ export function SprintDetailView({
     async function fetchSprintData() {
       try {
         const [sprintRes, issuesRes] = await Promise.all([
-          fetch(`${API_URL}/api/sprints/${sprintId}`, { credentials: 'include' }),
-          fetch(`${API_URL}/api/sprints/${sprintId}/issues`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/weeks/${sprintId}`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/weeks/${sprintId}/issues`, { credentials: 'include' }),
         ]);
 
         if (cancelled) return;
@@ -113,7 +113,7 @@ export function SprintDetailView({
   if (loading || !sprint) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-muted">Loading sprint...</div>
+        <div className="text-muted">Loading week...</div>
       </div>
     );
   }
@@ -149,7 +149,7 @@ export function SprintDetailView({
           <Link
             to={`/documents/${sprintId}`}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted hover:text-foreground hover:bg-border/50 rounded-md transition-colors"
-            title="Open sprint document"
+            title="Open week document"
           >
             <span>Open</span>
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,9 +176,9 @@ export function SprintDetailView({
         <div className="w-1/3 min-w-[320px] max-w-[400px] flex-shrink-0 border-r border-border flex flex-col overflow-hidden">
           {/* Sprint Progress - Fixed */}
           <div className="flex-shrink-0 border-b border-border p-4">
-            <h3 className="text-sm font-medium text-foreground mb-3">Sprint Progress</h3>
+            <h3 className="text-sm font-medium text-foreground mb-3">Week Progress</h3>
             {sprintEstimate > 0 ? (
-              <SprintProgressGraph
+              <WeekProgressGraph
                 startDate={startDate}
                 endDate={endDate}
                 scopeHours={sprintEstimate}
@@ -220,7 +220,7 @@ export function SprintDetailView({
             }}
             emptyState={
               <div className="flex h-full items-center justify-center">
-                <p className="text-muted">No issues in this sprint</p>
+                <p className="text-muted">No issues in this week</p>
               </div>
             }
             className="flex-1"

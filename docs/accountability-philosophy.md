@@ -2,7 +2,7 @@
 
 This document explains Ship's approach to accountability and why it matters for effective team execution.
 
-> **Related**: See [Ship Philosophy](./ship-philosophy.md) for the overall system design and [Sprint Documentation Philosophy](./sprint-documentation-philosophy.md) for sprint-specific details.
+> **Related**: See [Ship Philosophy](./ship-philosophy.md) for the overall system design and [Week Documentation Philosophy](./week-documentation-philosophy.md) for week-specific details.
 
 ## Why Accountability
 
@@ -12,7 +12,7 @@ Without accountability:
 - Deadlines slip and nobody knows why
 - Documentation is always "almost done"
 - Retros get skipped because "we're too busy"
-- Teams repeat the same mistakes sprint after sprint
+- Teams repeat the same mistakes week after week
 
 With accountability:
 - Clear ownership means clear expectations
@@ -24,7 +24,7 @@ With accountability:
 
 ## Hypothesis-Driven Development
 
-Ship treats every project and sprint as a scientific experiment:
+Ship treats every project and week as a scientific experiment:
 
 1. **Hypothesis**: Before starting, write down what you expect to happen
 2. **Experiment**: Execute the work
@@ -81,27 +81,27 @@ Unlike synchronous standups, written updates work for distributed teams. Someone
 ### Standup Frequency
 
 Ship encourages regular standups but doesn't enforce a specific frequency. However:
-- Sprint owners have a responsibility to ensure their team is posting updates
+- Week owners have a responsibility to ensure their team is posting updates
 - Prolonged silence is visible and creates accountability
 - The system shows when the last standup was posted
 
-## Sprint Reviews and Retros
+## Weekly Reviews and Retros
 
-Sprints end with two documents that close the learning loop:
+Weeks end with two documents that close the learning loop:
 
-### Sprint Review (Weekly)
+### Weekly Review (Weekly)
 
-A sprint review answers: **What did we actually deliver?**
+A weekly review answers: **What did we actually deliver?**
 
 - Issues completed vs. planned
-- What carried over to next sprint
+- What carried over to next week
 - Any scope changes or surprises
 
 This is execution tracking—did we do what we said we'd do?
 
-### Sprint Retro (Weekly)
+### Weekly Retro (Weekly)
 
-A sprint retro answers: **What did we learn?**
+A weekly retro answers: **What did we learn?**
 
 - What worked well?
 - What should we change?
@@ -149,8 +149,8 @@ In Ship, the Accountable person must approve:
 
 | Document | What's Approved |
 |----------|-----------------|
-| Sprint | Hypothesis (before sprint starts) |
-| Sprint | Review (after sprint ends) |
+| Week | Hypothesis (before week starts) |
+| Week | Review (after week ends) |
 | Project | Hypothesis (before project starts) |
 | Project | Retrospective (after project ends) |
 
@@ -171,7 +171,7 @@ Missing documentation shows as status indicators:
 - **Red**: Overdue and needs attention
 
 These indicators appear:
-- In the sprint list
+- In the week list
 - On project cards
 - In the accountability grid (for managers)
 
@@ -189,7 +189,7 @@ This creates gentle but persistent pressure to complete accountability tasks.
 
 For severely overdue items (7+ days), Ship can automatically create issues:
 - Assigned to the responsible party
-- Linked to the overdue sprint or project
+- Linked to the overdue week or project
 - Visible to the entire team
 
 This escalates accountability from "soft reminder" to "tracked work item."
@@ -220,5 +220,5 @@ Teams that embrace the friction improve over time. Teams that resist it stay stu
 ## References
 
 - [Ship Philosophy](./ship-philosophy.md) - System design and hierarchy
-- [Sprint Documentation Philosophy](./sprint-documentation-philosophy.md) - Sprint workflow details
+- [Week Documentation Philosophy](./week-documentation-philosophy.md) - Week workflow details
 - [Accountability Manager Guide](./accountability-manager-guide.md) - How to use approval workflows

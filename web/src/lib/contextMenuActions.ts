@@ -134,10 +134,10 @@ const CONTEXT_ACTIONS: Record<DocumentType, ContextMenuItem[]> = {
     {
       type: 'submenu',
       id: 'move-to-sprint',
-      label: 'Move to Sprint',
+      label: 'Move to Week',
       bulkSafe: true,
       handlerKey: 'onMoveToSprint',
-      items: [], // Populated dynamically with sprints
+      items: [], // Populated dynamically with weeks
     },
     {
       type: 'action',
@@ -258,19 +258,19 @@ const CONTEXT_ACTIONS: Record<DocumentType, ContextMenuItem[]> = {
     },
   ],
 
-  // Sprint actions - state-dependent
+  // Week actions - state-dependent
   sprint: [
     {
       type: 'action',
       id: 'start-sprint',
-      label: 'Start Sprint',
+      label: 'Start Week',
       singleOnly: true,
       handlerKey: 'onStartSprint',
     },
     {
       type: 'action',
       id: 'end-sprint',
-      label: 'End Sprint',
+      label: 'End Week',
       singleOnly: true,
       handlerKey: 'onEndSprint',
     },
@@ -327,8 +327,8 @@ const CONTEXT_ACTIONS: Record<DocumentType, ContextMenuItem[]> = {
     },
   ],
 
-  // Sprint plan/retro - minimal actions (these are typically opened, not managed)
-  sprint_plan: [
+  // Weekly plan/retro - minimal actions (these are typically opened, not managed)
+  weekly_plan: [
     {
       type: 'action',
       id: 'open',
@@ -352,7 +352,7 @@ const CONTEXT_ACTIONS: Record<DocumentType, ContextMenuItem[]> = {
     },
   ],
 
-  sprint_retro: [
+  weekly_retro: [
     {
       type: 'action',
       id: 'open',
@@ -396,8 +396,8 @@ const CONTEXT_ACTIONS: Record<DocumentType, ContextMenuItem[]> = {
     },
   ],
 
-  // Sprint review document actions - minimal (view only, tied to sprint)
-  sprint_review: [
+  // Weekly review document actions - minimal (view only, tied to week)
+  weekly_review: [
     {
       type: 'action',
       id: 'open',

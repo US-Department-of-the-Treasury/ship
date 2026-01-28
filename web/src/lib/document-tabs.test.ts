@@ -152,13 +152,13 @@ describe('resolveTabLabels', () => {
 
   it('resolves dynamic labels with counts', () => {
     const tabs = getTabsForDocumentType('project');
-    const resolved = resolveTabLabels(tabs, mockDocument, { issues: 5, sprints: 3 });
+    const resolved = resolveTabLabels(tabs, mockDocument, { issues: 5, weeks: 3 });
 
     const issuesTab = resolved.find(t => t.id === 'issues');
     expect(issuesTab?.label).toBe('Issues (5)');
 
     const sprintsTab = resolved.find(t => t.id === 'sprints');
-    expect(sprintsTab?.label).toBe('Sprints (3)');
+    expect(sprintsTab?.label).toBe('Weeks (3)');
   });
 
   it('resolves dynamic labels without counts', () => {
@@ -169,12 +169,12 @@ describe('resolveTabLabels', () => {
     expect(issuesTab?.label).toBe('Issues');
 
     const sprintsTab = resolved.find(t => t.id === 'sprints');
-    expect(sprintsTab?.label).toBe('Sprints');
+    expect(sprintsTab?.label).toBe('Weeks');
   });
 
   it('resolves dynamic labels with zero counts', () => {
     const tabs = getTabsForDocumentType('project');
-    const resolved = resolveTabLabels(tabs, mockDocument, { issues: 0, sprints: 0 });
+    const resolved = resolveTabLabels(tabs, mockDocument, { issues: 0, weeks: 0 });
 
     // Zero should not show count (falsy check in label function)
     const issuesTab = resolved.find(t => t.id === 'issues');

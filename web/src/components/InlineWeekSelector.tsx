@@ -6,7 +6,7 @@ interface Sprint {
   name: string;
 }
 
-interface InlineSprintSelectorProps {
+interface InlineWeekSelectorProps {
   /** Currently selected sprint ID */
   value: string | null;
   /** Available sprints to choose from */
@@ -25,13 +25,13 @@ interface InlineSprintSelectorProps {
  * Renders as a clickable cell that shows current sprint or placeholder.
  * On click, shows a dropdown with available sprints to select from.
  */
-export function InlineSprintSelector({
+export function InlineWeekSelector({
   value,
   sprints,
   onChange,
   placeholder = '—',
   disabled = false,
-}: InlineSprintSelectorProps) {
+}: InlineWeekSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -105,7 +105,7 @@ export function InlineSprintSelector({
           )}
           role="listbox"
         >
-          {/* No Sprint option */}
+          {/* No Week option */}
           <button
             type="button"
             onClick={(e) => {
@@ -119,7 +119,7 @@ export function InlineSprintSelector({
             role="option"
             aria-selected={!value}
           >
-            No Sprint
+            No Week
           </button>
 
           {sprints.length > 0 && (
@@ -148,7 +148,7 @@ export function InlineSprintSelector({
 
           {sprints.length === 0 && (
             <div className="px-3 py-2 text-xs text-muted">
-              No sprints available
+              No weeks available
             </div>
           )}
         </div>

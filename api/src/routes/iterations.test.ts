@@ -34,10 +34,10 @@ describe('Iterations API', () => {
     vi.clearAllMocks();
     app = express();
     app.use(express.json());
-    app.use('/api/sprints', iterationsRouter);
+    app.use('/api/weeks', iterationsRouter);
   });
 
-  describe('POST /api/sprints/:id/iterations', () => {
+  describe('POST /api/weeks/:id/iterations', () => {
     it('creates iteration with valid data', async () => {
       const sprintId = 'sprint-123';
       const mockIteration = {
@@ -62,7 +62,7 @@ describe('Iterations API', () => {
         .mockResolvedValueOnce({ rows: [{ id: 'user-123', name: 'Test User', email: 'test@example.com' }] } as any);
 
       const res = await request(app)
-        .post(`/api/sprints/${sprintId}/iterations`)
+        .post(`/api/weeks/${sprintId}/iterations`)
         .send({
           story_id: 'story-1',
           story_title: 'Test Story',
@@ -78,7 +78,7 @@ describe('Iterations API', () => {
 
     it('returns 400 for invalid status', async () => {
       const res = await request(app)
-        .post('/api/sprints/sprint-123/iterations')
+        .post('/api/weeks/sprint-123/iterations')
         .send({
           story_title: 'Test Story',
           status: 'invalid',
@@ -90,7 +90,7 @@ describe('Iterations API', () => {
 
     it('returns 400 for missing story_title', async () => {
       const res = await request(app)
-        .post('/api/sprints/sprint-123/iterations')
+        .post('/api/weeks/sprint-123/iterations')
         .send({
           status: 'pass',
         });
@@ -105,18 +105,18 @@ describe('Iterations API', () => {
         .mockResolvedValueOnce({ rows: [] } as any);
 
       const res = await request(app)
-        .post('/api/sprints/nonexistent/iterations')
+        .post('/api/weeks/nonexistent/iterations')
         .send({
           story_title: 'Test Story',
           status: 'pass',
         });
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Sprint not found');
+      expect(res.body.error).toBe('Week not found');
     });
   });
 
-  describe('GET /api/sprints/:id/iterations', () => {
+  describe('GET /api/weeks/:id/iterations', () => {
     it('returns iterations for sprint', async () => {
       const sprintId = 'sprint-123';
 
@@ -144,7 +144,7 @@ describe('Iterations API', () => {
         } as any);
 
       const res = await request(app)
-        .get(`/api/sprints/${sprintId}/iterations`);
+        .get(`/api/weeks/${sprintId}/iterations`);
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
@@ -158,10 +158,10 @@ describe('Iterations API', () => {
         .mockResolvedValueOnce({ rows: [] } as any);
 
       const res = await request(app)
-        .get('/api/sprints/nonexistent/iterations');
+        .get('/api/weeks/nonexistent/iterations');
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Sprint not found');
+      expect(res.body.error).toBe('Week not found');
     });
 
     it('filters by status', async () => {
@@ -172,7 +172,7 @@ describe('Iterations API', () => {
         .mockResolvedValueOnce({ rows: [] } as any);
 
       const res = await request(app)
-        .get('/api/sprints/sprint-123/iterations?status=fail');
+        .get('/api/weeks/sprint-123/iterations?status=fail');
 
       expect(res.status).toBe(200);
       // Verify the query was called with the status filter

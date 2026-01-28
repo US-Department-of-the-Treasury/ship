@@ -192,20 +192,20 @@ export function BulkActionBar({
         )}
       </div>
 
-      {/* Move to Sprint dropdown */}
+      {/* Move to Week dropdown */}
       <div className="relative" ref={sprintRef}>
         <ActionButton
           onClick={() => { setStatusOpen(false); setAssigneeOpen(false); setProjectOpen(false); setSprintOpen(!sprintOpen); }}
           disabled={loading}
           icon={<SprintIcon />}
-          label="Move to Sprint"
+          label="Move to Week"
           hasDropdown
           isOpen={sprintOpen}
         />
         {sprintOpen && (
           <DropdownMenu>
             <DropdownItem onClick={() => handleSprintSelect(null)}>
-              No Sprint
+              No Week
             </DropdownItem>
             {sprints.length > 0 && (
               <div className="my-1 h-px bg-border" />
@@ -220,7 +220,7 @@ export function BulkActionBar({
             ))}
             {sprints.length === 0 && (
               <div className="px-3 py-2 text-xs text-muted">
-                No sprints available
+                No weeks available
               </div>
             )}
           </DropdownMenu>

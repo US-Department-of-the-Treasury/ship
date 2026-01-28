@@ -77,7 +77,7 @@ test.describe('Status Colors Accessibility', () => {
     });
   });
 
-  test.describe('Sprint View', () => {
+  test.describe('Week View', () => {
     test('sprint status uses accessible colors', async ({ page }) => {
       // Navigate to sprints via team view or direct
       await page.goto('/team');

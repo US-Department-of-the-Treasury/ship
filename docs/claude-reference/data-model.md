@@ -10,7 +10,7 @@ Ship uses a **Unified Document Model** where all content types are stored in a s
 
 | Table | Purpose |
 |-------|---------|
-| `documents` | All content (wiki, issue, program, project, sprint, person, standup, sprint_review) |
+| `documents` | All content (wiki, issue, program, project, week, person, standup, weekly_review) |
 | `document_associations` | Junction table for flexible document relationships |
 | `document_history` | Audit trail of all document field changes |
 | `document_links` | Backlinks between documents |
@@ -22,7 +22,7 @@ Ship uses a **Unified Document Model** where all content types are stored in a s
 | `api_tokens` | Long-lived tokens for CLI/programmatic access |
 | `files` | S3 file references for attachments |
 | `audit_logs` | Compliance-grade action logging |
-| `sprint_iterations` | Claude Code work session tracking |
+| `sprint_iterations` | Claude Code work session tracking (historical table name) |
 
 ---
 
@@ -74,17 +74,19 @@ CREATE TABLE documents (
 ### Document Type Enum
 
 ```sql
+-- Note: 'sprint' types retained for historical compatibility
+-- User-facing terminology: Sprint → Week
 CREATE TYPE document_type AS ENUM (
   'wiki',          -- Documentation content
   'issue',         -- Work items with state/priority
   'program',       -- Product/initiative container
   'project',       -- Time-bounded deliverable
-  'sprint',        -- Time-boxed work period
+  'sprint',        -- Week document (historical name)
   'person',        -- User profile page
-  'sprint_plan',   -- Sprint planning document
-  'sprint_retro',  -- Sprint retrospective
+  'sprint_plan',   -- Week planning document (historical name)
+  'sprint_retro',  -- Week retrospective (historical name)
   'standup',       -- Daily standup entry
-  'sprint_review'  -- Sprint review/demo
+  'sprint_review'  -- Week review/demo (historical name)
 );
 ```
 
@@ -97,16 +99,16 @@ Properties are stored as schema-less JSONB, with structure enforced at the appli
 | `issue` | `state`, `priority`, `assignee_id`, `source`, `rejection_reason`, `feedback_status`, `estimate_hours`, `claude_metadata` |
 | `program` | `prefix` (e.g., "AUTH"), `color`, `emoji` |
 | `project` | `prefix`, `color`, `emoji` |
-| `sprint` | `sprint_number`, `owner_id`, `goal` |
+| `sprint` | `sprint_number` (historical field), `owner_id`, `goal` |
 | `person` | `user_id` (links to users.id), `email`, `capacity_hours`, `skills` |
 | `standup` | `author_id`, `posted_at` |
-| `sprint_review` | `hypothesis_validated`, `key_learnings` |
+| `sprint_review` | `hypothesis_validated`, `key_learnings` (week review properties) |
 
 ### Issue States
 
 Issues have a `state` property with 4 required states:
 - `backlog` - Not yet planned
-- `todo` - Planned for current sprint
+- `todo` - Planned for current week
 - `in_progress` - Actively being worked
 - `done` - Completed
 
@@ -155,7 +157,7 @@ CREATE TABLE document_associations (
 **Relationship types:**
 - `parent` - Hierarchy/nesting
 - `project` - Issue belongs to project
-- `sprint` - Issue assigned to sprint
+- `sprint` - Issue assigned to week (historical relationship name)
 - `program` - Document belongs to program
 
 **Why junction table:**
@@ -295,7 +297,7 @@ CREATE TABLE workspaces (
 );
 ```
 
-**Key concept:** `sprint_start_date` is the anchor for computing sprint windows. Sprint N = days (N-1)*7 to N*7-1 from start date.
+**Key concept:** `sprint_start_date` (historical field name) is the anchor for computing week windows. Week N = days (N-1)*7 to N*7-1 from start date.
 
 ---
 
@@ -358,11 +360,12 @@ CREATE TABLE workspace_invites (
 
 ---
 
-## 9. Sprint Iterations
+## 9. Week Iterations (historical table name: sprint_iterations)
 
 Claude Code work session tracking.
 
 ```sql
+-- Table name retained for historical compatibility
 CREATE TABLE sprint_iterations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sprint_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -380,7 +383,7 @@ CREATE TABLE sprint_iterations (
 
 **Use cases:**
 - Real-time `/work` progress visibility
-- Sprint velocity analysis
+- Week velocity analysis
 - Learning extraction from failed attempts
 
 ---
@@ -431,6 +434,6 @@ Schema changes are managed via numbered migration files in `api/src/db/migration
 1. **Everything is a document** - No separate tables for different content types
 2. **Properties in JSONB** - Type-specific data without schema migrations
 3. **Authorization separate from content** - `workspace_memberships` vs `person` documents
-4. **Sprints are computed** - Dates derived from `sprint_number` + workspace start date
+4. **Weeks are computed** - Dates derived from `sprint_number` (historical field) + workspace start date
 5. **Junction tables for relationships** - `document_associations` enables multi-parent
 6. **Audit everything** - `document_history` and `audit_logs` for compliance

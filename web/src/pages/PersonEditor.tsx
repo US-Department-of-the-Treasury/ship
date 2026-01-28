@@ -219,7 +219,7 @@ function SprintHistory({ metrics }: { metrics: SprintMetricsResponse }) {
 
   return (
     <div className="mt-6 border-t border-border pt-4">
-      <label className="mb-3 block text-xs font-medium text-muted">Sprint History</label>
+      <label className="mb-3 block text-xs font-medium text-muted">Week History</label>
 
       {/* Trend line SVG */}
       <div className="mb-3">

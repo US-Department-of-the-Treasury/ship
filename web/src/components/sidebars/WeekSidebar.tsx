@@ -48,7 +48,7 @@ interface ExistingSprint {
   owner?: SprintOwner | null;
 }
 
-interface SprintSidebarProps {
+interface WeekSidebarProps {
   sprint: Sprint;
   onUpdate: (updates: Partial<Sprint>) => Promise<void>;
   /** Fields to highlight as missing (e.g., after type conversion) */
@@ -67,7 +67,7 @@ interface SprintSidebarProps {
   onApprovalUpdate?: () => void;
 }
 
-export function SprintSidebar({
+export function WeekSidebar({
   sprint,
   onUpdate,
   highlightedFields = [],
@@ -76,7 +76,7 @@ export function SprintSidebar({
   canApprove = false,
   userNames = {},
   onApprovalUpdate,
-}: SprintSidebarProps) {
+}: WeekSidebarProps) {
   const navigate = useNavigate();
   // Helper to check if a field should be highlighted
   const isHighlighted = (field: string) => highlightedFields.includes(field);
@@ -151,7 +151,7 @@ export function SprintSidebar({
           approval={sprint.plan_approval}
           hasContent={!!sprint.plan?.trim()}
           canApprove={canApprove}
-          approveEndpoint={`/api/sprints/${sprint.id}/approve-plan`}
+          approveEndpoint={`/api/weeks/${sprint.id}/approve-plan`}
           approverName={sprint.plan_approval?.approved_by ? userNames[sprint.plan_approval.approved_by] : undefined}
           currentContent={sprint.plan || ''}
           onApproved={onApprovalUpdate}
@@ -181,7 +181,7 @@ export function SprintSidebar({
             approval={sprint.review_approval}
             hasContent={sprint.has_review ?? false}
             canApprove={canApprove}
-            approveEndpoint={`/api/sprints/${sprint.id}/approve-review`}
+            approveEndpoint={`/api/weeks/${sprint.id}/approve-review`}
             approverName={sprint.review_approval?.approved_by ? userNames[sprint.review_approval.approved_by] : undefined}
             onApproved={onApprovalUpdate}
           />
@@ -204,7 +204,7 @@ export function SprintSidebar({
           onClick={() => navigate(`/documents/${sprint.id}`)}
           className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
         >
-          Plan Sprint
+          Plan Week
         </button>
       </div>
     </div>

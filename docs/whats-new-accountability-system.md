@@ -25,13 +25,13 @@ When you log in, Ship now checks if you have outstanding accountability tasks an
 │  ⚠️  You have 3 items that need attention                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  📝 Post standup for Sprint 14 - Design System                  │
+│  📝 Post standup for Week of Jan 274 - Design System                  │
 │     3 issues assigned · Due today                               │
 │                                                                 │
-│  💡 Write hypothesis for Sprint 15                              │
-│     Sprint starts tomorrow · Due Jan 28                         │
+│  💡 Write hypothesis for Week of Jan 275                              │
+│     Week starts tomorrow · Due Jan 28                         │
 │                                                                 │
-│  📊 Complete review for Sprint 13                               │
+│  📊 Complete review for Week of Jan 273                               │
 │     1 day overdue · Due Jan 26                                  │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -41,11 +41,11 @@ When you log in, Ship now checks if you have outstanding accountability tasks an
 
 | Type | When Created | Due Date |
 |------|--------------|----------|
-| **Post Standup** | Each business day you're in an active sprint | Today |
-| **Write Hypothesis** | Sprint start date arrives without hypothesis | Sprint start |
-| **Start Sprint** | Sprint start date passes without clicking Start | Sprint start |
-| **Add Issues** | Sprint starts with no issues assigned | Sprint start |
-| **Complete Review** | Sprint ends without review | 1 business day after sprint end |
+| **Post Standup** | Each business day you're in an active week | Today |
+| **Write Hypothesis** | Week start date arrives without hypothesis | Week start |
+| **Start Week** | Week start date passes without clicking Start | Week start |
+| **Add Issues** | Week starts with no issues assigned | Week start |
+| **Complete Review** | Week ends without review | 1 business day after week end |
 | **Write Project Hypothesis** | You own a project without a hypothesis | When assigned |
 | **Complete Retro** | Project finishes without retrospective | When all issues done |
 
@@ -77,9 +77,9 @@ The My Week page now shows your action items prominently at the top:
 │                                                                 │
 │  ACTION ITEMS (3)                                    ▼ Collapse │
 │  ─────────────────────────────────────────────────────────────  │
-│  🔴 Post standup for Sprint 14          Due today              │
-│  🟡 Write hypothesis for Sprint 15      Due Jan 28             │
-│  🔴 Complete review for Sprint 13       1 day overdue          │
+│  🔴 Post standup for Week of Jan 274          Due today              │
+│  🟡 Write hypothesis for Week of Jan 275      Due Jan 28             │
+│  🔴 Complete review for Week of Jan 273       1 day overdue          │
 │                                                                 │
 │  ─────────────────────────────────────────────────────────────  │
 │                                                                 │
@@ -102,10 +102,10 @@ When you complete an accountability task, the corresponding action item automati
 | Action | Auto-Completes |
 |--------|----------------|
 | Post a standup | "Post standup" action item |
-| Write sprint hypothesis | "Write hypothesis" action item |
-| Click "Start Sprint" | "Start sprint" action item |
-| Add first issue to sprint | "Add issues" action item |
-| Create sprint review | "Complete review" action item |
+| Write week hypothesis | "Write hypothesis" action item |
+| Click "Start Week" | "Start week" action item |
+| Add first issue to week | "Add issues" action item |
+| Create weekly review | "Complete review" action item |
 | Write project hypothesis | "Project hypothesis" action item |
 | Create project retro | "Project retro" action item |
 
@@ -186,7 +186,7 @@ If you're the **Accountable** person or a **workspace admin**, you'll see an App
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Sprint 14 Properties                                           │
+│  Week of Jan 274 Properties                                           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  Hypothesis                                                     │
@@ -239,7 +239,7 @@ Click **View Changes** to see exactly what changed since approval:
 
 ## Accountability Grid
 
-Managers can now see accountability status across all sprints and projects in a single view.
+Managers can now see accountability status across all weeks and projects in a single view.
 
 ### Accessing the Grid
 
@@ -254,7 +254,7 @@ Managers can now see accountability status across all sprints and projects in a 
 │  Accountability Grid                                            │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│           │ Sprint 12  │ Sprint 13  │ Sprint 14  │ Sprint 15   │
+│           │ Week of Jan 272  │ Week of Jan 273  │ Week of Jan 274  │ Week of Jan 275   │
 │           │  (done)    │  (done)    │  (active)  │ (planning)  │
 │  ─────────┼────────────┼────────────┼────────────┼─────────────│
 │           │    H│R     │    H│R     │    H│R     │    H│R      │
@@ -279,15 +279,15 @@ Legend:
 
 ### Grid Features
 
-**Sprint cells (columns):**
+**Week cells (columns):**
 - Left half shows **hypothesis** status
 - Right half shows **review** status
 - Green border = approved
 - Yellow border = changed since approval
-- Click any cell to navigate to that sprint
+- Click any cell to navigate to that week
 
 **Project lines (rows):**
-- Thin colored line shows project duration across sprints
+- Thin colored line shows project duration across weeks
 - Hover to expand and see project details
 - Shows project hypothesis (left) and retro (right) status
 - Click to navigate to project document
@@ -296,43 +296,43 @@ Legend:
 
 ## Hypothesis Block
 
-Sprints now support a `/hypothesis` slash command that creates a dedicated hypothesis block in the editor.
+Weeks now support a `/hypothesis` slash command that creates a dedicated hypothesis block in the editor.
 
 ### Using the Command
 
-1. Open any sprint document
+1. Open any week document
 2. Type `/hypothesis` in the editor
 3. A styled hypothesis block appears:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Sprint 14                                                      │
+│  Week of Jan 274                                                      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │ 💡 HYPOTHESIS                                           │    │
 │  │ ───────────────────────────────────────────────────────│    │
 │  │                                                         │    │
-│  │ What will get done this sprint?                         │    │
+│  │ What will get done this week?                         │    │
 │  │                                                         │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                 │
-│  Sprint goals and planning notes...                             │
+│  Week goals and planning notes...                             │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Bidirectional Sync
 
-The hypothesis block content syncs automatically with the sprint's `hypothesis` property:
+The hypothesis block content syncs automatically with the week's `hypothesis` property:
 
 - Edit the block → property updates
 - Update property via API → block updates
 - The hypothesis field has been removed from the properties sidebar
 
-### New Sprint Default
+### New Week Default
 
-New sprints are created with a hypothesis block pre-populated with placeholder text.
+New weeks are created with a hypothesis block pre-populated with placeholder text.
 
 ---
 
@@ -350,7 +350,7 @@ If you miss multiple days, the system tracks how long it's been:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ 🔴 Post standup for Sprint 14 (3 days since last)              │
+│ 🔴 Post standup for Week of Jan 274 (3 days since last)              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -366,7 +366,7 @@ All due dates and deadlines now account for federal holidays and weekends:
 
 - Weekends (Saturday/Sunday) are skipped
 - Federal holidays (OPM calendar) are skipped
-- "1 business day after sprint end" means the next working day
+- "1 business day after week end" means the next working day
 
 This ensures you're not penalized for holidays or weekends.
 
@@ -397,14 +397,14 @@ Find them in the **Docs** section or at:
 - Hypothesis and review approval workflow
 - Inline diff viewer for changes
 - Accountability grid view
-- `/hypothesis` slash command for sprints
+- `/hypothesis` slash command for weeks
 - Federal holiday-aware business day calculations
 
 ### Improvements
-- Standup alerts show sprint name and issue count
+- Standup alerts show week name and issue count
 - Action items live-update when tasks are completed
 - Celebration animation when completing tasks
-- Sprint properties cleaned up (dates now computed from sprint number)
+- Week properties cleaned up (dates now computed from sprint number)
 
 ### Philosophy
 - Cannot dismiss accountability reminders - they persist until done
@@ -418,7 +418,7 @@ Find them in the **Docs** section or at:
 
 1. **Check your action items** - Log in and see what needs attention
 2. **Set up RACI** - Assign an Accountable person to your projects
-3. **Write hypotheses** - Use `/hypothesis` in sprint documents
+3. **Write hypotheses** - Use `/hypothesis` in week documents
 4. **Review the grid** - Managers can monitor team accountability
 
 ---

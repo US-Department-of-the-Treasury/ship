@@ -325,9 +325,9 @@ export function CommandPalette({ open, onOpenChange, currentDocument, onConvertD
               </Command.Group>
             )}
 
-            {/* Sprints */}
+            {/* Weeks */}
             {groupedDocuments.sprint.length > 0 && (
-              <Command.Group heading="Sprints" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
+              <Command.Group heading="Weeks" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted">
                 {groupedDocuments.sprint.map((doc) => (
                   <CommandItem
                     key={doc.id}
@@ -381,7 +381,7 @@ export function CommandPalette({ open, onOpenChange, currentDocument, onConvertD
                 {currentDocument.type !== 'sprint' && (
                   <CommandItem onSelect={() => runCommand(() => onConvertDocument('sprint'))}>
                     <ConvertIcon />
-                    <span>Convert to Sprint</span>
+                    <span>Convert to Week</span>
                   </CommandItem>
                 )}
               </Command.Group>

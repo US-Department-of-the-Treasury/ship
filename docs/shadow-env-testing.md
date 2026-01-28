@@ -100,7 +100,7 @@ After copying the database and deploying:
 - [ ] Sidebar navigation works
 - [ ] Associations display properly
 - [ ] Create/edit/delete operations work
-- [ ] Sprint assignments work
+- [ ] Week assignments work
 - [ ] Real-time collaboration works (WebSocket)
 
 ## Troubleshooting

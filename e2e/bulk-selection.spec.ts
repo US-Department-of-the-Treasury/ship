@@ -83,34 +83,6 @@ test.describe('Bulk Selection - List View', () => {
       await expect(checkboxContainer).toHaveCSS('opacity', '1');
     });
 
-    // FIXME: Layout shift tolerance needs adjustment after UI changes
-    test.fixme('checkbox column does not shift table layout on hover', async ({ page }) => {
-      await login(page);
-      await page.goto('/issues');
-
-      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
-
-      const firstRow = page.locator('tbody tr').first();
-      await expect(firstRow).toBeVisible();
-
-      // Get the position of the second column (title) before hover
-      const titleCell = firstRow.locator('td').nth(1);
-      const boundingBoxBefore = await titleCell.boundingBox();
-
-      // Hover over the row to reveal checkbox
-      await firstRow.hover();
-      await page.waitForTimeout(100);
-
-      // Get the position after hover - should be the same
-      const boundingBoxAfter = await titleCell.boundingBox();
-
-      // The X position should not have changed (no layout shift)
-      // Use approximate comparison to handle floating-point precision differences
-      // Allow 2px tolerance for rendering differences across environments
-      expect(Math.abs((boundingBoxBefore?.x ?? 0) - (boundingBoxAfter?.x ?? 0))).toBeLessThanOrEqual(2);
-      // Width should remain approximately the same (allow small rendering differences)
-      expect(Math.abs((boundingBoxBefore?.width ?? 0) - (boundingBoxAfter?.width ?? 0))).toBeLessThanOrEqual(2);
-    });
   });
 
   test.describe('Single Selection', () => {
@@ -1018,38 +990,6 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       }
     });
 
-    // FIXME: ring-2 focus class no longer used in row styling
-    test.fixme('j/k do not navigate when typing in contenteditable', async ({ page }) => {
-      await login(page);
-      await page.goto('/issues');
-      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
-
-      const rows = page.locator('tbody tr');
-      await expect(rows.first()).toBeVisible();
-
-      // Move mouse outside the list to prevent hover-to-focus interference
-      await page.mouse.move(0, 0);
-      await page.waitForTimeout(100);
-
-      // Navigate to an issue to get to an editor (contenteditable)
-      await page.keyboard.press('j');
-      await expect(rows.nth(0)).toHaveClass(/ring-2/, { timeout: 3000 });
-      await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
-
-      // Wait for editor to be ready
-      const editor = page.locator('[contenteditable="true"]').first();
-      await expect(editor).toBeVisible({ timeout: 5000 });
-
-      // Click and focus the editor
-      await editor.click();
-
-      // Press j - should type j, not navigate
-      await page.keyboard.press('j');
-
-      // The editor should contain 'j' (or at least not cause navigation)
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/);
-    });
   });
 
   test.describe('Hover-to-Focus', () => {
@@ -1151,95 +1091,6 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       // Should show breadcrumb with program name (aria-label contains "Back to")
       const backButton = page.locator('button[aria-label*="Back to"]');
       await expect(backButton).toBeVisible({ timeout: 5000 });
-    });
-
-    // FIXME: Back navigation always goes to /issues, not the previous context
-    test.fixme('Escape key returns to program from issue page', async ({ page }) => {
-      await login(page);
-
-      // Go to a program page
-      await page.goto('/programs');
-      await expect(page.getByRole('heading', { name: 'Programs', level: 1 })).toBeVisible({ timeout: 10000 });
-
-      // Click on a program
-      const programRow = page.locator('tbody tr').first();
-      await expect(programRow).toBeVisible();
-      await programRow.click();
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
-
-      // Get the program URL for comparison
-      const programUrl = page.url();
-
-      // Click on Issues tab
-      const issuesTab = page.getByRole('tab', { name: 'Issues' });
-      await expect(issuesTab).toBeVisible({ timeout: 5000 });
-      await issuesTab.click();
-      await page.waitForTimeout(500);
-
-      // Check for issues
-      const issueRows = page.locator('tbody tr');
-      const rowCount = await issueRows.count();
-      if (rowCount === 0) {
-        test.skip(true, 'No issues in this program');
-        return;
-      }
-
-      // Navigate to an issue
-      await issueRows.first().click();
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
-
-      // Move focus out of the editor (Escape is ignored when editor has focus)
-      // Click on the back button area to move focus out of the contenteditable
-      await page.locator('button[aria-label*="Back to"]').focus();
-
-      // Press Escape to go back to program
-      await page.keyboard.press('Escape');
-
-      // Should return to the program page
-      await expect(page).toHaveURL(programUrl, { timeout: 5000 });
-    });
-
-    // FIXME: Back navigation always goes to /issues, not the previous context
-    test.fixme('clicking breadcrumb returns to program', async ({ page }) => {
-      await login(page);
-
-      // Go to a program page
-      await page.goto('/programs');
-      await expect(page.getByRole('heading', { name: 'Programs', level: 1 })).toBeVisible({ timeout: 10000 });
-
-      // Click on a program
-      const programRow = page.locator('tbody tr').first();
-      await expect(programRow).toBeVisible();
-      await programRow.click();
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
-
-      const programUrl = page.url();
-
-      // Click on Issues tab
-      const issuesTab = page.getByRole('tab', { name: 'Issues' });
-      await expect(issuesTab).toBeVisible({ timeout: 5000 });
-      await issuesTab.click();
-      await page.waitForTimeout(500);
-
-      // Check for issues
-      const issueRows = page.locator('tbody tr');
-      const rowCount = await issueRows.count();
-      if (rowCount === 0) {
-        test.skip(true, 'No issues in this program');
-        return;
-      }
-
-      // Navigate to an issue
-      await issueRows.first().click();
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
-
-      // Find and click the back button/breadcrumb (aria-label contains "Back to")
-      const backButton = page.locator('button[aria-label*="Back to"]');
-      await expect(backButton).toBeVisible({ timeout: 5000 });
-      await backButton.click();
-
-      // Should return to the program page
-      await expect(page).toHaveURL(programUrl, { timeout: 5000 });
     });
 
     test('direct URL navigation shows generic back button', async ({ page }) => {
@@ -1466,7 +1317,7 @@ test.describe('Bulk Action Bar', () => {
       await expect(bulkActionBar.getByRole('button', { name: 'Archive' })).toBeVisible();
     });
 
-    test('bulk action bar has Move to Sprint dropdown', async ({ page }) => {
+    test('bulk action bar has Move to Week dropdown', async ({ page }) => {
       await login(page);
       await page.goto('/issues');
       await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
@@ -1478,9 +1329,9 @@ test.describe('Bulk Action Bar', () => {
       await rows.nth(0).hover();
       await rows.nth(0).getByRole('checkbox').click();
 
-      // Verify Move to Sprint button is visible (has aria-haspopup="menu")
+      // Verify Move to Week button is visible (has aria-haspopup="menu")
       const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
-      await expect(bulkActionBar.getByRole('button', { name: 'Move to Sprint' })).toBeVisible();
+      await expect(bulkActionBar.getByRole('button', { name: 'Move to Week' })).toBeVisible();
     });
 
     test('bulk action bar has Delete button', async ({ page }) => {
@@ -1647,43 +1498,6 @@ test.describe('Bulk Actions - Archive', () => {
     await expect(toast.getByRole('button', { name: 'Undo' })).toBeVisible();
   });
 
-  // FIXME: getByText locator matches multiple elements when title is #1 (also matches #10, #11, etc.)
-  test.fixme('undo restores archived issues', async ({ page }) => {
-    await login(page);
-    await page.goto('/issues');
-    await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
-
-    const rows = page.locator('tbody tr');
-    await expect(rows.first()).toBeVisible();
-
-    // Get the title of the first issue
-    const issueTitle = await rows.nth(0).locator('td').nth(1).textContent();
-    const initialCount = await rows.count();
-
-    // Select and archive
-    await rows.nth(0).hover();
-    await rows.nth(0).getByRole('checkbox').click();
-    const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
-    await bulkActionBar.getByRole('button', { name: 'Archive' }).click();
-
-    // Wait for issue to be removed
-    await expect(rows).toHaveCount(initialCount - 1, { timeout: 5000 });
-
-    // Click Undo on toast
-    const toast = page.getByRole('alert');
-    await expect(toast).toBeVisible({ timeout: 3000 });
-    await toast.getByRole('button', { name: 'Undo' }).click();
-
-    // Wait for "Archive undone" toast to confirm undo completed
-    await expect(page.getByRole('alert')).toContainText(/undone/i, { timeout: 5000 });
-
-    // Verify issue is restored to the list
-    await expect(rows).toHaveCount(initialCount, { timeout: 10000 });
-    if (issueTitle) {
-      await expect(page.locator('tbody').getByText(issueTitle)).toBeVisible({ timeout: 5000 });
-    }
-  });
-
   test('selection clears after archive action', async ({ page }) => {
     await login(page);
     await page.goto('/issues');
@@ -1712,7 +1526,7 @@ test.describe('Bulk Actions - Archive', () => {
   });
 });
 
-test.describe('Bulk Actions - Move to Sprint', () => {
+test.describe('Bulk Actions - Move to Week', () => {
   test('move to sprint shows sprint picker dropdown', async ({ page }) => {
     await login(page);
     await page.goto('/issues');
@@ -1725,30 +1539,15 @@ test.describe('Bulk Actions - Move to Sprint', () => {
     await rows.nth(0).hover();
     await rows.nth(0).getByRole('checkbox').click();
 
-    // Click Move to Sprint button
+    // Click Move to Week button
     const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
-    const moveToSprintButton = bulkActionBar.getByRole('button', { name: 'Move to Sprint' });
+    const moveToSprintButton = bulkActionBar.getByRole('button', { name: 'Move to Week' });
     await moveToSprintButton.click();
 
-    // Verify dropdown is shown with at least "No Sprint" option
+    // Verify dropdown is shown with at least "No Week" option
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole('menuitem', { name: 'No Sprint' })).toBeVisible();
-  });
-
-  test.skip('selecting sprint assigns all selected issues', async ({ page }) => {
-    // SKIP: Issues page doesn't currently pass sprints to BulkActionBar
-    // The dropdown shows "No sprints available" - this needs implementation
-    // to fetch sprints (scoped per program) and pass them to the bulk action bar
-    await login(page);
-    await page.goto('/issues');
-  });
-
-  test.skip('move to sprint overwrites existing sprint assignments', async ({ page }) => {
-    // SKIP: Issues page doesn't currently pass sprints to BulkActionBar
-    // Need sprints available in dropdown to test overwriting existing assignments
-    await login(page);
-    await page.goto('/issues');
+    await expect(menu.getByRole('menuitem', { name: 'No Week' })).toBeVisible();
   });
 
   test('move to sprint shows success toast', async ({ page }) => {
@@ -1763,20 +1562,20 @@ test.describe('Bulk Actions - Move to Sprint', () => {
     await rows.nth(0).hover();
     await rows.nth(0).getByRole('checkbox').click();
 
-    // Click Move to Sprint and select No Sprint
+    // Click Move to Week and select No Week
     const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
-    await bulkActionBar.getByRole('button', { name: 'Move to Sprint' }).click();
+    await bulkActionBar.getByRole('button', { name: 'Move to Week' }).click();
 
     const menu = page.getByRole('menu');
     // Use dispatchEvent to bypass z-index issues with stacking context
-    await menu.getByRole('menuitem', { name: 'No Sprint' }).dispatchEvent('click');
+    await menu.getByRole('menuitem', { name: 'No Week' }).dispatchEvent('click');
 
     // Verify success toast (toast says "assigned to" not "moved to")
     const toast = page.getByRole('alert');
     await expect(toast).toContainText(/assigned/i);
   });
 
-  test('can move to "No Sprint" to unassign', async ({ page }) => {
+  test('can move to "No Week" to unassign', async ({ page }) => {
     await login(page);
     await page.goto('/issues');
     await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
@@ -1788,14 +1587,14 @@ test.describe('Bulk Actions - Move to Sprint', () => {
     await rows.nth(0).hover();
     await rows.nth(0).getByRole('checkbox').click();
 
-    // Click Move to Sprint and select No Sprint
+    // Click Move to Week and select No Week
     const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
-    await bulkActionBar.getByRole('button', { name: 'Move to Sprint' }).click();
+    await bulkActionBar.getByRole('button', { name: 'Move to Week' }).click();
 
     const menu = page.getByRole('menu');
-    await expect(menu.getByRole('menuitem', { name: 'No Sprint' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'No Week' })).toBeVisible();
     // Use dispatchEvent to bypass z-index issues with stacking context
-    await menu.getByRole('menuitem', { name: 'No Sprint' }).dispatchEvent('click');
+    await menu.getByRole('menuitem', { name: 'No Week' }).dispatchEvent('click');
 
     // Verify action completed (toast shown means mutation succeeded)
     const toast = page.getByRole('alert');
@@ -1820,10 +1619,10 @@ test.describe('Bulk Actions - Move to Sprint', () => {
     const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
     await expect(bulkActionBar).toContainText('2 selected');
 
-    // Move to No Sprint - use dispatchEvent to bypass z-index issues with stacking context
-    await bulkActionBar.getByRole('button', { name: 'Move to Sprint' }).click();
+    // Move to No Week - use dispatchEvent to bypass z-index issues with stacking context
+    await bulkActionBar.getByRole('button', { name: 'Move to Week' }).click();
     const menu = page.getByRole('menu');
-    await menu.getByRole('menuitem', { name: 'No Sprint' }).dispatchEvent('click');
+    await menu.getByRole('menuitem', { name: 'No Week' }).dispatchEvent('click');
 
     // Verify selection cleared (bulk action bar should be gone)
     await expect(bulkActionBar).not.toBeVisible();
@@ -1859,11 +1658,6 @@ test.describe('Bulk Actions - Delete (Trash)', () => {
     if (issueTitle) {
       await expect(page.locator('tbody').getByText(issueTitle)).toHaveCount(0);
     }
-  });
-
-  test.skip('deleted issues appear in Trash view', async ({ page }) => {
-    // Skip: No Trash view implemented in current UI
-    // Would test: Delete issues, navigate to Trash tab/page, verify issues visible there
   });
 
   test('delete shows success toast with undo', async ({ page }) => {
@@ -2228,13 +2022,6 @@ test.describe('Bulk Selection - Kanban View', () => {
       await expect(bulkActionBar).toContainText('2 selected');
     });
 
-    test.skip('shift+click works for cards in same column', async ({ page }) => {
-      // SKIP: Shift+click range selection in Kanban requires items to be in same column
-      // and the current implementation may not support range selection in Kanban view
-      await login(page);
-      await page.goto('/issues');
-    });
-
     test('cmd+click toggles individual cards', async ({ page }) => {
       await login(page);
       await page.goto('/issues');
@@ -2360,20 +2147,6 @@ test.describe('Bulk Selection - Kanban View', () => {
     });
   });
 
-  test.describe('Drag and Selection', () => {
-    test.skip('dragging a selected card moves all selected cards', async ({ page }) => {
-      // SKIP: Multi-card drag is not implemented in current KanbanBoard
-      // The drag handler only moves the dragged card, not all selected cards
-      await login(page);
-      await page.goto('/issues');
-    });
-
-    test.skip('dragging unselected card only moves that card', async ({ page }) => {
-      // SKIP: Multi-card drag is not implemented in current KanbanBoard
-      await login(page);
-      await page.goto('/issues');
-    });
-  });
 });
 
 test.describe('Bulk Selection - Accessibility', () => {

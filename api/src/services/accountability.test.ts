@@ -78,12 +78,12 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      // Should include: standup, sprint_plan, sprint_start, sprint_issues, project_plan
+      // Should include: standup, weekly_plan, week_start, week_issues, project_plan
       const types = result.map((item) => item.type);
       expect(types).toContain('standup');
-      expect(types).toContain('sprint_plan');
-      expect(types).toContain('sprint_start');
-      expect(types).toContain('sprint_issues');
+      expect(types).toContain('weekly_plan');
+      expect(types).toContain('week_start');
+      expect(types).toContain('week_issues');
       expect(types).toContain('project_plan');
     });
   });
@@ -168,7 +168,7 @@ describe('Accountability Service', () => {
     });
   });
 
-  describe('sprint_plan type', () => {
+  describe('weekly_plan type', () => {
     it('returns item when sprint has no plan', async () => {
       vi.mocked(pool.query)
         .mockResolvedValueOnce({
@@ -191,7 +191,7 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const planItem = result.find((item) => item.type === 'sprint_plan');
+      const planItem = result.find((item) => item.type === 'weekly_plan');
       expect(planItem).toBeDefined();
       expect(planItem?.message).toContain('plan');
     });
@@ -224,12 +224,12 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const planItem = result.find((item) => item.type === 'sprint_plan');
+      const planItem = result.find((item) => item.type === 'weekly_plan');
       expect(planItem).toBeUndefined();
     });
   });
 
-  describe('sprint_start type', () => {
+  describe('week_start type', () => {
     it('returns item when sprint is not started', async () => {
       vi.mocked(pool.query)
         .mockResolvedValueOnce({
@@ -258,7 +258,7 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const startItem = result.find((item) => item.type === 'sprint_start');
+      const startItem = result.find((item) => item.type === 'week_start');
       expect(startItem).toBeDefined();
       expect(startItem?.message).toContain('Start');
     });
@@ -285,12 +285,12 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const startItem = result.find((item) => item.type === 'sprint_start');
+      const startItem = result.find((item) => item.type === 'week_start');
       expect(startItem).toBeUndefined();
     });
   });
 
-  describe('sprint_issues type', () => {
+  describe('week_issues type', () => {
     it('returns item when sprint has no issues', async () => {
       vi.mocked(pool.query)
         .mockResolvedValueOnce({
@@ -313,7 +313,7 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const issuesItem = result.find((item) => item.type === 'sprint_issues');
+      const issuesItem = result.find((item) => item.type === 'week_issues');
       expect(issuesItem).toBeDefined();
       expect(issuesItem?.message).toContain('Add issues');
     });
@@ -340,7 +340,7 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const issuesItem = result.find((item) => item.type === 'sprint_issues');
+      const issuesItem = result.find((item) => item.type === 'week_issues');
       expect(issuesItem).toBeUndefined();
     });
   });
@@ -421,7 +421,7 @@ describe('Accountability Service', () => {
     });
   });
 
-  describe('sprint_review type', () => {
+  describe('weekly_review type', () => {
     it('returns item for past sprint without review', async () => {
       vi.mocked(pool.query)
         .mockResolvedValueOnce({
@@ -429,7 +429,7 @@ describe('Accountability Service', () => {
         } as any)
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
-        // No owned sprints (for sprint_plan/start/issues)
+        // No owned sprints (for weekly_plan/week_start/week_issues)
         .mockResolvedValueOnce({ rows: [] } as any)
         // Past sprint without review (very old sprint number to ensure it's past)
         .mockResolvedValueOnce({
@@ -442,7 +442,7 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const reviewItem = result.find((item) => item.type === 'sprint_review');
+      const reviewItem = result.find((item) => item.type === 'weekly_review');
       expect(reviewItem).toBeDefined();
       expect(reviewItem?.message).toContain('review');
     });

@@ -14,7 +14,7 @@ const ALL_COLUMNS: ColumnDefinition[] = [
   { key: 'name', label: 'Name', hideable: false },
   { key: 'owner', label: 'Owner', hideable: true },
   { key: 'issue_count', label: 'Issues', hideable: true },
-  { key: 'sprint_count', label: 'Sprints', hideable: true },
+  { key: 'sprint_count', label: 'Weeks', hideable: true },
   { key: 'created', label: 'Created', hideable: true },
   { key: 'updated', label: 'Updated', hideable: true },
 ];

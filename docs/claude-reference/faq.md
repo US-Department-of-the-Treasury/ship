@@ -102,7 +102,7 @@ Use the `/e2e-test-runner` skill instead, which handles background execution and
 
 - 1 workspace with 11 users
 - 5 programs, 3 projects each
-- 7 sprints per program
+- 7 weeks per program
 - ~40 issues with various states
 
 Test credentials: `dev@ship.local` / `admin123`

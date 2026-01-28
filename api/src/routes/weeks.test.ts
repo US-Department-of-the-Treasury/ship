@@ -88,7 +88,7 @@ describe('Sprints API', () => {
     await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId])
   })
 
-  describe('GET /api/sprints', () => {
+  describe('GET /api/weeks', () => {
     let testSprintId: string
 
     beforeAll(async () => {
@@ -110,39 +110,39 @@ describe('Sprints API', () => {
 
     it('should return list of sprints', async () => {
       const res = await request(app)
-        .get('/api/sprints')
+        .get('/api/weeks')
         .set('Cookie', sessionCookie)
 
       expect(res.status).toBe(200)
-      expect(res.body.sprints).toBeInstanceOf(Array)
-      expect(res.body.sprints.length).toBeGreaterThan(0)
+      expect(res.body.weeks).toBeInstanceOf(Array)
+      expect(res.body.weeks.length).toBeGreaterThan(0)
 
       // Find our test sprint
-      const testSprint = res.body.sprints.find((s: { id: string }) => s.id === testSprintId)
+      const testSprint = res.body.weeks.find((s: { id: string }) => s.id === testSprintId)
       expect(testSprint).toBeDefined()
       expect(testSprint.name).toBe('Test Sprint for List')
     })
 
     it('should filter sprints by program_id', async () => {
       const res = await request(app)
-        .get(`/api/sprints?program_id=${testProgramId}`)
+        .get(`/api/weeks?program_id=${testProgramId}`)
         .set('Cookie', sessionCookie)
 
       expect(res.status).toBe(200)
-      expect(res.body.sprints).toBeInstanceOf(Array)
-      const allMatchProgram = res.body.sprints.every((s: { program_id: string }) => s.program_id === testProgramId)
+      expect(res.body.weeks).toBeInstanceOf(Array)
+      const allMatchProgram = res.body.weeks.every((s: { program_id: string }) => s.program_id === testProgramId)
       expect(allMatchProgram).toBe(true)
     })
 
     it('should reject unauthenticated request', async () => {
       const res = await request(app)
-        .get('/api/sprints')
+        .get('/api/weeks')
 
       expect(res.status).toBe(401)
     })
   })
 
-  describe('GET /api/sprints/:id', () => {
+  describe('GET /api/weeks/:id', () => {
     let testSprintId: string
 
     beforeAll(async () => {
@@ -163,7 +163,7 @@ describe('Sprints API', () => {
 
     it('should return sprint by id', async () => {
       const res = await request(app)
-        .get(`/api/sprints/${testSprintId}`)
+        .get(`/api/weeks/${testSprintId}`)
         .set('Cookie', sessionCookie)
 
       expect(res.status).toBe(200)
@@ -174,17 +174,17 @@ describe('Sprints API', () => {
     it('should return 404 for non-existent sprint', async () => {
       const fakeId = crypto.randomUUID()
       const res = await request(app)
-        .get(`/api/sprints/${fakeId}`)
+        .get(`/api/weeks/${fakeId}`)
         .set('Cookie', sessionCookie)
 
       expect(res.status).toBe(404)
     })
   })
 
-  describe('POST /api/sprints', () => {
+  describe('POST /api/weeks', () => {
     it('should create a new sprint', async () => {
       const res = await request(app)
-        .post('/api/sprints')
+        .post('/api/weeks')
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -201,7 +201,7 @@ describe('Sprints API', () => {
 
     it('should create sprint with dates', async () => {
       const res = await request(app)
-        .post('/api/sprints')
+        .post('/api/weeks')
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -218,7 +218,7 @@ describe('Sprints API', () => {
 
     it('should create sprint with plan', async () => {
       const res = await request(app)
-        .post('/api/sprints')
+        .post('/api/weeks')
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -234,7 +234,7 @@ describe('Sprints API', () => {
 
     it('should require sprint_number', async () => {
       const res = await request(app)
-        .post('/api/sprints')
+        .post('/api/weeks')
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -246,7 +246,7 @@ describe('Sprints API', () => {
     })
   })
 
-  describe('PATCH /api/sprints/:id', () => {
+  describe('PATCH /api/weeks/:id', () => {
     let testSprintId: string
 
     beforeAll(async () => {
@@ -267,7 +267,7 @@ describe('Sprints API', () => {
 
     it('should update sprint title', async () => {
       const res = await request(app)
-        .patch(`/api/sprints/${testSprintId}`)
+        .patch(`/api/weeks/${testSprintId}`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -281,7 +281,7 @@ describe('Sprints API', () => {
     it('should update sprint_number via PATCH', async () => {
       // Sprint status is computed from dates, sprint_number can be updated
       const res = await request(app)
-        .patch(`/api/sprints/${testSprintId}`)
+        .patch(`/api/weeks/${testSprintId}`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -295,7 +295,7 @@ describe('Sprints API', () => {
     it('should return 404 for non-existent sprint', async () => {
       const fakeId = crypto.randomUUID()
       const res = await request(app)
-        .patch(`/api/sprints/${fakeId}`)
+        .patch(`/api/weeks/${fakeId}`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -306,7 +306,7 @@ describe('Sprints API', () => {
     })
   })
 
-  describe('DELETE /api/sprints/:id', () => {
+  describe('DELETE /api/weeks/:id', () => {
     it('should delete a sprint', async () => {
       // Create sprint to delete
       const sprintResult = await pool.query(
@@ -324,7 +324,7 @@ describe('Sprints API', () => {
       )
 
       const res = await request(app)
-        .delete(`/api/sprints/${sprintId}`)
+        .delete(`/api/weeks/${sprintId}`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
 
@@ -332,14 +332,14 @@ describe('Sprints API', () => {
 
       // Verify it's gone
       const getRes = await request(app)
-        .get(`/api/sprints/${sprintId}`)
+        .get(`/api/weeks/${sprintId}`)
         .set('Cookie', sessionCookie)
 
       expect(getRes.status).toBe(404)
     })
   })
 
-  describe('PATCH /api/sprints/:id/plan', () => {
+  describe('PATCH /api/weeks/:id/plan', () => {
     let testSprintId: string
 
     beforeAll(async () => {
@@ -360,7 +360,7 @@ describe('Sprints API', () => {
 
     it('should update sprint plan', async () => {
       const res = await request(app)
-        .patch(`/api/sprints/${testSprintId}/plan`)
+        .patch(`/api/weeks/${testSprintId}/plan`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -372,7 +372,7 @@ describe('Sprints API', () => {
     })
   })
 
-  describe('GET /api/sprints/:id/issues', () => {
+  describe('GET /api/weeks/:id/issues', () => {
     let testSprintId: string
     let testIssueId: string
 
@@ -410,7 +410,7 @@ describe('Sprints API', () => {
 
     it('should return issues assigned to sprint', async () => {
       const res = await request(app)
-        .get(`/api/sprints/${testSprintId}/issues`)
+        .get(`/api/weeks/${testSprintId}/issues`)
         .set('Cookie', sessionCookie)
 
       expect(res.status).toBe(200)
@@ -442,7 +442,7 @@ describe('Sprints API', () => {
 
     it('should update sprint_number', async () => {
       const res = await request(app)
-        .patch(`/api/sprints/${testSprintId}`)
+        .patch(`/api/weeks/${testSprintId}`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -455,7 +455,7 @@ describe('Sprints API', () => {
 
     it('should update sprint title', async () => {
       const res = await request(app)
-        .patch(`/api/sprints/${testSprintId}`)
+        .patch(`/api/weeks/${testSprintId}`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -467,10 +467,10 @@ describe('Sprints API', () => {
     })
   })
 
-  describe('GET /api/sprints/my-week', () => {
+  describe('GET /api/weeks/my-week', () => {
     it('should return my-week data', async () => {
       const res = await request(app)
-        .get('/api/sprints/my-week')
+        .get('/api/weeks/my-week')
         .set('Cookie', sessionCookie)
 
       expect(res.status).toBe(200)
@@ -479,10 +479,10 @@ describe('Sprints API', () => {
     })
   })
 
-  describe('GET /api/sprints/my-action-items', () => {
+  describe('GET /api/weeks/my-action-items', () => {
     it('should return my action items', async () => {
       const res = await request(app)
-        .get('/api/sprints/my-action-items')
+        .get('/api/weeks/my-action-items')
         .set('Cookie', sessionCookie)
 
       expect(res.status).toBe(200)
@@ -490,7 +490,7 @@ describe('Sprints API', () => {
     })
   })
 
-  describe('POST /api/sprints/:id/start', () => {
+  describe('POST /api/weeks/:id/start', () => {
     it('should start a planning sprint and capture scope snapshot', async () => {
       // Create a sprint in planning status
       const sprintResult = await pool.query(
@@ -524,7 +524,7 @@ describe('Sprints API', () => {
       )
 
       const res = await request(app)
-        .post(`/api/sprints/${sprintId}/start`)
+        .post(`/api/weeks/${sprintId}/start`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
 
@@ -550,7 +550,7 @@ describe('Sprints API', () => {
       )
 
       const res = await request(app)
-        .post(`/api/sprints/${sprintId}/start`)
+        .post(`/api/weeks/${sprintId}/start`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
 
@@ -561,7 +561,7 @@ describe('Sprints API', () => {
     it('should return 404 for non-existent sprint', async () => {
       const fakeId = crypto.randomUUID()
       const res = await request(app)
-        .post(`/api/sprints/${fakeId}/start`)
+        .post(`/api/weeks/${fakeId}/start`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
 
@@ -569,7 +569,7 @@ describe('Sprints API', () => {
     })
   })
 
-  describe('POST /api/sprints/:id/carryover', () => {
+  describe('POST /api/weeks/:id/carryover', () => {
     let sourceSprintId: string
     let targetSprintId: string
     let issueId1: string
@@ -645,7 +645,7 @@ describe('Sprints API', () => {
 
     it('should move issues from source sprint to target sprint', async () => {
       const res = await request(app)
-        .post(`/api/sprints/${sourceSprintId}/carryover`)
+        .post(`/api/weeks/${sourceSprintId}/carryover`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -690,7 +690,7 @@ describe('Sprints API', () => {
       )
 
       const res = await request(app)
-        .post(`/api/sprints/${sourceSprintId}/carryover`)
+        .post(`/api/weeks/${sourceSprintId}/carryover`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -718,7 +718,7 @@ describe('Sprints API', () => {
       )
 
       const res = await request(app)
-        .post(`/api/sprints/${sourceSprintId}/carryover`)
+        .post(`/api/weeks/${sourceSprintId}/carryover`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -727,13 +727,13 @@ describe('Sprints API', () => {
         })
 
       expect(res.status).toBe(400)
-      expect(res.body.error).toContain('not found in source sprint')
+      expect(res.body.error).toContain('not found in source week')
     })
 
     it('should return 404 for non-existent source sprint', async () => {
       const fakeId = crypto.randomUUID()
       const res = await request(app)
-        .post(`/api/sprints/${fakeId}/carryover`)
+        .post(`/api/weeks/${fakeId}/carryover`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({

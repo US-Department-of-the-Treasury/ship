@@ -11,7 +11,7 @@ import { useDocumentConversion } from '@/hooks/useDocumentConversion';
 import { apiGet, apiPatch, apiDelete, apiPost } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 import { issueKeys } from '@/hooks/useIssuesQuery';
-import { projectKeys, useProjectSprintsQuery } from '@/hooks/useProjectsQuery';
+import { projectKeys, useProjectWeeksQuery } from '@/hooks/useProjectsQuery';
 import { TabBar } from '@/components/ui/TabBar';
 import { useCurrentDocument } from '@/contexts/CurrentDocumentContext';
 import {
@@ -120,10 +120,10 @@ export function UnifiedDocumentPage() {
     color: p.color,
   })), [projectsData]);
 
-  // Fetch counts for tabs (project sprints, etc.)
+  // Fetch counts for tabs (project weeks, etc.)
   const isProject = document?.document_type === 'project';
   const isProgram = document?.document_type === 'program';
-  const { data: projectSprints = [] } = useProjectSprintsQuery(isProject ? id : undefined);
+  const { data: projectWeeks = [] } = useProjectWeeksQuery(isProject ? id : undefined);
 
   // Compute tab counts based on document type
   const tabCounts: TabCounts = useMemo(() => {
@@ -131,7 +131,7 @@ export function UnifiedDocumentPage() {
       const issueCount = (document as { issue_count?: number })?.issue_count ?? 0;
       return {
         issues: issueCount,
-        sprints: projectSprints.length,
+        weeks: projectWeeks.length,
       };
     }
     if (isProgram) {
@@ -139,7 +139,7 @@ export function UnifiedDocumentPage() {
       return {};
     }
     return {};
-  }, [document, isProject, isProgram, projectSprints.length]);
+  }, [document, isProject, isProgram, projectWeeks.length]);
 
   // Handler for when associations change (invalidate document query to refetch)
   const handleAssociationChange = useCallback(() => {
@@ -315,7 +315,7 @@ export function UnifiedDocumentPage() {
     switch (document?.document_type) {
       case 'issue': return 'Back to issues';
       case 'project': return 'Back to projects';
-      case 'sprint': return 'Back to sprints';
+      case 'sprint': return 'Back to weeks';
       case 'program': return 'Back to programs';
       default: return 'Back to docs';
     }

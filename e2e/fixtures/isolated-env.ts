@@ -434,7 +434,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
            RETURNING id`,
           [
             workspaceId,
-            `Sprint ${sprintNum}`,
+            `Week ${sprintNum}`,
             JSON.stringify({ sprint_number: sprintNum, owner_id: userId }),
             userId,
           ]

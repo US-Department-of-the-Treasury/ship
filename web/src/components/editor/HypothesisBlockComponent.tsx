@@ -12,7 +12,7 @@ import { NodeViewWrapper, NodeViewContent, NodeViewProps } from '@tiptap/react';
  */
 export function HypothesisBlockComponent({ node }: NodeViewProps) {
   const isEmpty = node.content.size === 0;
-  const placeholder = node.attrs.placeholder || 'What will get done this sprint?';
+  const placeholder = node.attrs.placeholder || 'What will get done this week?';
 
   return (
     <NodeViewWrapper
