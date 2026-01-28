@@ -250,6 +250,7 @@ async function seed() {
         confidence: 4,
         ease: 3,
         monetary_impact_expected: 50000,
+        plan: 'If we ship these core features, users will be able to complete their primary workflows faster.',
       },
       {
         name: 'Bug Fixes',
@@ -259,6 +260,7 @@ async function seed() {
         confidence: 5,
         ease: 4,
         monetary_impact_expected: 15000,
+        plan: 'Fixing these bugs will reduce support tickets by 30% and improve user satisfaction scores.',
       },
       {
         name: 'Performance',
@@ -268,6 +270,7 @@ async function seed() {
         confidence: 3,
         ease: 2,
         monetary_impact_expected: 25000,
+        plan: 'Performance improvements will reduce page load times, increasing user engagement and retention.',
       },
     ];
 
@@ -288,8 +291,38 @@ async function seed() {
         );
 
         if (existingProject.rows[0]) {
+          // Update existing project to ensure it has content with hypothesisBlock
+          const existingId = existingProject.rows[0].id;
+
+          // Build content with hypothesisBlock containing the project plan
+          const projectContent = {
+            type: 'doc',
+            content: [
+              {
+                type: 'hypothesisBlock',
+                attrs: { placeholder: 'What will this project achieve?' },
+                content: [
+                  {
+                    type: 'paragraph',
+                    content: [{ type: 'text', text: template.plan }],
+                  },
+                ],
+              },
+              { type: 'paragraph', content: [] },
+            ],
+          };
+
+          // Pre-compute yjs_state from content
+          const projectYjsState = contentToYjsState(projectContent);
+
+          // Update content and yjs_state to ensure authoritative state
+          await pool.query(
+            `UPDATE documents SET content = $1, yjs_state = $2, properties = properties || $3 WHERE id = $4`,
+            [JSON.stringify(projectContent), projectYjsState, JSON.stringify({ plan: template.plan }), existingId]
+          );
+
           projects.push({
-            id: existingProject.rows[0].id,
+            id: existingId,
             programId: program.id,
             title: projectTitle,
           });
@@ -312,13 +345,38 @@ async function seed() {
             ease: template.ease,
             monetary_impact_expected: template.monetary_impact_expected,
             target_date: targetDate.toISOString().split('T')[0],
+            plan: template.plan,
           };
-          // Create project document without legacy program_id column
+
+          // Build content with hypothesisBlock containing the project plan
+          // (the TipTap node is still called hypothesisBlock for both sprints and projects)
+          const projectContent = {
+            type: 'doc',
+            content: [
+              {
+                type: 'hypothesisBlock',
+                attrs: { placeholder: 'What will this project achieve?' },
+                content: [
+                  {
+                    type: 'paragraph',
+                    content: [{ type: 'text', text: template.plan }],
+                  },
+                ],
+              },
+              { type: 'paragraph', content: [] },
+            ],
+          };
+
+          // Pre-compute yjs_state from content to ensure authoritative state
+          // This prevents stale browser IndexedDB from overriding seeded content via CRDT merge
+          const projectYjsState = contentToYjsState(projectContent);
+
+          // Create project document with content and yjs_state
           const projectResult = await pool.query(
-            `INSERT INTO documents (workspace_id, document_type, title, properties)
-             VALUES ($1, 'project', $2, $3)
+            `INSERT INTO documents (workspace_id, document_type, title, properties, content, yjs_state)
+             VALUES ($1, 'project', $2, $3, $4, $5)
              RETURNING id`,
-            [workspaceId, projectTitle, JSON.stringify(projectProperties)]
+            [workspaceId, projectTitle, JSON.stringify(projectProperties), JSON.stringify(projectContent), projectYjsState]
           );
           const projectId = projectResult.rows[0].id;
 

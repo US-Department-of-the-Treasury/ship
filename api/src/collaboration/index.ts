@@ -302,6 +302,32 @@ function jsonToYjsChildren(doc: Y.Doc, parent: Y.XmlElement, children: any[]) {
   }
 }
 
+// Helper to recursively clone a Y.XmlElement for restoration
+// This creates NEW Yjs operations that override stale deletions from browser cache
+function cloneXmlElement(element: Y.XmlElement): Y.XmlElement {
+  const clone = new Y.XmlElement(element.nodeName);
+
+  // Copy all attributes
+  const attrs = element.getAttributes();
+  for (const [key, value] of Object.entries(attrs)) {
+    clone.setAttribute(key, value as string);
+  }
+
+  // Recursively clone children
+  for (let i = 0; i < element.length; i++) {
+    const child = element.get(i);
+    if (child instanceof Y.XmlElement) {
+      clone.push([cloneXmlElement(child)]);
+    } else if (child instanceof Y.XmlText) {
+      const textClone = new Y.XmlText();
+      textClone.insert(0, child.toString());
+      clone.push([textClone]);
+    }
+  }
+
+  return clone;
+}
+
 function schedulePersist(docName: string, doc: Y.Doc) {
   const existing = pendingSaves.get(docName);
   if (existing) clearTimeout(existing);
@@ -374,6 +400,17 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
       // (Same protection as content fallback docs)
       loadedFromContentFallback.add(docName);
       Y.applyUpdate(doc, result.rows[0].yjs_state);
+
+      // Cache the loaded content for quick restoration if stale sync messages arrive
+      const fragment = doc.getXmlFragment('default');
+      if (!isFragmentEffectivelyEmpty(fragment)) {
+        const jsonContent = yjsToJson(fragment);
+        protectedDocs.set(docName, {
+          restoredAt: Date.now(),
+          content: jsonContent,
+        });
+        console.log(`[Collaboration] Cached content for ${docName} (${jsonContent.content?.length || 0} nodes)`);
+      }
     } else if (result.rows[0]?.content) {
       // Fallback: convert JSON content to Yjs (for seeded documents)
       console.log(`[Collaboration] Loading from content fallback for ${docName}`);
@@ -400,6 +437,18 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
           const fragment = doc.getXmlFragment('default');
           jsonToYjs(doc, fragment, jsonContent);
           console.log(`[Collaboration] Converted, fragment length: ${fragment.length}`);
+
+          // Cache the loaded content for quick restoration if stale sync messages arrive
+          // This is the same protection we apply to yjs_state documents
+          // Note: We check JSON content existence, not Yjs fragment, because the fragment
+          // structure may not have XmlText nodes yet even though content exists
+          if (jsonContent.content && jsonContent.content.length > 0) {
+            protectedDocs.set(docName, {
+              restoredAt: Date.now(),
+              content: jsonContent,
+            });
+            console.log(`[Collaboration] Protected content fallback ${docName} (${jsonContent.content.length} JSON nodes)`);
+          }
         }
       } catch (parseErr) {
         console.error('Failed to parse JSON content:', parseErr);
@@ -432,9 +481,24 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
   return doc;
 }
 
+// Track documents currently being restored to prevent infinite loops
+const restoringDocs = new Set<string>();
+
+// Track documents that were recently restored - during protection window, ignore sync messages that would empty content
+// This prevents stale client sync messages from re-emptying content after restoration
+const protectedDocs = new Map<string, { restoredAt: number; content: any }>();
+const PROTECTION_WINDOW_MS = 10000; // 10 seconds protection after restoration
+
 // Restore document content from database after stale client sync emptied it
 // This is called when a content-fallback doc becomes empty after CRDT merge
 async function restoreContentFromDatabase(docName: string, doc: Y.Doc): Promise<void> {
+  // Prevent re-entry during restoration
+  if (restoringDocs.has(docName)) {
+    console.log(`[Collaboration] Skipping restore for ${docName} - already restoring`);
+    return;
+  }
+
+  restoringDocs.add(docName);
   const docId = parseDocId(docName);
 
   try {
@@ -446,28 +510,76 @@ async function restoreContentFromDatabase(docName: string, doc: Y.Doc): Promise<
     // Prefer yjs_state if available (authoritative source)
     if (result.rows[0]?.yjs_state) {
       console.log(`[Collaboration] Restoring from yjs_state for ${docName}`);
-      const fragment = doc.getXmlFragment('default');
 
-      // Clear the fragment first
-      while (fragment.length > 0) {
-        fragment.delete(0, 1);
+      // Load stored state to get the content
+      const freshDoc = new Y.Doc();
+      Y.applyUpdate(freshDoc, result.rows[0].yjs_state);
+      const freshFragment = freshDoc.getXmlFragment('default');
+
+      console.log(`[Collaboration] Fresh doc fragment length: ${freshFragment.length}`);
+
+      if (freshFragment.length > 0) {
+        // Convert to JSON and back - this creates NEW insert operations
+        const jsonContent = yjsToJson(freshFragment);
+        console.log(`[Collaboration] Converted to JSON: ${jsonContent.content?.length || 0} nodes`);
+
+        const fragment = doc.getXmlFragment('default');
+
+        // Re-insert content - don't clear first, just add (CRDT will handle deduplication)
+        // The key insight: we're adding NEW operations with new timestamps
+        // that will survive future CRDT merges
+        doc.transact(() => {
+          // Clear first within same transaction
+          while (fragment.length > 0) {
+            fragment.delete(0, 1);
+          }
+          // Then add content
+          if (jsonContent.content) {
+            for (const node of jsonContent.content) {
+              if (node.type === 'text') {
+                const text = new Y.XmlText();
+                fragment.push([text]);
+                text.insert(0, node.text || '');
+              } else {
+                const element = new Y.XmlElement(node.type);
+                fragment.push([element]);
+                if (node.attrs) {
+                  for (const [key, value] of Object.entries(node.attrs)) {
+                    element.setAttribute(key, value as string);
+                  }
+                }
+                if (node.content) {
+                  jsonToYjsChildren(doc, element, node.content);
+                }
+              }
+            }
+          }
+        }, 'server');  // Mark as server origin to avoid broadcast loop
+
+        console.log(`[Collaboration] Restored content, fragment length: ${fragment.length}`);
+
+        // Cache restored content for quick re-restoration if stale sync messages arrive
+        protectedDocs.set(docName, {
+          restoredAt: Date.now(),
+          content: jsonContent,
+        });
+        console.log(`[Collaboration] Protected ${docName} for ${PROTECTION_WINDOW_MS}ms`);
+
+        // Send the restored state to all clients
+        const fullState = Y.encodeStateAsUpdate(doc);
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, messageSync);
+        syncProtocol.writeUpdate(encoder, fullState);
+        const message = encoding.toUint8Array(encoder);
+
+        conns.forEach((conn, ws) => {
+          if (conn.docName === docName && ws.readyState === WebSocket.OPEN) {
+            ws.send(message);
+          }
+        });
       }
 
-      // Apply the stored yjs_state
-      Y.applyUpdate(doc, result.rows[0].yjs_state);
-      console.log(`[Collaboration] Restored from yjs_state, fragment length: ${fragment.length}`);
-
-      // Broadcast the restored state to all clients
-      const encoder = encoding.createEncoder();
-      encoding.writeVarUint(encoder, messageSync);
-      syncProtocol.writeUpdate(encoder, Y.encodeStateAsUpdate(doc));
-      const message = encoding.toUint8Array(encoder);
-
-      conns.forEach((conn, ws) => {
-        if (conn.docName === docName && ws.readyState === WebSocket.OPEN) {
-          ws.send(message);
-        }
-      });
+      freshDoc.destroy();
     } else if (result.rows[0]?.content) {
       // Fallback to JSON content
       let jsonContent = result.rows[0].content;
@@ -489,6 +601,13 @@ async function restoreContentFromDatabase(docName: string, doc: Y.Doc): Promise<
         jsonToYjs(doc, fragment, jsonContent);
         console.log(`[Collaboration] Restored content, fragment length: ${fragment.length}`);
 
+        // Cache restored content for quick re-restoration if stale sync messages arrive
+        protectedDocs.set(docName, {
+          restoredAt: Date.now(),
+          content: jsonContent,
+        });
+        console.log(`[Collaboration] Protected ${docName} for ${PROTECTION_WINDOW_MS}ms`);
+
         // Broadcast the restored state to all clients
         const encoder = encoding.createEncoder();
         encoding.writeVarUint(encoder, messageSync);
@@ -504,6 +623,9 @@ async function restoreContentFromDatabase(docName: string, doc: Y.Doc): Promise<
     }
   } catch (err) {
     console.error(`[Collaboration] Failed to restore content for ${docName}:`, err);
+  } finally {
+    // Clear restoration flag immediately - protection is now handled by protectedDocs cache
+    restoringDocs.delete(docName);
   }
 }
 
@@ -538,24 +660,94 @@ async function handleMessage(ws: WebSocket, message: Uint8Array, docName: string
 
   switch (messageType) {
     case messageSync: {
-      // For content-fallback docs, check if we had content before sync
-      // This protects against stale browser IndexedDB emptying server content
-      const wasLoadedFromFallback = loadedFromContentFallback.has(docName);
-      const fragmentBefore = doc.getXmlFragment('default');
-      const emptyBefore = isFragmentEffectivelyEmpty(fragmentBefore);
-      const hadContentBefore = wasLoadedFromFallback && !emptyBefore;
+      // For protected docs, we need to handle sync messages carefully
+      // to prevent stale client state from overwriting authoritative server content
+      const protection = protectedDocs.get(docName);
+      const isProtected = protection && (Date.now() - protection.restoredAt) < PROTECTION_WINDOW_MS;
 
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, messageSync);
-      // Pass ws as origin so broadcast excludes the sender
-      syncProtocol.readSyncMessage(decoder, encoder, doc, ws);
 
-      // If content became empty after sync for a content-fallback doc, restore it
-      // This handles stale client IndexedDB with deletion markers
-      if (hadContentBefore) {
+      if (isProtected) {
+        // For protected documents, we use a special strategy:
+        // 1. Read the sync message type without applying destructive updates
+        // 2. Always respond with authoritative server state
+        // 3. This forces client to converge to server state
+
+        // Peek at message type (sync step 1 = state vector, sync step 2 = update)
+        const msgType = decoding.readVarUint(decoder);
+
+        if (msgType === 0) {
+          // Sync step 1: Client sending state vector, wants our diff
+          // Read client's state vector
+          const clientStateVector = decoding.readVarUint8Array(decoder);
+
+          // Send sync step 2: our full state (everything client might be missing)
+          // This ensures client gets ALL our content
+          // CRITICAL: Use writeSyncStep2 (message type 1) not writeUpdate (message type 2)
+          // The client expects sync step 2 response after sending sync step 1
+          syncProtocol.writeSyncStep2(encoder, doc, clientStateVector);
+
+          const serverUpdate = Y.encodeStateAsUpdate(doc, clientStateVector);
+          console.log(`[Collaboration] Protected ${docName}: sent sync step 2 to client (${serverUpdate.length} bytes)`);
+        } else if (msgType === 1) {
+          // Sync step 2: Client sending update
+          // For protected docs, we need to maintain CRDT convergence but ensure
+          // server content wins. Strategy:
+          // 1. Apply client update (required for CRDT convergence)
+          // 2. Then restore authoritative content from cache
+          // This allows CRDT to track what client has, while ensuring display is correct
+          const updateData = decoding.readVarUint8Array(decoder);
+
+          // Apply client update for CRDT tracking
+          Y.applyUpdate(doc, updateData, ws);
+
+          // Now restore authoritative content from cache
+          // This ensures server content always wins visually
+          const fragment = doc.getXmlFragment('default');
+          const currentJson = yjsToJson(fragment);
+          const cachedJson = protection.content;
+
+          // Compare content - if different, restore from cache
+          console.log(`[Collaboration] Protected ${docName}: comparing content...`);
+          console.log(`[Collaboration]   currentJson nodes: ${currentJson.length}`);
+          console.log(`[Collaboration]   cachedJson nodes: ${cachedJson.length}`);
+          console.log(`[Collaboration]   currentJson[0]?.type: ${currentJson[0]?.type}`);
+          console.log(`[Collaboration]   cachedJson[0]?.type: ${cachedJson[0]?.type}`);
+
+          if (JSON.stringify(currentJson) !== JSON.stringify(cachedJson)) {
+            console.log(`[Collaboration] Protected ${docName}: restoring authoritative content after client update`);
+            console.log(`[Collaboration]   current: ${JSON.stringify(currentJson).substring(0, 200)}`);
+            console.log(`[Collaboration]   cached: ${JSON.stringify(cachedJson).substring(0, 200)}`);
+            // Clear fragment and restore from cache
+            doc.transact(() => {
+              while (fragment.length > 0) {
+                fragment.delete(0, 1);
+              }
+              jsonToYjs(doc, fragment, cachedJson);
+            });
+            // Send restored state to all clients
+            const restoredState = Y.encodeStateAsUpdate(doc);
+            syncProtocol.writeUpdate(encoder, restoredState);
+          } else {
+            console.log(`[Collaboration] Protected ${docName}: client update maintained correct content`);
+            console.log(`[Collaboration]   content: ${JSON.stringify(currentJson).substring(0, 200)}`);
+          }
+        }
+
+        // Extend protection since we're actively handling sync
+        protection.restoredAt = Date.now();
+      } else {
+        // Not protected: use standard sync protocol
+        // Pass ws as origin so broadcast excludes the sender
+        syncProtocol.readSyncMessage(decoder, encoder, doc, ws);
+
+        // Check if content became empty for a content-fallback doc
+        const wasLoadedFromFallback = loadedFromContentFallback.has(docName);
         const fragment = doc.getXmlFragment('default');
         const emptyAfter = isFragmentEffectivelyEmpty(fragment);
-        if (emptyAfter) {
+
+        if (emptyAfter && wasLoadedFromFallback) {
           console.log(`[Collaboration] Content became empty after sync for ${docName}, restoring from database`);
           await restoreContentFromDatabase(docName, doc);
         }

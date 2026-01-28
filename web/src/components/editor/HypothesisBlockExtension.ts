@@ -40,8 +40,8 @@ export const HypothesisBlockExtension = Node.create<HypothesisBlockOptions>({
 
   group: 'block',
 
-  // Content model: inline content only (plain text)
-  content: 'inline*',
+  // Content model: block content (paragraphs) to match Yjs stored structure
+  content: 'block*',
 
   defining: true,
 

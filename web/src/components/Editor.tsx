@@ -254,45 +254,41 @@ export function Editor({
   // Setup IndexedDB persistence and WebSocket provider
   useEffect(() => {
     let wsProvider: WebsocketProvider | null = null;
+    let indexeddbProvider: IndexeddbPersistence | null = null;
     let hasCachedContent = false;
     let cancelled = false;
     // Store the updateUsers callback so we can properly remove it on cleanup
     let updateUsersCallback: (() => void) | null = null;
 
-    // Create IndexedDB persistence for content caching
-    // This loads cached content BEFORE WebSocket connects for instant navigation
-    const indexeddbProvider = new IndexeddbPersistence(`ship-${roomPrefix}-${documentId}`, ydoc);
-
-    // Wait for IndexedDB to load cached content (with timeout)
-    // This ensures cached content shows instantly before WebSocket syncs
-    const waitForCache = new Promise<void>((resolve) => {
-      // Resolve immediately if already synced
-      if (indexeddbProvider.synced) {
-        hasCachedContent = true;
-        setSyncStatus('cached');
-        resolve();
-        return;
-      }
-
-      // Wait for sync event
-      const onSynced = () => {
-        hasCachedContent = true;
-        setSyncStatus((prev) => prev === 'connecting' ? 'cached' : prev);
-        console.log(`[Editor] IndexedDB synced for ${roomPrefix}:${documentId}`);
+    // Clear stale IndexedDB cache before connecting
+    // This ensures server state is authoritative and prevents CRDT merge issues
+    // where stale deletions from browser cache would win over server content
+    const dbName = `ship-${roomPrefix}-${documentId}`;
+    const clearAndSetup = new Promise<void>((resolve) => {
+      const deleteRequest = indexedDB.deleteDatabase(dbName);
+      deleteRequest.onsuccess = () => {
+        console.log(`[Editor] Cleared IndexedDB cache for ${dbName}`);
         resolve();
       };
-      indexeddbProvider.on('synced', onSynced);
-
-      // Timeout after 300ms - don't block forever if no cache exists
-      setTimeout(() => {
-        indexeddbProvider.off('synced', onSynced);
+      deleteRequest.onerror = () => {
+        console.log(`[Editor] Failed to clear IndexedDB cache for ${dbName}, continuing anyway`);
         resolve();
-      }, 300);
+      };
+      deleteRequest.onblocked = () => {
+        console.log(`[Editor] IndexedDB delete blocked for ${dbName}, continuing anyway`);
+        resolve();
+      };
+      // Timeout in case IndexedDB is unresponsive
+      setTimeout(resolve, 100);
     });
 
-    // Connect WebSocket AFTER cache loads (or timeout)
-    waitForCache.then(() => {
+    clearAndSetup.then(() => {
       if (cancelled) return;
+
+      // IMPORTANT: Do NOT create IndexeddbPersistence until AFTER WebSocket syncs.
+      // This ensures the server state is authoritative and prevents stale IndexedDB
+      // data (with deletion markers) from overriding server content.
+      // IndexeddbPersistence will be created in the 'sync' event handler.
 
       // In production, use current host with wss:// (through CloudFront)
       // In development, Vite proxy handles /collaboration WebSocket (see vite.config.ts)
@@ -353,7 +349,28 @@ export function Editor({
         if (cancelled) return; // Don't update state if effect was cleaned up
         console.log(`[Editor] WebSocket sync: ${isSynced} for ${roomPrefix}:${documentId}`);
         if (isSynced) {
+          // DEBUG: Log what's in ydoc after sync
+          const fragment = ydoc.getXmlFragment('default');
+          console.log(`[Editor] After sync - ydoc fragment length: ${fragment.length}`);
+          if (fragment.length > 0) {
+            const firstItem = fragment.get(0);
+            console.log(`[Editor] After sync - first item type: ${firstItem?.constructor?.name}`);
+            // @ts-expect-error - accessing internal property for debugging
+            console.log(`[Editor] After sync - first item nodeName: ${firstItem?.nodeName || 'N/A'}`);
+          }
           setSyncStatus('synced');
+
+          // NOW create IndexedDB persistence AFTER WebSocket has synced authoritative state
+          // This ensures server content is loaded first, then cached to IndexedDB
+          // Creating it earlier would risk stale IndexedDB data overriding server content
+          if (!indexeddbProvider && !cancelled) {
+            console.log(`[Editor] Creating IndexedDB persistence after sync for ${dbName}`);
+            indexeddbProvider = new IndexeddbPersistence(dbName, ydoc);
+            indexeddbProvider.on('synced', () => {
+              hasCachedContent = true;
+              console.log(`[Editor] IndexedDB ready for ${roomPrefix}:${documentId}`);
+            });
+          }
         }
       });
 
@@ -407,7 +424,9 @@ export function Editor({
         wsProvider.destroy();
       }
       // Destroy IndexedDB persistence
-      indexeddbProvider.destroy();
+      if (indexeddbProvider) {
+        indexeddbProvider.destroy();
+      }
       // Clear provider state
       setProvider(null);
       setConnectedUsers([]);
