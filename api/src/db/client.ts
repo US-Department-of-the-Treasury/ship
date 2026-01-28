@@ -21,6 +21,8 @@ const pool = new Pool({
   idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
   connectionTimeoutMillis: 2000, // Fail fast if can't connect in 2 seconds
   maxUses: 7500, // Recycle connections after 7500 queries to prevent memory leaks
+  // DDoS protection: Terminate queries running longer than 30 seconds
+  statement_timeout: 30000, // 30 seconds max query duration
 });
 
 // Graceful shutdown - close pool connections on process termination
