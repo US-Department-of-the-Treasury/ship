@@ -252,9 +252,9 @@ export function UnifiedEditor({
     }
   }, [navigate, onNavigateToDocument]);
 
-  // Handle plan change (for sprint documents)
+  // Handle plan change (for sprint and project documents)
   const handlePlanChange = useCallback(async (plan: string) => {
-    if (document.document_type !== 'sprint') return;
+    if (document.document_type !== 'sprint' && document.document_type !== 'project') return;
     // Update the plan property
     await onUpdate({ plan } as Partial<UnifiedDocument>);
   }, [document.document_type, onUpdate]);
@@ -397,7 +397,7 @@ export function UnifiedEditor({
       headerBadge={headerBadge}
       sidebar={sidebar}
       documentType={document.document_type}
-      onPlanChange={document.document_type === 'sprint' ? handlePlanChange : undefined}
+      onPlanChange={document.document_type === 'sprint' || document.document_type === 'project' ? handlePlanChange : undefined}
     />
   );
 }
