@@ -48,12 +48,21 @@ resource "aws_wafv2_web_acl" "cloudfront" {
   # See: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/wafv2_web_acl
 
   # Rule 1: Rate limiting - 300 requests per 5 minutes per IP
+  # DDoS protection: BLOCK mode actively stops volumetric attacks at the edge
   rule {
     name     = "RateBasedRule-IP-300"
     priority = 1
 
     action {
-      count {} # Count mode - monitor before blocking
+      block {
+        custom_response {
+          response_code = 429
+          response_header {
+            name  = "Retry-After"
+            value = "300"
+          }
+        }
+      }
     }
 
     statement {
