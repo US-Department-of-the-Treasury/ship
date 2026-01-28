@@ -82,7 +82,8 @@ test.describe('Public Feedback Form', () => {
     await login(page);
     const programId = await getProgramId(page);
 
-    // Clear cookies to simulate logged out
+    // Navigate away from protected page before clearing cookies to avoid auth redirect race
+    await page.goto('about:blank');
     await page.context().clearCookies();
 
     // Navigate to public feedback form
@@ -97,7 +98,8 @@ test.describe('Public Feedback Form', () => {
     await login(page);
     const programId = await getProgramId(page);
 
-    // Clear cookies and submit feedback
+    // Navigate away from protected page before clearing cookies to avoid auth redirect race
+    await page.goto('about:blank');
     await page.context().clearCookies();
     await page.goto(`/feedback/${programId}`);
 
@@ -146,6 +148,8 @@ test.describe('Public Feedback Form', () => {
     await login(page);
     const programId = await getProgramId(page);
 
+    // Navigate away from protected page before clearing cookies to avoid auth redirect race
+    await page.goto('about:blank');
     await page.context().clearCookies();
     await page.goto(`/feedback/${programId}`);
 
@@ -161,6 +165,8 @@ test.describe('Public Feedback Form', () => {
     await login(page);
     const programId = await getProgramId(page);
 
+    // Navigate away from protected page before clearing cookies to avoid auth redirect race
+    await page.goto('about:blank');
     await page.context().clearCookies();
     await page.goto(`/feedback/${programId}`);
 
