@@ -27,6 +27,11 @@ async function main() {
   const app = createApp(CORS_ORIGIN);
   const server = createServer(app);
 
+  // DDoS protection: Set server-wide timeouts to prevent slow-read attacks (Slowloris)
+  server.timeout = 60000; // 60 seconds max request duration
+  server.keepAliveTimeout = 65000; // 65 seconds (slightly longer than timeout)
+  server.headersTimeout = 66000; // 66 seconds (slightly longer than keepAlive)
+
   // Setup WebSocket collaboration server
   setupCollaboration(server);
 

@@ -30,6 +30,10 @@ const connectionAttempts = new Map<string, number[]>();
 // Track message timestamps per WebSocket connection
 const messageTimestamps = new Map<WebSocket, number[]>();
 
+// DDoS protection: Track rate limit violations per connection for progressive penalties
+const rateLimitViolations = new Map<WebSocket, number>();
+const RATE_LIMIT_VIOLATION_THRESHOLD = 50; // Close connection after 50 violations
+
 // Clean up old connection attempts periodically
 setInterval(() => {
   const now = Date.now();
@@ -696,9 +700,12 @@ export function broadcastToUser(userId: string, eventType: string, data?: Record
   }
 }
 
+// DDoS protection: Max WebSocket message size (10MB, matches REST API limit)
+const MAX_WS_MESSAGE_SIZE = 10 * 1024 * 1024;
+
 export function setupCollaboration(server: Server) {
-  const wss = new WebSocketServer({ noServer: true });
-  const eventsWss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_MESSAGE_SIZE });
+  const eventsWss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_MESSAGE_SIZE });
 
   server.on('upgrade', async (request, socket, head) => {
     const url = new URL(request.url || '', `http://${request.headers.host}`);
@@ -797,11 +804,30 @@ export function setupCollaboration(server: Server) {
     }
 
     ws.on('message', (data: Buffer) => {
+      // DDoS protection: Defense-in-depth size check (WS server also enforces maxPayload)
+      if (data.length > MAX_WS_MESSAGE_SIZE) {
+        ws.close(1009, 'Message too large');
+        return;
+      }
+
       // Rate limit messages to prevent message floods
       if (isMessageRateLimited(ws)) {
+        // DDoS protection: Track violations and apply progressive penalties
+        const violations = (rateLimitViolations.get(ws) || 0) + 1;
+        rateLimitViolations.set(ws, violations);
+
+        // After repeated violations, terminate the connection
+        if (violations >= RATE_LIMIT_VIOLATION_THRESHOLD) {
+          ws.close(1008, 'Rate limit exceeded');
+          return;
+        }
+
         // Drop message silently - client will retry via Yjs sync protocol
         return;
       }
+
+      // Reset violation count on successful (non-rate-limited) messages
+      rateLimitViolations.delete(ws);
       recordMessage(ws);
 
       handleMessage(ws, new Uint8Array(data), docName, doc, aw);
@@ -815,6 +841,7 @@ export function setupCollaboration(server: Server) {
       }
       // Clean up rate limiting data for this connection
       messageTimestamps.delete(ws);
+      rateLimitViolations.delete(ws);
 
       // Clean up if no more connections to this doc
       let hasConnections = false;
@@ -854,8 +881,24 @@ export function setupCollaboration(server: Server) {
     // Send initial connected message
     ws.send(JSON.stringify({ type: 'connected', data: {} }));
 
-    // Handle ping/pong for keepalive
+    // Handle ping/pong for keepalive with rate limiting
     ws.on('message', (data: Buffer) => {
+      // DDoS protection: Rate limit events WebSocket messages
+      if (isMessageRateLimited(ws)) {
+        const violations = (rateLimitViolations.get(ws) || 0) + 1;
+        rateLimitViolations.set(ws, violations);
+
+        if (violations >= RATE_LIMIT_VIOLATION_THRESHOLD) {
+          console.log(`[Events] Rate limit violations exceeded for user ${sessionData.userId}, closing connection`);
+          ws.close(1008, 'Rate limit exceeded');
+        }
+        return;
+      }
+
+      // Reset violations on successful message
+      rateLimitViolations.delete(ws);
+      recordMessage(ws);
+
       try {
         const message = JSON.parse(data.toString());
         if (message.type === 'ping') {
@@ -868,6 +911,8 @@ export function setupCollaboration(server: Server) {
 
     ws.on('close', () => {
       eventConns.delete(ws);
+      rateLimitViolations.delete(ws);
+      messageTimestamps.delete(ws);
       console.log(`[Events] User ${sessionData.userId} disconnected (${eventConns.size} total connections)`);
     });
   });
