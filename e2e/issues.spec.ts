@@ -109,12 +109,13 @@ test.describe('Issues (Phase 5)', () => {
     if (await titleElement.isVisible({ timeout: 2000 })) {
       await titleElement.click()
       await page.keyboard.press('Meta+a')
-      await page.keyboard.type('My Test Issue Title')
+      await page.waitForTimeout(100)  // Wait for selection
+      await titleElement.fill('My Test Issue Title')
 
-      // Wait for save
-      await page.waitForTimeout(500)
+      // Wait for save with longer timeout
+      await page.waitForTimeout(1000)
 
-      await expect(titleElement).toContainText('My Test Issue Title')
+      await expect(titleElement).toContainText('My Test Issue Title', { timeout: 5000 })
     }
   })
 
@@ -143,6 +144,9 @@ test.describe('Issues (Phase 5)', () => {
 
     // Switch to list view (default is Kanban)
     await page.getByRole('button', { name: 'List view' }).click()
+
+    // Wait for table to have data
+    await page.waitForSelector('tbody tr', { timeout: 10000 })
 
     // Click on an issue row (seed data has issues)
     const issueRow = page.locator('tbody tr').first()

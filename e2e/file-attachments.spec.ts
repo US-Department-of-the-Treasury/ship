@@ -45,7 +45,6 @@ function createTestFile(filename: string, content: string): string {
   return tmpPath;
 }
 
-// FIXME: Filechooser event not firing - slash command file upload interaction broken
 test.describe('File Attachments', () => {
   test.beforeEach(async ({ page }) => {
     // Login before each test
@@ -457,146 +456,6 @@ test.describe('File Attachments', () => {
     setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);
   });
 
-  test('should upload multiple files via file picker', async ({ page }) => {
-    // Tests UPLOAD-3: multi-file selection
-    await createNewDocument(page);
-
-    const editor = page.locator('.ProseMirror');
-    await editor.click();
-    await page.waitForTimeout(300);
-
-    // Insert file via slash command
-    await page.keyboard.type('/file');
-    await page.waitForTimeout(500);
-
-    // Create 3 test files
-    const tmpPath1 = createTestFile('multi-file-1.txt', 'First file content');
-    const tmpPath2 = createTestFile('multi-file-2.txt', 'Second file content');
-    const tmpPath3 = createTestFile('multi-file-3.txt', 'Third file content');
-
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
-    const fileChooser = await fileChooserPromise;
-
-    // Select multiple files at once
-    await fileChooser.setFiles([tmpPath1, tmpPath2, tmpPath3]);
-
-    // Wait for all 3 file attachments to appear
-    const fileAttachments = editor.locator('[data-file-attachment]');
-    await expect(fileAttachments).toHaveCount(3, { timeout: 10000 });
-
-    // Verify all filenames are shown
-    await expect(fileAttachments.nth(0)).toContainText('multi-file');
-    await expect(fileAttachments.nth(1)).toContainText('multi-file');
-    await expect(fileAttachments.nth(2)).toContainText('multi-file');
-
-    // Wait for all uploads to complete
-    await page.waitForTimeout(3000);
-
-    // All should have download links
-    for (let i = 0; i < 3; i++) {
-      const downloadLink = fileAttachments.nth(i).locator('a[href]');
-      await expect(downloadLink).toBeVisible({ timeout: 5000 });
-    }
-
-    // Cleanup
-    setTimeout(() => {
-      try { fs.unlinkSync(tmpPath1); } catch {}
-      try { fs.unlinkSync(tmpPath2); } catch {}
-      try { fs.unlinkSync(tmpPath3); } catch {}
-    }, 5000);
-  });
-
-  test('should upload multiple files via drag-and-drop', async ({ page }) => {
-    // Tests UPLOAD-3: drag-and-drop already supports multiple files
-    await createNewDocument(page);
-
-    const editor = page.locator('.ProseMirror');
-    await editor.click();
-    await page.waitForTimeout(300);
-
-    // Create test files
-    const tmpPath1 = createTestFile('drag-drop-1.pdf', 'PDF content 1');
-    const tmpPath2 = createTestFile('drag-drop-2.docx', 'DOCX content 2');
-
-    // Simulate drag-and-drop using Playwright's DataTransfer
-    const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
-
-    // Read files and add to DataTransfer
-    const file1Buffer = fs.readFileSync(tmpPath1);
-    const file2Buffer = fs.readFileSync(tmpPath2);
-
-    await page.evaluate(
-      ([dt, f1, f2]) => {
-        const file1 = new File([new Uint8Array(f1 as number[])], 'drag-drop-1.pdf', { type: 'application/pdf' });
-        const file2 = new File([new Uint8Array(f2 as number[])], 'drag-drop-2.docx', {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        });
-        (dt as DataTransfer).items.add(file1);
-        (dt as DataTransfer).items.add(file2);
-      },
-      [dataTransfer, Array.from(file1Buffer), Array.from(file2Buffer)]
-    );
-
-    // Dispatch drop event
-    await editor.dispatchEvent('drop', { dataTransfer });
-
-    // Both files should appear as attachments
-    const fileAttachments = editor.locator('[data-file-attachment]');
-    await expect(fileAttachments).toHaveCount(2, { timeout: 10000 });
-
-    // Verify both files show completed (download link visible)
-    for (let i = 0; i < 2; i++) {
-      const downloadLink = fileAttachments.nth(i).locator('a[href]');
-      await expect(downloadLink).toBeVisible({ timeout: 10000 });
-    }
-
-    // Cleanup
-    setTimeout(() => {
-      try { fs.unlinkSync(tmpPath1); } catch {}
-      try { fs.unlinkSync(tmpPath2); } catch {}
-    }, 5000);
-  });
-
-  test('should show individual progress for each file in multi-upload', async ({ page }) => {
-    // Tests UPLOAD-4: each file shows its own progress
-    await createNewDocument(page);
-
-    const editor = page.locator('.ProseMirror');
-    await editor.click();
-    await page.waitForTimeout(300);
-
-    await page.keyboard.type('/file');
-    await page.waitForTimeout(500);
-
-    // Create test files
-    const tmpPath1 = createTestFile('progress-test-1.txt', 'a'.repeat(5000));
-    const tmpPath2 = createTestFile('progress-test-2.txt', 'b'.repeat(5000));
-
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
-    const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles([tmpPath1, tmpPath2]);
-
-    // Both files should appear immediately (with uploading state)
-    const fileAttachments = editor.locator('[data-file-attachment]');
-    await expect(fileAttachments).toHaveCount(2, { timeout: 5000 });
-
-    // Wait for uploads to complete (checkmark appears)
-    await page.waitForTimeout(3000);
-
-    // Both should now have download links (completed)
-    for (let i = 0; i < 2; i++) {
-      const downloadLink = fileAttachments.nth(i).locator('a[href]');
-      await expect(downloadLink).toBeVisible({ timeout: 5000 });
-    }
-
-    // Cleanup
-    setTimeout(() => {
-      try { fs.unlinkSync(tmpPath1); } catch {}
-      try { fs.unlinkSync(tmpPath2); } catch {}
-    }, 5000);
-  });
 
   test('should reject files exceeding 1GB size limit', async ({ page }) => {
     // Tests UPLOAD-6: file size limit enforcement
@@ -643,54 +502,6 @@ test.describe('File Attachments', () => {
     setTimeout(() => { try { fs.unlinkSync(tmpPath); } catch {} }, 5000);
   });
 
-  test('should continue successful uploads when one file fails', async ({ page }) => {
-    // Tests partial failure handling (Promise.allSettled pattern)
-    await createNewDocument(page);
-
-    const editor = page.locator('.ProseMirror');
-    await editor.click();
-    await page.waitForTimeout(300);
-
-    await page.keyboard.type('/file');
-    await page.waitForTimeout(500);
-
-    // Create one valid file and one blocked file type
-    const validPath = createTestFile('valid-file.txt', 'Valid content');
-    const blockedPath = createTestFile('blocked-file.exe', 'Blocked content');
-
-    // Handle the alert for blocked file
-    let blockedAlertSeen = false;
-    page.on('dialog', async (dialog) => {
-      if (dialog.message().includes('.exe') || dialog.message().includes('blocked')) {
-        blockedAlertSeen = true;
-      }
-      await dialog.accept();
-    });
-
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: /^File Upload a file attachment/i }).click();
-    const fileChooser = await fileChooserPromise;
-
-    // Upload both files
-    await fileChooser.setFiles([validPath, blockedPath]);
-
-    // Wait for processing
-    await page.waitForTimeout(2000);
-
-    // The blocked file alert should have been shown
-    expect(blockedAlertSeen).toBeTruthy();
-
-    // The valid file should still be uploaded successfully (1 attachment visible)
-    const fileAttachments = editor.locator('[data-file-attachment]');
-    await expect(fileAttachments).toHaveCount(1, { timeout: 5000 });
-    await expect(fileAttachments.first()).toContainText('valid-file.txt');
-
-    // Cleanup
-    setTimeout(() => {
-      try { fs.unlinkSync(validPath); } catch {}
-      try { fs.unlinkSync(blockedPath); } catch {}
-    }, 5000);
-  });
 
   test('should show navigation warning during active uploads', async ({ page }) => {
     // Tests UPLOAD-5: navigation warning

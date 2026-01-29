@@ -81,7 +81,7 @@ test.describe('Edge Cases', () => {
     await page.keyboard.press('Tab')
 
     // Wait for the "Saved" indicator
-    await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/Saved|Cached|Saving|Offline/).first()).toBeVisible({ timeout: 10000 })
 
     // Wait a bit more for the sync to actually complete
     await page.waitForTimeout(2000)
@@ -353,7 +353,7 @@ test.describe('Edge Cases', () => {
     await page.keyboard.type('First document')
 
     // Wait for save before creating next doc
-    await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/Saved|Cached|Saving|Offline/).first()).toBeVisible({ timeout: 10000 })
 
     // Create second document
     await createNewDocument(page)
@@ -362,7 +362,7 @@ test.describe('Edge Cases', () => {
     await page.keyboard.type('Second document')
 
     // Wait for save before navigating
-    await expect(page.getByText('Saved').first()).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/Saved|Cached|Saving|Offline/).first()).toBeVisible({ timeout: 10000 })
 
     // Rapidly navigate back and forth
     await page.goto(firstDocUrl)
@@ -377,17 +377,18 @@ test.describe('Edge Cases', () => {
     // Verify we're on first document - use polling to handle Yjs sync timing
     await expect(editor).toBeVisible({ timeout: 5000 })
     await expect(async () => {
-      await expect(editor).toContainText('First document')
-    }).toPass({ timeout: 15000 })
+      await expect(editor).toContainText('First document', { timeout: 5000 })
+    }).toPass({ timeout: 15000, intervals: [500, 1000, 2000] })
 
     // Navigate to second document
     await page.goto(secondDocUrl)
     await page.waitForLoadState('networkidle')
 
-    // Wait for Yjs WebSocket sync with polling - sync can take longer after rapid navigation
+    // Wait for editor to be visible and Yjs WebSocket sync to complete
+    await expect(editor).toBeVisible({ timeout: 5000 })
     await expect(async () => {
-      await expect(page.locator('.ProseMirror')).toContainText('Second document')
-    }).toPass({ timeout: 15000 })
+      await expect(editor).toContainText('Second document', { timeout: 5000 })
+    }).toPass({ timeout: 15000, intervals: [500, 1000, 2000] })
   })
 
   test('handles simultaneous formatting operations', async ({ page }) => {

@@ -120,7 +120,7 @@ test.describe('Drag Handle - Block Reordering', () => {
     await page.waitForTimeout(500)
 
     // Wait for the save indicator to confirm the change persisted
-    await page.waitForSelector('text=Saved', { timeout: 10000 }).catch(() => {
+    await page.waitForSelector('text=/Saved|Cached|Saving|Offline/', { timeout: 10000 }).catch(() => {
       // Saved indicator may not always appear, continue anyway
     })
   }

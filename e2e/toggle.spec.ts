@@ -35,7 +35,6 @@ async function createNewDocument(page: Page) {
   await expect(page.locator('input[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 });
 }
 
-// FIXME: Slash command menu interaction not working - button locators timing out
 test.describe('Toggle (Collapsible)', () => {
   test.beforeEach(async ({ page }) => {
     // Login before each test

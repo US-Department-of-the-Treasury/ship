@@ -16,22 +16,21 @@ test.describe('Context Menus - Sidebar', () => {
       await page.waitForLoadState('networkidle')
 
       // Look for document tree items in the sidebar
-      // These are buttons with document titles inside a tree structure
-      const docButtons = page.locator('aside button').filter({ hasText: /./  })
-      const firstDoc = docButtons.first()
+      const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }))
+      const firstDoc = tree.first().locator('[data-testid="doc-item"]').first()
 
       // Data should always exist - fail if it doesn't
       await expect(firstDoc).toBeVisible({ timeout: 5000 })
       await firstDoc.hover()
       await page.waitForTimeout(300) // Wait for hover state
 
-      // Look for three-dot menu button that appears on hover
-      const menuButton = page.locator('button[aria-label*="Actions"]').first()
+      // Look for three-dot menu button that appears on hover (has aria-label="Document actions")
+      const menuButton = firstDoc.locator('button[aria-label="Document actions"]')
       if (await menuButton.isVisible({ timeout: 2000 }).catch(() => false)) {
         await menuButton.click()
 
-        // Context menu should appear with options
-        const contextMenu = page.getByRole('menu', { name: 'Context menu' })
+        // Context menu should appear with options (it's not a role="menu", it's a custom div)
+        const contextMenu = page.locator('[data-contextmenu]').or(page.getByText('Create sub-document'))
         await expect(contextMenu).toBeVisible({ timeout: 3000 })
       }
     })
@@ -41,15 +40,15 @@ test.describe('Context Menus - Sidebar', () => {
       await page.waitForLoadState('networkidle')
 
       // Look for document tree items
-      const docButtons = page.locator('aside button').filter({ hasText: /./ })
-      const firstDoc = docButtons.first()
+      const tree = page.getByRole('tree', { name: 'Workspace documents' }).or(page.getByRole('tree', { name: 'Documents' }))
+      const firstDoc = tree.first().locator('[data-testid="doc-item"]').first()
 
       // Data should always exist - fail if it doesn't
       await expect(firstDoc).toBeVisible({ timeout: 5000 })
       await firstDoc.click({ button: 'right' })
 
-      // Context menu should appear
-      const contextMenu = page.getByRole('menu', { name: 'Context menu' })
+      // Context menu should appear (it's a custom div with menu options)
+      const contextMenu = page.locator('[data-contextmenu]').or(page.getByText('Create sub-document'))
       await expect(contextMenu).toBeVisible({ timeout: 3000 })
     })
   })

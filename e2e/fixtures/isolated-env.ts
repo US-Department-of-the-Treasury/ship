@@ -115,6 +115,7 @@ export const test = base.extend<
         .withDatabase('ship_test')
         .withUsername('test')
         .withPassword('test')
+        .withStartupTimeout(30000)  // 30s timeout for CI/parallel workers
         .start();
 
       try {
