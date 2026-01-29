@@ -446,7 +446,7 @@ async function seed() {
           `INSERT INTO documents (workspace_id, document_type, title, properties)
            VALUES ($1, 'sprint', $2, $3)
            RETURNING id`,
-          [workspaceId, `Sprint ${sprint.number}`, JSON.stringify(sprintProperties)]
+          [workspaceId, `Week ${sprint.number}`, JSON.stringify(sprintProperties)]
         );
         const sprintId = sprintResult.rows[0].id;
 
@@ -465,9 +465,9 @@ async function seed() {
     }
 
     if (sprintsCreated > 0) {
-      console.log(`✅ Created ${sprintsCreated} sprints`);
+      console.log(`✅ Created ${sprintsCreated} weeks`);
     } else {
-      console.log('ℹ️  All sprints already exist');
+      console.log('ℹ️  All weeks already exist');
     }
 
     // Get Ship Core program for comprehensive sprint testing
@@ -892,7 +892,7 @@ async function seed() {
           `SELECT d.id FROM documents d
            JOIN document_associations da ON da.document_id = d.id
              AND da.related_id = $2 AND da.relationship_type = 'sprint'
-           WHERE d.workspace_id = $1 AND d.document_type = 'sprint_review'`,
+           WHERE d.workspace_id = $1 AND d.document_type = 'weekly_review'`,
           [workspaceId, sprint.id]
         );
 
@@ -917,9 +917,9 @@ async function seed() {
           // Create sprint review document without legacy sprint_id column
           const reviewResult = await pool.query(
             `INSERT INTO documents (workspace_id, document_type, title, content, created_by)
-             VALUES ($1, 'sprint_review', $2, $3, $4)
+             VALUES ($1, 'weekly_review', $2, $3, $4)
              RETURNING id`,
-            [workspaceId, `Sprint ${sprint.number} Review`, JSON.stringify(reviewContent), owner.id]
+            [workspaceId, `Week ${sprint.number} Review`, JSON.stringify(reviewContent), owner.id]
           );
           const reviewId = reviewResult.rows[0].id;
 
@@ -932,9 +932,9 @@ async function seed() {
     }
 
     if (sprintReviewsCreated > 0) {
-      console.log(`✅ Created ${sprintReviewsCreated} sprint reviews`);
+      console.log(`✅ Created ${sprintReviewsCreated} week reviews`);
     } else {
-      console.log('ℹ️  All sprint reviews already exist');
+      console.log('ℹ️  All week reviews already exist');
     }
 
     console.log('');

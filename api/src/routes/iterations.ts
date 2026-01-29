@@ -22,7 +22,7 @@ const listIterationsSchema = z.object({
   story_id: z.string().optional(),
 });
 
-// Create iteration entry - POST /api/sprints/:id/iterations
+// Create iteration entry - POST /api/weeks/:id/iterations
 router.post('/:id/iterations', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id: sprintId } = req.params;
@@ -47,7 +47,7 @@ router.post('/:id/iterations', authMiddleware, async (req: Request, res: Respons
     );
 
     if (sprintCheck.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -92,7 +92,7 @@ router.post('/:id/iterations', authMiddleware, async (req: Request, res: Respons
   }
 });
 
-// Get sprint iterations - GET /api/sprints/:id/iterations
+// Get sprint iterations - GET /api/weeks/:id/iterations
 router.get('/:id/iterations', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id: sprintId } = req.params;
@@ -115,7 +115,7 @@ router.get('/:id/iterations', authMiddleware, async (req: Request, res: Response
     );
 
     if (sprintCheck.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 

@@ -103,7 +103,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
 
   const fetchStandups = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/sprints/${sprintId}/standups`, { credentials: 'include' });
+      const res = await fetch(`${API_URL}/api/weeks/${sprintId}/standups`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setStandups(data);
@@ -129,7 +129,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
     try {
       const content = createEditor.getJSON();
 
-      const res = await fetchWithCsrf(`${API_URL}/api/sprints/${sprintId}/standups`, 'POST', {
+      const res = await fetchWithCsrf(`${API_URL}/api/weeks/${sprintId}/standups`, 'POST', {
         content,
         title: `Standup - ${new Date().toLocaleDateString()}`,
       });

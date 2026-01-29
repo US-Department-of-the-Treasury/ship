@@ -18,14 +18,14 @@ When building AI-powered skills (like `/ship:standup`, `/ship:review`, `/ship:re
 **Symptoms:**
 - AI skills asking generic questions not relevant to the project
 - No hypothesis tracking or validation prompts
-- Missing connections between sprints, projects, and programs
-- Can't analyze patterns across standups or sprint reviews
+- Missing connections between weeks, projects, and programs
+- Can't analyze patterns across standups or week reviews
 
 ## Root Cause
 
 AI skills were making multiple API calls to piece together context, losing the relationships between:
-- Program → Project → Sprint hierarchy
-- Sprint hypotheses and their validation status
+- Program → Project → Week hierarchy
+- Week hypotheses and their validation status
 - Standup history and blockers
 - Issue completion rates and scope changes
 
@@ -42,11 +42,11 @@ Create a dedicated `/api/claude/context` endpoint that returns the full context 
  * GET /api/claude/context
  * Query params:
  * - context_type: 'standup' | 'review' | 'retro'
- * - sprint_id: Sprint ID (required for standup/review)
+ * - week_id: Week ID (required for standup/review) - uses sprint_id param for historical compatibility
  * - project_id: Project ID (required for retro)
  */
 router.get('/context', authMiddleware, async (req: Request, res: Response) => {
-  const { context_type, sprint_id, project_id } = req.query;
+  const { context_type, sprint_id, project_id } = req.query; // sprint_id = week ID (historical param name)
   const workspaceId = req.workspaceId;
 
   switch (context_type) {
@@ -67,7 +67,7 @@ Each context type returns:
 ```typescript
 {
   context_type: 'standup' | 'review' | 'retro',
-  sprint: {
+  week: {  // Note: key remains 'sprint' in API for historical compatibility
     id, title, number, status,
     start_date, end_date,
     hypothesis,  // Key for validation tracking
@@ -97,12 +97,12 @@ Each context type returns:
 The endpoint generates context-aware questions:
 
 ```typescript
-function generateStandupQuestions(sprint, issueStats) {
+function generateStandupQuestions(week, issueStats) {
   const questions = [];
 
   // Hypothesis alignment
-  if (sprint.hypothesis) {
-    questions.push(`How does today's work relate to: "${sprint.hypothesis}"?`);
+  if (week.hypothesis) {
+    questions.push(`How does today's work relate to: "${week.hypothesis}"?`);
   }
 
   // Progress tracking
@@ -111,8 +111,8 @@ function generateStandupQuestions(sprint, issueStats) {
   }
 
   // Goal alignment
-  if (sprint.goal) {
-    questions.push(`On track for: "${sprint.goal}"?`);
+  if (week.goal) {
+    questions.push(`On track for: "${week.goal}"?`);
   }
 
   return questions;
@@ -123,7 +123,7 @@ function generateStandupQuestions(sprint, issueStats) {
 
 1. **Single endpoint, multiple context types**: One `/context` endpoint handles all three use cases, reducing API surface area
 
-2. **Full hierarchy in response**: Always include program → project → sprint chain, even if some levels are null
+2. **Full hierarchy in response**: Always include program → project → week chain, even if some levels are null
 
 3. **Pre-computed questions**: Generate clarifying questions server-side based on data patterns
 
@@ -135,11 +135,11 @@ Skills fetch context before interviewing the user:
 
 ```bash
 # In skill SKILL.md
-CONTEXT=$(curl -s "$SHIP_URL/api/claude/context?context_type=standup&sprint_id=$SPRINT_ID" \
+CONTEXT=$(curl -s "$SHIP_URL/api/claude/context?context_type=standup&sprint_id=$WEEK_ID" \
   -H "Authorization: Bearer $SHIP_API_TOKEN")
 
-# Extract key fields
-SPRINT_HYPOTHESIS=$(echo "$CONTEXT" | jq -r '.sprint.hypothesis')
+# Extract key fields (API returns 'sprint' key for historical compatibility)
+WEEK_HYPOTHESIS=$(echo "$CONTEXT" | jq -r '.sprint.hypothesis')
 PROJECT_GOAL=$(echo "$CONTEXT" | jq -r '.project.goal')
 CLARIFYING_QUESTIONS=$(echo "$CONTEXT" | jq -r '.clarifying_questions_context')
 ```
@@ -163,6 +163,6 @@ When building AI-powered features:
 
 ## Related Patterns
 
-- **Unified Document Model**: The context endpoint leverages the document model where everything (programs, projects, sprints, standups) is a document with relationships
+- **Unified Document Model**: The context endpoint leverages the document model where everything (programs, projects, weeks, standups) is a document with relationships
 - **TipTap Content Structure**: Context includes TipTap JSON content for rich text analysis
 - **Hypothesis-Driven Development**: Central to Ship's philosophy - the context API makes hypotheses queryable

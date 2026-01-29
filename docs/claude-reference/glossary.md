@@ -5,13 +5,13 @@ Terminology and concepts used throughout the Ship codebase.
 ## Core Concepts
 
 ### Unified Document Model
-The architectural pattern where all content types (wikis, issues, projects, sprints, etc.) are stored in a single `documents` table with a `document_type` discriminator. Follows Notion's paradigm where the difference between content types is properties, not structure.
+The architectural pattern where all content types (wikis, issues, projects, weeks, etc.) are stored in a single `documents` table with a `document_type` discriminator. Follows Notion's paradigm where the difference between content types is properties, not structure.
 
 ### Document Type
-The `document_type` enum that categorizes documents: `wiki`, `issue`, `program`, `project`, `sprint`, `person`, `standup`, `sprint_review`, `sprint_retro`, `sprint_plan`.
+The `document_type` enum that categorizes documents: `wiki`, `issue`, `program`, `project`, `sprint` (week), `person`, `standup`, `sprint_review` (week review), `sprint_retro` (week retro), `sprint_plan` (week plan). Note: `sprint` types retained for historical database compatibility.
 
 ### Properties (JSONB)
-Type-specific metadata stored in a JSONB column on documents. Each document type has different properties (e.g., issues have `state`, `priority`, `assignee_id`; sprints have `sprint_number`, `goal`).
+Type-specific metadata stored in a JSONB column on documents. Each document type has different properties (e.g., issues have `state`, `priority`, `assignee_id`; weeks have `sprint_number` (historical field name), `goal`).
 
 ### 4-Panel Layout
 The standard editor layout: Icon Rail (48px) → Contextual Sidebar (224px) → Main Content (flex-1) → Properties Sidebar (256px). All four panels are always visible.
@@ -175,22 +175,22 @@ E2E test fixture that creates per-worker PostgreSQL containers.
 ### test.fixme()
 Playwright marker for unimplemented tests. Prevents silent passing of empty tests.
 
-## Sprint Concepts
+## Week Concepts
 
-### Sprint
-Time-boxed development period (typically 2 weeks). Has `sprint_number`, `goal`, computed dates.
+### Week
+Time-boxed development period (7 days). Uses `sprint_number` field (historical name), `goal`, computed dates. Database document type is `'sprint'` for historical compatibility.
 
-### Sprint Plan
-Document capturing sprint planning decisions. Created at sprint start.
+### Week Plan
+Document capturing week planning decisions. Created at week start. Database document type is `'sprint_plan'` (historical name).
 
 ### Standup
 Daily status update document. Tracks what was done, what's planned, blockers.
 
-### Sprint Review
-Document for end-of-sprint demonstration and stakeholder feedback.
+### Week Review
+Document for end-of-week demonstration and stakeholder feedback. Database document type is `'sprint_review'` (historical name).
 
-### Sprint Retro (Retrospective)
-Document for team reflection. What went well, what to improve.
+### Week Retro (Retrospective)
+Document for team reflection. What went well, what to improve. Database document type is `'sprint_retro'` (historical name).
 
 ### ICE Score
 Issue prioritization metric: Impact × Confidence × Ease. Stored in issue properties.
@@ -201,7 +201,7 @@ Issue prioritization metric: Impact × Confidence × Ease. Stored in issue prope
 Top-level container for related projects. Has `prefix`, `color`, `emoji`.
 
 ### Project
-Time-bounded deliverable within a program. Contains issues and sprints.
+Time-bounded deliverable within a program. Contains issues and weeks.
 
 ### Issue
 Work item with state machine (`triage` → `backlog` → `todo` → `in_progress` → `in_review` → `done`/`cancelled`).

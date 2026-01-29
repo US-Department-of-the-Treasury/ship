@@ -138,7 +138,7 @@ test.describe('Accountability Owner Change', () => {
 
     // Create a sprint via sprints API (requires sprint_number for accountability to work)
     // Use sprint_number: 1 which has already started (workspace sprint_start_date is 3 months ago)
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Test Sprint',
@@ -160,11 +160,11 @@ test.describe('Accountability Owner Change', () => {
       (item: { accountability_target_id: string }) => item.accountability_target_id === sprintId
     );
 
-    // Should have at least sprint_plan action item (new sprint without plan)
+    // Should have at least weekly_plan action item (new sprint without plan)
     expect(sprintItems.length).toBeGreaterThan(0);
 
     // Step 3: Remove owner from the sprint
-    const removeOwnerResponse = await page.request.patch(`${apiServer.url}/api/sprints/${sprintId}`, {
+    const removeOwnerResponse = await page.request.patch(`${apiServer.url}/api/weeks/${sprintId}`, {
       headers: { 'x-csrf-token': csrfToken },
       data: { owner_id: null },
     });

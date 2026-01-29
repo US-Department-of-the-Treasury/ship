@@ -20,12 +20,8 @@ test.describe('Context Menus - Sidebar', () => {
       const docButtons = page.locator('aside button').filter({ hasText: /./  })
       const firstDoc = docButtons.first()
 
-      // Skip if no documents in sidebar
-      if (await firstDoc.count() === 0) {
-        test.skip()
-        return
-      }
-
+      // Data should always exist - fail if it doesn't
+      await expect(firstDoc).toBeVisible({ timeout: 5000 })
       await firstDoc.hover()
       await page.waitForTimeout(300) // Wait for hover state
 
@@ -48,12 +44,8 @@ test.describe('Context Menus - Sidebar', () => {
       const docButtons = page.locator('aside button').filter({ hasText: /./ })
       const firstDoc = docButtons.first()
 
-      // Skip if no documents
-      if (await firstDoc.count() === 0) {
-        test.skip()
-        return
-      }
-
+      // Data should always exist - fail if it doesn't
+      await expect(firstDoc).toBeVisible({ timeout: 5000 })
       await firstDoc.click({ button: 'right' })
 
       // Context menu should appear

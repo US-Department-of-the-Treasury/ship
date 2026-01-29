@@ -20,21 +20,31 @@ async function getCsrfToken(page: import('@playwright/test').Page, apiUrl: strin
   return token;
 }
 
-// Helper to check if today is a business day
-function isBusinessDay(): boolean {
-  const today = new Date();
-  const day = today.getDay();
-  return day !== 0 && day !== 6; // Not Sunday (0) or Saturday (6)
-}
-
 test.describe('Standup Accountability Flow', () => {
-  test('user with assigned issues in current sprint sees standup action item', async ({ page, apiServer }) => {
-    // Skip test on weekends since standups are only on business days
-    if (!isBusinessDay()) {
-      test.skip();
-      return;
-    }
+  // Mock date to always be a Wednesday (business day) to avoid weekend skips
+  test.beforeEach(async ({ page }) => {
+    // Set a fixed Wednesday date for all tests
+    await page.addInitScript(() => {
+      const mockDate = new Date('2025-01-15T10:00:00'); // Wednesday
+      const OriginalDate = Date;
+      // @ts-ignore
+      globalThis.Date = class extends OriginalDate {
+        constructor(...args: unknown[]) {
+          if (args.length === 0) {
+            super(mockDate.getTime());
+          } else {
+            // @ts-ignore
+            super(...args);
+          }
+        }
+        static now() {
+          return mockDate.getTime();
+        }
+      };
+    });
+  });
 
+  test('user with assigned issues in current sprint sees standup action item', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');
@@ -76,7 +86,7 @@ test.describe('Standup Accountability Flow', () => {
     const currentSprintNumber = Math.floor(daysSinceStart / 7) + 1;
 
     // Create a sprint that's current (should be started)
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Current Sprint for Standup',
@@ -117,11 +127,7 @@ test.describe('Standup Accountability Flow', () => {
   });
 
   test('creating standup removes action item', async ({ page, apiServer }) => {
-    // Skip test on weekends since standups are only on business days
-    if (!isBusinessDay()) {
-      test.skip();
-      return;
-    }
+    // Date is mocked to Wednesday in beforeEach, so no weekend skip needed
 
     // Login to get auth cookies
     await page.goto('/login');
@@ -163,7 +169,7 @@ test.describe('Standup Accountability Flow', () => {
     const currentSprintNumber = Math.floor(daysSinceStart / 7) + 1;
 
     // Create current sprint
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Current Sprint for Standup Creation',
@@ -198,7 +204,7 @@ test.describe('Standup Accountability Flow', () => {
     expect(standupItems1.length).toBe(1);
 
     // Step 2: Create a standup for this sprint (via sprint standups endpoint)
-    const standupResponse = await page.request.post(`${apiServer.url}/api/sprints/${sprintId}/standups`, {
+    const standupResponse = await page.request.post(`${apiServer.url}/api/weeks/${sprintId}/standups`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Daily Standup',
@@ -262,7 +268,7 @@ test.describe('Standup Accountability Flow', () => {
     const currentSprintNumber = Math.floor(daysSinceStart / 7) + 1;
 
     // Create current sprint with user as owner
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/sprints`, {
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
         title: 'Empty Sprint No Assigned Issues',

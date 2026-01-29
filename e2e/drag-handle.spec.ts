@@ -541,13 +541,8 @@ test.describe('Drag Handle - Block Reordering', () => {
       const documentEmbed = page.locator('[data-document-embed]')
       embedCount = await documentEmbed.count()
 
-      if (embedCount === 0) {
-        // Document embed not found - this test requires slash command or direct API insertion
-        // which may not be reliably available. Skip with informative message.
-        console.log('Document embed could not be inserted - slash command dropdown may not have appeared')
-        test.skip()
-        return
-      }
+      // Document embed should be inserted - fail if it doesn't work
+      expect(embedCount).toBeGreaterThan(0)
 
       // Get initial content order
       const initialContent = await editor.textContent()

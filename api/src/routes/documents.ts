@@ -43,7 +43,7 @@ async function canAccessDocument(
 // Validation schemas
 const createDocumentSchema = z.object({
   title: z.string().min(1).max(255).optional().default('Untitled'),
-  document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'sprint_plan', 'sprint_retro']).optional().default('wiki'),
+  document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'weekly_plan', 'weekly_retro']).optional().default('wiki'),
   parent_id: z.string().uuid().optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
@@ -561,7 +561,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     // Broadcast accountability update for document types that affect action items
     // Sprint plans clear the "write sprint plan" action item
     // Documents with outcome property linked to sprints clear the "write retro" action item
-    if (document_type === 'sprint_plan' || (properties && 'outcome' in properties)) {
+    if (document_type === 'weekly_plan' || (properties && 'outcome' in properties)) {
       broadcastToUser(req.userId!, 'accountability:updated', { documentId: newDoc.id, documentType: document_type });
     }
 

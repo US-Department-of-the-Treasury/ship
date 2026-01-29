@@ -8,7 +8,7 @@ import { useMemo, useCallback } from 'react';
 import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
-import { SprintSidebar } from '@/components/sidebars/SprintSidebar';
+import { WeekSidebar } from '@/components/sidebars/WeekSidebar';
 import { ProgramSidebar } from '@/components/sidebars/ProgramSidebar';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
@@ -300,7 +300,7 @@ export function PropertiesPanel({
       case 'sprint': {
         const sprintProps = panelProps as SprintPanelProps;
         return (
-          <SprintSidebar
+          <WeekSidebar
             sprint={document as SprintDocument}
             onUpdate={onUpdate as (updates: Partial<SprintDocument>) => Promise<void>}
             highlightedFields={highlightedFields}

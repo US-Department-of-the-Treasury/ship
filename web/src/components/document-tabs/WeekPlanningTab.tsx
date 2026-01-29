@@ -35,16 +35,16 @@ export default function SprintPlanningTab({ documentId, document }: DocumentTabP
   // Start sprint mutation
   const startSprintMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiPost(`/api/sprints/${documentId}/start`);
+      const response = await apiPost(`/api/weeks/${documentId}/start`);
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.error || 'Failed to start sprint');
+        throw new Error(err.error || 'Failed to start week');
       }
       return response.json();
     },
     onSuccess: (data) => {
       const count = data.snapshot_issue_count ?? 0;
-      showToast(`Sprint started with ${count} issue${count === 1 ? '' : 's'}`, 'success');
+      showToast(`Week started with ${count} issue${count === 1 ? '' : 's'}`, 'success');
       // Invalidate queries to refresh document data
       queryClient.invalidateQueries({ queryKey: ['document', documentId] });
       queryClient.invalidateQueries({ queryKey: ['sprints'] });
@@ -82,7 +82,7 @@ export default function SprintPlanningTab({ documentId, document }: DocumentTabP
             disabled={isStarting}
             className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isStarting ? 'Starting...' : 'Start Sprint'}
+            {isStarting ? 'Starting...' : 'Start Week'}
           </button>
         )}
       </div>
@@ -120,7 +120,7 @@ export default function SprintPlanningTab({ documentId, document }: DocumentTabP
               <svg className="h-12 w-12 mx-auto mb-4 text-muted opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <p className="text-sm font-medium text-muted">No issues in this sprint yet</p>
+              <p className="text-sm font-medium text-muted">No issues in this week yet</p>
               <p className="text-xs text-muted mt-1">Use "Show All" to find issues to add</p>
             </div>
           }

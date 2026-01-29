@@ -38,10 +38,10 @@ export type DocumentType =
   | 'project'
   | 'sprint'
   | 'person'
-  | 'sprint_plan'
-  | 'sprint_retro'
+  | 'weekly_plan'
+  | 'weekly_retro'
   | 'standup'
-  | 'sprint_review';
+  | 'weekly_review';
 
 // Issue states
 export type IssueState = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
@@ -55,15 +55,15 @@ export type IssueSource = 'internal' | 'external' | 'action_items';
 // Accountability types for auto-generated action_items issues
 export type AccountabilityType =
   | 'standup'
-  | 'sprint_plan'
-  | 'sprint_review'
-  | 'sprint_start'
-  | 'sprint_issues'
+  | 'weekly_plan'
+  | 'weekly_review'
+  | 'week_start'
+  | 'week_issues'
   | 'project_plan'
   | 'project_retro';
 
 // Sprint status - computed from dates, not stored
-export type SprintStatus = 'active' | 'upcoming' | 'completed';
+export type WeekStatus = 'active' | 'upcoming' | 'completed';
 
 // Properties interfaces for each document type
 // Each includes index signature for JSONB compatibility
@@ -143,7 +143,7 @@ export interface ApprovalTracking {
   approved_version_id: number | null;     // document_history.id that was approved
 }
 
-export interface SprintProperties {
+export interface WeekProperties {
   sprint_number: number;  // References implicit 1-week window, dates computed from this
   owner_id: string;       // REQUIRED - person accountable for this sprint
   status?: 'planning' | 'active' | 'completed';  // Sprint workflow status (default: 'planning')
@@ -170,8 +170,8 @@ export interface WikiProperties {
   maintainer_id?: string | null;
   [key: string]: unknown;
 }
-export type SprintPlanProperties = Record<string, unknown>;
-export type SprintRetroProperties = Record<string, unknown>;
+export type WeeklyPlanProperties = Record<string, unknown>;
+export type WeeklyRetroProperties = Record<string, unknown>;
 
 // Standup properties - comment-like entries on sprints
 export interface StandupProperties {
@@ -179,9 +179,9 @@ export interface StandupProperties {
   [key: string]: unknown;
 }
 
-// Sprint review properties - one per sprint, tracks plan validation
-export interface SprintReviewProperties {
-  sprint_id: string;          // REQUIRED - which sprint this reviews
+// Weekly review properties - one per week, tracks plan validation
+export interface WeeklyReviewProperties {
+  sprint_id: string;          // REQUIRED - which sprint/week this reviews
   owner_id: string;           // REQUIRED - who is accountable for this review
   plan_validated: boolean | null;  // null = not yet determined
   [key: string]: unknown;
@@ -192,13 +192,13 @@ export type DocumentProperties =
   | IssueProperties
   | ProgramProperties
   | ProjectProperties
-  | SprintProperties
+  | WeekProperties
   | PersonProperties
   | WikiProperties
-  | SprintPlanProperties
-  | SprintRetroProperties
+  | WeeklyPlanProperties
+  | WeeklyRetroProperties
   | StandupProperties
-  | SprintReviewProperties;
+  | WeeklyReviewProperties;
 
 // Base document interface
 export interface Document {
@@ -254,9 +254,9 @@ export interface ProjectDocument extends Document {
   properties: ProjectProperties;
 }
 
-export interface SprintDocument extends Document {
+export interface WeekDocument extends Document {
   document_type: 'sprint';
-  properties: SprintProperties;
+  properties: WeekProperties;
 }
 
 export interface PersonDocument extends Document {
@@ -264,14 +264,14 @@ export interface PersonDocument extends Document {
   properties: PersonProperties;
 }
 
-export interface SprintPlanDocument extends Document {
-  document_type: 'sprint_plan';
-  properties: SprintPlanProperties;
+export interface WeeklyPlanDocument extends Document {
+  document_type: 'weekly_plan';
+  properties: WeeklyPlanProperties;
 }
 
-export interface SprintRetroDocument extends Document {
-  document_type: 'sprint_retro';
-  properties: SprintRetroProperties;
+export interface WeeklyRetroDocument extends Document {
+  document_type: 'weekly_retro';
+  properties: WeeklyRetroProperties;
 }
 
 export interface StandupDocument extends Document {
@@ -279,9 +279,9 @@ export interface StandupDocument extends Document {
   properties: StandupProperties;
 }
 
-export interface SprintReviewDocument extends Document {
-  document_type: 'sprint_review';
-  properties: SprintReviewProperties;
+export interface WeeklyReviewDocument extends Document {
+  document_type: 'weekly_review';
+  properties: WeeklyReviewProperties;
 }
 
 // Input types for creating/updating documents
@@ -327,10 +327,10 @@ export interface CreateProgramInput extends CreateDocumentInput {
   };
 }
 
-// Helper type for sprint creation
-export interface CreateSprintInput extends CreateDocumentInput {
+// Helper type for week/sprint creation
+export interface CreateWeekInput extends CreateDocumentInput {
   document_type: 'sprint';
-  properties?: Partial<SprintProperties>;
+  properties?: Partial<WeekProperties>;
 }
 
 // Helper type for project creation (owner_id is optional - can be unassigned)
@@ -398,7 +398,7 @@ export function computeSprintDates(sprintNumber: number, workspaceStartDate: Dat
  * Compute sprint status from sprint number and workspace start date.
  * Status is derived from whether today falls within, before, or after the sprint window.
  */
-export function computeSprintStatus(sprintNumber: number, workspaceStartDate: Date): SprintStatus {
+export function computeWeekStatus(sprintNumber: number, workspaceStartDate: Date): WeekStatus {
   const { start, end } = computeSprintDates(sprintNumber, workspaceStartDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0); // Start of today for comparison

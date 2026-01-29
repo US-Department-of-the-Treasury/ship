@@ -316,7 +316,7 @@ interface ClaudeContextRequest {
 
 - `/Users/jonesshaw/Documents/code/ship/api/src/routes/dashboard.ts:11-32` - `WorkItem` interface
 - `/Users/jonesshaw/Documents/code/ship/api/src/routes/claude.ts:21-48` - Multiple interfaces
-- `/Users/jonesshaw/Documents/code/ship/api/src/routes/sprints.ts:265` - `ActionItem` interface
+- `/Users/jonesshaw/Documents/code/ship/api/src/routes/weeks.ts:265` - `ActionItem` interface
 - `/Users/jonesshaw/Documents/code/ship/api/src/routes/backlinks.ts:158` - `Request` interface
 - `/Users/jonesshaw/Documents/code/ship/api/src/routes/issues.ts:105` - `BelongsToEntry` interface
 - `/Users/jonesshaw/Documents/code/ship/api/src/routes/caia-auth.ts:381` - `PendingInvite` interface

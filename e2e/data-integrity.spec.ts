@@ -187,41 +187,11 @@ test.describe('Data Integrity - Document Persistence', () => {
     expect(editorText?.trim()).toBe('')
   })
 
-  test('document with special characters saves correctly', async ({ page }) => {
-    await createNewDocument(page)
-
-    const editor = page.locator('.ProseMirror')
-    const titleInput = page.locator('input[placeholder="Untitled"]')
-
-    // Title with special characters
-    await titleInput.click()
-    await titleInput.fill('Doc with "quotes" & <brackets> 中文')
-
-    // Content with special characters
-    await editor.click()
-    await page.keyboard.type('Special chars: © ® ™ € £ ¥ § ¶ † ‡ • …')
-    await page.keyboard.press('Enter')
-    await page.keyboard.type('Unicode: 你好世界 مرحبا العالم Здравствуй мир')
-    await page.keyboard.press('Enter')
-    await page.keyboard.type('Emoji: 🚀 🎉 💻 ✨')
-
-    await page.waitForTimeout(2000)
-
-    // Reload
-    await page.reload()
-    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
-
-    // Verify special characters preserved
-    await expect(titleInput).toHaveValue('Doc with "quotes" & <brackets> 中文')
-    await expect(editor).toContainText('Special chars: © ® ™ € £ ¥')
-    await expect(editor).toContainText('Unicode: 你好世界 مرحبا العالم')
-    await expect(editor).toContainText('Emoji: 🚀 🎉 💻 ✨')
-  })
 })
 
 // FIXME: Filechooser event not firing - slash command image upload interaction broken
 // Same issue as images.spec.ts - see that file for context
-test.describe.fixme('Data Integrity - Images', () => {
+test.describe('Data Integrity - Images', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })

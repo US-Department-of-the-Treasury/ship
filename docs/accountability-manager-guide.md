@@ -21,8 +21,8 @@ The grid shows each team member as a row with columns for:
 | **Person** | Team member name |
 | **Pending Items** | Count of overdue accountability tasks |
 | **Standups** | Days since last standup |
-| **Hypotheses** | Unapproved sprint/project hypotheses |
-| **Reviews** | Unapproved sprint reviews |
+| **Hypotheses** | Unapproved week/project hypotheses |
+| **Reviews** | Unapproved weekly reviews |
 | **Retros** | Missing or unapproved retrospectives |
 
 ### Color Coding
@@ -40,17 +40,17 @@ The accountability grid is useful for one-on-one meetings:
 3. Use specific data points ("Your last standup was 5 days ago")
 4. Focus on patterns, not individual incidents
 
-## Reviewing Sprint Hypotheses
+## Reviewing Week Hypotheses
 
-Sprint hypotheses define what the team expects to accomplish and learn during the sprint.
+Week hypotheses define what the team expects to accomplish and learn during the week.
 
 ### When to Review
 
-Review hypotheses **before the sprint starts**. A sprint without an approved hypothesis should not begin execution.
+Review hypotheses **before the week starts**. A week without an approved hypothesis should not begin execution.
 
 ### What to Look For
 
-A good sprint hypothesis includes:
+A good week hypothesis includes:
 
 - **Clear objectives**: What will be delivered?
 - **Measurable outcomes**: How will we know if we succeeded?
@@ -59,9 +59,9 @@ A good sprint hypothesis includes:
 
 ### Approval Workflow
 
-1. Sprint owner writes the hypothesis
+1. Week owner writes the hypothesis
 2. You receive notification of pending approval
-3. Navigate to the sprint's sidebar
+3. Navigate to the week's sidebar
 4. Click **Approve Hypothesis** to approve
 
 If changes are needed:
@@ -71,7 +71,7 @@ If changes are needed:
 
 ### If Hypothesis Changes After Approval
 
-If the sprint owner modifies the hypothesis after approval, the status changes to **Changed Since Approved**.
+If the week owner modifies the hypothesis after approval, the status changes to **Changed Since Approved**.
 
 You'll see:
 - **Re-approve** button (amber color)
@@ -79,26 +79,26 @@ You'll see:
 
 Review the diff and re-approve if the changes are acceptable.
 
-## Reviewing Sprint Reviews
+## Reviewing Weekly Reviews
 
-Sprint reviews document what was actually delivered versus what was planned.
+Weekly reviews document what was actually delivered versus what was planned.
 
 ### When to Review
 
-Review sprint reviews **within 3 days of sprint end**. Fresh context makes review more valuable.
+Review weekly reviews **within 3 days of week end**. Fresh context makes review more valuable.
 
 ### What to Look For
 
-A good sprint review includes:
+A good weekly review includes:
 
 - **Issues completed**: What shipped?
 - **Carryover explained**: What didn't ship and why?
 - **Blockers documented**: What slowed the team down?
-- **Velocity comparison**: How does this compare to previous sprints?
+- **Velocity comparison**: How does this compare to previous weeks?
 
 ### Approval Workflow
 
-1. Navigate to the completed sprint
+1. Navigate to the completed week
 2. In the sidebar, find **Review Approval**
 3. Read the review content
 4. Click **Approve Review** if satisfactory
@@ -107,7 +107,7 @@ A good sprint review includes:
 
 - Missing explanation for incomplete issues
 - No mention of blockers or learnings
-- Copy-paste from previous sprint (no real reflection)
+- Copy-paste from previous week (no real reflection)
 - Blame language instead of process improvement
 
 ## Reviewing Project Hypotheses
@@ -223,24 +223,24 @@ Every week:
 
 1. Open the accountability grid
 2. Note any team members with red indicators
-3. Check for unapproved hypotheses on active sprints
-4. Review any pending sprint reviews from last week
+3. Check for unapproved hypotheses on active weeks
+4. Review any pending weekly reviews from last week
 5. Follow up on specific items in your 1:1s
 
-### Sprint Kickoff Approval
+### Week Kickoff Approval
 
-At sprint start:
+At week start:
 
-1. Sprint owner notifies you hypothesis is ready
-2. Read the hypothesis in the sprint document
+1. Week owner notifies you hypothesis is ready
+2. Read the hypothesis in the week document
 3. Navigate to sidebar and click **Approve Hypothesis**
 4. If feedback needed, comment first, then approve when updated
 
-### Sprint End Approval
+### Week End Approval
 
-After sprint ends:
+After week ends:
 
-1. Wait for sprint owner to complete the review
+1. Wait for week owner to complete the review
 2. Read the review content
 3. Navigate to sidebar and click **Approve Review**
 4. Note any patterns for retrospective discussion
@@ -321,4 +321,4 @@ A typo-free hypothesis with vague objectives is worse than a rough hypothesis wi
 
 - [Accountability Philosophy](./accountability-philosophy.md) - Why these features exist
 - [Ship Philosophy](./ship-philosophy.md) - System design overview
-- [Sprint Documentation Philosophy](./sprint-documentation-philosophy.md) - Sprint workflow details
+- [Week Documentation Philosophy](./week-documentation-philosophy.md) - Week workflow details

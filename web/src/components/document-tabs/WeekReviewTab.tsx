@@ -1,5 +1,5 @@
-import { SprintReview } from '@/components/SprintReview';
-import { SprintReconciliation } from '@/components/SprintReconciliation';
+import { WeekReview } from '@/components/WeekReview';
+import { WeekReconciliation } from '@/components/WeekReconciliation';
 import type { DocumentTabProps } from '@/lib/document-tabs';
 
 /**
@@ -24,7 +24,7 @@ export default function SprintReviewTab({ documentId, document }: DocumentTabPro
       {/* Sprint reconciliation for incomplete issues */}
       {programId && (
         <div className="border-b border-border p-4">
-          <SprintReconciliation
+          <WeekReconciliation
             sprintId={documentId}
             sprintNumber={sprintNumber}
             programId={programId}
@@ -37,7 +37,7 @@ export default function SprintReviewTab({ documentId, document }: DocumentTabPro
       )}
       {/* Sprint review editor */}
       <div className="flex-1 overflow-auto pb-20">
-        <SprintReview sprintId={documentId} />
+        <WeekReview sprintId={documentId} />
       </div>
     </div>
   );

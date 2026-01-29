@@ -170,7 +170,7 @@ async function checkMissingStandups(
 
       const lastStandupDate = lastStandupResult.rows[0]?.last_standup_date;
       let daysSinceLastStandup = 0;
-      const sprintTitle = sprint.title || `Sprint ${sprint.properties?.sprint_number || 'N'}`;
+      const sprintTitle = sprint.title || `Week ${sprint.properties?.sprint_number || 'N'}`;
       const issueCount = parseInt(sprint.issue_count, 10) || 0;
 
       // Format: "Post standup for {sprint_title} ({issue_count} issues)"
@@ -241,14 +241,14 @@ async function checkSprintAccountability(
       continue;
     }
 
-    const sprintTitle = sprint.title || `Sprint ${sprintNumber}`;
+    const sprintTitle = sprint.title || `Week ${sprintNumber}`;
 
     const sprintStartStr = sprintStartDate.toISOString().split('T')[0] || null;
 
     // Check for missing plan
     if (!props.plan || props.plan.trim() === '') {
       items.push({
-        type: 'sprint_plan',
+        type: 'weekly_plan',
         targetId: sprint.id,
         targetTitle: sprintTitle,
         targetType: 'sprint',
@@ -260,7 +260,7 @@ async function checkSprintAccountability(
     // Check if sprint hasn't been started (status !== 'active' or 'completed')
     if (props.status !== 'active' && props.status !== 'completed') {
       items.push({
-        type: 'sprint_start',
+        type: 'week_start',
         targetId: sprint.id,
         targetTitle: sprintTitle,
         targetType: 'sprint',
@@ -284,7 +284,7 @@ async function checkSprintAccountability(
     const issueCount = parseInt(issueCountResult.rows[0].count, 10);
     if (issueCount === 0) {
       items.push({
-        type: 'sprint_issues',
+        type: 'week_issues',
         targetId: sprint.id,
         targetTitle: sprintTitle,
         targetType: 'sprint',
@@ -322,7 +322,7 @@ async function checkMissingSprintReviews(
        AND NOT EXISTS (
          SELECT 1 FROM documents r
          JOIN document_associations da ON da.document_id = r.id AND da.related_id = s.id AND da.relationship_type = 'sprint'
-         WHERE r.document_type = 'sprint_review'
+         WHERE r.document_type = 'weekly_review'
            AND r.workspace_id = $1
        )`,
     [workspaceId, userId]
@@ -349,9 +349,9 @@ async function checkMissingSprintReviews(
     const reviewDueDate = addBusinessDays(sprintEndStr, 1);
 
     if (todayStr > reviewDueDate) {
-      const sprintTitle = sprint.title || `Sprint ${sprintNumber}`;
+      const sprintTitle = sprint.title || `Week ${sprintNumber}`;
       items.push({
-        type: 'sprint_review',
+        type: 'weekly_review',
         targetId: sprint.id,
         targetTitle: sprintTitle,
         targetType: 'sprint',

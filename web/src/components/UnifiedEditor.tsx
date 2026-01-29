@@ -414,7 +414,7 @@ function getDefaultPlaceholder(documentType: DocumentType): string {
     case 'project':
       return 'Describe this project...';
     case 'sprint':
-      return 'Add sprint goals, notes, or description...';
+      return 'Add week goals, notes, or description...';
     case 'program':
       return 'Describe this program...';
     case 'person':
@@ -439,4 +439,4 @@ export type {
 export { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 export { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 export { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
-export { SprintSidebar } from '@/components/sidebars/SprintSidebar';
+export { WeekSidebar } from '@/components/sidebars/WeekSidebar';

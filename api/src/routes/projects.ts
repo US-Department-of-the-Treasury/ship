@@ -192,7 +192,7 @@ async function generatePrefilledRetroContent(projectData: any, sprints: any[], i
     content.content.push({
       type: 'heading',
       attrs: { level: 3 },
-      content: [{ type: 'text', text: `Sprints (${sprints.length})` }],
+      content: [{ type: 'text', text: `Weeks (${sprints.length})` }],
     });
     content.content.push({
       type: 'bulletList',
@@ -200,7 +200,7 @@ async function generatePrefilledRetroContent(projectData: any, sprints: any[], i
         type: 'listItem',
         content: [{
           type: 'paragraph',
-          content: [{ type: 'text', text: `Sprint ${s.sprint_number}: ${s.title}` }],
+          content: [{ type: 'text', text: `Week ${s.sprint_number}: ${s.title}` }],
         }],
       })),
     });
@@ -938,7 +938,7 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
         success_criteria: props.success_criteria || [],
         next_steps: props.next_steps || null,
         content: projectData.content || {},
-        sprints: sprintsResult.rows,
+        weeks: sprintsResult.rows,
         issues_summary: {
           total: issuesResult.rows.length,
           completed: issuesResult.rows.filter((i: any) => i.state === 'done').length,
@@ -962,7 +962,7 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
         success_criteria: [],
         next_steps: null,
         content: prefilledContent,
-        sprints: sprintsResult.rows,
+        weeks: sprintsResult.rows,
         issues_summary: {
           total: issuesResult.rows.length,
           completed: issuesResult.rows.filter((i: any) => i.state === 'done').length,
@@ -1301,7 +1301,7 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     );
 
     if (existingCheck.rows.length > 0) {
-      res.status(400).json({ error: `Sprint ${sprint_number} already exists for this project` });
+      res.status(400).json({ error: `Week ${sprint_number} already exists for this project` });
       return;
     }
 

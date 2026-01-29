@@ -92,7 +92,7 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
 
       sprints.push({
         number: i,
-        name: `Sprint ${i}`,
+        name: `Week ${i}`,
         startDate: sprintStart.toISOString().split('T')[0],
         endDate: sprintEnd.toISOString().split('T')[0],
         isCurrent: i === currentSprintNumber,
@@ -183,7 +183,7 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
 
     res.json({
       users: usersResult.rows,
-      sprints,
+      weeks: sprints,
       associations,
       currentSprintNumber,
     });
@@ -598,7 +598,7 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
         `INSERT INTO documents (workspace_id, document_type, title, properties)
          VALUES ($1, 'sprint', $2, $3)
          RETURNING id`,
-        [workspaceId, `Sprint ${sprintNumber}`, JSON.stringify(props)]
+        [workspaceId, `Week ${sprintNumber}`, JSON.stringify(props)]
       );
       sprintId = newSprintResult.rows[0].id;
 
@@ -791,7 +791,7 @@ router.get('/accountability', authMiddleware, async (req: Request, res: Response
 
       sprints.push({
         number: i,
-        name: `Sprint ${i}`,
+        name: `Week ${i}`,
         startDate: sprintStart.toISOString().split('T')[0],
         endDate: sprintEnd.toISOString().split('T')[0],
         isCurrent: i === currentSprintNumber,
@@ -979,7 +979,7 @@ router.get('/people/:personId/sprint-metrics', authMiddleware, async (req: Reque
 
       sprints.push({
         number: i,
-        name: `Sprint ${i}`,
+        name: `Week ${i}`,
         startDate: sprintStart.toISOString().split('T')[0],
         endDate: sprintEnd.toISOString().split('T')[0],
         isCurrent: i === currentSprintNumber,
@@ -1093,7 +1093,7 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
 
       sprintRange.push({
         number: i,
-        name: `Sprint ${i}`,
+        name: `Week ${i}`,
         startDate: sprintStart.toISOString().split('T')[0],
         endDate: sprintEnd.toISOString().split('T')[0],
         isCurrent: i === currentSprintNumber,
@@ -1111,7 +1111,7 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
          d.properties->'review_approval' as review_approval,
          EXISTS(
            SELECT 1 FROM documents sr
-           WHERE sr.document_type = 'sprint_review'
+           WHERE sr.document_type = 'weekly_review'
            AND sr.properties->>'sprint_id' = d.id::text
            AND sr.archived_at IS NULL
          ) as has_review
@@ -1214,7 +1214,7 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
     });
 
     res.json({
-      sprints: sprintRange,
+      weeks: sprintRange,
       currentSprintNumber,
       sprintAccountability,
       projects,

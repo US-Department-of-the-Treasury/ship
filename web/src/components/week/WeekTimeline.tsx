@@ -1,18 +1,18 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { cn } from '@/lib/cn';
 import { sprintStatusColors } from '@/lib/statusColors';
-import type { Sprint } from '@/hooks/useSprintsQuery';
+import type { Sprint } from '@/hooks/useWeeksQuery';
 
 // Re-export Sprint type for consumers
-export type { Sprint } from '@/hooks/useSprintsQuery';
+export type { Sprint } from '@/hooks/useWeeksQuery';
 
-// Sprint window represents a 1-week period (may or may not have a sprint document)
-export interface SprintWindow {
+// Week window represents a 1-week period (may or may not have a week document)
+export interface WeekWindow {
   sprint_number: number;
   start_date: Date;
   end_date: Date;
   status: 'active' | 'upcoming' | 'completed';
-  sprint: Sprint | null; // null if no sprint document exists for this window
+  sprint: Sprint | null; // null if no week document exists for this window
 }
 
 // Compute sprint dates from sprint number (1-week sprints)
@@ -43,15 +43,15 @@ export function getCurrentSprintNumber(workspaceStartDate: Date): number {
   return Math.max(1, Math.floor(daysSinceStart / 7) + 1);
 }
 
-// Generate sprint windows for display
-export function generateSprintWindows(
+// Generate week windows for display
+export function generateWeekWindows(
   sprints: Sprint[],
   workspaceStartDate: Date,
   rangeStart: number,
   rangeEnd: number
-): SprintWindow[] {
+): WeekWindow[] {
   const sprintMap = new Map(sprints.map(s => [s.sprint_number, s]));
-  const windows: SprintWindow[] = [];
+  const windows: WeekWindow[] = [];
 
   for (let num = rangeStart; num <= rangeEnd; num++) {
     const { start, end } = computeSprintDates(num, workspaceStartDate);
@@ -73,16 +73,22 @@ function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// Format "Week of Jan 27" from a date
+function formatWeekName(startDate: Date): string {
+  const formatted = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `Week of ${formatted}`;
+}
+
 // Get plan status color and tooltip based on sprint status and whether plan exists
 function getPlanStatus(hasPlan: boolean, status: 'active' | 'upcoming' | 'completed'): { color: string; tooltip: string } {
   if (hasPlan) {
     return { color: 'text-green-500', tooltip: 'Plan exists' };
   }
   if (status === 'upcoming') {
-    return { color: 'text-yellow-500', tooltip: 'Plan needed before sprint starts' };
+    return { color: 'text-yellow-500', tooltip: 'Plan needed before week starts' };
   }
   // active or completed without plan
-  return { color: 'text-red-500', tooltip: 'Missing plan - sprint already started' };
+  return { color: 'text-red-500', tooltip: 'Missing plan - week already started' };
 }
 
 // Get retro status color and tooltip based on sprint status and days since end
@@ -96,31 +102,28 @@ function getRetroStatus(hasRetro: boolean, status: 'active' | 'upcoming' | 'comp
   // completed without retro - check how long ago
   const daysSinceEnd = Math.floor((Date.now() - endDate.getTime()) / (1000 * 60 * 60 * 24));
   if (daysSinceEnd >= 14) {
-    return { color: 'text-red-500', tooltip: `Retro overdue (${daysSinceEnd} days since sprint ended)` };
+    return { color: 'text-red-500', tooltip: `Retro overdue (${daysSinceEnd} days since week ended)` };
   }
-  return { color: 'text-yellow-500', tooltip: `Retro needed (${daysSinceEnd} days since sprint ended)` };
+  return { color: 'text-yellow-500', tooltip: `Retro needed (${daysSinceEnd} days since week ended)` };
 }
 
-// Individual sprint window card
-interface SprintWindowCardProps {
-  window: SprintWindow;
+// Individual week window card
+interface WeekWindowCardProps {
+  window: WeekWindow;
   isCurrentWindow: boolean;
   isSelected: boolean;
   onSelectSprint: (sprintNumber: number) => void;
   onOpenSprint: (id: string) => void;
-  onCreateClick: (sprintNumber: number) => void;
 }
 
-function SprintWindowCard({
+function WeekWindowCard({
   window,
   isCurrentWindow,
   isSelected,
   onSelectSprint,
   onOpenSprint,
-  onCreateClick,
-}: SprintWindowCardProps) {
+}: WeekWindowCardProps) {
   const { sprint, status, sprint_number, start_date, end_date } = window;
-  const canCreate = status !== 'completed';
 
   if (sprint) {
     // Filled window - sprint exists
@@ -145,13 +148,13 @@ function SprintWindowCard({
         )}
       >
         <div className="flex items-center justify-between mb-1">
-          <span className="font-medium text-foreground text-sm">{sprint.name}</span>
+          <span className="font-medium text-foreground text-sm">
+            {formatWeekName(start_date)}
+            {isCurrentWindow && <span className="text-accent ml-1">(Current)</span>}
+          </span>
           <div className="flex items-center gap-1">
             {sprint.is_complete === false && (
               <span className="text-xs text-orange-500" title="Incomplete - missing required fields">●</span>
-            )}
-            {status === 'active' && (
-              <span className="text-xs text-accent">●</span>
             )}
           </div>
         </div>
@@ -200,26 +203,24 @@ function SprintWindowCard({
     );
   }
 
-  // Empty window - no sprint
+  // Empty window - no sprint document, just informational display
   return (
     <div
       data-active={isCurrentWindow}
       className={cn(
         'flex-shrink-0 w-40 rounded-lg border border-dashed p-3 text-left',
-        canCreate ? 'border-border hover:border-accent/50 cursor-pointer' : 'border-border/50 opacity-50',
+        'border-border/50',
         isCurrentWindow && 'border-accent/30'
       )}
-      onClick={() => canCreate && onCreateClick(sprint_number)}
     >
-      <div className="font-medium text-muted text-sm mb-1">Window {sprint_number}</div>
+      <div className="font-medium text-muted text-sm mb-1">
+        {formatWeekName(start_date)}
+        {isCurrentWindow && <span className="text-accent ml-1">(Current)</span>}
+      </div>
       <div className="text-xs text-muted mb-2">
         {formatDate(start_date.toISOString())} - {formatDate(end_date.toISOString())}
       </div>
-      {canCreate ? (
-        <div className="text-xs text-accent">+ Create sprint</div>
-      ) : (
-        <div className="text-xs text-muted">No sprint</div>
-      )}
+      <div className="text-xs text-muted">No issues</div>
       <div className="mt-2 text-xs">
         <span className={cn(
           'rounded px-1.5 py-0.5 whitespace-nowrap',
@@ -232,36 +233,31 @@ function SprintWindowCard({
   );
 }
 
-export interface SprintTimelineProps {
+export interface WeekTimelineProps {
   sprints: Sprint[];
   workspaceSprintStartDate: Date;
   selectedSprintId?: string;
   onSelectSprint?: (sprintNumber: number, sprint: Sprint | null) => void;
   onOpenSprint?: (id: string) => void;
-  onCreateClick?: (sprintNumber: number) => void;
-  /** Whether to show the create option on empty windows */
-  showCreateOption?: boolean;
 }
 
 /**
- * SprintTimeline - Horizontal infinite scroll sprint selector
+ * WeekTimeline - Horizontal infinite scroll week selector
  *
- * Displays sprints in a horizontal timeline with:
+ * Displays weeks in a horizontal timeline with:
  * - Month headers
  * - "Today" marker
- * - Sprint window cards with progress and plan/retro status
+ * - Week window cards with progress and plan/retro status
  * - Infinite scroll to load more windows
  * - Click to select, double-click to open
  */
-export function SprintTimeline({
+export function WeekTimeline({
   sprints,
   workspaceSprintStartDate,
   selectedSprintId,
   onSelectSprint,
   onOpenSprint,
-  onCreateClick,
-  showCreateOption = true,
-}: SprintTimelineProps) {
+}: WeekTimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const currentSprintNumber = getCurrentSprintNumber(workspaceSprintStartDate);
   const [rangeStart, setRangeStart] = useState(() => Math.max(1, currentSprintNumber - 13)); // ~quarter back
@@ -277,7 +273,7 @@ export function SprintTimeline({
 
   // Generate windows for current range
   const windows = useMemo(() => {
-    return generateSprintWindows(sprints, workspaceSprintStartDate, rangeStart, rangeEnd);
+    return generateWeekWindows(sprints, workspaceSprintStartDate, rangeStart, rangeEnd);
   }, [sprints, workspaceSprintStartDate, rangeStart, rangeEnd]);
 
   // Center on current sprint on mount
@@ -397,12 +393,6 @@ export function SprintTimeline({
     onOpenSprint?.(id);
   }, [onOpenSprint]);
 
-  const handleCreateClick = useCallback((sprintNumber: number) => {
-    if (showCreateOption) {
-      onCreateClick?.(sprintNumber);
-    }
-  }, [showCreateOption, onCreateClick]);
-
   return (
     <div
       ref={scrollRef}
@@ -450,17 +440,16 @@ export function SprintTimeline({
               </div>
             </div>
           )}
-          {/* Sprint cards */}
+          {/* Week cards */}
           <div className="relative flex gap-3">
             {windows.map((window) => (
-              <SprintWindowCard
+              <WeekWindowCard
                 key={window.sprint_number}
                 window={window}
                 isCurrentWindow={window.sprint_number === currentSprintNumber}
                 isSelected={window.sprint_number === selectedSprintNumber}
                 onSelectSprint={handleSelectSprint}
                 onOpenSprint={handleOpenSprint}
-                onCreateClick={handleCreateClick}
               />
             ))}
           </div>

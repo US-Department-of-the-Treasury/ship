@@ -42,7 +42,7 @@ const options: swaggerJsdoc.Options = {
             title: { type: 'string' },
             document_type: {
               type: 'string',
-              enum: ['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'standup', 'sprint_review'],
+              enum: ['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'standup', 'weekly_review', 'weekly_plan', 'weekly_retro'],
             },
             content: { type: 'object' },
             properties: { type: 'object' },

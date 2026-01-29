@@ -297,16 +297,8 @@ test.describe('TIER 2: Tables - REAL TESTS', () => {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(1000);
 
-    // Should have a table
+    // Should have a table - if not, the /table command isn't working
     const table = page.locator('.tiptap table');
-    const count = await table.count();
-
-    if (count === 0) {
-      // Table feature not implemented yet - skip
-      test.skip();
-      return;
-    }
-
     await expect(table.first()).toBeVisible({ timeout: 5000 });
   });
 
@@ -317,14 +309,9 @@ test.describe('TIER 2: Tables - REAL TESTS', () => {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(1000);
 
-    // Check if table was created
+    // Check if table was created - should be visible
     const table = page.locator('.tiptap table');
-    const tableCount = await table.count();
-
-    if (tableCount === 0) {
-      test.skip();
-      return;
-    }
+    await expect(table.first()).toBeVisible({ timeout: 5000 });
 
     // Type in first cell
     await page.keyboard.type('Cell 1');
@@ -333,14 +320,9 @@ test.describe('TIER 2: Tables - REAL TESTS', () => {
     await page.keyboard.press('Tab');
     await page.keyboard.type('Cell 2');
 
-    // Verify content - wait for cells to exist
+    // Verify content - cells should exist
     const cells = page.locator('.tiptap td, .tiptap th');
-    const cellsCount = await cells.count();
-
-    if (cellsCount === 0) {
-      test.skip();
-      return;
-    }
+    await expect(cells.first()).toBeVisible({ timeout: 5000 });
 
     const cell1Text = await cells.nth(0).textContent();
     expect(cell1Text).toContain('Cell 1');
@@ -365,16 +347,9 @@ test.describe('TIER 2: Tables - REAL TESTS', () => {
     }
     await page.waitForTimeout(1000);
 
-    // Check if table was actually created
+    // Check if table was actually created - should be visible
     const table = page.locator('.tiptap table');
-    const tableCount = await table.count();
-
-    if (tableCount === 0) {
-      // Table not created (slash command didn't trigger) - skip gracefully
-      console.log('Table could not be inserted - slash command dropdown may not have appeared');
-      test.skip();
-      return;
-    }
+    await expect(table.first()).toBeVisible({ timeout: 5000 });
 
     await page.keyboard.type('Persisted content');
     await page.waitForTimeout(2000);
@@ -395,16 +370,8 @@ test.describe('TIER 2: Toggle/Collapsible - REAL TESTS', () => {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(1000);
 
-    // Should have a details element (or toggle component)
+    // Should have a details element (or toggle component) - if not, /toggle command isn't working
     const toggle = page.locator('.tiptap details, [data-type="details"], [data-type="toggle"], .toggle-block');
-    const count = await toggle.count();
-
-    if (count === 0) {
-      // Toggle feature not implemented yet - skip
-      test.skip();
-      return;
-    }
-
     await expect(toggle.first()).toBeVisible({ timeout: 5000 });
   });
 
@@ -415,26 +382,14 @@ test.describe('TIER 2: Toggle/Collapsible - REAL TESTS', () => {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(1000);
 
-    // Check if toggle was created
+    // Check if toggle was created - should be visible
     const toggle = page.locator('.tiptap details, [data-type="details"], [data-type="toggle"], .toggle-block');
-    const toggleCount = await toggle.count();
-
-    if (toggleCount === 0) {
-      // Toggle feature not implemented yet - skip
-      test.skip();
-      return;
-    }
+    await expect(toggle.first()).toBeVisible({ timeout: 5000 });
 
     // Find the summary/trigger (the clickable arrow button)
     // Note: data-type uses hyphen "details-summary", not camelCase
     const summary = page.locator('.tiptap summary, [data-type="details-summary"], .toggle-arrow');
-    const summaryCount = await summary.count();
-
-    if (summaryCount === 0) {
-      // No trigger found - skip
-      test.skip();
-      return;
-    }
+    await expect(summary.first()).toBeVisible({ timeout: 5000 });
 
     // Check initial state
     const details = toggle.first();

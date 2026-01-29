@@ -19,7 +19,7 @@ export interface ActionItemsResponse {
 }
 
 async function fetchActionItems(): Promise<ActionItemsResponse> {
-  const res = await apiGet('/api/sprints/my-action-items');
+  const res = await apiGet('/api/weeks/my-action-items');
   if (!res.ok) {
     const error = new Error('Failed to fetch action items') as Error & { status: number };
     error.status = res.status;

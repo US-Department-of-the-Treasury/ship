@@ -228,7 +228,7 @@ function renderSubmenuItems(
           onClose();
         }}
       >
-        {item.id === 'assign-to' ? 'Unassigned' : 'No Sprint'}
+        {item.id === 'assign-to' ? 'Unassigned' : 'No Week'}
       </ContextMenuItem>
     );
   }

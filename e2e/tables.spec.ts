@@ -36,7 +36,7 @@ async function createNewDocument(page: Page) {
 }
 
 // FIXME: Slash command menu interaction not working - button locators timing out
-test.describe.fixme('Tables', () => {
+test.describe('Tables', () => {
   test.beforeEach(async ({ page }) => {
     // Login before each test
     await page.goto('/login');

@@ -87,8 +87,8 @@ export function BacklinksPanel({ documentId }: BacklinksPanelProps) {
         return `/sprints/${backlink.id}`;
       case 'person':
         return `/team/${backlink.id}`;
-      case 'sprint_plan':
-      case 'sprint_retro':
+      case 'weekly_plan':
+      case 'weekly_retro':
         return `/docs/${backlink.id}`;
       default:
         return `/docs/${backlink.id}`;
@@ -146,10 +146,10 @@ export function BacklinksPanel({ documentId }: BacklinksPanelProps) {
       issue: 'Issue',
       program: 'Program',
       project: 'Project',
-      sprint: 'Sprint',
+      sprint: 'Week',
       person: 'Person',
-      sprint_plan: 'Sprint Plan',
-      sprint_retro: 'Sprint Retro',
+      weekly_plan: 'Week Plan',
+      weekly_retro: 'Week Retro',
     };
     return labels[type] || type;
   };

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/cn';
 
-export interface SprintProgressGraphProps {
+export interface WeekProgressGraphProps {
   startDate: string;
   endDate: string;
   scopeHours: number;
@@ -12,13 +12,13 @@ export interface SprintProgressGraphProps {
  * Sprint Progress Graph (burndown chart)
  * Displays a visual representation of sprint progress over time.
  */
-export function SprintProgressGraph({
+export function WeekProgressGraph({
   startDate,
   endDate,
   scopeHours,
   completedHours,
   status,
-}: SprintProgressGraphProps) {
+}: WeekProgressGraphProps) {
   const start = new Date(startDate).getTime();
   const end = new Date(endDate).getTime();
   const now = Date.now();

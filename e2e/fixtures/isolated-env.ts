@@ -434,7 +434,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
            RETURNING id`,
           [
             workspaceId,
-            `Sprint ${sprintNum}`,
+            `Week ${sprintNum}`,
             JSON.stringify({ sprint_number: sprintNum, owner_id: userId }),
             userId,
           ]
@@ -453,20 +453,40 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
   }
 
   // Create issues for Ship Core with various states and estimates
+  // IMPORTANT: Bulk selection tests need 6+ rows in each state filter
+  // Tests will skip with "Not enough rows" if insufficient data exists
   const shipCoreIssues = [
     // Done issues (past sprint)
     { title: 'Initial project setup', state: 'done', priority: 'high', sprintOffset: -1, estimate: 4 },
     { title: 'Database schema design', state: 'done', priority: 'high', sprintOffset: -1, estimate: 8 },
+    { title: 'User authentication setup', state: 'done', priority: 'high', sprintOffset: -1, estimate: 6 },
+    { title: 'CI/CD pipeline configuration', state: 'done', priority: 'medium', sprintOffset: -1, estimate: 4 },
     // Current sprint - mixed states with estimates for capacity tracking
     { title: 'Implement sprint management', state: 'done', priority: 'high', sprintOffset: 0, estimate: 5 },
     { title: 'Build issue assignment flow', state: 'in_progress', priority: 'high', sprintOffset: 0, estimate: 8 },
     { title: 'Add sprint velocity metrics', state: 'todo', priority: 'medium', sprintOffset: 0, estimate: 4 },
     { title: 'Implement burndown chart', state: 'todo', priority: 'medium', sprintOffset: 0, estimate: 6 },
+    { title: 'Review dashboard design', state: 'in_review', priority: 'medium', sprintOffset: 0, estimate: 3 },
+    { title: 'Update API documentation', state: 'in_review', priority: 'low', sprintOffset: 0, estimate: 2 },
+    // Additional todo items
+    { title: 'Refactor notification system', state: 'todo', priority: 'medium', sprintOffset: 0, estimate: 5 },
+    { title: 'Add email notifications', state: 'todo', priority: 'low', sprintOffset: 0, estimate: 8 },
+    // Additional in_progress items
+    { title: 'Build settings page', state: 'in_progress', priority: 'medium', sprintOffset: 0, estimate: 6 },
+    { title: 'Implement search feature', state: 'in_progress', priority: 'high', sprintOffset: 0, estimate: 10 },
     // Future sprint
     { title: 'Add team workload view', state: 'todo', priority: 'high', sprintOffset: 1, estimate: 12 },
+    { title: 'Build analytics dashboard', state: 'todo', priority: 'medium', sprintOffset: 1, estimate: 16 },
     // Backlog (no sprint) - with estimates so they can be moved to sprints
+    // Bulk selection tests filter by state=backlog and need 6+ items
     { title: 'Add dark mode support', state: 'backlog', priority: 'low', sprintOffset: null, estimate: 16 },
     { title: 'Create mobile app', state: 'backlog', priority: 'low', sprintOffset: null, estimate: 40 },
+    { title: 'Implement webhooks', state: 'backlog', priority: 'medium', sprintOffset: null, estimate: 12 },
+    { title: 'Add keyboard shortcuts', state: 'backlog', priority: 'low', sprintOffset: null, estimate: 8 },
+    { title: 'Build export to PDF', state: 'backlog', priority: 'low', sprintOffset: null, estimate: 10 },
+    { title: 'Create Slack integration', state: 'backlog', priority: 'medium', sprintOffset: null, estimate: 20 },
+    { title: 'Add calendar view', state: 'backlog', priority: 'low', sprintOffset: null, estimate: 24 },
+    { title: 'Implement file versioning', state: 'backlog', priority: 'low', sprintOffset: null, estimate: 16 },
   ];
 
   let ticketNumber = 0;
@@ -514,39 +534,57 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     }
   }
 
-  // Create a few issues for other programs too (with estimates for capacity testing)
+  // Create issues for other programs (with estimates for capacity testing)
+  // Each program gets multiple issues so program-specific views have enough data
+  const otherProgramIssues = [
+    { state: 'in_progress', priority: 'medium', estimate: 8, titleSuffix: 'initial setup' },
+    { state: 'todo', priority: 'high', estimate: 6, titleSuffix: 'documentation' },
+    { state: 'backlog', priority: 'low', estimate: 10, titleSuffix: 'improvements' },
+    { state: 'done', priority: 'medium', estimate: 4, titleSuffix: 'configuration' },
+  ];
+
   for (const prog of programs.filter(p => p.key !== 'SHIP')) {
-    ticketNumber++;
-    const progSprintId = sprintIds[prog.key][currentSprintNumber] || null;
-    const progIssueResult = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number, created_by)
-       VALUES ($1, 'issue', $2, $3, $4, $5)
-       RETURNING id`,
-      [
-        workspaceId,
-        `${prog.name} initial setup`,
-        JSON.stringify({ state: 'in_progress', priority: 'medium', source: 'internal', assignee_id: userId, estimate: 8 }),
-        ticketNumber,
-        userId,
-      ]
-    );
+    for (const issueTemplate of otherProgramIssues) {
+      ticketNumber++;
+      const progSprintId = issueTemplate.state !== 'backlog'
+        ? sprintIds[prog.key][currentSprintNumber] || null
+        : null;
+      const progIssueResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number, created_by)
+         VALUES ($1, 'issue', $2, $3, $4, $5)
+         RETURNING id`,
+        [
+          workspaceId,
+          `${prog.name} ${issueTemplate.titleSuffix}`,
+          JSON.stringify({
+            state: issueTemplate.state,
+            priority: issueTemplate.priority,
+            source: 'internal',
+            assignee_id: userId,
+            estimate: issueTemplate.estimate,
+          }),
+          ticketNumber,
+          userId,
+        ]
+      );
 
-    const progIssueId = progIssueResult.rows[0].id;
+      const progIssueId = progIssueResult.rows[0].id;
 
-    // Create program association via document_associations
-    await pool.query(
-      `INSERT INTO document_associations (document_id, related_id, relationship_type)
-       VALUES ($1, $2, 'program')`,
-      [progIssueId, programIds[prog.key]]
-    );
-
-    // Create sprint association via document_associations
-    if (progSprintId) {
+      // Create program association via document_associations
       await pool.query(
         `INSERT INTO document_associations (document_id, related_id, relationship_type)
-         VALUES ($1, $2, 'sprint')`,
-        [progIssueId, progSprintId]
+         VALUES ($1, $2, 'program')`,
+        [progIssueId, programIds[prog.key]]
       );
+
+      // Create sprint association via document_associations
+      if (progSprintId) {
+        await pool.query(
+          `INSERT INTO document_associations (document_id, related_id, relationship_type)
+           VALUES ($1, $2, 'sprint')`,
+          [progIssueId, progSprintId]
+        );
+      }
     }
   }
 
@@ -583,6 +621,36 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
       `INSERT INTO document_associations (document_id, related_id, relationship_type)
        VALUES ($1, $2, 'program')`,
       [extIssueResult.rows[0].id, programIds['SHIP']]
+    );
+  }
+
+  // Create project documents for team-mode tests
+  // Team allocation grid needs projects to assign team members to
+  const projects = [
+    { name: 'Ship Core Redesign', color: '#3B82F6', programKey: 'SHIP' },
+    { name: 'Auth System v2', color: '#8B5CF6', programKey: 'AUTH' },
+    { name: 'API Gateway', color: '#10B981', programKey: 'API' },
+    { name: 'Component Library', color: '#F59E0B', programKey: 'UI' },
+  ];
+
+  for (const project of projects) {
+    const projectResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+       VALUES ($1, 'project', $2, $3, $4)
+       RETURNING id`,
+      [
+        workspaceId,
+        project.name,
+        JSON.stringify({ color: project.color }),
+        userId,
+      ]
+    );
+
+    // Create association to program via junction table
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type)
+       VALUES ($1, $2, 'program')`,
+      [projectResult.rows[0].id, programIds[project.programKey]]
     );
   }
 

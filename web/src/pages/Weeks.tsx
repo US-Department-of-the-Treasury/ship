@@ -1,19 +1,19 @@
 import { useNavigate } from 'react-router-dom';
-import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
+import { useActiveWeeksQuery, ActiveWeek } from '@/hooks/useWeeksQuery';
 import { cn } from '@/lib/cn';
 
-export function SprintsPage() {
+export function WeeksPage() {
   const navigate = useNavigate();
-  const { data, isLoading, error } = useActiveSprintsQuery();
+  const { data, isLoading, error } = useActiveWeeksQuery();
 
   if (isLoading) {
     return (
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <h1 className="text-xl font-semibold text-foreground">Sprints</h1>
+          <h1 className="text-xl font-semibold text-foreground">Weeks</h1>
         </div>
         <div className="flex flex-1 items-center justify-center">
-          <div className="text-muted">Loading sprints...</div>
+          <div className="text-muted">Loading weeks...</div>
         </div>
       </div>
     );
@@ -23,16 +23,16 @@ export function SprintsPage() {
     return (
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <h1 className="text-xl font-semibold text-foreground">Sprints</h1>
+          <h1 className="text-xl font-semibold text-foreground">Weeks</h1>
         </div>
         <div className="flex flex-1 items-center justify-center">
-          <div className="text-red-400">Failed to load sprints</div>
+          <div className="text-red-400">Failed to load weeks</div>
         </div>
       </div>
     );
   }
 
-  const sprints = data?.sprints || [];
+  const sprints = data?.weeks || [];
   const currentSprintNumber = data?.current_sprint_number || 0;
 
   return (
@@ -40,10 +40,10 @@ export function SprintsPage() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-6 py-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-foreground">Sprints</h1>
+          <h1 className="text-xl font-semibold text-foreground">Weeks</h1>
           {currentSprintNumber > 0 && (
             <span className="rounded-full bg-accent/20 px-2.5 py-0.5 text-xs font-medium text-accent">
-              Sprint {currentSprintNumber}
+              Week {currentSprintNumber}
             </span>
           )}
         </div>
@@ -58,17 +58,17 @@ export function SprintsPage() {
       <div className="flex-1 overflow-auto">
         {sprints.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <p className="text-muted">No active sprints</p>
+            <p className="text-muted">No active weeks</p>
             <p className="text-sm text-muted/70">
-              Check Programs to see upcoming sprints
+              Check Programs to see upcoming weeks
             </p>
           </div>
         ) : (
-          <table className="w-full" role="grid" aria-label="Active sprints">
+          <table className="w-full" role="grid" aria-label="Active weeks">
             <thead>
               <tr className="border-b border-border bg-background/50">
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
-                  Sprint
+                  Week
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">
                   Program
@@ -101,7 +101,7 @@ export function SprintsPage() {
 }
 
 interface SprintRowProps {
-  sprint: ActiveSprint;
+  sprint: ActiveWeek;
   onClick: () => void;
 }
 

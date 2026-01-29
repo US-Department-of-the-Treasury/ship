@@ -215,7 +215,7 @@ test.describe('Existing User Invite Flow', () => {
     await expect(page.getByText('Bob Martinez')).toBeVisible({ timeout: 5000 })
 
     // Verify sprint columns exist
-    await expect(page.getByText(/Sprint \d+/).first()).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(/Week \d+/).first()).toBeVisible({ timeout: 5000 })
   })
 
   test('clicking cell opens program selector for valid user', async ({ page }) => {
@@ -227,7 +227,7 @@ test.describe('Existing User Invite Flow', () => {
     await expect(page.getByText('Dev User')).toBeVisible({ timeout: 10000 })
 
     // Wait for sprint columns to load
-    await expect(page.getByText(/Sprint \d+/).first()).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/Week \d+/).first()).toBeVisible({ timeout: 10000 })
 
     // Wait a moment for grid to stabilize
     await page.waitForTimeout(500)

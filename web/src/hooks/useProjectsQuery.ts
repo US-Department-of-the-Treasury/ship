@@ -61,8 +61,8 @@ export interface ProjectIssue {
   cancelled_at: string | null;
 }
 
-// Project sprint type (subset of Sprint for the list)
-export interface ProjectSprint {
+// Project week type (subset of Week for the list)
+export interface ProjectWeek {
   id: string;
   name: string;
   sprint_number: number;
@@ -82,7 +82,7 @@ export const projectKeys = {
   details: () => [...projectKeys.all, 'detail'] as const,
   detail: (id: string) => [...projectKeys.details(), id] as const,
   issues: (id: string) => [...projectKeys.detail(id), 'issues'] as const,
-  sprints: (id: string) => [...projectKeys.detail(id), 'sprints'] as const,
+  weeks: (id: string) => [...projectKeys.detail(id), 'weeks'] as const,
 };
 
 // Fetch projects
@@ -369,22 +369,22 @@ export function useProjectIssuesQuery(projectId: string | undefined) {
   });
 }
 
-// Fetch project sprints
-async function fetchProjectSprints(projectId: string): Promise<ProjectSprint[]> {
-  const res = await apiGet(`/api/projects/${projectId}/sprints`);
+// Fetch project weeks
+async function fetchProjectWeeks(projectId: string): Promise<ProjectWeek[]> {
+  const res = await apiGet(`/api/projects/${projectId}/weeks`);
   if (!res.ok) {
-    const error = new Error('Failed to fetch project sprints') as Error & { status: number };
+    const error = new Error('Failed to fetch project weeks') as Error & { status: number };
     error.status = res.status;
     throw error;
   }
   return res.json();
 }
 
-// Hook to get project sprints
-export function useProjectSprintsQuery(projectId: string | undefined) {
+// Hook to get project weeks
+export function useProjectWeeksQuery(projectId: string | undefined) {
   return useQuery({
-    queryKey: projectId ? projectKeys.sprints(projectId) : ['disabled'],
-    queryFn: () => fetchProjectSprints(projectId!),
+    queryKey: projectId ? projectKeys.weeks(projectId) : ['disabled'],
+    queryFn: () => fetchProjectWeeks(projectId!),
     enabled: !!projectId,
     staleTime: 1000 * 60 * 2, // 2 minutes
   });

@@ -239,7 +239,7 @@ test.describe('Security - XSS Prevention', () => {
 })
 
 // FIXME: File upload via slash command UI has changed
-test.describe.fixme('Security - File Upload Validation', () => {
+test.describe('Security - File Upload Validation', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })

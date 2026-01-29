@@ -42,7 +42,7 @@ interface ProjectData {
 }
 
 interface AccountabilityGridData {
-  sprints: Sprint[];
+  weeks: Sprint[];
   currentSprintNumber: number;
   sprintAccountability: Record<number, SprintAccountability>;
   projects: ProjectData[];
@@ -100,7 +100,7 @@ export function AccountabilityGrid({ showArchived = false }: AccountabilityGridP
   // Scroll to current sprint on initial load
   useEffect(() => {
     if (data && scrollContainerRef.current && !hasScrolledToCurrentRef.current) {
-      const currentSprintIndex = data.sprints.findIndex(s => s.isCurrent);
+      const currentSprintIndex = data.weeks.findIndex(s => s.isCurrent);
       if (currentSprintIndex >= 0) {
         requestAnimationFrame(() => {
           if (scrollContainerRef.current) {
@@ -173,7 +173,7 @@ export function AccountabilityGrid({ showArchived = false }: AccountabilityGridP
         <div className="flex flex-col sticky left-0 z-20 bg-background border-r border-border">
           {/* Header cell */}
           <div className="flex h-10 w-[180px] items-center justify-center border-b border-border px-3 sticky top-0 z-30 bg-background">
-            <span className="text-xs font-medium text-muted">Sprint Accountability</span>
+            <span className="text-xs font-medium text-muted">Week Accountability</span>
           </div>
 
           {/* Legend row */}
@@ -268,7 +268,7 @@ export function AccountabilityGrid({ showArchived = false }: AccountabilityGridP
 
         {/* Sprint columns */}
         <div className="flex">
-          {data.sprints.map((sprint) => {
+          {data.weeks.map((sprint) => {
             const accountability = data.sprintAccountability[sprint.number];
 
             return (
@@ -374,7 +374,7 @@ function SprintAccountabilityCell({
   onNavigate: (id: string) => void;
 }) {
   if (!accountability) {
-    // No sprint document for this sprint number yet
+    // No week document for this week number yet
     return (
       <div
         className={cn(
@@ -382,7 +382,7 @@ function SprintAccountabilityCell({
           isCurrent && "bg-accent/5"
         )}
       >
-        <span className="text-[10px] text-muted">No sprint</span>
+        <span className="text-[10px] text-muted">No week</span>
       </div>
     );
   }
@@ -409,7 +409,7 @@ function SprintAccountabilityCell({
         borderClass
       )}
       onClick={() => onNavigate(accountability.id)}
-      title={`${accountability.title}\nClick to open sprint`}
+      title={`${accountability.title}\nClick to open week`}
     >
       {/* Left half - Plan */}
       <div className="flex-1 flex flex-col items-center justify-center border-r border-border/50">

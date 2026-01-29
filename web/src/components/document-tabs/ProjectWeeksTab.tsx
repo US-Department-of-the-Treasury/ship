@@ -1,35 +1,26 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SprintTimeline, getCurrentSprintNumber, computeSprintDates, type Sprint } from '@/components/sprint/SprintTimeline';
-import { SprintDetailView } from '@/components/sprint/SprintDetailView';
-import { useProjectSprints } from '@/hooks/useSprintsQuery';
-import { apiPost } from '@/lib/api';
+import { WeekTimeline, getCurrentSprintNumber, type Sprint } from '@/components/week/WeekTimeline';
+import { WeekDetailView } from '@/components/week/WeekDetailView';
+import { useProjectSprints } from '@/hooks/useWeeksQuery';
 import type { DocumentTabProps } from '@/lib/document-tabs';
 
 /**
- * ProjectSprintsTab - Shows sprints associated with a project
+ * ProjectWeeksTab - Shows weeks associated with a project
  *
- * This is the "Sprints" tab content when viewing a project document.
- * Features a horizontal scrolling SprintTimeline at the top.
- * When nestedPath contains a sprint ID, shows SprintDetailView inline.
+ * This is the "Weeks" tab content when viewing a project document.
+ * Features a horizontal scrolling WeekTimeline at the top.
+ * When nestedPath contains a week ID, shows WeekDetailView inline.
  *
- * Sprint creation is enabled for ALL projects (with or without program association).
- * Created sprints are automatically associated with the project (and program if available).
+ * Note: Weeks are derived 7-day windows (not documents to create).
  */
-export default function ProjectSprintsTab({ documentId, document, nestedPath }: DocumentTabProps) {
+export default function ProjectSprintsTab({ documentId, nestedPath }: DocumentTabProps) {
   const navigate = useNavigate();
-  const { sprints, loading, workspaceSprintStartDate, refreshSprints } = useProjectSprints(documentId);
-
-  // Get program_id from belongs_to array (project's parent program via document_associations)
-  const belongsTo = (document as { belongs_to?: Array<{ id: string; type: string }> }).belongs_to;
-  const programId = belongsTo?.find(b => b.type === 'program')?.id;
+  const { sprints, loading, workspaceSprintStartDate } = useProjectSprints(documentId);
 
   // If nestedPath is provided and looks like a UUID, show sprint detail
   const isUuid = nestedPath && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nestedPath);
   const selectedSprintId = isUuid ? nestedPath : null;
-
-  // Sprint creation is enabled for all projects
-  const canCreateSprints = true;
 
   // Handle sprint selection from timeline
   const handleSelectSprint = useCallback((_sprintNumber: number, sprint: Sprint | null) => {
@@ -43,46 +34,6 @@ export default function ProjectSprintsTab({ documentId, document, nestedPath }: 
     navigate(`/documents/${documentId}/sprints/${sprintId}`);
   }, [documentId, navigate]);
 
-  // Handle sprint creation - follows document creation pattern (no modal)
-  const handleCreateSprint = useCallback(async (sprintNumber: number) => {
-    try {
-      // Calculate date range for sprint
-      const dateRange = computeSprintDates(sprintNumber, workspaceSprintStartDate);
-
-      // Build belongs_to associations - always include project, optionally include program
-      const belongs_to: Array<{ id: string; type: 'project' | 'program' }> = [
-        { id: documentId, type: 'project' }
-      ];
-      if (programId) {
-        belongs_to.push({ id: programId, type: 'program' });
-      }
-
-      // Create sprint via document API - no owner (user sets on sprint page)
-      const res = await apiPost('/api/documents', {
-        document_type: 'sprint',
-        title: `Sprint ${sprintNumber}`,
-        properties: {
-          sprint_number: sprintNumber,
-          status: 'planning',
-          start_date: dateRange.start.toISOString(),
-          end_date: dateRange.end.toISOString(),
-        },
-        belongs_to,
-      });
-
-      if (res.ok) {
-        const newSprint = await res.json();
-        // Refresh sprint list and navigate to the new sprint
-        await refreshSprints();
-        navigate(`/documents/${newSprint.id}`);
-      } else {
-        console.error('Failed to create sprint:', await res.text());
-      }
-    } catch (err) {
-      console.error('Failed to create sprint:', err);
-    }
-  }, [documentId, programId, workspaceSprintStartDate, refreshSprints, navigate]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
@@ -91,7 +42,7 @@ export default function ProjectSprintsTab({ documentId, document, nestedPath }: 
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          Loading sprints...
+          Loading weeks...
         </div>
       </div>
     );
@@ -102,21 +53,19 @@ export default function ProjectSprintsTab({ documentId, document, nestedPath }: 
       {/* Top Section: Horizontal Timeline - fixed height */}
       <div className="flex-shrink-0 border-b border-border p-4">
         <h3 className="mb-3 text-sm font-medium text-muted uppercase tracking-wide">Timeline</h3>
-        <SprintTimeline
+        <WeekTimeline
           sprints={sprints}
           workspaceSprintStartDate={workspaceSprintStartDate}
           selectedSprintId={selectedSprintId ?? undefined}
           onSelectSprint={handleSelectSprint}
           onOpenSprint={handleOpenSprint}
-          onCreateClick={canCreateSprints ? handleCreateSprint : undefined}
-          showCreateOption={canCreateSprints}
         />
       </div>
 
       {/* Bottom Section: Sprint Details or Empty State */}
       <div className="flex-1 min-h-0 overflow-auto">
         {selectedSprintId ? (
-          <SprintDetailView
+          <WeekDetailView
             sprintId={selectedSprintId}
             projectId={documentId}
             onBack={() => navigate(`/documents/${documentId}/sprints`)}
@@ -151,9 +100,9 @@ function EmptySprintState({
         <svg className="w-16 h-16 mb-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
         </svg>
-        <p className="text-lg font-medium mb-2">No sprints yet</p>
+        <p className="text-lg font-medium mb-2">No weeks with issues</p>
         <p className="text-sm text-center max-w-md">
-          Click on a sprint window in the timeline above to create your first sprint.
+          Assign issues to weeks from the Issues view to see them here.
         </p>
       </div>
     );
@@ -164,12 +113,12 @@ function EmptySprintState({
       <svg className="w-16 h-16 mb-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path strokeLinecap="round" strokeLinejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
       </svg>
-      <p className="text-lg font-medium mb-2">Select a sprint</p>
+      <p className="text-lg font-medium mb-2">Select a week</p>
       <p className="text-sm text-center max-w-md">
-        Click on a sprint in the timeline above to view its details, issues, and progress.
+        Click on a week in the timeline above to view its details, issues, and progress.
         {activeSprint && (
           <span className="block mt-2 text-accent">
-            Sprint {activeSprint.sprint_number} is currently active.
+            The current week is active.
           </span>
         )}
       </p>

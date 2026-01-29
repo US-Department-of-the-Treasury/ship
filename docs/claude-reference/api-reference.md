@@ -175,7 +175,7 @@ Update a document.
 - `title`, `content`, `parent_id`, `position`, `visibility`, `document_type`
 - Issue fields: `state`, `priority`, `estimate`, `assignee_id`, `source`, `belongs_to`
 - Project fields: `impact`, `confidence`, `ease`, `color`, `owner_id`
-- Sprint fields: `start_date`, `end_date`, `sprint_status`, `goal`
+- Week fields: `start_date`, `end_date`, `sprint_status` (historical name), `goal`
 
 ### DELETE /api/documents/:id
 
@@ -240,7 +240,7 @@ List issues with optional filters.
 - `priority` - urgent, high, medium, low, none
 - `assignee_id` - UUID or "null"/"unassigned"
 - `program_id` - Filter by program association
-- `sprint_id` - Filter by sprint association
+- `sprint_id` - Filter by week association (historical field name)
 - `source` - internal or external
 - `parent_filter` - top_level, has_children, is_sub_issue
 
@@ -433,7 +433,7 @@ List projects.
     "ice_score": 24,
     "color": "#6366f1",
     "owner": { "id", "name", "email" },
-    "sprint_count": 2,
+    "week_count": 2,
     "issue_count": 15,
     "inferred_status": "active",
     "is_complete": false,
@@ -488,15 +488,15 @@ Get issues associated with a project.
 
 **Authentication:** Required
 
-### GET /api/projects/:id/sprints
+### GET /api/projects/:id/weeks
 
-Get sprints associated with a project.
+Get weeks associated with a project.
 
 **Authentication:** Required
 
-### POST /api/projects/:id/sprints
+### POST /api/projects/:id/weeks
 
-Create a sprint under a project.
+Create a week under a project.
 
 **Authentication:** Required
 
@@ -544,55 +544,55 @@ Update project retrospective.
 
 ---
 
-## Sprints
+## Weeks
 
-Sprints are documents with `document_type = 'sprint'`. They have numbered weeks and hypothesis-driven goals.
+Weeks are documents with `document_type = 'sprint'` (historical name). They have numbered weeks and hypothesis-driven goals.
 
-### GET /api/sprints
+### GET /api/weeks
 
-List active sprints.
-
-**Authentication:** Required
-
-### GET /api/sprints/my-action-items
-
-Get action items for current user across all sprints.
+List active weeks.
 
 **Authentication:** Required
 
-### GET /api/sprints/my-week
+### GET /api/weeks/my-action-items
+
+Get action items for current user across all weeks.
+
+**Authentication:** Required
+
+### GET /api/weeks/my-week
 
 Get aggregated issues view for current week.
 
 **Authentication:** Required
 
-### GET /api/sprints/:id
+### GET /api/weeks/:id
 
-Get a single sprint.
-
-**Authentication:** Required
-
-### POST /api/sprints
-
-Create a new sprint.
+Get a single week.
 
 **Authentication:** Required
 
-### PATCH /api/sprints/:id
+### POST /api/weeks
 
-Update a sprint.
-
-**Authentication:** Required
-
-### DELETE /api/sprints/:id
-
-Delete a sprint.
+Create a new week.
 
 **Authentication:** Required
 
-### PATCH /api/sprints/:id/hypothesis
+### PATCH /api/weeks/:id
 
-Update sprint hypothesis.
+Update a week.
+
+**Authentication:** Required
+
+### DELETE /api/weeks/:id
+
+Delete a week.
+
+**Authentication:** Required
+
+### PATCH /api/weeks/:id/hypothesis
+
+Update week hypothesis.
 
 **Authentication:** Required
 
@@ -605,25 +605,25 @@ Update sprint hypothesis.
 }
 ```
 
-### GET /api/sprints/:id/issues
+### GET /api/weeks/:id/issues
 
-Get issues assigned to a sprint.
-
-**Authentication:** Required
-
-### GET /api/sprints/:id/scope-changes
-
-Get scope changes (issues added/removed from sprint).
+Get issues assigned to a week.
 
 **Authentication:** Required
 
-### GET /api/sprints/:id/standups
+### GET /api/weeks/:id/scope-changes
 
-Get standup entries for a sprint.
+Get scope changes (issues added/removed from week).
 
 **Authentication:** Required
 
-### POST /api/sprints/:id/standups
+### GET /api/weeks/:id/standups
+
+Get standup entries for a week.
+
+**Authentication:** Required
+
+### POST /api/weeks/:id/standups
 
 Create a standup entry.
 
@@ -638,21 +638,21 @@ Create a standup entry.
 }
 ```
 
-### GET /api/sprints/:id/review
+### GET /api/weeks/:id/review
 
-Get sprint review (pre-filled draft or existing).
-
-**Authentication:** Required
-
-### POST /api/sprints/:id/review
-
-Create sprint review.
+Get week review (pre-filled draft or existing).
 
 **Authentication:** Required
 
-### PATCH /api/sprints/:id/review
+### POST /api/weeks/:id/review
 
-Update sprint review.
+Create week review.
+
+**Authentication:** Required
+
+### PATCH /api/weeks/:id/review
+
+Update week review.
 
 **Authentication:** Required
 

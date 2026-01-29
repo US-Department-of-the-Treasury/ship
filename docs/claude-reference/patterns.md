@@ -76,7 +76,7 @@ function extractIssueFromRow(row: any) {
 Other examples:
 - `api/src/routes/programs.ts:11` - `extractProgramFromRow`
 - `api/src/routes/projects.ts:16` - `extractProjectFromRow`
-- `api/src/routes/sprints.ts:44` - `extractSprintFromRow`
+- `api/src/routes/weeks.ts:44` - `extractWeekFromRow`
 
 ### Error Response Formats
 
@@ -295,7 +295,7 @@ export function useCreateProject() {
 ### useQuery Naming Conventions
 
 - List queries: `use{Resource}Query()` - e.g., `useProjectsQuery()`
-- Detail queries: `use{Resource}Query(id)` - e.g., `useSprintQuery(sprintId)`
+- Detail queries: `use{Resource}Query(id)` - e.g., `useWeekQuery(weekId)`
 - Create mutations: `useCreate{Resource}()` - e.g., `useCreateProject()`
 - Update mutations: `useUpdate{Resource}()` - e.g., `useUpdateProject()`
 - Delete mutations: `useDelete{Resource}()` - e.g., `useDeleteProject()`
@@ -305,7 +305,7 @@ export function useCreateProject() {
 Query hooks go in `web/src/hooks/use{Resource}Query.ts`:
 - `useIssuesQuery.ts`
 - `useProjectsQuery.ts`
-- `useSprintsQuery.ts`
+- `useWeeksQuery.ts`
 - `useProgramsQuery.ts`
 - `useDocumentsQuery.ts`
 

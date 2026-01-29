@@ -184,9 +184,9 @@ describe('Project Retros API', () => {
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(200)
-      expect(response.body.sprints).toBeDefined()
-      expect(response.body.sprints.length).toBe(1)
-      expect(response.body.sprints[0].title).toBe('Sprint 1')
+      expect(response.body.weeks).toBeDefined()
+      expect(response.body.weeks.length).toBe(1)
+      expect(response.body.weeks[0].title).toBe('Sprint 1')
     })
 
     it('pre-fill includes issues categorized (completed/active/cancelled)', async () => {

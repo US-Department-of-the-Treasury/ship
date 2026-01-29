@@ -138,10 +138,10 @@ describe('Standups API', () => {
     )
   })
 
-  describe('POST /api/sprints/:id/standups', () => {
+  describe('POST /api/weeks/:id/standups', () => {
     it('creates standup with valid sprint_id and returns 201', async () => {
       const response = await request(app)
-        .post(`/api/sprints/${testSprintId}/standups`)
+        .post(`/api/weeks/${testSprintId}/standups`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -159,18 +159,18 @@ describe('Standups API', () => {
     it('returns 404 for non-existent sprint', async () => {
       const fakeSprintId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
-        .post(`/api/sprints/${fakeSprintId}/standups`)
+        .post(`/api/weeks/${fakeSprintId}/standups`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({ content: { type: 'doc', content: [] } })
 
       expect(response.status).toBe(404)
-      expect(response.body.error).toBe('Sprint not found')
+      expect(response.body.error).toBe('Week not found')
     })
 
     it('returns 403 without auth (CSRF check first)', async () => {
       const response = await request(app)
-        .post(`/api/sprints/${testSprintId}/standups`)
+        .post(`/api/weeks/${testSprintId}/standups`)
         .send({ content: { type: 'doc', content: [] } })
 
       expect(response.status).toBe(403)
@@ -178,7 +178,7 @@ describe('Standups API', () => {
 
     it('uses default title when not provided', async () => {
       const response = await request(app)
-        .post(`/api/sprints/${testSprintId}/standups`)
+        .post(`/api/weeks/${testSprintId}/standups`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({})
@@ -188,7 +188,7 @@ describe('Standups API', () => {
     })
   })
 
-  describe('GET /api/sprints/:id/standups', () => {
+  describe('GET /api/weeks/:id/standups', () => {
     it('returns array sorted newest first', async () => {
       // Create two standups with different timestamps
       await pool.query(
@@ -203,7 +203,7 @@ describe('Standups API', () => {
       )
 
       const response = await request(app)
-        .get(`/api/sprints/${testSprintId}/standups`)
+        .get(`/api/weeks/${testSprintId}/standups`)
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(200)
@@ -215,7 +215,7 @@ describe('Standups API', () => {
 
     it('returns empty array for sprint with no standups', async () => {
       const response = await request(app)
-        .get(`/api/sprints/${testSprintId}/standups`)
+        .get(`/api/weeks/${testSprintId}/standups`)
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(200)
@@ -225,7 +225,7 @@ describe('Standups API', () => {
     it('returns 404 for non-existent sprint', async () => {
       const fakeSprintId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
-        .get(`/api/sprints/${fakeSprintId}/standups`)
+        .get(`/api/weeks/${fakeSprintId}/standups`)
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(404)

@@ -10,7 +10,7 @@ import type { BelongsTo } from '@ship/shared';
 import { projectKeys, useProjectsQuery } from '@/hooks/useProjectsQuery';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
-import { useSprintsQuery } from '@/hooks/useSprintsQuery';
+import { useSprintsQuery } from '@/hooks/useWeeksQuery';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { useListFilters, ViewMode } from '@/hooks/useListFilters';
 import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
@@ -24,7 +24,7 @@ import { apiPost, apiPatch } from '@/lib/api';
 import { ConversionDialog } from '@/components/dialogs/ConversionDialog';
 import { BacklogPickerModal } from '@/components/dialogs/BacklogPickerModal';
 import { useSelectionPersistenceOptional } from '@/contexts/SelectionPersistenceContext';
-import { InlineSprintSelector } from '@/components/InlineSprintSelector';
+import { InlineWeekSelector } from '@/components/InlineWeekSelector';
 
 // Re-export Issue type for convenience
 export type { Issue } from '@/contexts/IssuesContext';
@@ -36,7 +36,7 @@ export const ALL_COLUMNS: ColumnDefinition[] = [
   { key: 'status', label: 'Status', hideable: true },
   { key: 'source', label: 'Source', hideable: true },
   { key: 'program', label: 'Program', hideable: true },
-  { key: 'sprint', label: 'Sprint', hideable: true },
+  { key: 'sprint', label: 'Week', hideable: true },
   { key: 'priority', label: 'Priority', hideable: true },
   { key: 'assignee', label: 'Assignee', hideable: true },
   { key: 'updated', label: 'Updated', hideable: true },
@@ -237,8 +237,8 @@ export function IssuesList({
   // Fetch sprints when program context is available (for bulk actions and inline assignment)
   const { data: sprintsData } = useSprintsQuery(lockedProgramId);
   const availableSprints = useMemo(() => {
-    if (!sprintsData?.sprints) return [];
-    return sprintsData.sprints.map(s => ({ id: s.id, name: s.name }));
+    if (!sprintsData?.weeks) return [];
+    return sprintsData.weeks.map(s => ({ id: s.id, name: s.name }));
   }, [sprintsData]);
 
   // Determine if we should self-fetch based on locked filters
@@ -757,8 +757,8 @@ export function IssuesList({
         });
 
         const sprintName = sprintId
-          ? availableSprints.find(s => s.id === sprintId)?.name || 'sprint'
-          : 'No Sprint';
+          ? availableSprints.find(s => s.id === sprintId)?.name || 'week'
+          : 'No Week';
         const message = movingOutOfView
           ? `${count} issue${count === 1 ? '' : 's'} moved out of this view`
           : `${count} issue${count === 1 ? '' : 's'} assigned to ${sprintName}`;
@@ -1020,12 +1020,12 @@ export function IssuesList({
       {
         onSuccess: () => {
           const sprintName = sprintId
-            ? availableSprints.find(s => s.id === sprintId)?.name || 'sprint'
-            : 'No Sprint';
+            ? availableSprints.find(s => s.id === sprintId)?.name || 'week'
+            : 'No Week';
           showToast(`Issue moved to ${sprintName}`, 'success');
         },
         onError: () => {
-          showToast('Failed to update sprint', 'error');
+          showToast('Failed to update week', 'error');
         },
       }
     );
@@ -1105,11 +1105,11 @@ export function IssuesList({
         options={sprintOptions}
         value={sprintFilter}
         onChange={setSprintFilter}
-        placeholder="All Sprints"
-        aria-label="Filter issues by sprint"
+        placeholder="All Weeks"
+        aria-label="Filter issues by week"
         id={`${storageKeyPrefix}-sprint-filter`}
         allowClear={true}
-        clearLabel="All Sprints"
+        clearLabel="All Weeks"
       />
     </div>
   ) : null;
@@ -1265,8 +1265,8 @@ export function IssuesList({
             <ContextMenuItem onClick={() => handleBulkChangeStatus('in_progress')}>In Progress</ContextMenuItem>
             <ContextMenuItem onClick={() => handleBulkChangeStatus('done')}>Done</ContextMenuItem>
           </ContextMenuSubmenu>
-          <ContextMenuSubmenu label="Move to Sprint">
-            <ContextMenuItem onClick={() => handleBulkMoveToSprint(null)}>No Sprint</ContextMenuItem>
+          <ContextMenuSubmenu label="Move to Week">
+            <ContextMenuItem onClick={() => handleBulkMoveToSprint(null)}>No Week</ContextMenuItem>
           </ContextMenuSubmenu>
           {showPromoteToProject && contextMenu.selection.selectedCount === 1 && (
             <>
@@ -1393,7 +1393,7 @@ function IssueRowContent({ issue, visibleColumns, sprints, onSprintChange, isOut
       {visibleColumns.has('sprint') && (
         <td className={cn("px-4 py-3 text-sm text-muted", cellClass)} role="gridcell">
           {sprints && onSprintChange ? (
-            <InlineSprintSelector
+            <InlineWeekSelector
               value={getSprintId(issue)}
               sprints={sprints}
               onChange={(sprintId) => onSprintChange(issue.id, sprintId)}

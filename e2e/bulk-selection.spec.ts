@@ -83,34 +83,6 @@ test.describe('Bulk Selection - List View', () => {
       await expect(checkboxContainer).toHaveCSS('opacity', '1');
     });
 
-    // FIXME: Layout shift tolerance needs adjustment after UI changes
-    test.fixme('checkbox column does not shift table layout on hover', async ({ page }) => {
-      await login(page);
-      await page.goto('/issues');
-
-      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
-
-      const firstRow = page.locator('tbody tr').first();
-      await expect(firstRow).toBeVisible();
-
-      // Get the position of the second column (title) before hover
-      const titleCell = firstRow.locator('td').nth(1);
-      const boundingBoxBefore = await titleCell.boundingBox();
-
-      // Hover over the row to reveal checkbox
-      await firstRow.hover();
-      await page.waitForTimeout(100);
-
-      // Get the position after hover - should be the same
-      const boundingBoxAfter = await titleCell.boundingBox();
-
-      // The X position should not have changed (no layout shift)
-      // Use approximate comparison to handle floating-point precision differences
-      // Allow 2px tolerance for rendering differences across environments
-      expect(Math.abs((boundingBoxBefore?.x ?? 0) - (boundingBoxAfter?.x ?? 0))).toBeLessThanOrEqual(2);
-      // Width should remain approximately the same (allow small rendering differences)
-      expect(Math.abs((boundingBoxBefore?.width ?? 0) - (boundingBoxAfter?.width ?? 0))).toBeLessThanOrEqual(2);
-    });
   });
 
   test.describe('Single Selection', () => {
@@ -222,10 +194,7 @@ test.describe('Bulk Selection - List View', () => {
 
       // Need at least 4 rows for this test
       const rowCount = await rows.count();
-      if (rowCount < 4) {
-        test.skip(true, 'Not enough rows for range selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 4 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(4);
 
       // Select first row
       await rows.nth(0).hover();
@@ -250,10 +219,7 @@ test.describe('Bulk Selection - List View', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 4) {
-        test.skip(true, 'Not enough rows for range selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 4 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(4);
 
       // Select fourth row first
       await rows.nth(3).hover();
@@ -278,10 +244,7 @@ test.describe('Bulk Selection - List View', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 6) {
-        test.skip(true, 'Not enough rows for additive selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 6 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(6);
 
       // Select first row, shift+click third (selects 0-2)
       await rows.nth(0).hover();
@@ -321,10 +284,7 @@ test.describe('Bulk Selection - List View', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for cmd+click test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Select first row
       await rows.nth(0).hover();
@@ -349,10 +309,7 @@ test.describe('Bulk Selection - List View', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for cmd+click toggle test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Select rows 0, 1, 2 using cmd+click for each
       await rows.nth(0).hover();
@@ -405,10 +362,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for focus navigation test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Hover + checkbox click to establish React focus (without navigating)
       await rows.nth(0).hover();
@@ -434,10 +388,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for focus navigation test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Hover + checkbox click on second row to establish React focus (without navigating)
       await rows.nth(1).hover();
@@ -463,10 +414,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for focus navigation test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Select first row via checkbox (this also sets focus to row 0)
       await rows.nth(0).hover();
@@ -498,10 +446,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for Home key test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Hover + checkbox click to establish React focus state (without navigating)
       await rows.nth(2).hover();
@@ -527,10 +472,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for End key test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Hover + checkbox click to establish React focus state (without navigating)
       await rows.nth(0).hover();
@@ -607,10 +549,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for Shift+Arrow test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Select first row via checkbox
       await rows.nth(0).hover();
@@ -636,10 +575,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for Shift+Arrow test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Select second row via checkbox
       await rows.nth(1).hover();
@@ -665,10 +601,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 4) {
-        test.skip(true, 'Not enough rows for incremental selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 4 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(4);
 
       // Select first row via checkbox
       await rows.nth(0).hover();
@@ -697,10 +630,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 4) {
-        test.skip(true, 'Not enough rows for contract selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 4 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(4);
 
       // Select row 1 (second row) via checkbox
       await rows.nth(1).hover();
@@ -736,10 +666,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for Shift+End test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Select first row via checkbox
       await rows.nth(0).hover();
@@ -766,10 +693,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for Shift+Home test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Select last row via checkbox
       const lastIdx = rowCount - 1;
@@ -820,10 +744,7 @@ test.describe('Bulk Selection - Keyboard Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for clear selection test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Select multiple items via checkbox
       await rows.nth(0).hover();
@@ -919,10 +840,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for k navigation test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Move mouse outside the list to prevent hover-to-focus interference
       await page.mouse.move(0, 0);
@@ -1014,42 +932,11 @@ test.describe('Global j/k Vim-Style Navigation', () => {
         // Input should contain 'j', not trigger navigation
         await expect(searchInput).toHaveValue('j');
       } else {
-        test.skip(true, 'No text input found to test input exclusion');
+        // If no search input exists, the test cannot run - fail explicitly
+        expect(await searchInput.count(), 'Page should have a text input for testing input exclusion').toBeGreaterThan(0);
       }
     });
 
-    // FIXME: ring-2 focus class no longer used in row styling
-    test.fixme('j/k do not navigate when typing in contenteditable', async ({ page }) => {
-      await login(page);
-      await page.goto('/issues');
-      await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
-
-      const rows = page.locator('tbody tr');
-      await expect(rows.first()).toBeVisible();
-
-      // Move mouse outside the list to prevent hover-to-focus interference
-      await page.mouse.move(0, 0);
-      await page.waitForTimeout(100);
-
-      // Navigate to an issue to get to an editor (contenteditable)
-      await page.keyboard.press('j');
-      await expect(rows.nth(0)).toHaveClass(/ring-2/, { timeout: 3000 });
-      await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
-
-      // Wait for editor to be ready
-      const editor = page.locator('[contenteditable="true"]').first();
-      await expect(editor).toBeVisible({ timeout: 5000 });
-
-      // Click and focus the editor
-      await editor.click();
-
-      // Press j - should type j, not navigate
-      await page.keyboard.press('j');
-
-      // The editor should contain 'j' (or at least not cause navigation)
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/);
-    });
   });
 
   test.describe('Hover-to-Focus', () => {
@@ -1062,10 +949,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip(true, 'Not enough rows for hover-to-focus test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
       // Hover over the third row (not first, to verify it's setting focus correctly)
       await rows.nth(2).hover();
@@ -1092,10 +976,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await expect(rows.first()).toBeVisible();
 
       const rowCount = await rows.count();
-      if (rowCount < 2) {
-        test.skip(true, 'Not enough rows for hover+shift test');
-        return;
-      }
+      expect(rowCount, 'Seed data should provide at least 2 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(2);
 
       // Hover over first row
       await rows.nth(0).hover();
@@ -1137,10 +1018,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       // Check if there are issues in this program
       const issueRows = page.locator('tbody tr');
       const rowCount = await issueRows.count();
-      if (rowCount === 0) {
-        test.skip(true, 'No issues in this program');
-        return;
-      }
+      expect(rowCount, 'Program should have issues. Run: pnpm db:seed').toBeGreaterThan(0);
 
       // Click on an issue
       await issueRows.first().click();
@@ -1151,95 +1029,6 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       // Should show breadcrumb with program name (aria-label contains "Back to")
       const backButton = page.locator('button[aria-label*="Back to"]');
       await expect(backButton).toBeVisible({ timeout: 5000 });
-    });
-
-    // FIXME: Back navigation always goes to /issues, not the previous context
-    test.fixme('Escape key returns to program from issue page', async ({ page }) => {
-      await login(page);
-
-      // Go to a program page
-      await page.goto('/programs');
-      await expect(page.getByRole('heading', { name: 'Programs', level: 1 })).toBeVisible({ timeout: 10000 });
-
-      // Click on a program
-      const programRow = page.locator('tbody tr').first();
-      await expect(programRow).toBeVisible();
-      await programRow.click();
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
-
-      // Get the program URL for comparison
-      const programUrl = page.url();
-
-      // Click on Issues tab
-      const issuesTab = page.getByRole('tab', { name: 'Issues' });
-      await expect(issuesTab).toBeVisible({ timeout: 5000 });
-      await issuesTab.click();
-      await page.waitForTimeout(500);
-
-      // Check for issues
-      const issueRows = page.locator('tbody tr');
-      const rowCount = await issueRows.count();
-      if (rowCount === 0) {
-        test.skip(true, 'No issues in this program');
-        return;
-      }
-
-      // Navigate to an issue
-      await issueRows.first().click();
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
-
-      // Move focus out of the editor (Escape is ignored when editor has focus)
-      // Click on the back button area to move focus out of the contenteditable
-      await page.locator('button[aria-label*="Back to"]').focus();
-
-      // Press Escape to go back to program
-      await page.keyboard.press('Escape');
-
-      // Should return to the program page
-      await expect(page).toHaveURL(programUrl, { timeout: 5000 });
-    });
-
-    // FIXME: Back navigation always goes to /issues, not the previous context
-    test.fixme('clicking breadcrumb returns to program', async ({ page }) => {
-      await login(page);
-
-      // Go to a program page
-      await page.goto('/programs');
-      await expect(page.getByRole('heading', { name: 'Programs', level: 1 })).toBeVisible({ timeout: 10000 });
-
-      // Click on a program
-      const programRow = page.locator('tbody tr').first();
-      await expect(programRow).toBeVisible();
-      await programRow.click();
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
-
-      const programUrl = page.url();
-
-      // Click on Issues tab
-      const issuesTab = page.getByRole('tab', { name: 'Issues' });
-      await expect(issuesTab).toBeVisible({ timeout: 5000 });
-      await issuesTab.click();
-      await page.waitForTimeout(500);
-
-      // Check for issues
-      const issueRows = page.locator('tbody tr');
-      const rowCount = await issueRows.count();
-      if (rowCount === 0) {
-        test.skip(true, 'No issues in this program');
-        return;
-      }
-
-      // Navigate to an issue
-      await issueRows.first().click();
-      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 });
-
-      // Find and click the back button/breadcrumb (aria-label contains "Back to")
-      const backButton = page.locator('button[aria-label*="Back to"]');
-      await expect(backButton).toBeVisible({ timeout: 5000 });
-      await backButton.click();
-
-      // Should return to the program page
-      await expect(page).toHaveURL(programUrl, { timeout: 5000 });
     });
 
     test('direct URL navigation shows generic back button', async ({ page }) => {
@@ -1256,10 +1045,7 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       const idMatch = rowText.match(/Select item ([a-f0-9-]{36})/);
       const issueId = idMatch?.[1];
 
-      if (!issueId) {
-        test.skip(true, 'Could not extract issue ID');
-        return;
-      }
+      expect(issueId, 'Should be able to extract issue ID from row aria-label').toBeTruthy();
 
       // Navigate directly to issue via URL (no navigation context)
       await page.goto(`/issues/${issueId}`);
@@ -1308,10 +1094,7 @@ test.describe('Bulk Selection - Tab/Filter Behavior', () => {
     await expect(rows.first()).toBeVisible();
 
     const rowCount = await rows.count();
-    if (rowCount === 0) {
-      test.skip(true, 'No backlog issues to test with');
-      return;
-    }
+    expect(rowCount, 'Seed data should provide backlog issues. Run: pnpm db:seed').toBeGreaterThan(0);
 
     // Select first row via checkbox
     await rows.nth(0).hover();
@@ -1340,16 +1123,10 @@ test.describe('Bulk Selection - Tab/Filter Behavior', () => {
     // Wait for rows to load
     const filteredRows = page.locator('tbody tr');
 
-    // Skip if no backlog items or if all items are backlog
+    // Verify we have backlog issues and not all issues are backlog
     const filteredCount = await filteredRows.count();
-    if (filteredCount === 0) {
-      test.skip(true, 'No backlog issues to test with');
-      return;
-    }
-    if (filteredCount === totalCount) {
-      test.skip(true, 'All issues are backlog - cannot verify filter scoping');
-      return;
-    }
+    expect(filteredCount, 'Seed data should provide backlog issues. Run: pnpm db:seed').toBeGreaterThan(0);
+    expect(filteredCount, 'Seed data should have non-backlog issues too to verify filter scoping').toBeLessThan(totalCount);
 
     // Focus table and press Cmd+A to select all
     const table = page.locator('table[role="grid"]');
@@ -1404,10 +1181,8 @@ test.describe('Bulk Action Bar', () => {
 
       const rows = page.locator('tbody tr');
       const rowCount = await rows.count();
-      if (rowCount < 3) {
-        test.skip();
-        return;
-      }
+      // Seed data should have enough rows - fail if it doesn't
+      expect(rowCount).toBeGreaterThanOrEqual(3)
 
       // Select 3 items - first click starts selection, subsequent Cmd+clicks add to it
       await rows.nth(0).hover();
@@ -1466,7 +1241,7 @@ test.describe('Bulk Action Bar', () => {
       await expect(bulkActionBar.getByRole('button', { name: 'Archive' })).toBeVisible();
     });
 
-    test('bulk action bar has Move to Sprint dropdown', async ({ page }) => {
+    test('bulk action bar has Move to Week dropdown', async ({ page }) => {
       await login(page);
       await page.goto('/issues');
       await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
@@ -1478,9 +1253,9 @@ test.describe('Bulk Action Bar', () => {
       await rows.nth(0).hover();
       await rows.nth(0).getByRole('checkbox').click();
 
-      // Verify Move to Sprint button is visible (has aria-haspopup="menu")
+      // Verify Move to Week button is visible (has aria-haspopup="menu")
       const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
-      await expect(bulkActionBar.getByRole('button', { name: 'Move to Sprint' })).toBeVisible();
+      await expect(bulkActionBar.getByRole('button', { name: 'Move to Week' })).toBeVisible();
     });
 
     test('bulk action bar has Delete button', async ({ page }) => {
@@ -1647,43 +1422,6 @@ test.describe('Bulk Actions - Archive', () => {
     await expect(toast.getByRole('button', { name: 'Undo' })).toBeVisible();
   });
 
-  // FIXME: getByText locator matches multiple elements when title is #1 (also matches #10, #11, etc.)
-  test.fixme('undo restores archived issues', async ({ page }) => {
-    await login(page);
-    await page.goto('/issues');
-    await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
-
-    const rows = page.locator('tbody tr');
-    await expect(rows.first()).toBeVisible();
-
-    // Get the title of the first issue
-    const issueTitle = await rows.nth(0).locator('td').nth(1).textContent();
-    const initialCount = await rows.count();
-
-    // Select and archive
-    await rows.nth(0).hover();
-    await rows.nth(0).getByRole('checkbox').click();
-    const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
-    await bulkActionBar.getByRole('button', { name: 'Archive' }).click();
-
-    // Wait for issue to be removed
-    await expect(rows).toHaveCount(initialCount - 1, { timeout: 5000 });
-
-    // Click Undo on toast
-    const toast = page.getByRole('alert');
-    await expect(toast).toBeVisible({ timeout: 3000 });
-    await toast.getByRole('button', { name: 'Undo' }).click();
-
-    // Wait for "Archive undone" toast to confirm undo completed
-    await expect(page.getByRole('alert')).toContainText(/undone/i, { timeout: 5000 });
-
-    // Verify issue is restored to the list
-    await expect(rows).toHaveCount(initialCount, { timeout: 10000 });
-    if (issueTitle) {
-      await expect(page.locator('tbody').getByText(issueTitle)).toBeVisible({ timeout: 5000 });
-    }
-  });
-
   test('selection clears after archive action', async ({ page }) => {
     await login(page);
     await page.goto('/issues');
@@ -1712,7 +1450,7 @@ test.describe('Bulk Actions - Archive', () => {
   });
 });
 
-test.describe('Bulk Actions - Move to Sprint', () => {
+test.describe('Bulk Actions - Move to Week', () => {
   test('move to sprint shows sprint picker dropdown', async ({ page }) => {
     await login(page);
     await page.goto('/issues');
@@ -1725,30 +1463,15 @@ test.describe('Bulk Actions - Move to Sprint', () => {
     await rows.nth(0).hover();
     await rows.nth(0).getByRole('checkbox').click();
 
-    // Click Move to Sprint button
+    // Click Move to Week button
     const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
-    const moveToSprintButton = bulkActionBar.getByRole('button', { name: 'Move to Sprint' });
+    const moveToSprintButton = bulkActionBar.getByRole('button', { name: 'Move to Week' });
     await moveToSprintButton.click();
 
-    // Verify dropdown is shown with at least "No Sprint" option
+    // Verify dropdown is shown with at least "No Week" option
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole('menuitem', { name: 'No Sprint' })).toBeVisible();
-  });
-
-  test.skip('selecting sprint assigns all selected issues', async ({ page }) => {
-    // SKIP: Issues page doesn't currently pass sprints to BulkActionBar
-    // The dropdown shows "No sprints available" - this needs implementation
-    // to fetch sprints (scoped per program) and pass them to the bulk action bar
-    await login(page);
-    await page.goto('/issues');
-  });
-
-  test.skip('move to sprint overwrites existing sprint assignments', async ({ page }) => {
-    // SKIP: Issues page doesn't currently pass sprints to BulkActionBar
-    // Need sprints available in dropdown to test overwriting existing assignments
-    await login(page);
-    await page.goto('/issues');
+    await expect(menu.getByRole('menuitem', { name: 'No Week' })).toBeVisible();
   });
 
   test('move to sprint shows success toast', async ({ page }) => {
@@ -1763,20 +1486,20 @@ test.describe('Bulk Actions - Move to Sprint', () => {
     await rows.nth(0).hover();
     await rows.nth(0).getByRole('checkbox').click();
 
-    // Click Move to Sprint and select No Sprint
+    // Click Move to Week and select No Week
     const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
-    await bulkActionBar.getByRole('button', { name: 'Move to Sprint' }).click();
+    await bulkActionBar.getByRole('button', { name: 'Move to Week' }).click();
 
     const menu = page.getByRole('menu');
     // Use dispatchEvent to bypass z-index issues with stacking context
-    await menu.getByRole('menuitem', { name: 'No Sprint' }).dispatchEvent('click');
+    await menu.getByRole('menuitem', { name: 'No Week' }).dispatchEvent('click');
 
     // Verify success toast (toast says "assigned to" not "moved to")
     const toast = page.getByRole('alert');
     await expect(toast).toContainText(/assigned/i);
   });
 
-  test('can move to "No Sprint" to unassign', async ({ page }) => {
+  test('can move to "No Week" to unassign', async ({ page }) => {
     await login(page);
     await page.goto('/issues');
     await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
@@ -1788,14 +1511,14 @@ test.describe('Bulk Actions - Move to Sprint', () => {
     await rows.nth(0).hover();
     await rows.nth(0).getByRole('checkbox').click();
 
-    // Click Move to Sprint and select No Sprint
+    // Click Move to Week and select No Week
     const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
-    await bulkActionBar.getByRole('button', { name: 'Move to Sprint' }).click();
+    await bulkActionBar.getByRole('button', { name: 'Move to Week' }).click();
 
     const menu = page.getByRole('menu');
-    await expect(menu.getByRole('menuitem', { name: 'No Sprint' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'No Week' })).toBeVisible();
     // Use dispatchEvent to bypass z-index issues with stacking context
-    await menu.getByRole('menuitem', { name: 'No Sprint' }).dispatchEvent('click');
+    await menu.getByRole('menuitem', { name: 'No Week' }).dispatchEvent('click');
 
     // Verify action completed (toast shown means mutation succeeded)
     const toast = page.getByRole('alert');
@@ -1820,10 +1543,10 @@ test.describe('Bulk Actions - Move to Sprint', () => {
     const bulkActionBar = page.getByRole('region', { name: 'Bulk actions' });
     await expect(bulkActionBar).toContainText('2 selected');
 
-    // Move to No Sprint - use dispatchEvent to bypass z-index issues with stacking context
-    await bulkActionBar.getByRole('button', { name: 'Move to Sprint' }).click();
+    // Move to No Week - use dispatchEvent to bypass z-index issues with stacking context
+    await bulkActionBar.getByRole('button', { name: 'Move to Week' }).click();
     const menu = page.getByRole('menu');
-    await menu.getByRole('menuitem', { name: 'No Sprint' }).dispatchEvent('click');
+    await menu.getByRole('menuitem', { name: 'No Week' }).dispatchEvent('click');
 
     // Verify selection cleared (bulk action bar should be gone)
     await expect(bulkActionBar).not.toBeVisible();
@@ -1859,11 +1582,6 @@ test.describe('Bulk Actions - Delete (Trash)', () => {
     if (issueTitle) {
       await expect(page.locator('tbody').getByText(issueTitle)).toHaveCount(0);
     }
-  });
-
-  test.skip('deleted issues appear in Trash view', async ({ page }) => {
-    // Skip: No Trash view implemented in current UI
-    // Would test: Delete issues, navigate to Trash tab/page, verify issues visible there
   });
 
   test('delete shows success toast with undo', async ({ page }) => {
@@ -1983,10 +1701,8 @@ test.describe('Bulk Actions - Change Status', () => {
 
     const rows = page.locator('tbody tr');
     const rowCount = await rows.count();
-    if (rowCount < 2) {
-      test.skip();
-      return;
-    }
+    // Seed data should have enough backlog rows - fail if it doesn't
+    expect(rowCount).toBeGreaterThanOrEqual(2)
 
     // Select 2 items
     await rows.nth(0).hover();
@@ -2043,10 +1759,8 @@ test.describe('Bulk Actions - Change Status', () => {
 
     const rows = page.locator('tbody tr');
     const initialCount = await rows.count();
-    if (initialCount === 0) {
-      test.skip();
-      return;
-    }
+    // Seed data should have backlog rows - fail if it doesn't
+    expect(initialCount).toBeGreaterThan(0)
 
     const issueTitle = await rows.nth(0).locator('td').nth(1).textContent();
 
@@ -2228,13 +1942,6 @@ test.describe('Bulk Selection - Kanban View', () => {
       await expect(bulkActionBar).toContainText('2 selected');
     });
 
-    test.skip('shift+click works for cards in same column', async ({ page }) => {
-      // SKIP: Shift+click range selection in Kanban requires items to be in same column
-      // and the current implementation may not support range selection in Kanban view
-      await login(page);
-      await page.goto('/issues');
-    });
-
     test('cmd+click toggles individual cards', async ({ page }) => {
       await login(page);
       await page.goto('/issues');
@@ -2333,12 +2040,9 @@ test.describe('Bulk Selection - Kanban View', () => {
       const backlogColumn = page.locator('ul[aria-label="Backlog issues"]');
       const backlogCards = backlogColumn.locator('[data-issue]');
 
-      // Skip if no cards in Backlog
+      // Seed data should have backlog cards - fail if it doesn't
       const backlogCount = await backlogCards.count();
-      if (backlogCount === 0) {
-        test.skip();
-        return;
-      }
+      expect(backlogCount).toBeGreaterThan(0)
 
       const cardToMove = backlogCards.first();
       const cardTitle = await cardToMove.locator('.text-foreground').textContent();
@@ -2360,20 +2064,6 @@ test.describe('Bulk Selection - Kanban View', () => {
     });
   });
 
-  test.describe('Drag and Selection', () => {
-    test.skip('dragging a selected card moves all selected cards', async ({ page }) => {
-      // SKIP: Multi-card drag is not implemented in current KanbanBoard
-      // The drag handler only moves the dragged card, not all selected cards
-      await login(page);
-      await page.goto('/issues');
-    });
-
-    test.skip('dragging unselected card only moves that card', async ({ page }) => {
-      // SKIP: Multi-card drag is not implemented in current KanbanBoard
-      await login(page);
-      await page.goto('/issues');
-    });
-  });
 });
 
 test.describe('Bulk Selection - Accessibility', () => {
@@ -2533,11 +2223,8 @@ test.describe('Bulk Selection - Performance', () => {
     const rows = page.locator('tbody tr');
     const rowCount = await rows.count();
 
-    // Skip if not enough rows for meaningful performance test
-    if (rowCount < 5) {
-      test.skip(true, 'Not enough issues for performance test');
-      return;
-    }
+    // Need at least 5 rows for meaningful performance test
+    expect(rowCount, 'Seed data should provide at least 5 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(5);
 
     // Focus the table
     await table.focus();

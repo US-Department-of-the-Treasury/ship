@@ -16,7 +16,7 @@ const TYPE_OPTIONS: { value: DocumentType; label: string; icon: React.ReactNode 
   { value: 'wiki', label: 'Wiki', icon: <WikiIcon /> },
   { value: 'issue', label: 'Issue', icon: <IssueIcon /> },
   { value: 'project', label: 'Project', icon: <ProjectIcon /> },
-  { value: 'sprint', label: 'Sprint', icon: <SprintIcon /> },
+  { value: 'sprint', label: 'Week', icon: <SprintIcon /> },
 ];
 
 export function DocumentTypeSelector({

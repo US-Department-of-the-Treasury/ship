@@ -193,7 +193,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
               (SELECT COUNT(*) FROM documents i
                JOIN document_associations ida ON ida.document_id = i.id AND ida.related_id = d.id AND ida.relationship_type = 'sprint'
                WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
-              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'weekly_plan') as has_plan,
               (SELECT COUNT(*) > 0 FROM documents rt
                JOIN document_associations rda ON rda.document_id = rt.id AND rda.related_id = d.id AND rda.relationship_type = 'sprint'
                WHERE rt.properties->>'outcome' IS NOT NULL) as has_retro,
@@ -221,7 +221,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     }));
 
     res.json({
-      sprints,
+      weeks: sprints,
       current_sprint_number: currentSprintNumber,
       days_remaining: daysRemaining,
       sprint_start_date: currentSprintStart.toISOString().split('T')[0],
@@ -275,7 +275,7 @@ router.get('/my-action-items', authMiddleware, async (req: Request, res: Respons
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name,
               (d.properties->>'sprint_number')::int as sprint_number,
-              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'weekly_plan') as has_plan,
               (SELECT COUNT(*) > 0 FROM documents rt
                JOIN document_associations rda ON rda.document_id = rt.id AND rda.related_id = d.id AND rda.relationship_type = 'sprint'
                WHERE rt.properties->>'outcome' IS NOT NULL) as has_retro
@@ -325,24 +325,24 @@ router.get('/my-action-items', authMiddleware, async (req: Request, res: Respons
       // Check for missing sprint plan (active sprint only)
       if (sprintNumber === currentSprintNumber && !hasPlan) {
         let urgency: ActionItem['urgency'] = 'upcoming';
-        let message = 'Write sprint plan';
+        let message = 'Write weekly plan';
 
         if (daysIntoSprint >= 3) {
           urgency = 'overdue';
-          message = `Sprint plan is ${daysIntoSprint - 2} days overdue`;
+          message = `Weekly plan is ${daysIntoSprint - 2} days overdue`;
         } else if (daysIntoSprint >= 2) {
           urgency = 'due_today';
-          message = 'Sprint plan due today';
+          message = 'Weekly plan due today';
         } else if (daysIntoSprint >= 1) {
           urgency = 'due_soon';
-          message = 'Sprint plan due tomorrow';
+          message = 'Weekly plan due tomorrow';
         }
 
         actionItems.push({
           id: `plan-${row.id}`,
           type: 'plan',
           sprint_id: row.id,
-          sprint_title: row.title || `Sprint ${sprintNumber}`,
+          sprint_title: row.title || `Week ${sprintNumber}`,
           program_id: row.program_id,
           program_name: row.program_name,
           sprint_number: sprintNumber,
@@ -359,20 +359,20 @@ router.get('/my-action-items', authMiddleware, async (req: Request, res: Respons
 
         if (daysSinceEnd > 3) {
           urgency = 'overdue';
-          message = `Sprint retro is ${daysSinceEnd - 3} days overdue`;
+          message = `Weekly retro is ${daysSinceEnd - 3} days overdue`;
         } else if (daysSinceEnd === 3) {
           urgency = 'due_today';
-          message = 'Sprint retro due today';
+          message = 'Weekly retro due today';
         } else if (daysSinceEnd >= 1) {
           urgency = 'due_soon';
-          message = `Sprint retro due in ${3 - daysSinceEnd} days`;
+          message = `Weekly retro due in ${3 - daysSinceEnd} days`;
         }
 
         actionItems.push({
           id: `retro-${row.id}`,
           type: 'retro',
           sprint_id: row.id,
-          sprint_title: row.title || `Sprint ${sprintNumber}`,
+          sprint_title: row.title || `Week ${sprintNumber}`,
           program_id: row.program_id,
           program_name: row.program_name,
           sprint_number: sprintNumber,
@@ -614,7 +614,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
               (SELECT COUNT(*) FROM documents i
                JOIN document_associations ida ON ida.document_id = i.id AND ida.related_id = d.id AND ida.relationship_type = 'sprint'
                WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
-              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'weekly_plan') as has_plan,
               (SELECT COUNT(*) > 0 FROM documents rt
                JOIN document_associations rda ON rda.document_id = rt.id AND rda.related_id = d.id AND rda.relationship_type = 'sprint'
                WHERE rt.properties->>'outcome' IS NOT NULL) as has_retro,
@@ -635,7 +635,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     );
 
     if (result.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -732,7 +732,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       );
 
       if (existingCheck.rows.length > 0) {
-        res.status(400).json({ error: `Sprint ${sprint_number} already exists for this program` });
+        res.status(400).json({ error: `Week ${sprint_number} already exists for this program` });
         return;
       }
     } else {
@@ -750,7 +750,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       );
 
       if (existingCheck.rows.length > 0) {
-        res.status(400).json({ error: `Projectless sprint ${sprint_number} already exists` });
+        res.status(400).json({ error: `Programless week ${sprint_number} already exists` });
         return;
       }
     }
@@ -894,7 +894,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     );
 
     if (existing.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -952,7 +952,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         );
 
         if (existingCheck.rows.length > 0) {
-          res.status(400).json({ error: `Sprint ${data.sprint_number} already exists for this program` });
+          res.status(400).json({ error: `Week ${data.sprint_number} already exists for this program` });
           return;
         }
       } else {
@@ -966,7 +966,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         );
 
         if (existingCheck.rows.length > 0) {
-          res.status(400).json({ error: `Programless sprint ${data.sprint_number} already exists` });
+          res.status(400).json({ error: `Programless week ${data.sprint_number} already exists` });
           return;
         }
       }
@@ -1020,7 +1020,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
               (SELECT COUNT(*) FROM documents i
                JOIN document_associations ida ON ida.document_id = i.id AND ida.related_id = d.id AND ida.relationship_type = 'sprint'
                WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
-              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'weekly_plan') as has_plan,
               (SELECT COUNT(*) > 0 FROM documents rt
                JOIN document_associations rda ON rda.document_id = rt.id AND rda.related_id = d.id AND rda.relationship_type = 'sprint'
                WHERE rt.properties->>'outcome' IS NOT NULL) as has_retro,
@@ -1047,7 +1047,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // Start sprint - manually activate a planning sprint with scope snapshot
-// POST /api/sprints/:id/start
+// POST /api/weeks/:id/start
 router.post('/:id/start', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -1069,7 +1069,7 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
     );
 
     if (existing.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -1079,7 +1079,7 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
     // Only allow starting a sprint that's in planning status
     if (currentStatus !== 'planning') {
       res.status(400).json({
-        error: `Cannot start sprint: sprint is already ${currentStatus}`,
+        error: `Cannot start week: week is already ${currentStatus}`,
       });
       return;
     }
@@ -1103,7 +1103,7 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
     );
 
     // Broadcast celebration when sprint is started
-    broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_start', targetId: id as string });
+    broadcastToUser(req.userId!, 'accountability:updated', { type: 'week_start', targetId: id as string });
 
     // Re-query to get full sprint with owner info
     const result = await pool.query(
@@ -1121,7 +1121,7 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
               (SELECT COUNT(*) FROM documents i
                JOIN document_associations ida ON ida.document_id = i.id AND ida.related_id = d.id AND ida.relationship_type = 'sprint'
                WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
-              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'weekly_plan') as has_plan,
               (SELECT COUNT(*) > 0 FROM documents rt
                JOIN document_associations rda ON rda.document_id = rt.id AND rda.related_id = d.id AND rda.relationship_type = 'sprint'
                WHERE rt.properties->>'outcome' IS NOT NULL) as has_retro,
@@ -1171,7 +1171,7 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
     );
 
     if (existing.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -1194,7 +1194,7 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // Update sprint plan (append mode - preserves history)
-// PATCH /api/sprints/:id/plan
+// PATCH /api/weeks/:id/plan
 router.patch('/:id/plan', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -1219,7 +1219,7 @@ router.patch('/:id/plan', authMiddleware, async (req: Request, res: Response) =>
     );
 
     if (existing.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -1309,7 +1309,7 @@ router.patch('/:id/plan', authMiddleware, async (req: Request, res: Response) =>
 
     // Broadcast celebration when plan is added
     if (data.plan && data.plan.trim() !== '') {
-      broadcastToUser(req.userId!, 'accountability:updated', { type: 'sprint_plan', targetId: id as string });
+      broadcastToUser(req.userId!, 'accountability:updated', { type: 'weekly_plan', targetId: id as string });
     }
 
     // Re-query to get full sprint with owner info
@@ -1328,7 +1328,7 @@ router.patch('/:id/plan', authMiddleware, async (req: Request, res: Response) =>
               (SELECT COUNT(*) FROM documents i
                JOIN document_associations ida ON ida.document_id = i.id AND ida.related_id = d.id AND ida.relationship_type = 'sprint'
                WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count,
-              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'sprint_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'weekly_plan') as has_plan,
               (SELECT COUNT(*) > 0 FROM documents rt
                JOIN document_associations rda ON rda.document_id = rt.id AND rda.related_id = d.id AND rda.relationship_type = 'sprint'
                WHERE rt.properties->>'outcome' IS NOT NULL) as has_retro,
@@ -1375,7 +1375,7 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
     );
 
     if (sprintResult.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -1475,7 +1475,7 @@ router.get('/:id/scope-changes', authMiddleware, async (req: Request, res: Respo
     );
 
     if (sprintResult.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -1696,7 +1696,7 @@ router.get('/:id/standups', authMiddleware, async (req: Request, res: Response) 
     );
 
     if (sprintCheck.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -1811,7 +1811,7 @@ router.post('/:id/standups', authMiddleware, async (req: Request, res: Response)
     );
 
     if (sprintCheck.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -1898,11 +1898,11 @@ async function generatePrefilledReviewContent(sprintData: any, issues: any[]) {
       {
         type: 'heading',
         attrs: { level: 2 },
-        content: [{ type: 'text', text: 'Sprint Summary' }]
+        content: [{ type: 'text', text: 'Weekly Summary' }]
       },
       {
         type: 'paragraph',
-        content: [{ type: 'text', text: `Sprint ${sprintData.sprint_number} review for ${sprintData.program_name || 'Program'}.` }]
+        content: [{ type: 'text', text: `Week ${sprintData.sprint_number} review for ${sprintData.program_name || 'Program'}.` }]
       },
     ]
   };
@@ -2001,7 +2001,7 @@ async function generatePrefilledReviewContent(sprintData: any, issues: any[]) {
   return content;
 }
 
-// GET /api/sprints/:id/review - Get or generate pre-filled sprint review
+// GET /api/weeks/:id/review - Get or generate pre-filled sprint review
 router.get('/:id/review', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -2024,22 +2024,22 @@ router.get('/:id/review', authMiddleware, async (req: Request, res: Response) =>
     );
 
     if (sprintResult.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
     const sprint = sprintResult.rows[0];
     const sprintProps = sprint.properties || {};
 
-    // Check if a sprint_review already exists for this sprint
-    // Note: sprint_review documents use document_associations to link to sprint
+    // Check if a weekly_review already exists for this sprint
+    // Note: weekly_review documents use document_associations to link to sprint
     const existingReview = await pool.query(
       `SELECT d.id, d.title, d.content, d.properties, d.created_at, d.updated_at,
               u.name as owner_name, u.email as owner_email
        FROM documents d
        JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
        LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
-       WHERE d.document_type = 'sprint_review'
+       WHERE d.document_type = 'weekly_review'
          AND d.workspace_id = $2
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
@@ -2086,7 +2086,7 @@ router.get('/:id/review', authMiddleware, async (req: Request, res: Response) =>
     res.json({
       id: null, // No ID yet - this is a draft
       sprint_id: id,
-      title: `Sprint ${sprintData.sprint_number} Review`,
+      title: `Week ${sprintData.sprint_number} Review`,
       content: prefilledContent,
       plan_validated: null,
       owner_id: null,
@@ -2102,7 +2102,7 @@ router.get('/:id/review', authMiddleware, async (req: Request, res: Response) =>
   }
 });
 
-// POST /api/sprints/:id/review - Create finalized sprint review
+// POST /api/weeks/:id/review - Create finalized sprint review
 router.post('/:id/review', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -2129,44 +2129,44 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
     );
 
     if (sprintCheck.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
-    // Check if a sprint_review already exists
+    // Check if a weekly_review already exists
     const existingCheck = await pool.query(
       `SELECT d.id FROM documents d
        JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
-       WHERE d.document_type = 'sprint_review'
+       WHERE d.document_type = 'weekly_review'
          AND d.workspace_id = $2`,
       [id, workspaceId]
     );
 
     if (existingCheck.rows.length > 0) {
-      res.status(409).json({ error: 'Sprint review already exists. Use PATCH to update.' });
+      res.status(409).json({ error: 'Weekly review already exists. Use PATCH to update.' });
       return;
     }
 
     const sprintProps = sprintCheck.rows[0].properties || {};
 
-    // Create the sprint_review document
+    // Create the weekly_review document
     const properties = {
       sprint_id: id,
       owner_id: userId,
       plan_validated: plan_validated ?? null,
     };
 
-    const reviewTitle = title || `Sprint ${sprintProps.sprint_number || 'N'} Review`;
+    const reviewTitle = title || `Week ${sprintProps.sprint_number || 'N'} Review`;
     const reviewContent = content || { type: 'doc', content: [{ type: 'paragraph' }] };
 
     const result = await pool.query(
       `INSERT INTO documents (workspace_id, document_type, title, content, properties, created_by, visibility)
-       VALUES ($1, 'sprint_review', $2, $3, $4, $5, 'workspace')
+       VALUES ($1, 'weekly_review', $2, $3, $4, $5, 'workspace')
        RETURNING id, title, content, properties, created_at, updated_at`,
       [workspaceId, reviewTitle, JSON.stringify(reviewContent), JSON.stringify(properties), userId]
     );
 
-    // Create document_association to link sprint_review to sprint
+    // Create document_association to link weekly_review to sprint
     await pool.query(
       `INSERT INTO document_associations (document_id, related_id, relationship_type)
        VALUES ($1, $2, 'sprint')`,
@@ -2180,7 +2180,7 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
     );
 
     // Broadcast celebration when sprint review is created
-    broadcastToUser(userId, 'accountability:updated', { type: 'sprint_review', targetId: id as string });
+    broadcastToUser(userId, 'accountability:updated', { type: 'weekly_review', targetId: id as string });
 
     // Log initial review content to document_history for approval workflow tracking
     const review = result.rows[0];
@@ -2215,7 +2215,7 @@ router.post('/:id/review', authMiddleware, async (req: Request, res: Response) =
   }
 });
 
-// PATCH /api/sprints/:id/review - Update existing sprint review
+// PATCH /api/weeks/:id/review - Update existing sprint review
 router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -2233,18 +2233,18 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
-    // Find existing sprint_review for this sprint
+    // Find existing weekly_review for this sprint
     const existing = await pool.query(
       `SELECT d.id, d.properties, d.content FROM documents d
        JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
-       WHERE d.document_type = 'sprint_review'
+       WHERE d.document_type = 'weekly_review'
          AND d.workspace_id = $2
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
     );
 
     if (existing.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint review not found. Use POST to create.' });
+      res.status(404).json({ error: 'Weekly review not found. Use POST to create.' });
       return;
     }
 
@@ -2297,7 +2297,7 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
 
     await pool.query(
       `UPDATE documents SET ${updates.join(', ')}
-       WHERE id = $${paramIndex} AND document_type = 'sprint_review'`,
+       WHERE id = $${paramIndex} AND document_type = 'weekly_review'`,
       [...values, reviewId]
     );
 
@@ -2344,13 +2344,13 @@ router.patch('/:id/review', authMiddleware, async (req: Request, res: Response) 
     }
 
     // Re-query to get full review with owner info
-    // Note: sprint_review documents use owner_id (not assignee_ids like sprint docs)
+    // Note: weekly_review documents use owner_id (not assignee_ids like sprint docs)
     const result = await pool.query(
       `SELECT d.id, d.title, d.content, d.properties, d.created_at, d.updated_at,
               u.name as owner_name, u.email as owner_email
        FROM documents d
        LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
-       WHERE d.id = $1 AND d.document_type = 'sprint_review'`,
+       WHERE d.id = $1 AND d.document_type = 'weekly_review'`,
       [reviewId]
     );
 
@@ -2382,7 +2382,7 @@ const carryoverSchema = z.object({
   target_sprint_id: z.string().uuid(),
 });
 
-// POST /api/sprints/:id/carryover - Move incomplete issues to another sprint
+// POST /api/weeks/:id/carryover - Move incomplete issues to another sprint
 router.post('/:id/carryover', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id: sourceSprintId } = req.params;
@@ -2409,7 +2409,7 @@ router.post('/:id/carryover', authMiddleware, async (req: Request, res: Response
     );
 
     if (sourceSprintResult.rows.length === 0) {
-      res.status(404).json({ error: 'Source sprint not found' });
+      res.status(404).json({ error: 'Source week not found' });
       return;
     }
 
@@ -2424,7 +2424,7 @@ router.post('/:id/carryover', authMiddleware, async (req: Request, res: Response
     );
 
     if (targetSprintResult.rows.length === 0) {
-      res.status(404).json({ error: 'Target sprint not found' });
+      res.status(404).json({ error: 'Target week not found' });
       return;
     }
 
@@ -2433,7 +2433,7 @@ router.post('/:id/carryover', authMiddleware, async (req: Request, res: Response
     const targetStatus = targetProps.status || 'planning';
 
     if (!['planning', 'active'].includes(targetStatus)) {
-      res.status(400).json({ error: `Target sprint must be planning or active (currently: ${targetStatus})` });
+      res.status(400).json({ error: `Target week must be planning or active (currently: ${targetStatus})` });
       return;
     }
 
@@ -2451,7 +2451,7 @@ router.post('/:id/carryover', authMiddleware, async (req: Request, res: Response
 
     if (missingIssues.length > 0) {
       res.status(400).json({
-        error: 'Some issues not found in source sprint',
+        error: 'Some issues not found in source week',
         missing_issue_ids: missingIssues,
       });
       return;
@@ -2510,12 +2510,12 @@ router.post('/:id/carryover', authMiddleware, async (req: Request, res: Response
       },
     });
   } catch (err) {
-    console.error('Sprint carryover error:', err);
+    console.error('Week carryover error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// POST /api/sprints/:id/approve-plan - Approve sprint plan
+// POST /api/weeks/:id/approve-plan - Approve sprint plan
 router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -2537,7 +2537,7 @@ router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Respo
     );
 
     if (sprintResult.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -2582,7 +2582,7 @@ router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Respo
   }
 });
 
-// POST /api/sprints/:id/approve-review - Approve sprint review
+// POST /api/weeks/:id/approve-review - Approve sprint review
 router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -2604,7 +2604,7 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
     );
 
     if (sprintResult.rows.length === 0) {
-      res.status(404).json({ error: 'Sprint not found' });
+      res.status(404).json({ error: 'Week not found' });
       return;
     }
 
@@ -2617,11 +2617,11 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
       return;
     }
 
-    // Find the sprint_review document to get its version history
+    // Find the weekly_review document to get its version history
     const reviewResult = await pool.query(
       `SELECT d.id FROM documents d
        JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'sprint'
-       WHERE d.document_type = 'sprint_review' AND d.workspace_id = $2`,
+       WHERE d.document_type = 'weekly_review' AND d.workspace_id = $2`,
       [id, workspaceId]
     );
 

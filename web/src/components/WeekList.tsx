@@ -1,10 +1,10 @@
 import { useNavigate } from 'react-router-dom';
-import { useSprintsQuery, Sprint } from '@/hooks/useSprintsQuery';
-import { useProjectSprintsQuery, ProjectSprint } from '@/hooks/useProjectsQuery';
+import { useSprintsQuery, Sprint } from '@/hooks/useWeeksQuery';
+import { useProjectWeeksQuery, ProjectWeek } from '@/hooks/useProjectsQuery';
 import { cn } from '@/lib/cn';
 
-// Union type that works with both Sprint and ProjectSprint
-interface SprintItem {
+// Union type that works with both Sprint and ProjectWeek
+interface WeekItem {
   id: string;
   name: string;
   sprint_number: number;
@@ -17,16 +17,16 @@ interface SprintItem {
   owner?: { id: string; name: string; email: string } | null;
 }
 
-interface SprintListProps {
-  /** Program ID to fetch sprints for (exclusive with lockedProjectId) */
+interface WeekListProps {
+  /** Program ID to fetch weeks for (exclusive with lockedProjectId) */
   lockedProgramId?: string;
-  /** Project ID to fetch sprints for (exclusive with lockedProgramId) */
+  /** Project ID to fetch weeks for (exclusive with lockedProgramId) */
   lockedProjectId?: string;
-  /** Callback when Plan Sprint is clicked */
-  onPlanSprint?: (sprintId?: string) => void;
-  /** Callback when a sprint is clicked (defaults to navigation) */
-  onSprintClick?: (sprintId: string) => void;
-  /** Show the Plan Sprint button */
+  /** Callback when Plan Week is clicked */
+  onPlanWeek?: (weekId?: string) => void;
+  /** Callback when a week is clicked (defaults to navigation) */
+  onWeekClick?: (weekId: string) => void;
+  /** Show the Plan Week button */
   showPlanButton?: boolean;
   /** Custom empty state message */
   emptyMessage?: string;
@@ -35,47 +35,47 @@ interface SprintListProps {
 }
 
 /**
- * SprintList - Unified sprint list component for programs and projects
+ * WeekList - Unified week list component for programs and projects
  *
- * Renders a list of sprints with consistent UI including:
- * - Sprint number badge
+ * Renders a list of weeks with consistent UI including:
+ * - Week number badge
  * - Status badge (Planning/Active/Completed)
  * - Date range
  * - Owner name (if available)
- * - Days remaining (for active sprints)
+ * - Days remaining (for active weeks)
  * - Progress (completed/total issues)
- * - Plan Sprint button (optional)
+ * - Plan Week button (optional)
  */
-export function SprintList({
+export function WeekList({
   lockedProgramId,
   lockedProjectId,
-  onPlanSprint,
-  onSprintClick,
+  onPlanWeek,
+  onWeekClick,
   showPlanButton = false,
   emptyMessage,
   emptyHint,
-}: SprintListProps) {
+}: WeekListProps) {
   const navigate = useNavigate();
 
-  // Fetch sprints based on context
+  // Fetch weeks based on context
   const programQuery = useSprintsQuery(lockedProgramId);
-  const projectQuery = useProjectSprintsQuery(lockedProjectId);
+  const projectQuery = useProjectWeeksQuery(lockedProjectId);
 
   // Determine which query to use
   const isProjectContext = !!lockedProjectId;
   const query = isProjectContext ? projectQuery : programQuery;
-  const sprints: SprintItem[] = isProjectContext
+  const weeks: WeekItem[] = isProjectContext
     ? (projectQuery.data ?? [])
-    : (programQuery.data?.sprints ?? []);
+    : (programQuery.data?.weeks ?? []);
 
   const loading = query.isLoading;
 
-  // Default click handler navigates to sprint view
-  const handleSprintClick = (sprintId: string) => {
-    if (onSprintClick) {
-      onSprintClick(sprintId);
+  // Default click handler navigates to week view
+  const handleWeekClick = (weekId: string) => {
+    if (onWeekClick) {
+      onWeekClick(weekId);
     } else {
-      navigate(`/documents/${sprintId}`);
+      navigate(`/documents/${weekId}`);
     }
   };
 
@@ -87,18 +87,18 @@ export function SprintList({
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          Loading sprints...
+          Loading weeks...
         </div>
       </div>
     );
   }
 
-  if (sprints.length === 0) {
+  if (weeks.length === 0) {
     const contextType = isProjectContext ? 'project' : 'program';
-    const defaultEmptyMessage = `No sprints in this ${contextType}`;
+    const defaultEmptyMessage = `No weeks in this ${contextType}`;
     const defaultEmptyHint = isProjectContext
-      ? 'Link sprints to this project from the sprint editor'
-      : 'Create sprints using the Plan Sprint button';
+      ? 'Link weeks to this project from the week editor'
+      : 'Create weeks using the Plan Week button';
 
     return (
       <div className="flex flex-col items-center justify-center h-48 text-muted">
@@ -107,12 +107,12 @@ export function SprintList({
         </svg>
         <p className="text-sm font-medium">{emptyMessage || defaultEmptyMessage}</p>
         <p className="text-xs mt-1">{emptyHint || defaultEmptyHint}</p>
-        {showPlanButton && onPlanSprint && (
+        {showPlanButton && onPlanWeek && (
           <button
-            onClick={() => onPlanSprint()}
+            onClick={() => onPlanWeek()}
             className="mt-4 rounded-md bg-accent/20 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/30 transition-colors"
           >
-            Plan Sprint
+            Plan Week
           </button>
         )}
       </div>
@@ -121,22 +121,22 @@ export function SprintList({
 
   return (
     <div className="h-full overflow-auto p-4 pb-20">
-      {showPlanButton && onPlanSprint && (
+      {showPlanButton && onPlanWeek && (
         <div className="mb-4 flex justify-end">
           <button
-            onClick={() => onPlanSprint()}
+            onClick={() => onPlanWeek()}
             className="rounded-md bg-accent/20 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/30 transition-colors"
           >
-            Plan Sprint
+            Plan Week
           </button>
         </div>
       )}
       <div className="space-y-2">
-        {sprints.map((sprint) => (
-          <SprintCard
-            key={sprint.id}
-            sprint={sprint}
-            onClick={() => handleSprintClick(sprint.id)}
+        {weeks.map((week) => (
+          <WeekCard
+            key={week.id}
+            week={week}
+            onClick={() => handleWeekClick(week.id)}
           />
         ))}
       </div>
@@ -144,13 +144,13 @@ export function SprintList({
   );
 }
 
-// Individual sprint card component
-interface SprintCardProps {
-  sprint: SprintItem;
+// Individual week card component
+interface WeekCardProps {
+  week: WeekItem;
   onClick: () => void;
 }
 
-function SprintCard({ sprint, onClick }: SprintCardProps) {
+function WeekCard({ week, onClick }: WeekCardProps) {
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '—';
     return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -173,29 +173,29 @@ function SprintCard({ sprint, onClick }: SprintCardProps) {
       onClick={onClick}
       className="flex items-center gap-4 p-3 rounded-lg border border-border hover:bg-accent/5 cursor-pointer transition-colors"
     >
-      {/* Sprint number badge */}
+      {/* Week number badge */}
       <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center">
-        <span className="text-sm font-bold text-accent">{sprint.sprint_number}</span>
+        <span className="text-sm font-bold text-accent">{week.sprint_number}</span>
       </div>
 
-      {/* Sprint info */}
+      {/* Week info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium text-foreground truncate">
-            {sprint.name || `Sprint ${sprint.sprint_number}`}
+            {week.name || `Week ${week.sprint_number}`}
           </h3>
           <span className={cn(
             'inline-flex px-2 py-0.5 text-xs font-medium rounded capitalize',
-            getStatusBadgeClass(sprint.status)
+            getStatusBadgeClass(week.status)
           )}>
-            {sprint.status}
+            {week.status}
           </span>
         </div>
         <div className="flex items-center gap-3 mt-1 text-xs text-muted">
-          <span>{formatDate(sprint.start_date)} – {formatDate(sprint.end_date)}</span>
-          {sprint.owner && <span>{sprint.owner.name}</span>}
-          {sprint.days_remaining != null && sprint.status === 'active' && (
-            <span className="text-accent">{sprint.days_remaining}d remaining</span>
+          <span>{formatDate(week.start_date)} – {formatDate(week.end_date)}</span>
+          {week.owner && <span>{week.owner.name}</span>}
+          {week.days_remaining != null && week.status === 'active' && (
+            <span className="text-accent">{week.days_remaining}d remaining</span>
           )}
         </div>
       </div>
@@ -203,7 +203,7 @@ function SprintCard({ sprint, onClick }: SprintCardProps) {
       {/* Progress */}
       <div className="flex-shrink-0 text-right">
         <div className="text-sm font-medium text-foreground">
-          {sprint.completed_count}/{sprint.issue_count}
+          {week.completed_count}/{week.issue_count}
         </div>
         <div className="text-xs text-muted">issues done</div>
       </div>

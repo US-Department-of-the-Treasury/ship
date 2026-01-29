@@ -166,7 +166,7 @@ test.describe('Pending Invites in Allocation Grid', () => {
     await expect(page.getByText('Dev User')).toBeVisible({ timeout: 10000 })
 
     // Wait for sprint columns to load
-    await expect(page.getByText(/Sprint \d+/).first()).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/Week \d+/).first()).toBeVisible({ timeout: 10000 })
 
     // Wait a moment for grid to stabilize
     await page.waitForTimeout(500)

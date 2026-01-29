@@ -5,7 +5,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { cn } from '@/lib/cn';
 import { useToast } from '@/components/ui/Toast';
 
-interface SprintReviewProps {
+interface WeekReviewProps {
   sprintId: string;
 }
 
@@ -72,7 +72,7 @@ async function patchWithCsrf(url: string, body: object): Promise<Response> {
   return res;
 }
 
-export function SprintReview({ sprintId }: SprintReviewProps) {
+export function WeekReview({ sprintId }: WeekReviewProps) {
   const [reviewData, setReviewData] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -84,7 +84,7 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
     extensions: [
       StarterKit,
       Placeholder.configure({
-        placeholder: 'Write your sprint review...',
+        placeholder: 'Write your weekly review...',
       }),
     ],
     content: '',
@@ -95,7 +95,7 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
 
   const fetchReview = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/sprints/${sprintId}/review`, { credentials: 'include' });
+      const res = await fetch(`${API_URL}/api/weeks/${sprintId}/review`, { credentials: 'include' });
       if (res.ok) {
         const data: ReviewData = await res.json();
         setReviewData(data);
@@ -104,11 +104,11 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
           editor.commands.setContent(data.content);
         }
       } else {
-        showToast('Failed to load sprint review', 'error');
+        showToast('Failed to load weekly review', 'error');
       }
     } catch (err) {
-      console.error('Failed to fetch sprint review:', err);
-      showToast('Failed to load sprint review. Please try again.', 'error');
+      console.error('Failed to fetch weekly review:', err);
+      showToast('Failed to load weekly review. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -129,7 +129,7 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
 
       if (reviewData?.is_draft) {
         // POST to create new review
-        const res = await postWithCsrf(`${API_URL}/api/sprints/${sprintId}/review`, {
+        const res = await postWithCsrf(`${API_URL}/api/weeks/${sprintId}/review`, {
           content,
           plan_validated: planValidated,
         });
@@ -137,34 +137,34 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
           const data = await res.json();
           setReviewData({ ...data, is_draft: false });
           setIsDirty(false);
-          showToast('Sprint review saved', 'success');
+          showToast('Week review saved', 'success');
         } else if (res.status === 409) {
           // Review already exists - someone else created it
-          showToast('A review already exists for this sprint. Refreshing...', 'error');
+          showToast('A review already exists for this week. Refreshing...', 'error');
           fetchReview();
         } else {
           const data = await res.json().catch(() => ({}));
-          showToast(data.error || 'Failed to save sprint review', 'error');
+          showToast(data.error || 'Failed to save week review', 'error');
         }
       } else {
         // PATCH to update existing review
-        const res = await patchWithCsrf(`${API_URL}/api/sprints/${sprintId}/review`, {
+        const res = await patchWithCsrf(`${API_URL}/api/weeks/${sprintId}/review`, {
           content,
           plan_validated: planValidated,
         });
         if (res.ok) {
           setIsDirty(false);
-          showToast('Sprint review updated', 'success');
+          showToast('Week review updated', 'success');
         } else if (res.status === 403) {
           showToast('You can only edit reviews you created', 'error');
         } else {
           const data = await res.json().catch(() => ({}));
-          showToast(data.error || 'Failed to update sprint review', 'error');
+          showToast(data.error || 'Failed to update week review', 'error');
         }
       }
     } catch (err) {
-      console.error('Failed to save sprint review:', err);
-      showToast('Failed to save sprint review. Please try again.', 'error');
+      console.error('Failed to save weekly review:', err);
+      showToast('Failed to save weekly review. Please try again.', 'error');
     } finally {
       setSaving(false);
     }
@@ -187,7 +187,7 @@ export function SprintReview({ sprintId }: SprintReviewProps) {
           <div className="flex-1 px-6 py-4">
             {reviewData?.is_draft && (
               <div className="mb-4 rounded-md border border-yellow-500/50 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-600">
-                This is a pre-filled draft. Edit and save to finalize your sprint review.
+                This is a pre-filled draft. Edit and save to finalize your weekly review.
               </div>
             )}
             <div className="prose prose-sm max-w-none">

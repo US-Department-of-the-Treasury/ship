@@ -67,7 +67,7 @@ async function createIssue(page: Page, title: string) {
 // =============================================================================
 
 // FIXME: Tests use dev-server fixture - New Issue navigation broken
-test.describe.fixme('Issue Program Assignment', () => {
+test.describe('Issue Program Assignment', () => {
   test.slow() // 3x timeout for dev server
 
   test.beforeEach(async ({ page }) => {
@@ -98,7 +98,7 @@ test.describe.fixme('Issue Program Assignment', () => {
 // =============================================================================
 
 // FIXME: Tests use dev-server fixture - login sometimes stuck
-test.describe.fixme('Issue Sprint Assignment', () => {
+test.describe('Issue Week Assignment', () => {
   test.slow() // 3x timeout for dev server
 
   test.beforeEach(async ({ page }) => {
@@ -123,17 +123,17 @@ test.describe.fixme('Issue Sprint Assignment', () => {
     await page.waitForTimeout(1000) // Wait for debounced save and sprints to load
 
     // Assign to sprint
-    const sprintCombobox = page.getByRole('combobox', { name: 'Sprint' })
+    const sprintCombobox = page.getByRole('combobox', { name: 'Week' })
     await expect(sprintCombobox).toBeVisible({ timeout: 10000 })
     await sprintCombobox.click()
     await page.waitForTimeout(500)
 
     // Select first available sprint
-    const sprintOption = page.locator('[cmdk-item]').filter({ hasText: /Sprint \d+/ }).first()
+    const sprintOption = page.locator('[cmdk-item]').filter({ hasText: /Week \d+/ }).first()
     if (await sprintOption.isVisible({ timeout: 5000 }).catch(() => false)) {
       await sprintOption.click()
       // Verify sprint selected via UI
-      await expect(sprintCombobox).toContainText(/Sprint \d+/, { timeout: 5000 })
+      await expect(sprintCombobox).toContainText(/Week \d+/, { timeout: 5000 })
     }
   })
 })
@@ -143,7 +143,7 @@ test.describe.fixme('Issue Sprint Assignment', () => {
 // =============================================================================
 
 // FIXME: Tests use dev-server fixture - login fails in isolated E2E environment
-test.describe.fixme('Issue to Project Conversion', () => {
+test.describe('Issue to Project Conversion', () => {
   test.slow() // 3x timeout for dev server
 
   test.beforeEach(async ({ page }) => {
@@ -182,7 +182,7 @@ test.describe.fixme('Issue to Project Conversion', () => {
 // =============================================================================
 
 // FIXME: Tests use dev-server fixture - login fails in isolated E2E environment
-test.describe.fixme('Sprint Planning Board', () => {
+test.describe('Week Planning Board', () => {
   test.slow() // 3x timeout for dev server
 
   test.beforeEach(async ({ page }) => {
@@ -196,12 +196,12 @@ test.describe.fixme('Sprint Planning Board', () => {
     await page.getByRole('row', { name: /Ship Core/i }).click()
     await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
 
-    // Click Sprints tab
-    await page.getByRole('tab', { name: 'Sprints' }).click()
+    // Click Weeks tab
+    await page.getByRole('tab', { name: 'Weeks' }).click()
     await page.waitForTimeout(1000)
 
-    // Click "Plan Sprint" button
-    const planSprintButton = page.getByRole('button', { name: /Plan Sprint/i })
+    // Click "Plan Week" button
+    const planSprintButton = page.getByRole('button', { name: /Plan Week/i })
     if (await planSprintButton.isVisible({ timeout: 5000 }).catch(() => false)) {
       await planSprintButton.click({ force: true })
       await expect(page).toHaveURL(/\/sprints\/[a-f0-9-]+\/view/, { timeout: 15000 })
@@ -212,7 +212,7 @@ test.describe.fixme('Sprint Planning Board', () => {
 
       // Should see kanban columns
       await expect(page.locator('h2').filter({ hasText: 'Backlog' })).toBeVisible({ timeout: 10000 })
-      await expect(page.locator('h2').filter({ hasText: /^Sprint$/ })).toBeVisible()
+      await expect(page.locator('h2').filter({ hasText: /^Week$/ })).toBeVisible()
     }
   })
 })

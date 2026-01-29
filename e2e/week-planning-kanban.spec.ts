@@ -25,17 +25,17 @@ async function login(page: Page) {
 }
 
 async function navigateToSprintPlanningView(page: Page) {
-  // Navigate to a program's Sprints tab and click "Plan Sprint" to go to SprintView
+  // Navigate to a program's Weeks tab and click "Plan Week" to go to SprintView
   await page.goto('/programs')
   await page.getByRole('row', { name: /Ship Core/i }).click()
   await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
-  // Click Sprints tab
-  await page.getByRole('tab', { name: 'Sprints' }).click()
+  // Click Weeks tab
+  await page.getByRole('tab', { name: 'Weeks' }).click()
 
-  // Wait for active sprint content and click "Plan Sprint" button
+  // Wait for active sprint content and click "Plan Week" button
   // Use force:true because sidebar panel can overlap the button
-  const planSprintButton = page.getByRole('button', { name: /Plan Sprint/ })
+  const planSprintButton = page.getByRole('button', { name: /Plan Week/ })
   await expect(planSprintButton).toBeVisible({ timeout: 10000 })
   await planSprintButton.click({ force: true })
 
@@ -51,8 +51,8 @@ async function navigateToSprintPlanningView(page: Page) {
 // LAYOUT TESTS
 // =============================================================================
 
-// FIXME: Sprint planning workflow broken - Plan Sprint button and /sprints/:id/view route don't exist
-test.describe.fixme('Sprint Planning Kanban Layout', () => {
+// FIXME: Sprint planning workflow broken - Plan Week button and /sprints/:id/view route don't exist
+test.describe('Week Planning Kanban Layout', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
     await navigateToSprintPlanningView(page)
@@ -66,7 +66,7 @@ test.describe.fixme('Sprint Planning Kanban Layout', () => {
     await expect(page.locator('h2').filter({ hasText: 'Backlog' })).toBeVisible({ timeout: 5000 })
 
     // Should see Sprint column header (h2 element with exactly "Sprint", not "Sprint N")
-    await expect(page.locator('h2').filter({ hasText: /^Sprint$/ })).toBeVisible()
+    await expect(page.locator('h2').filter({ hasText: /^Week$/ })).toBeVisible()
   })
 
   test('backlog column shows issues without sprint assignment', async ({ page }) => {
@@ -83,7 +83,7 @@ test.describe.fixme('Sprint Planning Kanban Layout', () => {
     await page.waitForLoadState('networkidle')
 
     // Sprint column should exist - h2 with exactly "Sprint" (not "Sprint N")
-    await expect(page.locator('h2').filter({ hasText: /^Sprint$/ })).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('h2').filter({ hasText: /^Week$/ })).toBeVisible({ timeout: 5000 })
   })
 })
 
@@ -91,8 +91,8 @@ test.describe.fixme('Sprint Planning Kanban Layout', () => {
 // ADD ISSUE TO SPRINT TESTS
 // =============================================================================
 
-// FIXME: Sprint planning workflow broken - Plan Sprint button and /sprints/:id/view route don't exist
-test.describe.fixme('Add Issue to Sprint', () => {
+// FIXME: Sprint planning workflow broken - Plan Week button and /sprints/:id/view route don't exist
+test.describe('Add Issue to Week', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
     await navigateToSprintPlanningView(page)
@@ -163,7 +163,7 @@ test.describe.fixme('Add Issue to Sprint', () => {
       const estimateInput = page.locator('input[type="number"]').first()
       if (await estimateInput.isVisible({ timeout: 1000 }).catch(() => false)) {
         await estimateInput.fill('3')
-        await page.getByRole('button', { name: /Add to Sprint|Save|Submit/i }).click()
+        await page.getByRole('button', { name: /Add to Week|Save|Submit/i }).click()
       }
 
       // Should have made CSRF token request
@@ -180,8 +180,8 @@ test.describe.fixme('Add Issue to Sprint', () => {
 // REMOVE ISSUE FROM SPRINT TESTS
 // =============================================================================
 
-// FIXME: Sprint planning workflow broken - Plan Sprint button and /sprints/:id/view route don't exist
-test.describe.fixme('Remove Issue from Sprint', () => {
+// FIXME: Sprint planning workflow broken - Plan Week button and /sprints/:id/view route don't exist
+test.describe('Remove Issue from Week', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
     await navigateToSprintPlanningView(page)
@@ -251,21 +251,21 @@ test.describe.fixme('Remove Issue from Sprint', () => {
 // INTEGRATION TESTS
 // =============================================================================
 
-// FIXME: Sprint planning workflow broken - Plan Sprint button and /sprints/:id/view route don't exist
-test.describe.fixme('Sprint Planning Kanban Integration', () => {
+// FIXME: Sprint planning workflow broken - Plan Week button and /sprints/:id/view route don't exist
+test.describe('Week Planning Kanban Integration', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
     await navigateToSprintPlanningView(page)
   })
 
-  test('Plan Sprint button from timeline navigates to this view', async ({ page }) => {
+  test('Plan Week button from timeline navigates to this view', async ({ page }) => {
     // Go back to program view
     await page.goto('/programs')
     await page.getByRole('row', { name: /Ship Core/i }).click()
-    await page.getByRole('tab', { name: 'Sprints' }).click()
+    await page.getByRole('tab', { name: 'Weeks' }).click()
 
-    // Click Plan Sprint button (if visible)
-    const planButton = page.getByRole('button', { name: /Plan Sprint/i })
+    // Click Plan Week button (if visible)
+    const planButton = page.getByRole('button', { name: /Plan Week/i })
     if (await planButton.isVisible({ timeout: 3000 }).catch(() => false)) {
       await planButton.click()
       await expect(page).toHaveURL(/\/sprints\/[a-f0-9-]+\/view/, { timeout: 5000 })
