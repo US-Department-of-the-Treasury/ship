@@ -162,8 +162,8 @@ test.describe('Docs Mode (Phase 3)', () => {
     await editor.click()
     await page.keyboard.type('Hello world')
 
-    // Should see save status indicator (Saved, Syncing..., or Offline)
+    // Should see save status indicator (Saved, Cached, Saving, or Offline)
     // The status is shown in the editor header (use .first() to avoid matching sr-only element)
-    await expect(page.getByText(/saved|syncing|offline/i).first()).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/saved|cached|saving|offline/i).first()).toBeVisible({ timeout: 10000 })
   })
 })

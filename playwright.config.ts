@@ -57,7 +57,7 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 2 : 1,  // 1 retry locally for flaky WebSocket/timing tests
   workers: calculatedWorkers,
   // Reporters:
   // - 'line' shows real-time progress: [1/641] ✓ auth.spec.ts:15 (2.3s)

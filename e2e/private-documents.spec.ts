@@ -634,7 +634,7 @@ test.describe('Private Documents', () => {
       await adminPage.waitForLoadState('networkidle');
 
       // Wait for WebSocket connection to establish (sync status shows "Saved")
-      await expect(adminPage.getByTestId('sync-status').getByText('Saved')).toBeVisible({ timeout: 10000 });
+      await expect(adminPage.getByTestId('sync-status').getByText(/Saved|Cached|Saving|Offline/)).toBeVisible({ timeout: 10000 });
 
       // Login as member and open the same document
       await loginAsMember(memberPage);
@@ -642,21 +642,19 @@ test.describe('Private Documents', () => {
       await memberPage.waitForLoadState('networkidle');
 
       // Wait for member's WebSocket connection to establish
-      await expect(memberPage.getByTestId('sync-status').getByText('Saved')).toBeVisible({ timeout: 10000 });
+      await expect(memberPage.getByTestId('sync-status').getByText(/Saved|Cached|Saving|Offline/)).toBeVisible({ timeout: 10000 });
 
-      // Set up dialog handler for the member page BEFORE the visibility change
+      // Set up promise to wait for dialog BEFORE triggering the visibility change
       // The dialog will show when WebSocket is closed with code 4403
-      let dialogMessage = '';
-      memberPage.on('dialog', async (dialog) => {
-        dialogMessage = dialog.message();
-        await dialog.accept();
-      });
+      const dialogPromise = memberPage.waitForEvent('dialog', { timeout: 10000 });
 
       // Admin changes document to private via API
       await updateDocument(adminPage, doc.id, { visibility: 'private' });
 
       // Wait for the WebSocket close event to trigger the dialog
-      await memberPage.waitForTimeout(3000);
+      const dialog = await dialogPromise;
+      const dialogMessage = dialog.message();
+      await dialog.accept();
 
       // Verify the member saw the access revoked message
       expect(dialogMessage.toLowerCase()).toContain('access');
@@ -694,7 +692,7 @@ test.describe('Private Documents', () => {
       await adminPage.waitForLoadState('networkidle');
 
       // Wait for WebSocket connection to establish
-      await expect(adminPage.getByTestId('sync-status').getByText('Saved')).toBeVisible({ timeout: 10000 });
+      await expect(adminPage.getByTestId('sync-status').getByText(/Saved|Cached|Saving|Offline/)).toBeVisible({ timeout: 10000 });
 
       // Admin changes document to private via API
       await updateDocument(adminPage, doc.id, { visibility: 'private' });

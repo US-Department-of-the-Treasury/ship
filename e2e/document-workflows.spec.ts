@@ -10,18 +10,9 @@
  * These tests use slow mode (3x timeout) for dev server reliability
  */
 
-import { test, expect, Page } from './fixtures/dev-server'
+import { test, expect, Page } from './fixtures/isolated-env'
 
-// These tests run against existing dev servers (pnpm dev must be running)
-// No container spinup = fast execution even on low memory systems
-
-// Allow retries for flaky dev server conditions
-test.describe.configure({ retries: 2 })
-
-// Add delay between tests to let dev server recover
-test.afterEach(async () => {
-  await new Promise(resolve => setTimeout(resolve, 2000))
-})
+// Tests run in isolated containers with fresh database per worker
 
 // =============================================================================
 // HELPERS
@@ -66,7 +57,6 @@ async function createIssue(page: Page, title: string) {
 // ISSUE PROGRAM ASSIGNMENT
 // =============================================================================
 
-// FIXME: Tests use dev-server fixture - New Issue navigation broken
 test.describe('Issue Program Assignment', () => {
   test.slow() // 3x timeout for dev server
 
@@ -77,19 +67,20 @@ test.describe('Issue Program Assignment', () => {
   test('user creates issue and assigns to program via dropdown', async ({ page }) => {
     await createIssue(page, 'Program Assignment Test')
 
-    // Find and click the Program combobox
-    const programCombobox = page.getByRole('combobox', { name: 'Program' })
-    await expect(programCombobox).toBeVisible({ timeout: 10000 })
-    await programCombobox.click()
+    // Find and click the Programs button (MultiAssociationChips component in properties sidebar)
+    // Use "Add program..." text to distinguish from nav sidebar icon
+    const programsButton = page.getByText('Add program...')
+    await expect(programsButton).toBeVisible({ timeout: 10000 })
+    await programsButton.click()
 
     // Wait for dropdown and select Ship Core
     await page.waitForTimeout(500)
-    const shipCoreOption = page.locator('[cmdk-item]').filter({ hasText: 'Ship Core' })
+    const shipCoreOption = page.getByText('Ship Core', { exact: true })
     await expect(shipCoreOption).toBeVisible({ timeout: 5000 })
     await shipCoreOption.click()
 
-    // Verify program is selected (UI-based assertion, not waitForResponse)
-    await expect(programCombobox).toContainText('Ship Core', { timeout: 5000 })
+    // Verify program chip is added (look for chip with the program name)
+    await expect(page.locator('span').filter({ hasText: 'Ship Core' })).toBeVisible({ timeout: 5000 })
   })
 })
 
@@ -97,7 +88,6 @@ test.describe('Issue Program Assignment', () => {
 // ISSUE SPRINT ASSIGNMENT
 // =============================================================================
 
-// FIXME: Tests use dev-server fixture - login sometimes stuck
 test.describe('Issue Week Assignment', () => {
   test.slow() // 3x timeout for dev server
 
@@ -108,12 +98,13 @@ test.describe('Issue Week Assignment', () => {
   test('user assigns issue to sprint via properties panel', async ({ page }) => {
     await createIssue(page, 'Sprint Assignment Test')
 
-    // Assign to program first
-    const programCombobox = page.getByRole('combobox', { name: 'Program' })
-    await programCombobox.click()
+    // Assign to program first (MultiAssociationChips component in properties sidebar)
+    // Use "Add program..." text to distinguish from nav sidebar icon
+    const programsButton = page.getByText('Add program...')
+    await programsButton.click()
     await page.waitForTimeout(500)
-    await page.locator('[cmdk-item]').filter({ hasText: 'Ship Core' }).click()
-    await expect(programCombobox).toContainText('Ship Core', { timeout: 5000 })
+    await page.getByText('Ship Core', { exact: true }).click()
+    await expect(page.locator('span').filter({ hasText: 'Ship Core' })).toBeVisible({ timeout: 5000 })
 
     // Add estimate (required for sprint)
     const estimateInput = page.getByRole('spinbutton', { name: /estimate/i })
@@ -142,7 +133,6 @@ test.describe('Issue Week Assignment', () => {
 // DOCUMENT CONVERSION
 // =============================================================================
 
-// FIXME: Tests use dev-server fixture - login fails in isolated E2E environment
 test.describe('Issue to Project Conversion', () => {
   test.slow() // 3x timeout for dev server
 
@@ -154,26 +144,41 @@ test.describe('Issue to Project Conversion', () => {
     const issueTitle = `Conversion Test ${Date.now()}`
     await createIssue(page, issueTitle)
 
-    // Click "Promote to Project" button
+    // Click "Promote to Project" button - converts directly without confirmation dialog
     const promoteButton = page.getByRole('button', { name: /Promote to Project/i })
     await expect(promoteButton).toBeVisible({ timeout: 10000 })
     await promoteButton.click()
 
-    // Confirm in dialog
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toBeVisible({ timeout: 5000 })
-    await dialog.getByRole('button', { name: /Promote to Project/i }).click()
-
-    // Wait for navigation to new project
-    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 20000 })
+    // Wait for conversion to complete by checking the button disappears
+    // (the button only shows on issues, not projects)
+    await expect(promoteButton).toBeHidden({ timeout: 20000 })
 
     // Verify title preserved
     await expect(page.getByPlaceholder('Untitled')).toHaveValue(issueTitle)
 
     // Go to projects list and verify title appears
+    // Note: The app uses IndexedDB persistence for React Query, so we need to
+    // clear the cache or wait for the background refetch to complete
     await page.goto('/projects')
-    // Use row selector to avoid matching sidebar and main content both
-    await expect(page.getByRole('row', { name: new RegExp(issueTitle) })).toBeVisible({ timeout: 15000 })
+    await page.waitForLoadState('networkidle')
+
+    // Clear IndexedDB cache and reload to get fresh data
+    await page.evaluate(async () => {
+      const databases = await indexedDB.databases()
+      for (const db of databases) {
+        if (db.name) indexedDB.deleteDatabase(db.name)
+      }
+    })
+    await page.reload()
+    await page.waitForLoadState('networkidle')
+
+    // Wait for the table to be visible
+    await expect(page.locator('table')).toBeVisible({ timeout: 10000 })
+
+    // Look for the project title text within the table
+    // Using text selector is more reliable than role-based accessible name matching
+    const projectTitle = page.locator('table td').filter({ hasText: issueTitle })
+    await expect(projectTitle).toBeVisible({ timeout: 15000 })
   })
 })
 
@@ -181,7 +186,6 @@ test.describe('Issue to Project Conversion', () => {
 // SPRINT PLANNING BOARD
 // =============================================================================
 
-// FIXME: Tests use dev-server fixture - login fails in isolated E2E environment
 test.describe('Week Planning Board', () => {
   test.slow() // 3x timeout for dev server
 
