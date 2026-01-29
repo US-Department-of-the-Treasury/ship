@@ -239,7 +239,7 @@ async function seed() {
         impact: 5,
         confidence: 4,
         ease: 3,
-        hypothesis: 'Building core features will establish the product foundation and attract early adopters.',
+        plan: 'Building core features will establish the product foundation and attract early adopters.',
         monetary_impact_expected: 50000,
       },
       {
@@ -249,7 +249,7 @@ async function seed() {
         impact: 4,
         confidence: 5,
         ease: 4,
-        hypothesis: 'Fixing bugs will improve user retention and reduce support costs.',
+        plan: 'Fixing bugs will improve user retention and reduce support costs.',
         monetary_impact_expected: 15000,
       },
       {
@@ -259,7 +259,7 @@ async function seed() {
         impact: 4,
         confidence: 3,
         ease: 2,
-        hypothesis: 'Performance improvements will increase user satisfaction and enable scale.',
+        plan: 'Performance improvements will increase user satisfaction and enable scale.',
         monetary_impact_expected: 25000,
       },
     ];
@@ -303,7 +303,7 @@ async function seed() {
             impact: template.impact,
             confidence: template.confidence,
             ease: template.ease,
-            hypothesis: template.hypothesis,
+            plan: template.plan,
             monetary_impact_expected: template.monetary_impact_expected,
             target_date: targetDate.toISOString().split('T')[0],
           };
@@ -406,7 +406,7 @@ async function seed() {
           'Focus on documentation and developer experience',
           'Ship incremental improvements based on feedback',
         ];
-        const sprintHypotheses = [
+        const sprintPlans = [
           'If we complete these features, we will unblock the next milestone.',
           'Fixing these issues will reduce user-reported problems by 50%.',
           'Performance gains will improve user engagement metrics.',
@@ -437,7 +437,7 @@ async function seed() {
           sprint_number: sprint.number,
           owner_id: owner.id,
           assignee_ids: [owner.id, allUsers[(sprint.ownerIdx + 1) % allUsers.length]!.id], // Owner + one other
-          hypothesis: sprintHypotheses[sprint.number % sprintHypotheses.length],
+          plan: sprintPlans[sprint.number % sprintPlans.length],
           success_criteria: sprintSuccessCriteria[sprint.number % sprintSuccessCriteria.length],
           confidence: baseConfidence + (Math.random() * 10 - 5), // Add some variance
         };

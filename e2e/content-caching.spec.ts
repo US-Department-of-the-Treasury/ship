@@ -169,3 +169,145 @@ test.describe('WebSocket Connection Reliability', () => {
   });
 
 });
+
+test.describe('API Content Update Invalidates Browser Cache', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/login');
+    await page.fill('input[name="email"]', 'dev@ship.local');
+    await page.fill('input[name="password"]', 'admin123');
+    await page.click('button[type="submit"]');
+    await page.waitForURL(/\/(issues|docs)/);
+  });
+
+  test('user edits document, leaves, API updates content, user returns and sees API content', async ({ page, request }) => {
+    // Step 1: Create a new document via API for clean test isolation
+    const createResponse = await request.post('/api/documents', {
+      data: {
+        title: 'API Cache Test Document',
+        document_type: 'wiki',
+        content: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Initial API content' }]
+            }
+          ]
+        }
+      }
+    });
+    expect(createResponse.ok()).toBe(true);
+    const { id: docId } = await createResponse.json();
+
+    // Step 2: Navigate to the document in browser
+    await page.goto(`/documents/${docId}`);
+    await page.waitForSelector('.ProseMirror', { timeout: 10000 });
+    await page.waitForSelector('text=Saved', { timeout: 10000 });
+
+    // Step 3: Edit content in browser (type some text)
+    const editor = page.locator('.ProseMirror');
+    await editor.click();
+    // Clear and type new content
+    await page.keyboard.press('Meta+a');
+    await page.keyboard.type('User typed content in browser');
+
+    // Wait for content to sync
+    await page.waitForSelector('text=Saved', { timeout: 10000 });
+    await page.waitForTimeout(1000); // Give IndexedDB time to persist
+
+    // Verify browser shows user-typed content
+    await expect(editor).toContainText('User typed content in browser');
+
+    // Step 4: Navigate away (leave the page)
+    await page.goto('/docs');
+    await page.waitForSelector('[role="tree"]', { timeout: 5000 });
+
+    // Step 5: Update content via API (simulating /ship or external system)
+    const updateResponse = await request.patch(`/api/documents/${docId}/content`, {
+      data: {
+        content: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'API updated content - should override cached' }]
+            }
+          ]
+        }
+      }
+    });
+    expect(updateResponse.ok()).toBe(true);
+
+    // Step 6: Navigate back to the document
+    await page.goto(`/documents/${docId}`);
+    await page.waitForSelector('.ProseMirror', { timeout: 10000 });
+    await page.waitForSelector('text=Saved', { timeout: 10000 });
+
+    // Step 7: Verify the API content is displayed, NOT the cached browser content
+    const editorAfter = page.locator('.ProseMirror');
+    await expect(editorAfter).toContainText('API updated content - should override cached');
+    // Should NOT contain the old cached content
+    await expect(editorAfter).not.toContainText('User typed content in browser');
+
+    // Cleanup: Delete the test document
+    await request.delete(`/api/documents/${docId}`);
+  });
+
+  test('API update while user has document open triggers cache clear', async ({ page, request }) => {
+    // Create a new document
+    const createResponse = await request.post('/api/documents', {
+      data: {
+        title: 'Live API Update Test',
+        document_type: 'wiki',
+        content: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Original content' }]
+            }
+          ]
+        }
+      }
+    });
+    expect(createResponse.ok()).toBe(true);
+    const { id: docId } = await createResponse.json();
+
+    // Navigate to document and wait for sync
+    await page.goto(`/documents/${docId}`);
+    await page.waitForSelector('.ProseMirror', { timeout: 10000 });
+    await page.waitForSelector('text=Saved', { timeout: 10000 });
+
+    // Verify original content
+    const editor = page.locator('.ProseMirror');
+    await expect(editor).toContainText('Original content');
+
+    // Update content via API while user has document open
+    // This should trigger WebSocket close code 4101 and cache clear
+    const updateResponse = await request.patch(`/api/documents/${docId}/content`, {
+      data: {
+        content: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Updated while viewing' }]
+            }
+          ]
+        }
+      }
+    });
+    expect(updateResponse.ok()).toBe(true);
+
+    // Wait for WebSocket reconnect and content sync
+    await page.waitForTimeout(2000);
+
+    // Verify updated content is displayed
+    await expect(editor).toContainText('Updated while viewing');
+
+    // Cleanup
+    await request.delete(`/api/documents/${docId}`);
+  });
+
+});

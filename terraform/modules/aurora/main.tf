@@ -26,6 +26,33 @@ resource "aws_rds_cluster_parameter_group" "aurora" {
     value = "1000" # Log queries taking > 1s
   }
 
+  # DDoS protection: Connection and query limits
+  parameter {
+    name  = "max_connections"
+    value = "200"
+  }
+
+  parameter {
+    name  = "idle_in_transaction_session_timeout"
+    value = "30000" # 30 seconds - terminate idle transactions
+  }
+
+  parameter {
+    name  = "statement_timeout"
+    value = "30000" # 30 seconds - terminate long-running queries
+  }
+
+  # DDoS forensics: Log connection events for attack analysis
+  parameter {
+    name  = "log_connections"
+    value = "1"
+  }
+
+  parameter {
+    name  = "log_disconnections"
+    value = "1"
+  }
+
   tags = {
     Name = "${var.project_name}-${var.environment}-aurora-pg16"
   }

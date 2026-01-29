@@ -481,13 +481,13 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
           .run();
       },
     },
-    // Plan block (for Sprint documents only - syncs with properties.plan)
+    // Plan block (for Sprint and Project documents - syncs with properties.plan)
     {
       title: 'Plan',
       description: 'Add a plan block',
       aliases: ['plan', 'hypothesis', 'hypo', 'theory'],
       icon: icons.plan,
-      documentTypes: ['sprint'],
+      documentTypes: ['sprint', 'project'],
       command: ({ editor, range }) => {
         editor
           .chain()
@@ -495,7 +495,7 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
           .deleteRange(range)
           .insertContent({
             type: 'hypothesisBlock',
-            attrs: { placeholder: 'What will get done this week?' },
+            attrs: { placeholder: 'What do you expect to accomplish?' },
           })
           .run();
       },
