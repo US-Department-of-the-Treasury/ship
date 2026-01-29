@@ -301,9 +301,55 @@ export function Editor({
       const wsUrl = apiUrl
         ? apiUrl.replace(/^http/, 'ws') + '/collaboration'
         : `${wsProtocol}//${window.location.host}/collaboration`;
+      // Listen for custom "clear cache" message (type 3) from server
+      // This is sent when the server loaded content fresh from JSON (API update/create)
+      // We need to clear IndexedDB to prevent stale cached content from merging
+      const MESSAGE_TYPE_CLEAR_CACHE = 3;
+      const handleRawMessage = (event: MessageEvent) => {
+        if (cancelled) return;
+        try {
+          const data = new Uint8Array(event.data);
+          if (data.length > 0 && data[0] === MESSAGE_TYPE_CLEAR_CACHE) {
+            console.log(`[Editor] Received cache clear signal for ${documentId}, clearing IndexedDB`);
+            // Clear the Y.Doc to remove any cached content before server sync
+            ydoc.transact(() => {
+              const fragment = ydoc.getXmlFragment('default');
+              // Delete all content from the fragment
+              while (fragment.length > 0) {
+                fragment.delete(0, 1);
+              }
+            });
+            // Also clear IndexedDB for future visits
+            indexeddbProvider.clearData().then(() => {
+              console.log(`[Editor] IndexedDB cache cleared for ${documentId} (fresh from JSON)`);
+              hasCachedContent = false;
+            }).catch((err) => {
+              console.error(`[Editor] Failed to clear IndexedDB cache for ${documentId}:`, err);
+            });
+          }
+        } catch {
+          // Ignore errors from processing non-binary messages
+        }
+      };
+
+      // Create WebSocket provider with connect: false so we can add listener first
       wsProvider = new WebsocketProvider(wsUrl, `${roomPrefix}:${documentId}`, ydoc, {
-        connect: true,
+        connect: false,
       });
+
+      // Add raw message listener before connecting
+      // y-websocket creates its own WebSocket, we need to hook into it
+      const originalConnect = wsProvider.connect.bind(wsProvider);
+      wsProvider.connect = () => {
+        originalConnect();
+        // Add listener to the new WebSocket
+        if (wsProvider?.ws) {
+          wsProvider.ws.addEventListener('message', handleRawMessage);
+        }
+      };
+
+      // Now connect
+      wsProvider.connect();
 
       wsProvider.on('status', (event: { status: string }) => {
         if (cancelled) return; // Don't update state if effect was cleaned up
@@ -316,7 +362,7 @@ export function Editor({
         }
       });
 
-      // Handle WebSocket close events to detect access revoked or document converted
+      // Handle WebSocket close events to detect access revoked, document converted, or content updated
       wsProvider.on('connection-close', (event: CloseEvent | null) => {
         if (cancelled) return; // Don't process if effect was cleaned up
         if (event?.code === 4403) {
@@ -346,6 +392,17 @@ export function Editor({
             alert('This document was converted. Please refresh to view the new document.');
             onBack?.();
           }
+        } else if (event?.code === 4101) {
+          // Content updated via API - clear IndexedDB cache to prevent stale content merge
+          console.log(`[Editor] Content updated via API for ${documentId}, clearing IndexedDB cache`);
+          // Clear the IndexedDB cache so stale content doesn't merge with new content
+          indexeddbProvider.clearData().then(() => {
+            console.log(`[Editor] IndexedDB cache cleared for ${documentId}`);
+            hasCachedContent = false;
+          }).catch((err) => {
+            console.error(`[Editor] Failed to clear IndexedDB cache for ${documentId}:`, err);
+          });
+          // y-websocket will auto-reconnect, now with fresh state from server
         }
       });
 

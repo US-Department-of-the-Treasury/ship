@@ -416,10 +416,20 @@ router.patch('/:id/content', authMiddleware, async (req: Request, res: Response)
     const userId = String(req.userId);
     const workspaceId = String(req.workspaceId);
 
-    // Validate content
+    // Validate content structure
     const { content } = req.body;
     if (!content || typeof content !== 'object') {
       res.status(400).json({ error: 'Content is required and must be a valid TipTap JSON object' });
+      return;
+    }
+
+    // Validate TipTap JSON structure
+    if (content.type !== 'doc' || !Array.isArray(content.content)) {
+      res.status(400).json({
+        error: 'Invalid content structure. Content must be a TipTap document with type "doc" and a content array.',
+        expected: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '...' }] }] },
+        received: { type: content.type, hasContentArray: Array.isArray(content.content) },
+      });
       return;
     }
 
