@@ -325,7 +325,7 @@ export function UnifiedEditor({
   // Render the type-specific sidebar content via unified PropertiesPanel
   const typeSpecificSidebar = useMemo(() => {
     // Check if document type has a properties panel
-    if (!['wiki', 'issue', 'project', 'sprint', 'program'].includes(document.document_type)) {
+    if (!['wiki', 'issue', 'project', 'sprint', 'program', 'weekly_plan', 'weekly_retro'].includes(document.document_type)) {
       return (
         <div className="p-4">
           <p className="text-xs text-muted">
@@ -339,7 +339,7 @@ export function UnifiedEditor({
       <PropertiesPanel
         document={document as PanelDocument}
         panelProps={panelProps}
-        onUpdate={onUpdate}
+        onUpdate={onUpdate as (updates: Partial<PanelDocument>) => Promise<void>}
         highlightedFields={missingFields}
       />
     );

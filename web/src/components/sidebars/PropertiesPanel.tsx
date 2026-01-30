@@ -10,13 +10,14 @@ import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
 import { WeekSidebar } from '@/components/sidebars/WeekSidebar';
 import { ProgramSidebar } from '@/components/sidebars/ProgramSidebar';
+import { ContentHistoryPanel } from '@/components/ContentHistoryPanel';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
 import type { Person } from '@/components/PersonCombobox';
 import type { BelongsTo, ApprovalTracking } from '@ship/shared';
 
 // Document types that have properties panels
-export type PanelDocumentType = 'wiki' | 'issue' | 'project' | 'sprint' | 'program';
+export type PanelDocumentType = 'wiki' | 'issue' | 'project' | 'sprint' | 'program' | 'weekly_plan' | 'weekly_retro';
 
 // Base document interface
 interface BaseDocument {
@@ -110,8 +111,30 @@ interface ProgramDocument extends BaseDocument {
   informed_ids?: string[];
 }
 
+// Weekly plan document properties
+interface WeeklyPlanDocument extends BaseDocument {
+  document_type: 'weekly_plan';
+  properties?: {
+    person_id?: string;
+    project_id?: string;
+    week_number?: number;
+    submitted_at?: string | null;
+  };
+}
+
+// Weekly retro document properties
+interface WeeklyRetroDocument extends BaseDocument {
+  document_type: 'weekly_retro';
+  properties?: {
+    person_id?: string;
+    project_id?: string;
+    week_number?: number;
+    submitted_at?: string | null;
+  };
+}
+
 // Union type for all documents
-export type PanelDocument = WikiDocument | IssueDocument | ProjectDocument | SprintDocument | ProgramDocument;
+export type PanelDocument = WikiDocument | IssueDocument | ProjectDocument | SprintDocument | ProgramDocument | WeeklyPlanDocument | WeeklyRetroDocument;
 
 // Props for wiki panel
 interface WikiPanelProps {
@@ -322,6 +345,50 @@ export function PropertiesPanel({
             onUpdate={onUpdate as (updates: Partial<ProgramDocument>) => Promise<void>}
             highlightedFields={highlightedFields}
           />
+        );
+      }
+
+      case 'weekly_plan':
+      case 'weekly_retro': {
+        // Weekly plan and retro documents get a minimal sidebar with history panel
+        const docProperties = document.properties || {};
+        const weekNumber = docProperties.week_number as number | undefined;
+        const personId = docProperties.person_id as string | undefined;
+        const projectId = docProperties.project_id as string | undefined;
+
+        return (
+          <div className="p-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-medium text-neutral-900 mb-2">
+                {document.document_type === 'weekly_plan' ? 'Weekly Plan' : 'Weekly Retro'}
+              </h3>
+              {weekNumber && (
+                <p className="text-xs text-neutral-500">Week {weekNumber}</p>
+              )}
+            </div>
+
+            {/* Properties summary */}
+            <div className="space-y-2 text-xs text-neutral-600">
+              {personId && (
+                <div>
+                  <span className="text-neutral-400">Person:</span>{' '}
+                  <span>{personId.substring(0, 8)}...</span>
+                </div>
+              )}
+              {projectId && (
+                <div>
+                  <span className="text-neutral-400">Project:</span>{' '}
+                  <span>{projectId.substring(0, 8)}...</span>
+                </div>
+              )}
+            </div>
+
+            {/* Content History Panel */}
+            <ContentHistoryPanel
+              documentId={document.id}
+              documentType={document.document_type as 'weekly_plan' | 'weekly_retro'}
+            />
+          </div>
         );
       }
 

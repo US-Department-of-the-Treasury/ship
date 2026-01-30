@@ -242,6 +242,71 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
 /**
  * @swagger
+ * /weekly-plans/{id}/history:
+ *   get:
+ *     summary: Get content version history for a weekly plan
+ *     tags: [Weekly Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: List of content versions
+ *       404:
+ *         description: Weekly plan not found
+ */
+router.get('/:id/history', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const workspaceId = req.workspaceId!;
+
+    // Verify document exists and is a weekly_plan
+    const docCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'weekly_plan'`,
+      [id, workspaceId]
+    );
+
+    if (docCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Weekly plan not found' });
+      return;
+    }
+
+    // Get content history entries
+    const result = await pool.query(
+      `SELECT h.id, h.old_value, h.new_value, h.created_at,
+              u.id as changed_by_id, u.name as changed_by_name
+       FROM document_history h
+       LEFT JOIN users u ON h.changed_by = u.id
+       WHERE h.document_id = $1 AND h.field = 'content'
+       ORDER BY h.created_at DESC`,
+      [id]
+    );
+
+    const history = result.rows.map(row => ({
+      id: row.id,
+      old_content: row.old_value ? JSON.parse(row.old_value) : null,
+      new_content: row.new_value ? JSON.parse(row.new_value) : null,
+      created_at: row.created_at,
+      changed_by: row.changed_by_id ? {
+        id: row.changed_by_id,
+        name: row.changed_by_name,
+      } : null,
+    }));
+
+    res.json(history);
+  } catch (err) {
+    console.error('Get weekly plan history error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
  * /weekly-plans/{id}:
  *   get:
  *     summary: Get a specific weekly plan by ID
@@ -529,6 +594,71 @@ weeklyRetrosRouter.get('/', authMiddleware, async (req: Request, res: Response) 
     res.json(retros);
   } catch (err) {
     console.error('Get weekly retros error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /weekly-retros/{id}/history:
+ *   get:
+ *     summary: Get content version history for a weekly retro
+ *     tags: [Weekly Retros]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: List of content versions
+ *       404:
+ *         description: Weekly retro not found
+ */
+weeklyRetrosRouter.get('/:id/history', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const workspaceId = req.workspaceId!;
+
+    // Verify document exists and is a weekly_retro
+    const docCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'weekly_retro'`,
+      [id, workspaceId]
+    );
+
+    if (docCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Weekly retro not found' });
+      return;
+    }
+
+    // Get content history entries
+    const result = await pool.query(
+      `SELECT h.id, h.old_value, h.new_value, h.created_at,
+              u.id as changed_by_id, u.name as changed_by_name
+       FROM document_history h
+       LEFT JOIN users u ON h.changed_by = u.id
+       WHERE h.document_id = $1 AND h.field = 'content'
+       ORDER BY h.created_at DESC`,
+      [id]
+    );
+
+    const history = result.rows.map(row => ({
+      id: row.id,
+      old_content: row.old_value ? JSON.parse(row.old_value) : null,
+      new_content: row.new_value ? JSON.parse(row.new_value) : null,
+      created_at: row.created_at,
+      changed_by: row.changed_by_id ? {
+        id: row.changed_by_id,
+        name: row.changed_by_name,
+      } : null,
+    }));
+
+    res.json(history);
+  } catch (err) {
+    console.error('Get weekly retro history error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

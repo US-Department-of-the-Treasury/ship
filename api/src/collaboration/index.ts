@@ -103,6 +103,10 @@ function parseDocId(docName: string): string {
   return parts.length > 1 ? parts[1]! : parts[0]!;
 }
 
+// Track last content history log time per document to avoid excessive logging
+const contentHistoryLastLogged = new Map<string, number>();
+const CONTENT_HISTORY_MIN_INTERVAL_MS = 60_000; // Log at most once per minute per document
+
 async function persistDocument(docName: string, doc: Y.Doc) {
   const state = Y.encodeStateAsUpdate(doc);
   const docId = parseDocId(docName);
@@ -118,12 +122,38 @@ async function persistDocument(docName: string, doc: Y.Doc) {
     const vision = extractVisionFromContent(content);
     const goals = extractGoalsFromContent(content);
 
-    // Get existing properties to merge
+    // Get existing properties, document_type, and content to check for changes
     const existingResult = await pool.query(
-      'SELECT properties FROM documents WHERE id = $1',
+      'SELECT properties, document_type, content, created_by FROM documents WHERE id = $1',
       [docId]
     );
     const existingProps = existingResult.rows[0]?.properties || {};
+    const documentType = existingResult.rows[0]?.document_type;
+    const existingContent = existingResult.rows[0]?.content;
+    const createdBy = existingResult.rows[0]?.created_by;
+
+    // For weekly_plan and weekly_retro documents, log content history when content changes
+    // This provides full version history for accountability audit trails
+    if ((documentType === 'weekly_plan' || documentType === 'weekly_retro') && createdBy) {
+      const newContentStr = JSON.stringify(content);
+      const oldContentStr = existingContent ? JSON.stringify(existingContent) : null;
+
+      // Only log if content actually changed and enough time has passed since last log
+      if (newContentStr !== oldContentStr) {
+        const now = Date.now();
+        const lastLogged = contentHistoryLastLogged.get(docId) || 0;
+
+        if (now - lastLogged >= CONTENT_HISTORY_MIN_INTERVAL_MS) {
+          // Log content change to document_history
+          await pool.query(
+            `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by)
+             VALUES ($1, 'content', $2, $3, $4)`,
+            [docId, oldContentStr, newContentStr, createdBy]
+          );
+          contentHistoryLastLogged.set(docId, now);
+        }
+      }
+    }
 
     // Update properties with extracted values (null clears the property)
     // Note: 'plan' is the canonical field name (renamed from 'hypothesis' in migration 032)
