@@ -758,7 +758,7 @@ router.get('/project-allocation-grid/:projectId', authMiddleware, async (req: Re
 
     // Get workspace sprint config
     const workspaceResult = await pool.query(
-      `SELECT sprint_start_date, sprint_duration FROM workspaces WHERE id = $1`,
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
       [workspaceId]
     );
 
@@ -768,7 +768,7 @@ router.get('/project-allocation-grid/:projectId', authMiddleware, async (req: Re
     }
 
     const sprintStartDate = new Date(workspaceResult.rows[0].sprint_start_date);
-    const sprintDuration = workspaceResult.rows[0].sprint_duration || 7;
+    const sprintDuration = 7; // 1 week sprints (standard for Ship)
 
     // Calculate current sprint number
     const today = new Date();
