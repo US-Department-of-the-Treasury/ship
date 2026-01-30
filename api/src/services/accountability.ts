@@ -103,6 +103,14 @@ export async function checkMissingAccountability(
   const sprintItems = await checkSprintAccountability(userId, workspaceId, workspaceStartDate, sprintDuration, today, personId);
   items.push(...sprintItems);
 
+  // 2b. Check for per-person weekly_plan and weekly_retro (based on allocations)
+  if (personId && todayStr) {
+    const weeklyPersonItems = await checkWeeklyPersonAccountability(
+      userId, workspaceId, personId, workspaceStartDate, sprintDuration, currentSprintNumber, todayStr
+    );
+    items.push(...weeklyPersonItems);
+  }
+
   // 5. Check for completed sprints without review
   if (todayStr) {
     const reviewItems = await checkMissingSprintReviews(userId, workspaceId, workspaceStartDate, sprintDuration, today, todayStr);
@@ -313,6 +321,125 @@ async function checkSprintAccountability(
         dueDate: sprintStartStr,
         message: `Add issues to ${sprintTitle}`,
       });
+    }
+  }
+
+  return items;
+}
+
+/**
+ * Check for missing per-person weekly_plan and weekly_retro documents.
+ *
+ * Allocations are determined by having issues assigned in a sprint for a project.
+ * For each allocation, check if weekly_plan/weekly_retro exists.
+ *
+ * Deadlines:
+ * - weekly_plan: due Monday EOD (week start + 1 day)
+ * - weekly_retro: due Friday EOD (week start + 4 days)
+ */
+async function checkWeeklyPersonAccountability(
+  userId: string,
+  workspaceId: string,
+  personId: string,
+  workspaceStartDate: Date,
+  sprintDuration: number,
+  currentSprintNumber: number,
+  todayStr: string
+): Promise<MissingAccountabilityItem[]> {
+  const items: MissingAccountabilityItem[] = [];
+
+  // Calculate current sprint dates
+  const sprintStartDate = new Date(workspaceStartDate);
+  sprintStartDate.setUTCDate(sprintStartDate.getUTCDate() + (currentSprintNumber - 1) * sprintDuration);
+  const sprintStartStr = sprintStartDate.toISOString().split('T')[0] || '';
+
+  // Calculate deadlines
+  const planDueDate = new Date(sprintStartDate);
+  planDueDate.setUTCDate(planDueDate.getUTCDate() + 1); // Monday EOD
+  const planDueStr = planDueDate.toISOString().split('T')[0] || '';
+
+  const retroDueDate = new Date(sprintStartDate);
+  retroDueDate.setUTCDate(retroDueDate.getUTCDate() + 4); // Friday EOD
+  const retroDueStr = retroDueDate.toISOString().split('T')[0] || '';
+
+  // Find projects where user has assigned issues in the current sprint
+  // This determines their "allocations" for the week
+  const allocationsResult = await pool.query(
+    `SELECT DISTINCT proj_da.related_id as project_id, proj.title as project_name
+     FROM documents i
+     JOIN document_associations sprint_da ON sprint_da.document_id = i.id AND sprint_da.relationship_type = 'sprint'
+     JOIN documents s ON s.id = sprint_da.related_id AND s.document_type = 'sprint'
+     JOIN document_associations proj_da ON proj_da.document_id = s.id AND proj_da.relationship_type = 'project'
+     JOIN documents proj ON proj.id = proj_da.related_id AND proj.document_type = 'project'
+     WHERE i.workspace_id = $1
+       AND i.document_type = 'issue'
+       AND (i.properties->>'assignee_id')::uuid = $2
+       AND (s.properties->>'sprint_number')::int = $3
+       AND i.deleted_at IS NULL
+       AND s.deleted_at IS NULL
+       AND proj.deleted_at IS NULL`,
+    [workspaceId, userId, currentSprintNumber]
+  );
+
+  // For each allocation, check if weekly_plan and weekly_retro exist
+  for (const allocation of allocationsResult.rows) {
+    const projectId = allocation.project_id;
+    const projectName = allocation.project_name || 'Untitled Project';
+
+    // Check for missing weekly_plan (due Monday EOD)
+    if (todayStr > planDueStr) {
+      const planResult = await pool.query(
+        `SELECT id FROM documents
+         WHERE workspace_id = $1
+           AND document_type = 'weekly_plan'
+           AND (properties->>'person_id') = $2
+           AND (properties->>'project_id') = $3
+           AND (properties->>'week_number')::int = $4
+           AND deleted_at IS NULL`,
+        [workspaceId, personId, projectId, currentSprintNumber]
+      );
+
+      if (planResult.rows.length === 0) {
+        items.push({
+          type: 'weekly_plan',
+          targetId: projectId, // Use project as target for context
+          targetTitle: `Week ${currentSprintNumber} Plan - ${projectName}`,
+          targetType: 'project',
+          dueDate: planDueStr,
+          message: `Write week ${currentSprintNumber} plan for ${projectName}`,
+          personId,
+          projectId,
+          weekNumber: currentSprintNumber,
+        });
+      }
+    }
+
+    // Check for missing weekly_retro (due Friday EOD)
+    if (todayStr > retroDueStr) {
+      const retroResult = await pool.query(
+        `SELECT id FROM documents
+         WHERE workspace_id = $1
+           AND document_type = 'weekly_retro'
+           AND (properties->>'person_id') = $2
+           AND (properties->>'project_id') = $3
+           AND (properties->>'week_number')::int = $4
+           AND deleted_at IS NULL`,
+        [workspaceId, personId, projectId, currentSprintNumber]
+      );
+
+      if (retroResult.rows.length === 0) {
+        items.push({
+          type: 'weekly_retro',
+          targetId: projectId,
+          targetTitle: `Week ${currentSprintNumber} Retro - ${projectName}`,
+          targetType: 'project',
+          dueDate: retroDueStr,
+          message: `Write week ${currentSprintNumber} retro for ${projectName}`,
+          personId,
+          projectId,
+          weekNumber: currentSprintNumber,
+        });
+      }
     }
   }
 

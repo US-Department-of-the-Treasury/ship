@@ -56,6 +56,7 @@ export type IssueSource = 'internal' | 'external' | 'action_items';
 export type AccountabilityType =
   | 'standup'
   | 'weekly_plan'
+  | 'weekly_retro'
   | 'weekly_review'
   | 'week_start'
   | 'week_issues'

@@ -78,13 +78,15 @@ describe('Accountability Service', () => {
         } as any)
         // 7. Sprint issues count
         .mockResolvedValueOnce({ rows: [{ count: '0' }] } as any)
-        // 8. Sprint reviews - past sprints without review
+        // 8. Weekly person accountability - allocations (no allocations = no extra queries)
         .mockResolvedValueOnce({ rows: [] } as any)
-        // 9. Project plan - projects without plan
+        // 9. Sprint reviews - past sprints without review
+        .mockResolvedValueOnce({ rows: [] } as any)
+        // 10. Project plan - projects without plan
         .mockResolvedValueOnce({
           rows: [{ id: projectId, title: 'Test Project', properties: {} }],
         } as any)
-        // 10. Project retros - completed projects without retro
+        // 11. Project retros - completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
 
       const result = await checkMissingAccountability(userId, workspaceId);
@@ -112,6 +114,8 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [{ last_standup_date: null }] } as any)
         // No owned sprints (for sprint accountability)
         .mockResolvedValueOnce({ rows: [] } as any)
+        // Weekly person accountability - allocations
+        .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
         // No projects without plan
@@ -132,6 +136,8 @@ describe('Accountability Service', () => {
 
       mockSetupQueries()
         // No owned sprints
+        .mockResolvedValueOnce({ rows: [] } as any)
+        // Weekly person accountability - allocations
         .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
@@ -155,6 +161,8 @@ describe('Accountability Service', () => {
         // Standup exists today
         .mockResolvedValueOnce({ rows: [{ id: 'standup-1' }] } as any)
         // No owned sprints
+        .mockResolvedValueOnce({ rows: [] } as any)
+        // Weekly person accountability - allocations
         .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
@@ -181,6 +189,8 @@ describe('Accountability Service', () => {
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
+        // Weekly person accountability - allocations
+        .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
         // No projects without plan
@@ -216,6 +226,8 @@ describe('Accountability Service', () => {
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
+        // Weekly person accountability - allocations
+        .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
         // No projects without plan
@@ -248,6 +260,8 @@ describe('Accountability Service', () => {
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
+        // Weekly person accountability - allocations
+        .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
         // No projects without plan
@@ -272,6 +286,8 @@ describe('Accountability Service', () => {
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
+        // Weekly person accountability - allocations
+        .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
         // No projects without plan
@@ -297,6 +313,8 @@ describe('Accountability Service', () => {
         } as any)
         // Sprint has NO issues
         .mockResolvedValueOnce({ rows: [{ count: '0' }] } as any)
+        // Weekly person accountability - allocations
+        .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
         // No projects without plan
@@ -321,6 +339,8 @@ describe('Accountability Service', () => {
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
+        // Weekly person accountability - allocations
+        .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
         // No projects without plan
@@ -341,6 +361,8 @@ describe('Accountability Service', () => {
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // No owned sprints
+        .mockResolvedValueOnce({ rows: [] } as any)
+        // Weekly person accountability - allocations
         .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
@@ -365,6 +387,8 @@ describe('Accountability Service', () => {
       mockSetupQueries()
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
+        // Weekly person accountability - allocations
+        .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
         // No projects (all archived)
         .mockResolvedValueOnce({ rows: [] } as any)
@@ -383,6 +407,8 @@ describe('Accountability Service', () => {
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // No owned sprints
+        .mockResolvedValueOnce({ rows: [] } as any)
+        // Weekly person accountability - allocations
         .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
@@ -408,6 +434,8 @@ describe('Accountability Service', () => {
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // No owned sprints (for weekly_plan/week_start/week_issues)
+        .mockResolvedValueOnce({ rows: [] } as any)
+        // Weekly person accountability - allocations
         .mockResolvedValueOnce({ rows: [] } as any)
         // Past sprint without review (very old sprint number to ensure it's past)
         .mockResolvedValueOnce({
@@ -437,6 +465,8 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({ rows: [{ id: personId }] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
+        // Weekly person accountability - allocations
+        .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any);
@@ -450,6 +480,8 @@ describe('Accountability Service', () => {
     it('handles workspace start date as string', async () => {
       mockSetupQueries()
         .mockResolvedValueOnce({ rows: [] } as any)
+        .mockResolvedValueOnce({ rows: [] } as any)
+        // Weekly person accountability - allocations
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
