@@ -30,6 +30,7 @@ import activityRoutes from './routes/activity.js';
 import dashboardRoutes from './routes/dashboard.js';
 import associationsRoutes from './routes/associations.js';
 import accountabilityRoutes from './routes/accountability.js';
+import weeklyPlansRoutes, { weeklyRetrosRouter } from './routes/weekly-plans.js';
 import { setupSwagger } from './swagger.js';
 import { initializeCAIA } from './services/caia.js';
 
@@ -206,6 +207,12 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // Accountability routes - inference-based action items (read-only GET)
   app.use('/api/accountability', accountabilityRoutes);
+
+  // Weekly plans routes - per-person accountability documents (CSRF protected)
+  app.use('/api/weekly-plans', conditionalCsrf, weeklyPlansRoutes);
+
+  // Weekly retros routes - per-person accountability documents (CSRF protected)
+  app.use('/api/weekly-retros', conditionalCsrf, weeklyRetrosRouter);
 
   // CAIA auth routes - no CSRF protection (OAuth flow with external callback)
   // This is the single identity provider for PIV authentication
