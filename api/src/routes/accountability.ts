@@ -64,6 +64,10 @@ router.get('/action-items', authMiddleware, async (req: Request, res: Response) 
         target_title: item.targetTitle,
         due_date: item.dueDate,
         days_overdue: daysOverdue,
+        // Additional metadata for weekly_plan navigation
+        person_id: item.personId || null,
+        project_id: item.projectId || null,
+        week_number: item.weekNumber || null,
       };
     });
 

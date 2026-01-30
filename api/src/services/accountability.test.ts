@@ -25,11 +25,25 @@ describe('Accountability Service', () => {
   const workspaceId = 'workspace-456';
   const sprintId = 'sprint-789';
   const projectId = 'project-abc';
+  const personId = 'person-doc-123';
 
   beforeEach(() => {
     vi.mocked(pool.query).mockReset();
     vi.mocked(isBusinessDay).mockReturnValue(true);
   });
+
+  // Helper to mock the standard setup queries (workspace + person lookup)
+  const mockSetupQueries = () => {
+    return vi.mocked(pool.query)
+      // 1. Workspace query
+      .mockResolvedValueOnce({
+        rows: [{ sprint_start_date: '2024-01-01' }],
+      } as any)
+      // 2. Person document lookup
+      .mockResolvedValueOnce({
+        rows: [{ id: personId }],
+      } as any);
+  };
 
   describe('checkMissingAccountability', () => {
     it('returns empty array when workspace not found', async () => {
@@ -41,39 +55,36 @@ describe('Accountability Service', () => {
     });
 
     it('returns all 7 accountability types when applicable', async () => {
-      // Mock workspace query
-      vi.mocked(pool.query)
-        // 1. Workspace query
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
-        // 2. Standup - active sprints with assigned issues
+      // Mock workspace and person queries
+      mockSetupQueries()
+        // 3. Standup - active sprints with assigned issues
         .mockResolvedValueOnce({
           rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1 }, issue_count: '3' }],
         } as any)
-        // 3. Standup - check for existing standup today
+        // 4. Standup - check for existing standup today
         .mockResolvedValueOnce({ rows: [] } as any)
-        // 4. Standup - last standup date
+        // 5. Standup - last standup date
         .mockResolvedValueOnce({ rows: [{ last_standup_date: null }] } as any)
-        // 5. Sprint accountability - sprints owned by user
+        // 6. Sprint accountability - sprints owned by user
         .mockResolvedValueOnce({
           rows: [
             {
               id: sprintId,
               title: 'Sprint 1',
               properties: { sprint_number: 1, status: 'planning', plan: '' },
+              project_id: projectId,
             },
           ],
         } as any)
-        // 6. Sprint issues count
+        // 7. Sprint issues count
         .mockResolvedValueOnce({ rows: [{ count: '0' }] } as any)
-        // 7. Sprint reviews - past sprints without review
+        // 8. Sprint reviews - past sprints without review
         .mockResolvedValueOnce({ rows: [] } as any)
-        // 8. Project plan - projects without plan
+        // 9. Project plan - projects without plan
         .mockResolvedValueOnce({
           rows: [{ id: projectId, title: 'Test Project', properties: {} }],
         } as any)
-        // 9. Project retros - completed projects without retro
+        // 10. Project retros - completed projects without retro
         .mockResolvedValueOnce({ rows: [] } as any);
 
       const result = await checkMissingAccountability(userId, workspaceId);
@@ -90,10 +101,7 @@ describe('Accountability Service', () => {
 
   describe('standup type', () => {
     it('returns standup item with issue count', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // Active sprints with issues - include issue count
         .mockResolvedValueOnce({
           rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1 }, issue_count: '5' }],
@@ -122,10 +130,7 @@ describe('Accountability Service', () => {
     it('skips standup check on weekends', async () => {
       vi.mocked(isBusinessDay).mockReturnValue(false);
 
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // No owned sprints
         .mockResolvedValueOnce({ rows: [] } as any)
         // No past sprints without review
@@ -142,10 +147,7 @@ describe('Accountability Service', () => {
     });
 
     it('does not return standup item when standup exists today', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // Active sprints with issues
         .mockResolvedValueOnce({
           rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1 }, issue_count: '3' }],
@@ -170,15 +172,12 @@ describe('Accountability Service', () => {
 
   describe('weekly_plan type', () => {
     it('returns item when sprint has no plan', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // Owned sprint without plan
         .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: '' } }],
+          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: '' }, project_id: projectId }],
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
@@ -194,13 +193,14 @@ describe('Accountability Service', () => {
       const planItem = result.find((item) => item.type === 'weekly_plan');
       expect(planItem).toBeDefined();
       expect(planItem?.message).toContain('plan');
+      // Verify navigation metadata is included
+      expect(planItem?.personId).toBe(personId);
+      expect(planItem?.projectId).toBe(projectId);
+      expect(planItem?.weekNumber).toBe(1);
     });
 
     it('does not return item when sprint has plan', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // Owned sprint WITH plan
@@ -210,6 +210,7 @@ describe('Accountability Service', () => {
               id: sprintId,
               title: 'Sprint 1',
               properties: { sprint_number: 1, status: 'active', plan: 'Test plan' },
+              project_id: projectId,
             },
           ],
         } as any)
@@ -231,10 +232,7 @@ describe('Accountability Service', () => {
 
   describe('week_start type', () => {
     it('returns item when sprint is not started', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // Owned sprint not started
@@ -244,6 +242,7 @@ describe('Accountability Service', () => {
               id: sprintId,
               title: 'Sprint 1',
               properties: { sprint_number: 1, status: 'planning', plan: 'test' },
+              project_id: projectId,
             },
           ],
         } as any)
@@ -264,15 +263,12 @@ describe('Accountability Service', () => {
     });
 
     it('does not return item when sprint is active', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // Owned sprint is active
         .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' } }],
+          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' }, project_id: projectId }],
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
@@ -292,15 +288,12 @@ describe('Accountability Service', () => {
 
   describe('week_issues type', () => {
     it('returns item when sprint has no issues', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // Owned sprint
         .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' } }],
+          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' }, project_id: projectId }],
         } as any)
         // Sprint has NO issues
         .mockResolvedValueOnce({ rows: [{ count: '0' }] } as any)
@@ -319,15 +312,12 @@ describe('Accountability Service', () => {
     });
 
     it('does not return item when sprint has issues', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // Owned sprint
         .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' } }],
+          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' }, project_id: projectId }],
         } as any)
         // Sprint has issues
         .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
@@ -347,10 +337,7 @@ describe('Accountability Service', () => {
 
   describe('project_plan type', () => {
     it('returns item when project has no plan', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // No owned sprints
@@ -375,10 +362,7 @@ describe('Accountability Service', () => {
     it('excludes archived projects', async () => {
       // The query itself filters archived projects, so we just verify the query is correct
       // by checking that the mock returns no results when projects are archived
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
@@ -395,10 +379,7 @@ describe('Accountability Service', () => {
 
   describe('project_retro type', () => {
     it('returns item when project is complete but has no retro', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // No owned sprints
@@ -423,10 +404,7 @@ describe('Accountability Service', () => {
 
   describe('weekly_review type', () => {
     it('returns item for past sprint without review', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         // No active sprints with assigned issues
         .mockResolvedValueOnce({ rows: [] } as any)
         // No owned sprints (for weekly_plan/week_start/week_issues)
@@ -455,6 +433,8 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce({
           rows: [{ sprint_start_date: startDate }],
         } as any)
+        // Person lookup
+        .mockResolvedValueOnce({ rows: [{ id: personId }] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
@@ -468,10 +448,7 @@ describe('Accountability Service', () => {
     });
 
     it('handles workspace start date as string', async () => {
-      vi.mocked(pool.query)
-        .mockResolvedValueOnce({
-          rows: [{ sprint_start_date: '2024-01-01' }],
-        } as any)
+      mockSetupQueries()
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({ rows: [] } as any)
