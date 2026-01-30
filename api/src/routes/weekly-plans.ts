@@ -592,4 +592,179 @@ weeklyRetrosRouter.get('/:id', authMiddleware, async (req: Request, res: Respons
   }
 });
 
+/**
+ * @swagger
+ * /project-allocation-grid/{projectId}:
+ *   get:
+ *     summary: Get allocation grid data for a project
+ *     description: Returns people allocated to a project (via assigned issues), weeks, and plan/retro status
+ *     tags: [Weekly Plans]
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Allocation grid data
+ */
+router.get('/project-allocation-grid/:projectId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const workspaceId = req.workspaceId!;
+
+    // Verify project exists
+    const projectResult = await pool.query(
+      `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+      [projectId, workspaceId]
+    );
+
+    if (projectResult.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // Get workspace sprint config
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date, sprint_duration FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    if (workspaceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Workspace not found' });
+      return;
+    }
+
+    const sprintStartDate = new Date(workspaceResult.rows[0].sprint_start_date);
+    const sprintDuration = workspaceResult.rows[0].sprint_duration || 7;
+
+    // Calculate current sprint number
+    const today = new Date();
+    const daysSinceStart = Math.floor((today.getTime() - sprintStartDate.getTime()) / (24 * 60 * 60 * 1000));
+    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDuration) + 1);
+
+    // Find all people who have assigned issues in sprints for this project
+    const allocatedPeopleResult = await pool.query(
+      `SELECT DISTINCT p.id as person_id, p.title as person_name, (s.properties->>'sprint_number')::int as week_number
+       FROM documents i
+       JOIN document_associations sprint_da ON sprint_da.document_id = i.id AND sprint_da.relationship_type = 'sprint'
+       JOIN documents s ON s.id = sprint_da.related_id AND s.document_type = 'sprint'
+       JOIN document_associations proj_da ON proj_da.document_id = s.id AND proj_da.relationship_type = 'project'
+       JOIN documents p ON (i.properties->>'assignee_id')::uuid = p.id AND p.document_type = 'person'
+       WHERE i.workspace_id = $1
+         AND i.document_type = 'issue'
+         AND proj_da.related_id = $2
+         AND i.deleted_at IS NULL
+         AND s.deleted_at IS NULL
+         AND i.properties->>'assignee_id' IS NOT NULL`,
+      [workspaceId, projectId]
+    );
+
+    // Group allocations by person
+    const peopleMap = new Map<string, { id: string; name: string; allocatedWeeks: Set<number> }>();
+    for (const row of allocatedPeopleResult.rows) {
+      if (!peopleMap.has(row.person_id)) {
+        peopleMap.set(row.person_id, {
+          id: row.person_id,
+          name: row.person_name || 'Unknown',
+          allocatedWeeks: new Set(),
+        });
+      }
+      peopleMap.get(row.person_id)!.allocatedWeeks.add(row.week_number);
+    }
+
+    // Get all weekly plans for this project
+    const plansResult = await pool.query(
+      `SELECT (properties->>'person_id') as person_id, (properties->>'week_number')::int as week_number, id
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_plan'
+         AND (properties->>'project_id') = $2
+         AND deleted_at IS NULL`,
+      [workspaceId, projectId]
+    );
+
+    // Get all weekly retros for this project
+    const retrosResult = await pool.query(
+      `SELECT (properties->>'person_id') as person_id, (properties->>'week_number')::int as week_number, id
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_retro'
+         AND (properties->>'project_id') = $2
+         AND deleted_at IS NULL`,
+      [workspaceId, projectId]
+    );
+
+    // Build plan/retro status maps
+    const plans = new Map<string, string>(); // `${personId}_${weekNumber}` -> planId
+    for (const row of plansResult.rows) {
+      plans.set(`${row.person_id}_${row.week_number}`, row.id);
+    }
+
+    const retros = new Map<string, string>(); // `${personId}_${weekNumber}` -> retroId
+    for (const row of retrosResult.rows) {
+      retros.set(`${row.person_id}_${row.week_number}`, row.id);
+    }
+
+    // Determine week range to show (min/max allocated weeks or current sprint)
+    let minWeek = currentSprintNumber;
+    let maxWeek = currentSprintNumber;
+    for (const person of peopleMap.values()) {
+      for (const week of person.allocatedWeeks) {
+        minWeek = Math.min(minWeek, week);
+        maxWeek = Math.max(maxWeek, week);
+      }
+    }
+
+    // Generate weeks array
+    const weeks: { number: number; name: string; startDate: string; endDate: string; isCurrent: boolean }[] = [];
+    for (let n = minWeek; n <= maxWeek; n++) {
+      const weekStart = new Date(sprintStartDate);
+      weekStart.setUTCDate(weekStart.getUTCDate() + (n - 1) * sprintDuration);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setUTCDate(weekEnd.getUTCDate() + sprintDuration - 1);
+
+      weeks.push({
+        number: n,
+        name: `Week ${n}`,
+        startDate: weekStart.toISOString().split('T')[0] || '',
+        endDate: weekEnd.toISOString().split('T')[0] || '',
+        isCurrent: n === currentSprintNumber,
+      });
+    }
+
+    // Build people array with allocation and status per week
+    const people = Array.from(peopleMap.values()).map(person => ({
+      id: person.id,
+      name: person.name,
+      weeks: Object.fromEntries(
+        weeks.map(week => [
+          week.number,
+          {
+            isAllocated: person.allocatedWeeks.has(week.number),
+            planId: plans.get(`${person.id}_${week.number}`) || null,
+            retroId: retros.get(`${person.id}_${week.number}`) || null,
+          },
+        ])
+      ),
+    }));
+
+    // Sort people alphabetically
+    people.sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json({
+      projectId,
+      projectTitle: projectResult.rows[0].title,
+      currentSprintNumber,
+      weeks,
+      people,
+    });
+  } catch (err) {
+    console.error('Get project allocation grid error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
