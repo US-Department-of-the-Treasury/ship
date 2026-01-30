@@ -1,0 +1,388 @@
+#!/usr/bin/env node
+/**
+ * Ship MCP Server - Auto-generated from OpenAPI spec
+ *
+ * This server dynamically generates MCP tools by fetching the OpenAPI specification
+ * from a running Ship instance. As the API changes, tools automatically stay in sync.
+ *
+ * Usage:
+ *   SHIP_API_TOKEN=xxx SHIP_URL=https://ship.example.com npx @ship/mcp-server
+ *
+ * Or configure in ~/.claude.json:
+ *   {
+ *     "mcpServers": {
+ *       "ship": {
+ *         "command": "npx",
+ *         "args": ["tsx", "/path/to/ship/api/src/mcp/server.ts"],
+ *         "env": {
+ *           "SHIP_API_TOKEN": "${SHIP_API_TOKEN}",
+ *           "SHIP_URL": "https://ship.example.com"
+ *         }
+ *       }
+ *     }
+ *   }
+ */
+
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+
+import type { OpenAPIObject, OperationObject, ParameterObject, SchemaObject, ReferenceObject } from 'openapi3-ts/oas30';
+
+const SHIP_URL = process.env.SHIP_URL || 'http://localhost:3000';
+const SHIP_API_TOKEN = process.env.SHIP_API_TOKEN;
+
+if (!SHIP_API_TOKEN) {
+  console.error('Error: SHIP_API_TOKEN environment variable is required');
+  console.error('Set it in your environment or ~/.claude/.env');
+  process.exit(1);
+}
+
+/**
+ * Fetch OpenAPI spec from the Ship instance
+ */
+async function fetchOpenAPISpec(): Promise<OpenAPIObject> {
+  const url = `${SHIP_URL}/api/openapi.json`;
+  console.error(`Fetching OpenAPI spec from ${url}...`);
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch OpenAPI spec: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json() as Promise<OpenAPIObject>;
+}
+
+interface ToolOperation {
+  method: string;
+  path: string;
+  operation: OperationObject;
+}
+
+// Map of tool name -> operation details
+const toolOperations = new Map<string, ToolOperation>();
+
+/**
+ * Convert OpenAPI operationId to MCP tool name
+ * e.g., "get_issues" stays as "get_issues", "postAuthLogin" -> "post_auth_login"
+ */
+function toToolName(operationId: string): string {
+  // Already snake_case
+  if (operationId.includes('_')) {
+    return `ship_${operationId}`;
+  }
+  // Convert camelCase to snake_case
+  return `ship_${operationId.replace(/([A-Z])/g, '_$1').toLowerCase()}`;
+}
+
+/**
+ * Check if a schema is a reference object
+ */
+function isReference(schema: SchemaObject | ReferenceObject): schema is ReferenceObject {
+  return '$ref' in schema;
+}
+
+/**
+ * Resolve a $ref to its schema definition
+ */
+function resolveRef(ref: string, spec: OpenAPIObject): SchemaObject | undefined {
+  // Format: #/components/schemas/SchemaName
+  const parts = ref.split('/');
+  if (parts[0] !== '#' || parts[1] !== 'components' || parts[2] !== 'schemas') {
+    return undefined;
+  }
+  const schemaName = parts[3];
+  if (!schemaName || !spec.components?.schemas) {
+    return undefined;
+  }
+  return spec.components.schemas[schemaName] as SchemaObject | undefined;
+}
+
+/**
+ * Convert OpenAPI schema to JSON Schema for MCP tool input
+ */
+function openApiToJsonSchema(
+  schema: SchemaObject | ReferenceObject | undefined,
+  spec: OpenAPIObject
+): Record<string, unknown> {
+  if (!schema) {
+    return { type: 'object', properties: {} };
+  }
+
+  if (isReference(schema)) {
+    const resolved = resolveRef(schema.$ref, spec);
+    if (resolved) {
+      return openApiToJsonSchema(resolved, spec);
+    }
+    return { type: 'object', properties: {} };
+  }
+
+  // Handle basic types
+  const result: Record<string, unknown> = {};
+
+  if (schema.type) {
+    result.type = schema.type;
+  }
+
+  if (schema.description) {
+    result.description = schema.description;
+  }
+
+  if (schema.enum) {
+    result.enum = schema.enum;
+  }
+
+  if (schema.properties) {
+    result.properties = {};
+    for (const [key, prop] of Object.entries(schema.properties)) {
+      (result.properties as Record<string, unknown>)[key] = openApiToJsonSchema(
+        prop as SchemaObject | ReferenceObject,
+        spec
+      );
+    }
+  }
+
+  if (schema.required) {
+    result.required = schema.required;
+  }
+
+  if (schema.items) {
+    result.items = openApiToJsonSchema(schema.items as SchemaObject | ReferenceObject, spec);
+  }
+
+  return result;
+}
+
+/**
+ * Build MCP tool input schema from OpenAPI operation
+ */
+function buildInputSchema(operation: OperationObject, spec: OpenAPIObject): Tool['inputSchema'] {
+  const properties: Record<string, object> = {};
+  const required: string[] = [];
+
+  // Add path and query parameters
+  if (operation.parameters) {
+    for (const param of operation.parameters) {
+      const p = param as ParameterObject;
+      if (p.name && p.schema) {
+        const paramSchema = openApiToJsonSchema(p.schema as SchemaObject | ReferenceObject, spec);
+        if (p.description) {
+          paramSchema.description = p.description;
+        }
+        properties[p.name] = paramSchema as object;
+        if (p.required) {
+          required.push(p.name);
+        }
+      }
+    }
+  }
+
+  // Add request body properties
+  if (operation.requestBody && 'content' in operation.requestBody) {
+    const content = operation.requestBody.content;
+    const jsonContent = content['application/json'];
+    if (jsonContent?.schema) {
+      const bodySchema = openApiToJsonSchema(jsonContent.schema as SchemaObject | ReferenceObject, spec);
+
+      // Flatten body properties into the main schema
+      if (bodySchema.properties && typeof bodySchema.properties === 'object') {
+        for (const [key, value] of Object.entries(bodySchema.properties)) {
+          properties[key] = value as object;
+        }
+      }
+      if (Array.isArray(bodySchema.required)) {
+        required.push(...bodySchema.required);
+      }
+    }
+  }
+
+  return {
+    type: 'object' as const,
+    properties,
+    required: required.length > 0 ? required : undefined,
+  };
+}
+
+/**
+ * Generate MCP tools from OpenAPI spec
+ */
+function generateTools(openApiSpec: OpenAPIObject): Tool[] {
+  const tools: Tool[] = [];
+
+  for (const [path, pathItem] of Object.entries(openApiSpec.paths || {})) {
+    if (!pathItem) continue;
+
+    const methods = ['get', 'post', 'put', 'patch', 'delete'] as const;
+
+    for (const method of methods) {
+      const operation = pathItem[method] as OperationObject | undefined;
+      if (!operation?.operationId) continue;
+
+      const toolName = toToolName(operation.operationId);
+      const description = [
+        operation.summary,
+        operation.description,
+        `[${method.toUpperCase()} ${path}]`,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      // Store operation details for execution
+      toolOperations.set(toolName, { method, path, operation });
+
+      tools.push({
+        name: toolName,
+        description,
+        inputSchema: buildInputSchema(operation, openApiSpec),
+      });
+    }
+  }
+
+  return tools;
+}
+
+/**
+ * Execute an API call based on tool name and arguments
+ */
+async function executeToolCall(
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<unknown> {
+  const toolOp = toolOperations.get(toolName);
+  if (!toolOp) {
+    throw new Error(`Unknown tool: ${toolName}`);
+  }
+
+  const { method, path, operation } = toolOp;
+
+  // Build URL with path parameters replaced
+  let url = `${SHIP_URL}/api${path}`;
+  const queryParams: Record<string, string> = {};
+  const bodyParams: Record<string, unknown> = {};
+
+  // Categorize arguments into path, query, and body params
+  if (operation.parameters) {
+    for (const param of operation.parameters) {
+      const p = param as ParameterObject;
+      const value = args[p.name];
+      if (value !== undefined) {
+        if (p.in === 'path') {
+          url = url.replace(`{${p.name}}`, encodeURIComponent(String(value)));
+        } else if (p.in === 'query') {
+          queryParams[p.name] = String(value);
+        }
+      }
+    }
+  }
+
+  // Remaining args go to body (for POST/PUT/PATCH)
+  const paramNames = new Set(
+    (operation.parameters || []).map((p) => (p as ParameterObject).name)
+  );
+  for (const [key, value] of Object.entries(args)) {
+    if (!paramNames.has(key)) {
+      bodyParams[key] = value;
+    }
+  }
+
+  // Build query string
+  const queryString = new URLSearchParams(queryParams).toString();
+  if (queryString) {
+    url += `?${queryString}`;
+  }
+
+  // Make the request
+  const fetchOptions: RequestInit = {
+    method: method.toUpperCase(),
+    headers: {
+      'Authorization': `Bearer ${SHIP_API_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+  };
+
+  if (['post', 'put', 'patch'].includes(method) && Object.keys(bodyParams).length > 0) {
+    fetchOptions.body = JSON.stringify(bodyParams);
+  }
+
+  const response = await fetch(url, fetchOptions);
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      `API error ${response.status}: ${JSON.stringify(data)}`
+    );
+  }
+
+  return data;
+}
+
+// Start the server
+async function main() {
+  // Fetch OpenAPI spec from Ship instance
+  const openApiSpec = await fetchOpenAPISpec();
+
+  // Generate tools from spec
+  const mcpTools = generateTools(openApiSpec);
+  console.error(`Generated ${mcpTools.length} tools from OpenAPI spec`);
+
+  // Create the MCP server
+  const server = new Server(
+    {
+      name: 'ship',
+      version: '1.0.0',
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
+    }
+  );
+
+  // Handle list tools request
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return { tools: mcpTools };
+  });
+
+  // Handle tool calls
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+
+    try {
+      const result = await executeToolCall(name, (args || {}) as Record<string, unknown>);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error: ${message}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  });
+
+  // Connect transport and start
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error(`Ship MCP server running on ${SHIP_URL}`);
+}
+
+main().catch((error) => {
+  console.error('Failed to start Ship MCP server:', error);
+  process.exit(1);
+});

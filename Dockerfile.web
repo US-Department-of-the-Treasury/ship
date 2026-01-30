@@ -1,0 +1,38 @@
+# Development Dockerfile for Ship Web frontend
+FROM node:20-slim
+
+WORKDIR /app
+
+# Disable SSL strict mode for government VPN environments
+RUN npm config set strict-ssl false
+
+# Install pnpm and disable SSL for it too
+RUN npm install -g pnpm@10 && pnpm config set strict-ssl false
+
+# Copy all package.json files and workspace config
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
+COPY web/package.json ./web/
+COPY shared/package.json ./shared/
+
+# Create minimal api package.json - needed for workspace but won't be installed
+RUN mkdir -p api && echo '{"name":"@ship/api","version":"0.0.0","private":true}' > api/package.json
+
+# Install only web and shared dependencies (skip api entirely)
+RUN pnpm install --filter @ship/web --filter @ship/shared --ignore-scripts
+
+# Copy source code
+COPY shared/ ./shared/
+COPY web/ ./web/
+
+# Build shared types first
+RUN pnpm build:shared
+
+# Expose Vite dev server port
+EXPOSE 5173
+
+# Set environment
+ENV NODE_ENV=development
+
+# Run Vite dev server with host binding for Docker
+WORKDIR /app/web
+CMD ["pnpm", "dev", "--host", "0.0.0.0"]

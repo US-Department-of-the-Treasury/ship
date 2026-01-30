@@ -2,26 +2,233 @@ openapi: 3.0.0
 info:
   title: Ship API
   version: 1.0.0
-  description: API for Ship - Project and Sprint Management Platform
+  description: "Ship is a project and sprint management platform with real-time collaboration.
+
+## Authentication
+
+All endpoints (except /auth/login and /health) require authentication via:
+- **Session Cookie**: Automatically set after login (15-minute timeout, 12-hour absolute)
+- **Bearer Token**: API tokens from Settings > API Tokens
+
+## Core Concepts
+
+- **Documents**: Everything in Ship is a document (wikis, issues, projects, sprints, etc.)
+- **Document Type**: Each document has a `document_type` that determines its properties
+- **Belongs To**: Documents can be associated via `belongs_to` array (programs, projects, sprints, parent issues)
+
+## WebSocket Collaboration
+
+Real-time editing available at `/collaboration/{docType}:{docId}` using Yjs CRDT protocol."
+  contact:
+    name: Ship Team
 servers:
   - url: /api
         description: API base path
+security:
+  - bearerAuth:
+    []
+  - cookieAuth:
+    []
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
+      description: API token authentication. Get your token from Settings > API Tokens.
     cookieAuth:
       type: apiKey
       in: cookie
       name: session
+      description: Session cookie authentication. Automatically set after login.
   schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error code or type
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              path:
+                type: array
+                items:
+                  anyOf:
+                    - type: string
+                    - type: number
+              message:
+                type: string
+            required:
+              - message
+          description: Validation error details
+      required:
+        - error
+    BelongsToEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID of the related document
+          example: 550e8400-e29b-41d4-a716-446655440000
+        type:
+          type: string
+          enum:
+            - program
+            - project
+            - sprint
+            - parent
+          description: Type of document association
+      required:
+        - id
+        - type
+    BelongsToResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        type:
+          type: string
+          enum:
+            - program
+            - project
+            - sprint
+            - parent
+          description: Type of document association
+        title:
+          type: string
+          description: Title of the related document
+        color:
+          type: string
+          description: Color of the related document (hex)
+      required:
+        - id
+        - type
+    UserReference:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+          description: User display name
+        email:
+          type: string
+          format: email
+          description: User email address
+      required:
+        - id
+        - name
+    DocumentType:
+      type: string
+      enum:
+        - wiki
+        - issue
+        - program
+        - project
+        - sprint
+        - person
+        - weekly_plan
+        - weekly_retro
+        - standup
+        - weekly_review
+      description: Type of document
     Document:
       type: object
       properties:
         id:
           type: string
           format: uuid
+          description: Document ID
+          example: 550e8400-e29b-41d4-a716-446655440000
+        title:
+          type: string
+          description: Document title
+        document_type:
+          type: string
+          enum:
+            - wiki
+            - issue
+            - program
+            - project
+            - sprint
+            - person
+            - weekly_plan
+            - weekly_retro
+            - standup
+            - weekly_review
+          description: Type of document
+        content:
+          type: object
+          nullable: true
+          additionalProperties:
+            nullable: true
+          description: TipTap JSON content
+        properties:
+          type: object
+          additionalProperties:
+            nullable: true
+          description: Type-specific properties (see individual document type schemas)
+        parent_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: Parent document ID for hierarchical wiki pages
+          example: 550e8400-e29b-41d4-a716-446655440000
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        archived_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        deleted_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        created_by:
+          type: string
+          format: uuid
+          description: User ID who created this document
+          example: 550e8400-e29b-41d4-a716-446655440000
+      required:
+        - id
+        - title
+        - document_type
+        - content
+        - properties
+        - created_at
+        - updated_at
+    DocumentListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
         title:
           type: string
         document_type:
@@ -33,176 +240,2664 @@ components:
             - project
             - sprint
             - person
+            - weekly_plan
+            - weekly_retro
             - standup
-            - sprint_review
-        content:
-          type: object
-        properties:
-          type: object
+            - weekly_review
+          description: Type of document
         parent_id:
           type: string
-          format: uuid
           nullable: true
-        project_id:
-          type: string
           format: uuid
-          nullable: true
-        sprint_id:
-          type: string
-          format: uuid
-          nullable: true
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
         created_at:
           type: string
           format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
         updated_at:
           type: string
           format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+      required:
+        - id
+        - title
+        - document_type
+        - created_at
+        - updated_at
+    CreateDocument:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+          default: Untitled
+          description: Document title. Defaults to "Untitled".
+        document_type:
+          type: string
+          enum:
+            - wiki
+            - issue
+            - program
+            - project
+            - sprint
+            - person
+            - weekly_plan
+            - weekly_retro
+            - standup
+            - weekly_review
+          description: Type of document
+        content:
+          type: object
+          additionalProperties:
+            nullable: true
+          description: TipTap JSON content
+        properties:
+          type: object
+          additionalProperties:
+            nullable: true
+          description: Type-specific properties
+        parent_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: Parent document ID (for hierarchical wikis)
+          example: 550e8400-e29b-41d4-a716-446655440000
+        visibility:
+          type: string
+          enum:
+            - private
+            - workspace
+          default: workspace
+          description: Document visibility scope
+      required:
+        - document_type
+    UpdateDocument:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        content:
+          type: object
+          additionalProperties:
+            nullable: true
+        properties:
+          type: object
+          additionalProperties:
+            nullable: true
+        parent_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        visibility:
+          type: string
+          enum:
+            - private
+            - workspace
+    IssueState:
+      type: string
+      enum:
+        - triage
+        - backlog
+        - todo
+        - in_progress
+        - in_review
+        - done
+        - cancelled
+      description: Issue workflow state
+    IssuePriority:
+      type: string
+      enum:
+        - urgent
+        - high
+        - medium
+        - low
+        - none
+      description: Issue priority level
+    IssueSource:
+      type: string
+      enum:
+        - internal
+        - external
+        - action_items
+      description: Issue source/provenance (never changes after creation)
     Issue:
       type: object
       properties:
         id:
           type: string
           format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
         title:
           type: string
-        content:
-          type: object
+        display_id:
+          type: string
+          description: "Human-readable ticket ID (e.g., \"#42\")"
+          example: "#42"
+        ticket_number:
+          type: integer
+          description: Numeric ticket number
+          example: 42
         state:
           type: string
           enum:
+            - triage
             - backlog
-            - planned
+            - todo
             - in_progress
             - in_review
             - done
             - cancelled
+          description: Issue workflow state
         priority:
           type: string
           enum:
-            - low
-            - medium
+            - urgent
             - high
+            - medium
+            - low
+            - none
+          description: Issue priority level
+        assignee_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        assignee_name:
+          type: string
+          nullable: true
+          description: Name of assigned user
+        assignee_archived:
+          type: boolean
+          description: Whether the assigned user has been archived
         estimate:
           type: number
           nullable: true
-        project_id:
+          minimum: 0
+          exclusiveMinimum: true
+          description: Time estimate in hours
+        source:
+          type: string
+          enum:
+            - internal
+            - external
+            - action_items
+          description: Issue source/provenance (never changes after creation)
+        due_date:
+          type: string
+          nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: ISO 8601 date string (YYYY-MM-DD)
+          example: 2025-01-30
+        is_system_generated:
+          type: boolean
+          description: Whether this issue was auto-generated for accountability
+        accountability_target_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        accountability_type:
+          type: string
+          nullable: true
+          enum:
+            - standup
+            - weekly_plan
+            - weekly_review
+            - week_start
+            - week_issues
+            - project_plan
+            - project_retro
+          description: Type of accountability task for auto-generated issues
+        rejection_reason:
+          type: string
+          nullable: true
+          description: Reason if issue was rejected from triage
+        content:
+          type: object
+          nullable: true
+          additionalProperties:
+            nullable: true
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        created_by:
           type: string
           format: uuid
-          nullable: true
-        sprint_id:
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        created_by_name:
           type: string
-          format: uuid
+        started_at:
+          type: string
           nullable: true
-        assignee_ids:
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        completed_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        cancelled_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        reopened_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        converted_from_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: ID of document this issue was converted from
+          example: 550e8400-e29b-41d4-a716-446655440000
+        belongs_to:
+          type: array
+          items:
+            $ref: "#/components/schemas/BelongsToResponse"
+          description: Associated documents (programs, projects, sprints, parent issues)
+      required:
+        - id
+        - title
+        - display_id
+        - ticket_number
+        - state
+        - priority
+        - assignee_id
+        - assignee_name
+        - estimate
+        - source
+        - content
+        - created_at
+        - updated_at
+        - belongs_to
+    CreateIssue:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Issue title
+          example: Fix login button not responding
+        state:
+          type: string
+          enum:
+            - triage
+            - backlog
+            - todo
+            - in_progress
+            - in_review
+            - done
+            - cancelled
+          default: backlog
+          description: Issue workflow state
+        priority:
+          type: string
+          enum:
+            - urgent
+            - high
+            - medium
+            - low
+            - none
+          default: medium
+          description: Issue priority level
+        assignee_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        belongs_to:
+          type: array
+          items:
+            $ref: "#/components/schemas/BelongsToEntry"
+          default:
+[]
+          description: Associate with programs, projects, sprints, or parent issues
+        source:
+          type: string
+          enum:
+            - internal
+            - external
+            - action_items
+          default: internal
+          description: Issue source/provenance (never changes after creation)
+        due_date:
+          type: string
+          nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: ISO 8601 date string (YYYY-MM-DD)
+          example: 2025-01-30
+        is_system_generated:
+          type: boolean
+          default: false
+        accountability_target_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        accountability_type:
+          type: string
+          nullable: true
+          enum:
+            - standup
+            - weekly_plan
+            - weekly_review
+            - week_start
+            - week_issues
+            - project_plan
+            - project_retro
+          description: Type of accountability task for auto-generated issues
+      required:
+        - title
+    UpdateIssue:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        state:
+          type: string
+          enum:
+            - triage
+            - backlog
+            - todo
+            - in_progress
+            - in_review
+            - done
+            - cancelled
+          description: Issue workflow state
+        priority:
+          type: string
+          enum:
+            - urgent
+            - high
+            - medium
+            - low
+            - none
+          description: Issue priority level
+        assignee_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        belongs_to:
+          type: array
+          items:
+            $ref: "#/components/schemas/BelongsToEntry"
+        estimate:
+          type: number
+          nullable: true
+          minimum: 0
+          exclusiveMinimum: true
+        confirm_orphan_children:
+          type: boolean
+          description: Confirm closing parent issue with incomplete children
+        claude_metadata:
+          type: object
+          properties:
+            updated_by:
+              type: string
+              enum:
+                - claude
+            story_id:
+              type: string
+            prd_name:
+              type: string
+            session_context:
+              type: string
+            confidence:
+              type: integer
+              minimum: 0
+              maximum: 100
+            telemetry:
+              type: object
+              properties:
+                iterations:
+                  type: integer
+                  minimum: 1
+                feedback_loops:
+                  type: object
+                  properties:
+                    type_check:
+                      type: integer
+                      minimum: 0
+                    test:
+                      type: integer
+                      minimum: 0
+                    build:
+                      type: integer
+                      minimum: 0
+                time_elapsed_seconds:
+                  type: integer
+                  minimum: 0
+                files_changed:
+                  type: array
+                  items:
+                    type: string
+          required:
+            - updated_by
+          description: Metadata for Claude Code integration
+    BulkUpdateIssues:
+      type: object
+      properties:
+        ids:
           type: array
           items:
             type: string
             format: uuid
-    Sprint:
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+          minItems: 1
+          maxItems: 100
+        action:
+          type: string
+          enum:
+            - archive
+            - delete
+            - restore
+            - update
+        updates:
+          type: object
+          properties:
+            state:
+              type: string
+              enum:
+                - triage
+                - backlog
+                - todo
+                - in_progress
+                - in_review
+                - done
+                - cancelled
+              description: Issue workflow state
+            sprint_id:
+              type: string
+              nullable: true
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            assignee_id:
+              type: string
+              nullable: true
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            project_id:
+              type: string
+              nullable: true
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+      required:
+        - ids
+        - action
+    IssueHistoryEntry:
       type: object
       properties:
         id:
           type: string
           format: uuid
-        title:
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        field:
           type: string
-        start_date:
-          type: string
-          format: date
-        end_date:
-          type: string
-          format: date
-        hypothesis:
+          description: Field that was changed
+        old_value:
           type: string
           nullable: true
-        goal:
+        new_value:
           type: string
           nullable: true
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        changed_by:
+          allOf:
+            - $ref: "#/components/schemas/UserReference"
+            - nullable: true
+        automated_by:
+          type: string
+          description: Automation source (e.g., "claude")
+      required:
+        - id
+        - field
+        - old_value
+        - new_value
+        - created_at
+        - changed_by
+    IssueIteration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        issue_id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        status:
+          type: string
+          enum:
+            - pass
+            - fail
+            - in_progress
+        what_attempted:
+          type: string
+          nullable: true
+          maxLength: 5000
+        blockers_encountered:
+          type: string
+          nullable: true
+          maxLength: 5000
+        author:
+          $ref: "#/components/schemas/UserReference"
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+      required:
+        - id
+        - issue_id
+        - status
+        - author
+        - created_at
+        - updated_at
+    IncompleteChildrenWarning:
+      type: object
+      properties:
+        error:
+          type: string
+          enum:
+            - incomplete_children
+        message:
+          type: string
+        incomplete_children:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: UUID identifier
+                example: 550e8400-e29b-41d4-a716-446655440000
+              title:
+                type: string
+              ticket_number:
+                type: integer
+              state:
+                type: string
+                enum:
+                  - triage
+                  - backlog
+                  - todo
+                  - in_progress
+                  - in_review
+                  - done
+                  - cancelled
+                description: Issue workflow state
+            required:
+              - id
+              - title
+              - ticket_number
+              - state
+        confirm_action:
+          type: string
+      required:
+        - error
+        - message
+        - incomplete_children
+        - confirm_action
+    ApprovalTracking:
+      type: object
+      properties:
+        state:
+          type: string
+          nullable: true
+          enum:
+            - approved
+            - changed_since_approved
+          description: "Approval state: null = pending, approved = current version approved, changed_since_approved = needs re-review"
+        approved_by:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        approved_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        approved_version_id:
+          type: integer
+          nullable: true
+          description: document_history.id that was approved
+      required:
+        - state
+        - approved_by
+        - approved_at
+        - approved_version_id
     Project:
       type: object
       properties:
         id:
           type: string
           format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
         title:
           type: string
-        content:
-          type: object
-        hypothesis:
+        impact:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          description: How much will this move the needle? (1-5, null = not set)
+          example: 3
+        confidence:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          description: How certain are we this will achieve the impact? (1-5, null = not set)
+          example: 3
+        ease:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          description: How easy is this to implement? (1-5, null = not set)
+          example: 3
+        ice_score:
+          type: number
+          nullable: true
+          description: Computed ICE score (impact * confidence * ease)
+        color:
+          type: string
+          example: "#6366f1"
+        emoji:
           type: string
           nullable: true
-        ice_impact:
-          type: number
+        program_id:
+          type: string
           nullable: true
-        ice_confidence:
-          type: number
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        owner_id:
+          type: string
           nullable: true
-        ice_ease:
-          type: number
+          format: uuid
+          description: R - Responsible (does the work)
+          example: 550e8400-e29b-41d4-a716-446655440000
+        accountable_id:
+          type: string
           nullable: true
-        status:
+          format: uuid
+          description: A - Accountable (approver)
+          example: 550e8400-e29b-41d4-a716-446655440000
+        consulted_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+          description: C - Consulted (provide input)
+        informed_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+          description: I - Informed (kept in loop)
+        owner:
+          allOf:
+            - $ref: "#/components/schemas/UserReference"
+            - nullable: true
+        plan:
+          type: string
+          nullable: true
+          description: Project hypothesis/plan statement
+        plan_approval:
+          allOf:
+            - $ref: "#/components/schemas/ApprovalTracking"
+            - nullable: true
+        retro_approval:
+          allOf:
+            - $ref: "#/components/schemas/ApprovalTracking"
+            - nullable: true
+        has_retro:
+          type: boolean
+          description: Whether project has a retrospective document
+        target_date:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        inferred_status:
           type: string
           enum:
             - active
+            - planned
             - completed
-            - on_hold
-            - cancelled
+            - backlog
+            - archived
+          description: Status computed from sprint relationships
+        sprint_count:
+          type: integer
+        issue_count:
+          type: integer
+        is_complete:
+          type: boolean
+          nullable: true
+        missing_fields:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        archived_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        converted_from_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+      required:
+        - id
+        - title
+        - impact
+        - confidence
+        - ease
+        - ice_score
+        - color
+        - emoji
+        - program_id
+        - owner_id
+        - accountable_id
+        - consulted_ids
+        - informed_ids
+        - owner
+        - plan
+        - plan_approval
+        - retro_approval
+        - has_retro
+        - target_date
+        - inferred_status
+        - sprint_count
+        - issue_count
+        - is_complete
+        - missing_fields
+        - created_at
+        - updated_at
+        - archived_at
+        - converted_from_id
+    CreateProject:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          default: Untitled
+        impact:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          default: null
+          description: ICE score component (1-5 scale)
+          example: 3
+        confidence:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          default: null
+          description: ICE score component (1-5 scale)
+          example: 3
+        ease:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          default: null
+          description: ICE score component (1-5 scale)
+          example: 3
+        owner_id:
+          type: string
+          nullable: true
+          format: uuid
+          default: null
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        accountable_id:
+          type: string
+          nullable: true
+          format: uuid
+          default: null
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        consulted_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+          default:
+[]
+        informed_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+          default:
+[]
+        color:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+          default: "#6366f1"
+        emoji:
+          type: string
+          nullable: true
+          maxLength: 10
+        program_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        plan:
+          type: string
+          nullable: true
+          maxLength: 2000
+        target_date:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+    UpdateProject:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        impact:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          description: ICE score component (1-5 scale)
+          example: 3
+        confidence:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          description: ICE score component (1-5 scale)
+          example: 3
+        ease:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 5
+          description: ICE score component (1-5 scale)
+          example: 3
+        owner_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        accountable_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        consulted_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+        informed_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+        color:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        emoji:
+          type: string
+          nullable: true
+          maxLength: 10
+        program_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        archived_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        plan:
+          type: string
+          nullable: true
+          maxLength: 2000
+        target_date:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+    ProjectRetro:
+      type: object
+      properties:
+        plan_validated:
+          type: boolean
+          nullable: true
+        monetary_impact_actual:
+          type: string
+          nullable: true
+          maxLength: 500
+        success_criteria:
+          type: array
+          nullable: true
+          items:
+            type: string
+            maxLength: 500
+        next_steps:
+          type: string
+          nullable: true
+          maxLength: 2000
+        content:
+          type: object
+          additionalProperties:
+            nullable: true
+    Program:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+        color:
+          type: string
+          example: "#6366f1"
+        emoji:
+          type: string
+          nullable: true
+        archived_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        issue_count:
+          type: integer
+        sprint_count:
+          type: integer
+        owner:
+          allOf:
+            - $ref: "#/components/schemas/UserReference"
+            - nullable: true
+        owner_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: R - Responsible
+          example: 550e8400-e29b-41d4-a716-446655440000
+        accountable_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: A - Accountable
+          example: 550e8400-e29b-41d4-a716-446655440000
+        consulted_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+          description: C - Consulted
+        informed_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+          description: I - Informed
+      required:
+        - id
+        - name
+        - color
+        - emoji
+        - archived_at
+        - created_at
+        - updated_at
+        - issue_count
+        - sprint_count
+        - owner
+        - owner_id
+        - accountable_id
+        - consulted_ids
+        - informed_ids
+    CreateProgram:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          default: Untitled
+        color:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+          default: "#6366f1"
+        emoji:
+          type: string
+          nullable: true
+          maxLength: 10
+        owner_id:
+          type: string
+          nullable: true
+          format: uuid
+          default: null
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        accountable_id:
+          type: string
+          nullable: true
+          format: uuid
+          default: null
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        consulted_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+          default:
+[]
+        informed_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+          default:
+[]
+    UpdateProgram:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        color:
+          type: string
+          pattern: "^#[0-9a-fA-F]{6}$"
+        emoji:
+          type: string
+          nullable: true
+          maxLength: 10
+        owner_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        accountable_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        consulted_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+        informed_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+        archived_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+    Week:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+          description: Sprint title
+        sprint_number:
+          type: integer
+          minimum: 0
+          exclusiveMinimum: true
+          description: Sprint sequence number (dates computed from workspace.sprint_start_date)
+        status:
+          type: string
+          enum:
+            - planning
+            - active
+            - completed
+          description: Sprint workflow status
+        owner:
+          allOf:
+            - $ref: "#/components/schemas/UserReference"
+            - nullable: true
+        program_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        program_name:
+          type: string
+          nullable: true
+        program_prefix:
+          type: string
+          nullable: true
+        program_accountable_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        workspace_sprint_start_date:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: Workspace anchor date for computing sprint dates
+          example: 2025-01-30
+        issue_count:
+          type: integer
+        completed_count:
+          type: integer
+        started_count:
+          type: integer
+        has_plan:
+          type: boolean
+        has_retro:
+          type: boolean
+        retro_outcome:
+          type: string
+          nullable: true
+        retro_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        plan:
+          type: string
+          nullable: true
+          description: What will we learn or validate this sprint?
+        success_criteria:
+          type: array
+          nullable: true
+          items:
+            type: string
+        confidence:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100
+        plan_history:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              plan:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+                description: ISO 8601 datetime string
+                example: "2025-01-30T14:30:00.000Z"
+              author_id:
+                type: string
+                format: uuid
+                description: UUID identifier
+                example: 550e8400-e29b-41d4-a716-446655440000
+              author_name:
+                type: string
+            required:
+              - plan
+              - timestamp
+              - author_id
+        is_complete:
+          type: boolean
+          nullable: true
+        missing_fields:
+          type: array
+          items:
+            type: string
+        planned_issue_ids:
+          type: array
+          nullable: true
+          items:
+            type: string
+            format: uuid
+            description: UUID identifier
+            example: 550e8400-e29b-41d4-a716-446655440000
+        snapshot_taken_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        plan_approval:
+          allOf:
+            - $ref: "#/components/schemas/ApprovalTracking"
+            - nullable: true
+        review_approval:
+          allOf:
+            - $ref: "#/components/schemas/ApprovalTracking"
+            - nullable: true
+        accountable_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+      required:
+        - id
+        - name
+        - sprint_number
+        - status
+        - owner
+        - program_id
+        - program_name
+        - program_prefix
+        - program_accountable_id
+        - workspace_sprint_start_date
+        - issue_count
+        - completed_count
+        - started_count
+        - has_plan
+        - has_retro
+        - retro_outcome
+        - retro_id
+        - plan
+        - success_criteria
+        - confidence
+        - plan_history
+        - is_complete
+        - missing_fields
+        - planned_issue_ids
+        - snapshot_taken_at
+        - plan_approval
+        - review_approval
+        - accountable_id
+    CreateWeek:
+      type: object
+      properties:
+        program_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          default: Untitled
+        sprint_number:
+          type: integer
+          minimum: 0
+          exclusiveMinimum: true
+        owner_id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        plan:
+          type: string
+          maxLength: 2000
+        success_criteria:
+          type: array
+          items:
+            type: string
+            maxLength: 500
+          maxItems: 20
+        confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+      required:
+        - sprint_number
+    UpdateWeek:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        owner_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        sprint_number:
+          type: integer
+          minimum: 0
+          exclusiveMinimum: true
+        status:
+          type: string
+          enum:
+            - planning
+            - active
+            - completed
+    UpdateWeekPlan:
+      type: object
+      properties:
+        plan:
+          type: string
+          maxLength: 2000
+        success_criteria:
+          type: array
+          items:
+            type: string
+            maxLength: 500
+          maxItems: 20
+        confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+    WeekReview:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        sprint_id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        owner_id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        plan_validated:
+          type: boolean
+          nullable: true
+        content:
+          type: object
+          nullable: true
+          additionalProperties:
+            nullable: true
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+      required:
+        - id
+        - sprint_id
+        - owner_id
+        - plan_validated
+        - content
+        - created_at
+        - updated_at
+    ActiveWeeksResponse:
+      type: object
+      properties:
+        sprints:
+          type: array
+          items:
+            $ref: "#/components/schemas/Week"
+        currentSprintNumber:
+          type: integer
+        daysRemaining:
+          type: integer
+          description: Days remaining in current sprint
+      required:
+        - sprints
+        - currentSprintNumber
+        - daysRemaining
     Standup:
       type: object
       properties:
         id:
           type: string
           format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        title:
+          type: string
         content:
           type: object
-        author_id:
+          nullable: true
+          additionalProperties:
+            nullable: true
+        author:
+          $ref: "#/components/schemas/UserReference"
+        sprint_id:
           type: string
           format: uuid
+          description: Parent sprint ID
+          example: 550e8400-e29b-41d4-a716-446655440000
         created_at:
           type: string
           format: date-time
-    SprintReview:
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+      required:
+        - id
+        - title
+        - content
+        - author
+        - sprint_id
+        - created_at
+        - updated_at
+    StandupStatus:
+      type: object
+      properties:
+        due:
+          type: boolean
+          description: True if user has active sprint but has not posted today
+        lastPosted:
+          type: string
+          nullable: true
+          format: date-time
+          description: Timestamp of last standup posted
+          example: "2025-01-30T14:30:00.000Z"
+      required:
+        - due
+        - lastPosted
+    CreateStandup:
+      type: object
+      properties:
+        sprint_id:
+          type: string
+          format: uuid
+          description: Sprint to attach standup to
+          example: 550e8400-e29b-41d4-a716-446655440000
+        title:
+          type: string
+          maxLength: 200
+        content:
+          type: object
+          additionalProperties:
+            nullable: true
+      required:
+        - sprint_id
+    UpdateStandup:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        content:
+          type: object
+          additionalProperties:
+            nullable: true
+    Person:
+      type: object
+      properties:
+        personId:
+          type: string
+          format: uuid
+          description: Person document ID (used for allocations)
+          example: 550e8400-e29b-41d4-a716-446655440000
+        id:
+          type: string
+          nullable: true
+          format: uuid
+          description: User ID (null for pending users)
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+        email:
+          type: string
+          nullable: true
+          format: email
+        isArchived:
+          type: boolean
+        isPending:
+          type: boolean
+          description: User has not accepted invite yet
+      required:
+        - personId
+        - id
+        - name
+        - email
+        - isArchived
+        - isPending
+    SprintPeriod:
+      type: object
+      properties:
+        number:
+          type: integer
+        name:
+          type: string
+          example: Week 5
+        startDate:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: ISO 8601 date string (YYYY-MM-DD)
+          example: 2025-01-30
+        endDate:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: ISO 8601 date string (YYYY-MM-DD)
+          example: 2025-01-30
+        isCurrent:
+          type: boolean
+      required:
+        - number
+        - name
+        - startDate
+        - endDate
+        - isCurrent
+    TeamGridAssociation:
+      type: object
+      properties:
+        programs:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: UUID identifier
+                example: 550e8400-e29b-41d4-a716-446655440000
+              name:
+                type: string
+              emoji:
+                type: string
+                nullable: true
+              color:
+                type: string
+              issueCount:
+                type: integer
+            required:
+              - id
+              - name
+              - emoji
+              - color
+              - issueCount
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: UUID identifier
+                example: 550e8400-e29b-41d4-a716-446655440000
+              title:
+                type: string
+              displayId:
+                type: string
+              state:
+                type: string
+            required:
+              - id
+              - title
+              - displayId
+              - state
+      required:
+        - programs
+        - issues
+    TeamGridResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/Person"
+        sprints:
+          type: array
+          items:
+            $ref: "#/components/schemas/SprintPeriod"
+        associations:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              $ref: "#/components/schemas/TeamGridAssociation"
+          description: Map of user_id -> sprint_number -> associations
+      required:
+        - users
+        - sprints
+        - associations
+    Workspace:
       type: object
       properties:
         id:
           type: string
           format: uuid
-        content:
-          type: object
-        hypothesis_validated:
-          type: boolean
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+        sprintStartDate:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: Anchor date for computing sprint numbers and dates
+          example: 2025-01-30
+        archivedAt:
+          type: string
           nullable: true
-        sprint_id:
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        createdAt:
           type: string
-          format: uuid
-        owner_id:
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        updatedAt:
           type: string
-          format: uuid
-    ProjectRetro:
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        role:
+          type: string
+          enum:
+            - admin
+            - member
+          description: Current user's role in this workspace
+        isSuperAdmin:
+          type: boolean
+          description: True if user is super-admin (can access all workspaces)
+      required:
+        - id
+        - name
+        - sprintStartDate
+        - archivedAt
+        - createdAt
+        - updatedAt
+        - role
+    WorkspaceListResponse:
       type: object
       properties:
-        is_draft:
+        success:
           type: boolean
-          description: True if retro hasn't been saved yet
-        hypothesis_validated:
-          type: boolean
-          nullable: true
-        monetary_impact_expected:
+          enum:
+            - true
+        data:
+          type: object
+          properties:
+            workspaces:
+              type: array
+              items:
+                $ref: "#/components/schemas/Workspace"
+            isSuperAdmin:
+              type: boolean
+          required:
+            - workspaces
+            - isSuperAdmin
+      required:
+        - success
+        - data
+    CreateWorkspace:
+      type: object
+      properties:
+        name:
           type: string
-          nullable: true
-        monetary_impact_actual:
+          minLength: 1
+          maxLength: 200
+        sprintStartDate:
           type: string
-          nullable: true
-        success_criteria:
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: Defaults to next Monday if not provided
+          example: 2025-01-30
+      required:
+        - name
+    UpdateWorkspace:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        sprintStartDate:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: ISO 8601 date string (YYYY-MM-DD)
+          example: 2025-01-30
+    MentionSearchResult:
+      type: object
+      properties:
+        people:
           type: array
           items:
-            type: string
-        next_steps:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: UUID identifier
+                example: 550e8400-e29b-41d4-a716-446655440000
+              name:
+                type: string
+              document_type:
+                type: string
+                enum:
+                  - person
+            required:
+              - id
+              - name
+              - document_type
+        documents:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: UUID identifier
+                example: 550e8400-e29b-41d4-a716-446655440000
+              title:
+                type: string
+              document_type:
+                type: string
+                enum:
+                  - wiki
+                  - issue
+                  - program
+                  - project
+                  - sprint
+                  - person
+                  - weekly_plan
+                  - weekly_retro
+                  - standup
+                  - weekly_review
+                description: Type of document
+              visibility:
+                type: string
+                enum:
+                  - private
+                  - workspace
+            required:
+              - id
+              - title
+              - document_type
+      required:
+        - people
+        - documents
+    LearningSearchResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        title:
+          type: string
+        content_preview:
           type: string
           nullable: true
-        content:
+        program_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        program_name:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+        updated_at:
+          type: string
+      required:
+        - id
+        - title
+        - content_preview
+        - program_id
+        - program_name
+        - created_at
+        - updated_at
+    UploadRequest:
+      type: object
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Original filename
+          example: screenshot.png
+        mimeType:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: MIME type of the file
+          example: image/png
+        sizeBytes:
+          type: integer
+          minimum: 0
+          exclusiveMinimum: true
+          maximum: 1073741824
+          description: File size in bytes (max 1GB)
+          example: 1024000
+      required:
+        - filename
+        - mimeType
+        - sizeBytes
+    UploadResponse:
+      type: object
+      properties:
+        uploadUrl:
+          type: string
+          format: uri
+          description: Presigned URL to PUT the file (expires in 15 minutes)
+        fileId:
+          type: string
+          format: uuid
+          description: File ID to use when referencing this file
+          example: 550e8400-e29b-41d4-a716-446655440000
+        publicUrl:
+          type: string
+          format: uri
+          description: URL where the file will be accessible after upload
+      required:
+        - uploadUrl
+        - fileId
+        - publicUrl
+    FileMetadata:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        filename:
+          type: string
+        mimeType:
+          type: string
+        sizeBytes:
+          type: integer
+        uploadedBy:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        documentId:
+          type: string
+          nullable: true
+          format: uuid
+          description: Document this file is attached to
+          example: 550e8400-e29b-41d4-a716-446655440000
+        publicUrl:
+          type: string
+          format: uri
+        createdAt:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+      required:
+        - id
+        - filename
+        - mimeType
+        - sizeBytes
+        - uploadedBy
+        - documentId
+        - publicUrl
+        - createdAt
+    ActivityDay:
+      type: object
+      properties:
+        date:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: ISO 8601 date string (YYYY-MM-DD)
+          example: 2025-01-30
+        count:
+          type: integer
+          description: Number of document changes on this day
+      required:
+        - date
+        - count
+    ActivityResponse:
+      type: object
+      properties:
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActivityDay"
+          description: Last 30 days of activity counts
+      required:
+        - days
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: user@example.com
+        password:
+          type: string
+          minLength: 1
+          description: User password
+      required:
+        - email
+        - password
+    LoginResponse:
+      type: object
+      properties:
+        user:
           type: object
-          description: TipTap editor content
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            email:
+              type: string
+              format: email
+            name:
+              type: string
+            is_admin:
+              type: boolean
+          required:
+            - id
+            - email
+            - name
+        workspace:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            name:
+              type: string
+            slug:
+              type: string
+          required:
+            - id
+            - name
+            - slug
+      required:
+        - user
+    SessionResponse:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            email:
+              type: string
+              format: email
+            name:
+              type: string
+            is_admin:
+              type: boolean
+          required:
+            - id
+            - email
+            - name
+        workspace:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            name:
+              type: string
+            slug:
+              type: string
+            person_id:
+              type: string
+              format: uuid
+              description: Person document ID for current user
+              example: 550e8400-e29b-41d4-a716-446655440000
+            role:
+              type: string
+          required:
+            - id
+            - name
+            - slug
+      required:
+        - user
+        - workspace
+    APIToken:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+        prefix:
+          type: string
+          description: Token prefix for identification (first 8 chars)
+          example: ship_abc
+        last_used_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        expires_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+      required:
+        - id
+        - name
+        - prefix
+        - last_used_at
+        - created_at
+        - expires_at
+    CreateAPIToken:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Descriptive name for the token
+          example: CI/CD Pipeline
+        expires_in_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: "Days until token expires (default: never)"
+      required:
+        - name
+    CreateAPITokenResponse:
+      type: object
+      properties:
+        token:
+          $ref: "#/components/schemas/APIToken"
+        secret:
+          type: string
+          description: Full token value. Only shown once at creation time.
+          example: ship_abc123xyz789...
+      required:
+        - token
+        - secret
+    Backlink:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        document_type:
+          type: string
+          enum:
+            - wiki
+            - issue
+            - program
+            - project
+            - sprint
+            - person
+            - weekly_plan
+            - weekly_retro
+            - standup
+            - weekly_review
+          description: Type of document
+        title:
+          type: string
+        display_id:
+          type: string
+          description: "Display ID for issues (e.g., \"#42\")"
+      required:
+        - id
+        - document_type
+        - title
+    Association:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        document_id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        related_id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        relationship_type:
+          type: string
+          enum:
+            - program
+            - project
+            - sprint
+            - parent
+          description: Type of document association
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        related_title:
+          type: string
+        related_document_type:
+          type: string
+          enum:
+            - wiki
+            - issue
+            - program
+            - project
+            - sprint
+            - person
+            - weekly_plan
+            - weekly_retro
+            - standup
+            - weekly_review
+          description: Type of document
+        related_color:
+          type: string
+      required:
+        - id
+        - document_id
+        - related_id
+        - relationship_type
+        - created_at
+    IssueStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        completed:
+          type: integer
+        in_progress:
+          type: integer
+        todo:
+          type: integer
+        planned_at_start:
+          type: integer
+        added_mid_sprint:
+          type: integer
+        cancelled:
+          type: integer
+        active:
+          type: integer
+      required:
+        - total
+        - completed
+        - in_progress
+    StandupContext:
+      type: object
+      properties:
+        sprint:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            title:
+              type: string
+            sprint_number:
+              type: integer
+            status:
+              type: string
+            plan:
+              type: string
+              nullable: true
+          required:
+            - id
+            - title
+            - sprint_number
+            - status
+            - plan
+        program:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              nullable: true
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            name:
+              type: string
+              nullable: true
+            description:
+              type: string
+              nullable: true
+            goals:
+              type: string
+              nullable: true
+          required:
+            - id
+            - name
+            - description
+            - goals
+        project:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              nullable: true
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            name:
+              type: string
+              nullable: true
+            plan:
+              type: string
+              nullable: true
+            ice_impact:
+              type: number
+              nullable: true
+            ice_confidence:
+              type: number
+              nullable: true
+            ice_ease:
+              type: number
+              nullable: true
+          required:
+            - id
+            - name
+            - plan
+            - ice_impact
+            - ice_confidence
+            - ice_ease
+        issues:
+          type: object
+          properties:
+            stats:
+              $ref: "#/components/schemas/IssueStats"
+            active:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: UUID identifier
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  title:
+                    type: string
+                  state:
+                    type: string
+                  ticket_number:
+                    type: integer
+                required:
+                  - id
+                  - title
+                  - state
+                  - ticket_number
+          required:
+            - stats
+            - active
+        recent_standups:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: UUID identifier
+                example: 550e8400-e29b-41d4-a716-446655440000
+              content:
+                type: object
+                nullable: true
+                additionalProperties:
+                  nullable: true
+              created_at:
+                type: string
+                format: date-time
+                description: ISO 8601 datetime string
+                example: "2025-01-30T14:30:00.000Z"
+              author_name:
+                type: string
+            required:
+              - id
+              - content
+              - created_at
+              - author_name
+        clarifying_questions_context:
+          type: string
+          nullable: true
+      required:
+        - sprint
+        - program
+        - project
+        - issues
+        - recent_standups
+        - clarifying_questions_context
+    ReviewContext:
+      type: object
+      properties:
+        sprint:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            title:
+              type: string
+            sprint_number:
+              type: integer
+            plan:
+              type: string
+              nullable: true
+          required:
+            - id
+            - title
+            - sprint_number
+            - plan
+        program:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              nullable: true
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            name:
+              type: string
+              nullable: true
+          required:
+            - id
+            - name
+        project:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              nullable: true
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            name:
+              type: string
+              nullable: true
+            plan:
+              type: string
+              nullable: true
+          required:
+            - id
+            - name
+            - plan
+        issues:
+          type: object
+          properties:
+            stats:
+              $ref: "#/components/schemas/IssueStats"
+            completed:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: UUID identifier
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  title:
+                    type: string
+                  ticket_number:
+                    type: integer
+                  was_planned:
+                    type: boolean
+                required:
+                  - id
+                  - title
+                  - ticket_number
+                  - was_planned
+            incomplete:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: UUID identifier
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  title:
+                    type: string
+                  state:
+                    type: string
+                  ticket_number:
+                    type: integer
+                required:
+                  - id
+                  - title
+                  - state
+                  - ticket_number
+          required:
+            - stats
+            - completed
+            - incomplete
+        previous_review:
+          type: object
+          nullable: true
+          properties:
+            plan_validated:
+              type: boolean
+              nullable: true
+            content:
+              type: object
+              nullable: true
+              additionalProperties:
+                nullable: true
+          required:
+            - plan_validated
+            - content
+      required:
+        - sprint
+        - program
+        - project
+        - issues
+        - previous_review
+    RetroContext:
+      type: object
+      properties:
+        project:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            title:
+              type: string
+            plan:
+              type: string
+              nullable: true
+            ice_impact:
+              type: number
+              nullable: true
+            ice_confidence:
+              type: number
+              nullable: true
+            ice_ease:
+              type: number
+              nullable: true
+            monetary_impact_expected:
+              type: string
+              nullable: true
+          required:
+            - id
+            - title
+            - plan
+            - ice_impact
+            - ice_confidence
+            - ice_ease
+            - monetary_impact_expected
+        program:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              nullable: true
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            name:
+              type: string
+              nullable: true
+          required:
+            - id
+            - name
         sprints:
           type: array
           items:
@@ -211,60 +2906,2302 @@ components:
               id:
                 type: string
                 format: uuid
+                description: UUID identifier
+                example: 550e8400-e29b-41d4-a716-446655440000
               title:
                 type: string
-        issues_summary:
+              sprint_number:
+                type: integer
+              plan_validated:
+                type: boolean
+                nullable: true
+            required:
+              - id
+              - title
+              - sprint_number
+              - plan_validated
+        issues:
           type: object
           properties:
-            completed:
-              type: integer
-            active:
-              type: integer
-            cancelled:
-              type: integer
-    ProjectRetroInput:
+            stats:
+              $ref: "#/components/schemas/IssueStats"
+            all:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: UUID identifier
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  title:
+                    type: string
+                  state:
+                    type: string
+                  ticket_number:
+                    type: integer
+                required:
+                  - id
+                  - title
+                  - state
+                  - ticket_number
+          required:
+            - stats
+            - all
+      required:
+        - project
+        - program
+        - sprints
+        - issues
+    WorkItem:
       type: object
       properties:
-        hypothesis_validated:
-          type: boolean
-          nullable: true
-        monetary_impact_actual:
+        id:
           type: string
-        success_criteria:
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        title:
+          type: string
+        type:
+          type: string
+          enum:
+            - issue
+            - project
+            - sprint
+        urgency:
+          type: string
+          enum:
+            - overdue
+            - this_sprint
+            - later
+          description: Urgency level for work items
+        state:
+          type: string
+        priority:
+          type: string
+        ticket_number:
+          type: integer
+        sprint_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        sprint_name:
+          type: string
+          nullable: true
+        ice_score:
+          type: number
+          nullable: true
+        inferred_status:
+          type: string
+        sprint_number:
+          type: integer
+        days_remaining:
+          type: integer
+        program_name:
+          type: string
+          nullable: true
+      required:
+        - id
+        - title
+        - type
+        - urgency
+    MyWorkResponse:
+      type: object
+      properties:
+        items:
           type: array
           items:
-            type: string
-        next_steps:
-          type: string
-        content:
-          type: object
-    Error:
+            $ref: "#/components/schemas/WorkItem"
+        currentSprintNumber:
+          type: integer
+        daysRemaining:
+          type: integer
+          description: Days remaining in current sprint
+      required:
+        - items
+        - currentSprintNumber
+        - daysRemaining
+    InferredAccountabilityType:
+      type: string
+      enum:
+        - standup
+        - weekly_plan
+        - weekly_review
+        - week_start
+        - week_issues
+        - project_plan
+        - project_retro
+      description: Type of accountability task
+    InferredActionItem:
       type: object
       properties:
-        error:
+        id:
           type: string
-        message:
+          description: Synthetic ID (e.g., "standup-{sprintId}")
+        title:
           type: string
-security:
-  - bearerAuth:
-    []
-  - cookieAuth:
-    []
+          description: Human-readable message describing the action needed
+        state:
+          type: string
+          enum:
+            - todo
+        priority:
+          type: string
+          enum:
+            - high
+        ticket_number:
+          type: number
+          enum:
+            - 0
+        display_id:
+          type: string
+          enum:
+            - 
+        is_system_generated:
+          type: boolean
+          enum:
+            - true
+        accountability_type:
+          type: string
+          enum:
+            - standup
+            - weekly_plan
+            - weekly_review
+            - week_start
+            - week_issues
+            - project_plan
+            - project_retro
+          description: Type of accountability task
+        accountability_target_id:
+          type: string
+          format: uuid
+          description: Document ID to navigate to
+          example: 550e8400-e29b-41d4-a716-446655440000
+        target_title:
+          type: string
+          description: Title of the target document
+        due_date:
+          type: string
+          nullable: true
+          pattern: ^\d{4}-\d{2}-\d{2}$
+          description: ISO 8601 date string (YYYY-MM-DD)
+          example: 2025-01-30
+        days_overdue:
+          type: integer
+          description: Positive if past due, 0 if due today, negative if upcoming
+      required:
+        - id
+        - title
+        - state
+        - priority
+        - ticket_number
+        - display_id
+        - is_system_generated
+        - accountability_type
+        - accountability_target_id
+        - target_title
+        - due_date
+        - days_overdue
+    AccountabilityActionItemsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/InferredActionItem"
+        total:
+          type: integer
+      required:
+        - items
+        - total
+  parameters:
+{}
 paths:
-  /sprints/{id}/standups:
+  /documents:
     get:
-      summary: List standups for a sprint
       tags:
-        - Sprints
-        - Standups
+        - Documents
+      summary: List documents
+      description: List documents with optional filtering by type and parent.
       parameters:
-        - in: path
-                    name: id
-                    required: true
-                    schema:
+        - schema:
+                      type: string
+                      enum:
+                        - wiki
+                        - issue
+                        - program
+                        - project
+                        - sprint
+                        - person
+                        - weekly_plan
+                        - weekly_retro
+                        - standup
+                        - weekly_review
+                      description: Filter by document type
+                    required: false
+                    name: type
+                    in: query
+        - schema:
                       type: string
                       format: uuid
-                    description: Sprint ID
+                      description: Filter by parent document ID
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: false
+                    name: parent_id
+                    in: query
+      responses:
+        200:
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentListItem"
+        401:
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required:
+                  - error
+    post:
+      tags:
+        - Documents
+      summary: Create document
+      description: Create a new document of any type.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDocument"
+      responses:
+        201:
+          description: Created document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        400:
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  details:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        path:
+                          type: array
+                          items:
+                            anyOf:
+                              - type: string
+                              - type: number
+                        message:
+                          type: string
+                      required:
+                        - path
+                        - message
+                required:
+                  - error
+  /documents/{id}:
+    get:
+      tags:
+        - Documents
+      summary: Get document by ID
+      description: Retrieve a single document with full content and properties.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: Document ID
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Document details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        404:
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    enum:
+                      - Document not found
+                required:
+                  - error
+    patch:
+      tags:
+        - Documents
+      summary: Update document
+      description: Update document title, content, or properties.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDocument"
+      responses:
+        200:
+          description: Updated document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        404:
+          description: Document not found
+    delete:
+      tags:
+        - Documents
+      summary: Delete document
+      description: Soft-delete a document. Can be restored later.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        204:
+          description: Document deleted
+        404:
+          description: Document not found
+  /issues:
+    get:
+      tags:
+        - Issues
+      summary: List issues
+      description: List issues with optional filtering by state, priority, assignee, program, sprint, and more.
+      parameters:
+        - schema:
+                      type: string
+                      description: Filter by state(s), comma-separated
+                      example: backlog,todo,in_progress
+                    required: false
+                    name: state
+                    in: query
+        - schema:
+                      type: string
+                      enum:
+                        - urgent
+                        - high
+                        - medium
+                        - low
+                        - none
+                      description: Issue priority level
+                    required: false
+                    name: priority
+                    in: query
+        - schema:
+                      type: string
+                      description: Filter by assignee ID. Use "null" or "unassigned" for unassigned issues.
+                    required: false
+                    name: assignee_id
+                    in: query
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: false
+                    name: program_id
+                    in: query
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: false
+                    name: sprint_id
+                    in: query
+        - schema:
+                      type: string
+                      enum:
+                        - internal
+                        - external
+                        - action_items
+                      description: Issue source/provenance (never changes after creation)
+                    required: false
+                    name: source
+                    in: query
+        - schema:
+                      type: string
+                      enum:
+                        - top_level
+                        - has_children
+                        - is_sub_issue
+                      description: Filter by parent/child relationship
+                    required: false
+                    name: parent_filter
+                    in: query
+      responses:
+        200:
+          description: List of issues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Issue"
+    post:
+      tags:
+        - Issues
+      summary: Create issue
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssue"
+      responses:
+        201:
+          description: Created issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+        400:
+          description: Validation error
+  /issues/{id}:
+    get:
+      tags:
+        - Issues
+      summary: Get issue by ID
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Issue details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+        301:
+          description: Issue was converted to another document type
+          headers:
+            Location:
+              schema:
+                type: string
+                description: URL to the new document
+              required: true
+            X-Converted-Type:
+              schema:
+                type: string
+                description: New document type
+              required: true
+            X-Converted-To:
+              schema:
+                type: string
+                description: New document ID
+              required: true
+        404:
+          description: Issue not found
+    patch:
+      tags:
+        - Issues
+      summary: Update issue
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIssue"
+      responses:
+        200:
+          description: Updated issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+        400:
+          description: Validation error or estimate required for sprint assignment
+        404:
+          description: Issue not found
+        409:
+          description: Cannot close parent issue with incomplete children
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncompleteChildrenWarning"
+    delete:
+      tags:
+        - Issues
+      summary: Delete issue
+      description: Delete an issue. System-generated accountability issues cannot be deleted.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        204:
+          description: Issue deleted
+        403:
+          description: Cannot delete system-generated accountability issues
+        404:
+          description: Issue not found
+  /issues/by-ticket/{number}:
+    get:
+      tags:
+        - Issues
+      summary: Get issue by ticket number
+      description: "Retrieve an issue by its human-readable ticket number (e.g., 42 for #42)."
+      parameters:
+        - schema:
+                      type: integer
+                      nullable: true
+                      description: "Ticket number (without the # prefix)"
+                      example: 42
+                    required: false
+                    name: number
+                    in: path
+      responses:
+        200:
+          description: Issue details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+        301:
+          description: Issue was converted to another document type
+        404:
+          description: Issue not found
+  /issues/{id}/children:
+    get:
+      tags:
+        - Issues
+      summary: Get sub-issues
+      description: Get all sub-issues (children) of a parent issue.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: List of sub-issues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Issue"
+        404:
+          description: Parent issue not found
+  /issues/bulk:
+    post:
+      tags:
+        - Issues
+      summary: Bulk update issues
+      description: Perform bulk operations on multiple issues (archive, delete, restore, update).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkUpdateIssues"
+      responses:
+        200:
+          description: Bulk operation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Issue"
+                  failed:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          description: UUID identifier
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        error:
+                          type: string
+                      required:
+                        - id
+                        - error
+                required:
+                  - updated
+                  - failed
+  /issues/{id}/accept:
+    post:
+      tags:
+        - Issues
+      summary: Accept issue from triage
+      description: Move an issue from triage state to backlog.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Issue accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+        400:
+          description: Issue must be in triage state
+        404:
+          description: Issue not found
+  /issues/{id}/reject:
+    post:
+      tags:
+        - Issues
+      summary: Reject issue from triage
+      description: Reject an issue from triage state to cancelled with a reason.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+                  description: Reason for rejecting the issue
+              required:
+                - reason
+      responses:
+        200:
+          description: Issue rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+        400:
+          description: Issue must be in triage state or reason is required
+        404:
+          description: Issue not found
+  /issues/{id}/history:
+    get:
+      tags:
+        - Issues
+      summary: Get issue history
+      description: Get the change history for an issue.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Issue history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IssueHistoryEntry"
+        404:
+          description: Issue not found
+  /issues/{id}/iterations:
+    get:
+      tags:
+        - Issues
+      summary: Get issue iterations
+      description: Get Claude work iterations for an issue.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+        - schema:
+                      type: string
+                      enum:
+                        - pass
+                        - fail
+                        - in_progress
+                    required: false
+                    name: status
+                    in: query
+      responses:
+        200:
+          description: Issue iterations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IssueIteration"
+        404:
+          description: Issue not found
+    post:
+      tags:
+        - Issues
+      summary: Create issue iteration
+      description: Log a Claude work iteration for an issue.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - pass
+                    - fail
+                    - in_progress
+                what_attempted:
+                  type: string
+                  maxLength: 5000
+                blockers_encountered:
+                  type: string
+                  maxLength: 5000
+              required:
+                - status
+      responses:
+        201:
+          description: Created iteration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueIteration"
+        404:
+          description: Issue not found
+  /issues/action-items:
+    get:
+      tags:
+        - Issues
+      summary: Get action items
+      description: Get accountability action items for the current user.
+      responses:
+        200:
+          description: Action items list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          description: UUID identifier
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        title:
+                          type: string
+                        state:
+                          type: string
+                          enum:
+                            - triage
+                            - backlog
+                            - todo
+                            - in_progress
+                            - in_review
+                            - done
+                            - cancelled
+                          description: Issue workflow state
+                        priority:
+                          type: string
+                          enum:
+                            - urgent
+                            - high
+                            - medium
+                            - low
+                            - none
+                          description: Issue priority level
+                        ticket_number:
+                          type: integer
+                        display_id:
+                          type: string
+                        due_date:
+                          type: string
+                          nullable: true
+                          pattern: ^\d{4}-\d{2}-\d{2}$
+                          description: ISO 8601 date string (YYYY-MM-DD)
+                          example: 2025-01-30
+                        is_system_generated:
+                          type: boolean
+                        accountability_type:
+                          type: string
+                          nullable: true
+                          enum:
+                            - standup
+                            - weekly_plan
+                            - weekly_review
+                            - week_start
+                            - week_issues
+                            - project_plan
+                            - project_retro
+                          description: Type of accountability task for auto-generated issues
+                        accountability_target_id:
+                          type: string
+                          nullable: true
+                          format: uuid
+                          description: UUID identifier
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        target_title:
+                          type: string
+                          nullable: true
+                        days_overdue:
+                          type: integer
+                      required:
+                        - id
+                        - title
+                        - state
+                        - priority
+                        - ticket_number
+                        - display_id
+                        - due_date
+                        - is_system_generated
+                        - accountability_type
+                        - accountability_target_id
+                        - target_title
+                        - days_overdue
+                  total:
+                    type: integer
+                required:
+                  - items
+                  - total
+  /projects:
+    get:
+      tags:
+        - Projects
+      summary: List projects
+      description: List projects with optional filtering.
+      parameters:
+        - schema:
+                      type: boolean
+                      nullable: true
+                      description: Include archived projects
+                    required: false
+                    name: archived
+                    in: query
+        - schema:
+                      type: string
+                      enum:
+                        - ice_score
+                        - updated_at
+                        - created_at
+                        - title
+                    required: false
+                    name: sort
+                    in: query
+        - schema:
+                      type: string
+                      enum:
+                        - asc
+                        - desc
+                    required: false
+                    name: dir
+                    in: query
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: false
+                    name: program_id
+                    in: query
+      responses:
+        200:
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      tags:
+        - Projects
+      summary: Create project
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProject"
+      responses:
+        201:
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        400:
+          description: Validation error
+  /projects/{id}:
+    get:
+      tags:
+        - Projects
+      summary: Get project by ID
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        404:
+          description: Project not found
+    patch:
+      tags:
+        - Projects
+      summary: Update project
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProject"
+      responses:
+        200:
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        404:
+          description: Project not found
+    delete:
+      tags:
+        - Projects
+      summary: Delete project
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        204:
+          description: Project deleted
+        404:
+          description: Project not found
+  /projects/{id}/retro:
+    get:
+      tags:
+        - Projects
+      summary: Get project retro
+      description: Get pre-filled retrospective data for a project.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Project retro data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: UUID identifier
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  title:
+                    type: string
+                  plan:
+                    type: string
+                    nullable: true
+                  plan_validated:
+                    type: boolean
+                    nullable: true
+                  monetary_impact_expected:
+                    type: string
+                    nullable: true
+                  monetary_impact_actual:
+                    type: string
+                    nullable: true
+                  success_criteria:
+                    type: array
+                    nullable: true
+                    items:
+                      type: string
+                  next_steps:
+                    type: string
+                    nullable: true
+                  content:
+                    type: object
+                    nullable: true
+                    additionalProperties:
+                      nullable: true
+                  sprints:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          description: UUID identifier
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        title:
+                          type: string
+                        sprint_number:
+                          type: integer
+                      required:
+                        - id
+                        - title
+                        - sprint_number
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          description: UUID identifier
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        title:
+                          type: string
+                        state:
+                          type: string
+                        ticket_number:
+                          type: integer
+                      required:
+                        - id
+                        - title
+                        - state
+                        - ticket_number
+                required:
+                  - id
+                  - title
+                  - plan
+                  - plan_validated
+                  - monetary_impact_expected
+                  - monetary_impact_actual
+                  - success_criteria
+                  - next_steps
+                  - content
+                  - sprints
+                  - issues
+        404:
+          description: Project not found
+    patch:
+      tags:
+        - Projects
+      summary: Update project retro
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectRetro"
+      responses:
+        200:
+          description: Updated project retro
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        404:
+          description: Project not found
+  /programs:
+    get:
+      tags:
+        - Programs
+      summary: List programs
+      parameters:
+        - schema:
+                      type: boolean
+                      nullable: true
+                      description: Include archived programs
+                    required: false
+                    name: archived
+                    in: query
+      responses:
+        200:
+          description: List of programs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Program"
+    post:
+      tags:
+        - Programs
+      summary: Create program
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProgram"
+      responses:
+        201:
+          description: Created program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Program"
+        400:
+          description: Validation error
+  /programs/{id}:
+    get:
+      tags:
+        - Programs
+      summary: Get program by ID
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Program details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Program"
+        404:
+          description: Program not found
+    patch:
+      tags:
+        - Programs
+      summary: Update program
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProgram"
+      responses:
+        200:
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Program"
+        404:
+          description: Program not found
+    delete:
+      tags:
+        - Programs
+      summary: Delete program
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        204:
+          description: Program deleted
+        404:
+          description: Program not found
+  /programs/{id}/issues:
+    get:
+      tags:
+        - Programs
+      summary: Get program issues
+      description: Get all issues associated with this program.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+        - schema:
+                      type: string
+                    required: false
+                    name: state
+                    in: query
+        - schema:
+                      type: integer
+                      nullable: true
+                    required: false
+                    name: limit
+                    in: query
+      responses:
+        200:
+          description: List of program issues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    title:
+                      type: string
+                    state:
+                      type: string
+                    priority:
+                      type: string
+                    ticket_number:
+                      type: integer
+                    display_id:
+                      type: string
+                    assignee_id:
+                      type: string
+                      nullable: true
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    assignee_name:
+                      type: string
+                      nullable: true
+                  required:
+                    - id
+                    - title
+                    - state
+                    - priority
+                    - ticket_number
+                    - display_id
+                    - assignee_id
+                    - assignee_name
+        404:
+          description: Program not found
+  /programs/{id}/projects:
+    get:
+      tags:
+        - Programs
+      summary: Get program projects
+      description: Get all projects associated with this program.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+        - schema:
+                      type: boolean
+                      nullable: true
+                    required: false
+                    name: archived
+                    in: query
+      responses:
+        200:
+          description: List of program projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    title:
+                      type: string
+                    ice_score:
+                      type: number
+                      nullable: true
+                    inferred_status:
+                      type: string
+                    color:
+                      type: string
+                    emoji:
+                      type: string
+                      nullable: true
+                    issue_count:
+                      type: integer
+                  required:
+                    - id
+                    - title
+                    - ice_score
+                    - inferred_status
+                    - color
+                    - emoji
+                    - issue_count
+        404:
+          description: Program not found
+  /programs/{id}/sprints:
+    get:
+      tags:
+        - Programs
+      summary: Get program sprints
+      description: Get all sprints associated with this program.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+        - schema:
+                      type: string
+                      enum:
+                        - planning
+                        - active
+                        - completed
+                    required: false
+                    name: status
+                    in: query
+      responses:
+        200:
+          description: List of program sprints
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    name:
+                      type: string
+                    sprint_number:
+                      type: integer
+                    status:
+                      type: string
+                    issue_count:
+                      type: integer
+                    completed_count:
+                      type: integer
+                  required:
+                    - id
+                    - name
+                    - sprint_number
+                    - status
+                    - issue_count
+                    - completed_count
+        404:
+          description: Program not found
+  /weeks:
+    get:
+      tags:
+        - Weeks
+      summary: Get active weeks
+      description: Get all sprints for the current sprint number based on workspace.sprint_start_date.
+      responses:
+        200:
+          description: Active weeks with sprint metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveWeeksResponse"
+    post:
+      tags:
+        - Weeks
+      summary: Create week
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWeek"
+      responses:
+        201:
+          description: Created week
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Week"
+        400:
+          description: Validation error
+        409:
+          description: Sprint number already exists for this program
+  /weeks/all:
+    get:
+      tags:
+        - Weeks
+      summary: List all weeks
+      description: Get all sprints with optional filtering.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: false
+                    name: program_id
+                    in: query
+        - schema:
+                      type: integer
+                      nullable: true
+                    required: false
+                    name: from_sprint
+                    in: query
+        - schema:
+                      type: integer
+                      nullable: true
+                    required: false
+                    name: to_sprint
+                    in: query
+      responses:
+        200:
+          description: List of all weeks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Week"
+  /weeks/{id}:
+    get:
+      tags:
+        - Weeks
+      summary: Get week by ID
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Week details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Week"
+        404:
+          description: Week not found
+    patch:
+      tags:
+        - Weeks
+      summary: Update week
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWeek"
+      responses:
+        200:
+          description: Updated week
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Week"
+        404:
+          description: Week not found
+    delete:
+      tags:
+        - Weeks
+      summary: Delete week
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        204:
+          description: Week deleted
+        404:
+          description: Week not found
+  /weeks/{id}/plan:
+    patch:
+      tags:
+        - Weeks
+      summary: Update week plan
+      description: Update sprint hypothesis/plan. Changes are appended to plan_history.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWeekPlan"
+      responses:
+        200:
+          description: Updated week with plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Week"
+        404:
+          description: Week not found
+  /weeks/{id}/review:
+    get:
+      tags:
+        - Weeks
+      summary: Get week review
+      description: Get pre-filled review data for a sprint including issues and outcomes.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Week review data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: UUID identifier
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  name:
+                    type: string
+                  sprint_number:
+                    type: integer
+                  plan:
+                    type: string
+                    nullable: true
+                  plan_validated:
+                    type: boolean
+                    nullable: true
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          description: UUID identifier
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        title:
+                          type: string
+                        state:
+                          type: string
+                        ticket_number:
+                          type: integer
+                        was_planned:
+                          type: boolean
+                      required:
+                        - id
+                        - title
+                        - state
+                        - ticket_number
+                        - was_planned
+                  content:
+                    type: object
+                    nullable: true
+                    additionalProperties:
+                      nullable: true
+                required:
+                  - id
+                  - name
+                  - sprint_number
+                  - plan
+                  - plan_validated
+                  - issues
+                  - content
+        404:
+          description: Week not found
+    patch:
+      tags:
+        - Weeks
+      summary: Update week review
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan_validated:
+                  type: boolean
+                  nullable: true
+                content:
+                  type: object
+                  additionalProperties:
+                    nullable: true
+      responses:
+        200:
+          description: Updated week review
+        404:
+          description: Week not found
+    post:
+      tags:
+        - Weeks
+      summary: Create week review
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plan_validated:
+                  type: boolean
+                  nullable: true
+                content:
+                  type: object
+                  additionalProperties:
+                    nullable: true
+      responses:
+        201:
+          description: Created week review
+        404:
+          description: Week not found
+  /weeks/{id}/issues:
+    get:
+      tags:
+        - Weeks
+      summary: Get sprint issues
+      description: Get all issues assigned to this sprint.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+        - schema:
+                      type: string
+                    required: false
+                    name: state
+                    in: query
+      responses:
+        200:
+          description: List of sprint issues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    title:
+                      type: string
+                    state:
+                      type: string
+                    priority:
+                      type: string
+                    ticket_number:
+                      type: integer
+                    display_id:
+                      type: string
+                    assignee_id:
+                      type: string
+                      nullable: true
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    assignee_name:
+                      type: string
+                      nullable: true
+                    was_planned:
+                      type: boolean
+                  required:
+                    - id
+                    - title
+                    - state
+                    - priority
+                    - ticket_number
+                    - display_id
+                    - assignee_id
+                    - assignee_name
+        404:
+          description: Sprint not found
+  /weeks/{id}/standups:
+    get:
+      tags:
+        - Weeks
+      summary: Get sprint standups
+      description: Get all standups posted for this sprint.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+        - schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                    required: false
+                    name: limit
+                    in: query
+      responses:
+        200:
+          description: List of standups
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    title:
+                      type: string
+                    content:
+                      type: object
+                      nullable: true
+                      additionalProperties:
+                        nullable: true
+                    author_id:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    author_name:
+                      type: string
+                    created_at:
+                      type: string
+                  required:
+                    - id
+                    - title
+                    - content
+                    - author_id
+                    - author_name
+                    - created_at
+        404:
+          description: Sprint not found
+    post:
+      tags:
+        - Weeks
+      summary: Create standup for sprint
+      description: Post a standup update for this sprint.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  maxLength: 200
+                content:
+                  type: object
+                  additionalProperties:
+                    nullable: true
+      responses:
+        201:
+          description: Created standup
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    description: UUID identifier
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  title:
+                    type: string
+                  content:
+                    type: object
+                    nullable: true
+                    additionalProperties:
+                      nullable: true
+                  author_id:
+                    type: string
+                    format: uuid
+                    description: UUID identifier
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  created_at:
+                    type: string
+                required:
+                  - id
+                  - title
+                  - content
+                  - author_id
+                  - created_at
+        404:
+          description: Sprint not found
+  /weeks/{id}/start:
+    post:
+      tags:
+        - Weeks
+      summary: Start sprint
+      description: Transition sprint from planning to active state and take a snapshot of planned issues.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Sprint started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Week"
+        400:
+          description: Sprint cannot be started (already active or completed)
+        404:
+          description: Sprint not found
+  /weeks/{id}/carryover:
+    post:
+      tags:
+        - Weeks
+      summary: Carry over incomplete issues
+      description: Move incomplete issues from this sprint to a target sprint.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target_sprint_id:
+                  type: string
+                  format: uuid
+                  description: Sprint to move incomplete issues to
+                  example: 550e8400-e29b-41d4-a716-446655440000
+                issue_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                    description: UUID identifier
+                    example: 550e8400-e29b-41d4-a716-446655440000
+                  description: Specific issues to move (defaults to all incomplete)
+              required:
+                - target_sprint_id
+      responses:
+        200:
+          description: Issues carried over
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  moved_count:
+                    type: integer
+                  moved_issues:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          description: UUID identifier
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        title:
+                          type: string
+                        ticket_number:
+                          type: integer
+                      required:
+                        - id
+                        - title
+                        - ticket_number
+                required:
+                  - moved_count
+                  - moved_issues
+        400:
+          description: Invalid target sprint or no issues to carry over
+        404:
+          description: Sprint not found
+  /weeks/{id}/approve-plan:
+    post:
+      tags:
+        - Weeks
+      summary: Approve sprint plan
+      description: Mark the sprint plan as approved by the accountable person.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Plan approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Week"
+        403:
+          description: Not authorized to approve (not the accountable person)
+        404:
+          description: Sprint not found
+  /weeks/{id}/approve-review:
+    post:
+      tags:
+        - Weeks
+      summary: Approve sprint review
+      description: Mark the sprint review as approved by the accountable person.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Review approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Week"
+        403:
+          description: Not authorized to approve (not the accountable person)
+        404:
+          description: Sprint not found
+  /weeks/{id}/scope-changes:
+    get:
+      tags:
+        - Weeks
+      summary: Get sprint scope changes
+      description: Get issues added or removed after sprint was started.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Scope changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  planned_at_start:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          description: UUID identifier
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        title:
+                          type: string
+                        state:
+                          type: string
+                        ticket_number:
+                          type: integer
+                      required:
+                        - id
+                        - title
+                        - state
+                        - ticket_number
+                  added_after_start:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          description: UUID identifier
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        title:
+                          type: string
+                        state:
+                          type: string
+                        ticket_number:
+                          type: integer
+                        added_at:
+                          type: string
+                      required:
+                        - id
+                        - title
+                        - state
+                        - ticket_number
+                        - added_at
+                  removed_after_start:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                          description: UUID identifier
+                          example: 550e8400-e29b-41d4-a716-446655440000
+                        title:
+                          type: string
+                        ticket_number:
+                          type: integer
+                        removed_at:
+                          type: string
+                      required:
+                        - id
+                        - title
+                        - ticket_number
+                        - removed_at
+                required:
+                  - planned_at_start
+                  - added_after_start
+                  - removed_after_start
+        404:
+          description: Sprint not found
+  /standups/status:
+    get:
+      tags:
+        - Standups
+      summary: Get standup due status
+      description: Check if current user needs to post a standup today.
+      responses:
+        200:
+          description: Standup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandupStatus"
+  /standups:
+    get:
+      tags:
+        - Standups
+      summary: List standups
+      description: List standups with optional filtering by sprint.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: false
+                    name: sprint_id
+                    in: query
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: false
+                    name: author_id
+                    in: query
+        - schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                    required: false
+                    name: limit
+                    in: query
       responses:
         200:
           description: List of standups
@@ -274,283 +5211,1072 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Standup"
-        404:
-          description: Sprint not found
     post:
-      summary: Create a standup entry
       tags:
-        - Sprints
         - Standups
-      parameters:
-        - in: path
-                    name: id
-                    required: true
-                    schema:
-                      type: string
-                      format: uuid
-                    description: Sprint ID
+      summary: Create standup
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                content:
-                  type: object
-                  description: TipTap editor content
-                title:
-                  type: string
-                  default: Untitled
+              $ref: "#/components/schemas/CreateStandup"
       responses:
         201:
-          description: Standup created successfully
+          description: Created standup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Standup"
+        400:
+          description: Validation error
+  /standups/{id}:
+    get:
+      tags:
+        - Standups
+      summary: Get standup by ID
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Standup details
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Standup"
         404:
-          description: Sprint not found
-  /standups/{id}:
+          description: Standup not found
     patch:
-      summary: Update a standup entry
       tags:
         - Standups
+      summary: Update standup
+      description: Only the author or an admin can update a standup.
       parameters:
-        - in: path
-                    name: id
-                    required: true
-                    schema:
+        - schema:
                       type: string
                       format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                content:
-                  type: object
-                title:
-                  type: string
+              $ref: "#/components/schemas/UpdateStandup"
       responses:
         200:
-          description: Standup updated successfully
+          description: Updated standup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Standup"
         403:
           description: Forbidden - only author or admin can update
         404:
           description: Standup not found
     delete:
-      summary: Delete a standup entry
       tags:
         - Standups
+      summary: Delete standup
+      description: Only the author or an admin can delete a standup.
       parameters:
-        - in: path
-                    name: id
-                    required: true
-                    schema:
+        - schema:
                       type: string
                       format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
       responses:
-        200:
-          description: Standup deleted successfully
+        204:
+          description: Standup deleted
         403:
           description: Forbidden - only author or admin can delete
         404:
           description: Standup not found
-  /sprints/{id}/review:
+  /team/grid:
     get:
-      summary: Get sprint review (pre-filled draft or existing)
-      description: Returns existing review if one exists, otherwise returns pre-filled draft with is_draft=true containing issues summary and hypothesis from sprint
       tags:
-        - Sprints
-        - Sprint Reviews
+        - Team
+      summary: Get team grid data
+      description: Get team members with their sprint associations for the allocation grid.
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Sprint ID
+        - schema:
+                      type: integer
+                      nullable: true
+                      description: "Start of sprint range (default: current - 7)"
+                    required: false
+                    name: fromSprint
+                    in: query
+        - schema:
+                      type: integer
+                      nullable: true
+                      description: "End of sprint range (default: current + 7)"
+                    required: false
+                    name: toSprint
+                    in: query
+        - schema:
+                      type: boolean
+                      nullable: true
+                      description: Include archived team members
+                    required: false
+                    name: includeArchived
+                    in: query
       responses:
         200:
-          description: Sprint review (draft or existing)
+          description: Team grid data
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/SprintReview"
-                  - type: object
-                    properties:
-                      is_draft:
-                        type: boolean
-                        description: True if this is a pre-filled draft, false if saved
-        404:
-          description: Sprint not found
-    post:
-      summary: Create sprint review
+                $ref: "#/components/schemas/TeamGridResponse"
+  /team:
+    get:
       tags:
-        - Sprints
-        - Sprint Reviews
+        - Team
+      summary: List team members
+      description: List all person documents in the workspace.
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Sprint ID
+        - schema:
+                      type: boolean
+                      nullable: true
+                    required: false
+                    name: includeArchived
+                    in: query
+      responses:
+        200:
+          description: List of team members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Person"
+  /team/{id}:
+    get:
+      tags:
+        - Team
+      summary: Get team member
+      description: Get a specific person document by ID.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Person details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Person"
+        404:
+          description: Person not found
+    patch:
+      tags:
+        - Team
+      summary: Update team member
+      description: Update a person document (name, role, capacity, etc.).
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               type: object
               properties:
-                content:
-                  type: object
-                  description: TipTap editor content
-                hypothesis_validated:
-                  type: boolean
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                role:
+                  type: string
+                  maxLength: 100
+                capacity_hours:
+                  type: number
                   nullable: true
+                  minimum: 0
+                  exclusiveMinimum: true
+      responses:
+        200:
+          description: Updated person
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Person"
+        404:
+          description: Person not found
+  /team/{id}/archive:
+    post:
+      tags:
+        - Team
+      summary: Archive team member
+      description: Archive a person document (soft delete).
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Person archived
+        404:
+          description: Person not found
+  /team/{id}/restore:
+    post:
+      tags:
+        - Team
+      summary: Restore team member
+      description: Restore an archived person document.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Person restored
+        404:
+          description: Person not found
+  /workspaces:
+    get:
+      tags:
+        - Workspaces
+      summary: List workspaces
+      description: List all workspaces the current user has access to.
+      responses:
+        200:
+          description: List of workspaces
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceListResponse"
+    post:
+      tags:
+        - Workspaces
+      summary: Create workspace
+      description: Create a new workspace. Requires admin privileges.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkspace"
       responses:
         201:
-          description: Sprint review created
+          description: Created workspace
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SprintReview"
-        404:
-          description: Sprint not found
-        409:
-          description: Review already exists for this sprint
-    patch:
-      summary: Update sprint review
-      tags:
-        - Sprints
-        - Sprint Reviews
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Sprint ID
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                content:
-                  type: object
-                hypothesis_validated:
-                  type: boolean
-                  nullable: true
-      responses:
-        200:
-          description: Sprint review updated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SprintReview"
+                $ref: "#/components/schemas/Workspace"
+        400:
+          description: Validation error
         403:
-          description: Forbidden - only owner can update
-        404:
-          description: Sprint or review not found
-  /projects/{id}/retro:
+          description: Insufficient privileges
+  /workspaces/current:
     get:
-      summary: Get project retro (pre-filled draft or existing)
-      description: Returns existing retro data if hypothesis_validated is set, otherwise returns pre-filled draft with is_draft=true containing ICE scores, sprints list, and issues summary
       tags:
-        - Projects
-        - Project Retros
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Project ID
+        - Workspaces
+      summary: Get current workspace
+      description: Get the workspace currently selected in the session.
       responses:
         200:
-          description: Project retro (draft or existing)
+          description: Current workspace
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProjectRetro"
-        404:
-          description: Project not found
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    properties:
+                      workspace:
+                        $ref: "#/components/schemas/Workspace"
+                    required:
+                      - workspace
+                required:
+                  - success
+                  - data
+        400:
+          description: No workspace selected
+  /workspaces/{id}/switch:
     post:
-      summary: Create project retro
-      description: Stores retro data in project properties (hypothesis_validated, monetary_impact_actual, success_criteria, next_steps)
       tags:
-        - Projects
-        - Project Retros
+        - Workspaces
+      summary: Switch workspace
+      description: Switch to a different workspace. Updates the session.
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Project ID
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Workspace switched
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                  data:
+                    type: object
+                    properties:
+                      workspace:
+                        $ref: "#/components/schemas/Workspace"
+                    required:
+                      - workspace
+                required:
+                  - success
+                  - data
+        403:
+          description: No access to workspace
+        404:
+          description: Workspace not found
+  /workspaces/{id}:
+    patch:
+      tags:
+        - Workspaces
+      summary: Update workspace
+      description: Update workspace settings. Requires workspace admin role.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProjectRetroInput"
+              $ref: "#/components/schemas/UpdateWorkspace"
+      responses:
+        200:
+          description: Updated workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workspace"
+        403:
+          description: Not a workspace admin
+        404:
+          description: Workspace not found
+  /search/mentions:
+    get:
+      tags:
+        - Search
+      summary: Search for mentions
+      description: Search for people and documents to mention. Used by the @ mention autocomplete.
+      parameters:
+        - schema:
+                      type: string
+                      description: Search query
+                      example: john
+                    required: true
+                    name: q
+                    in: query
+      responses:
+        200:
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MentionSearchResult"
+  /search/learnings:
+    get:
+      tags:
+        - Search
+      summary: Search learnings
+      description: Search wiki documents for learnings. Filters by program optionally.
+      parameters:
+        - schema:
+                      type: string
+                      description: Search query
+                    required: true
+                    name: q
+                    in: query
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: false
+                    name: program_id
+                    in: query
+        - schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 50
+                    required: false
+                    name: limit
+                    in: query
+      responses:
+        200:
+          description: Learning search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LearningSearchResult"
+  /search/documents:
+    get:
+      tags:
+        - Search
+      summary: Search documents
+      description: Full-text search across all document types.
+      parameters:
+        - schema:
+                      type: string
+                    required: true
+                    name: q
+                    in: query
+        - schema:
+                      type: string
+                      enum:
+                        - wiki
+                        - issue
+                        - program
+                        - project
+                        - sprint
+                        - person
+                        - weekly_plan
+                        - weekly_retro
+                        - standup
+                        - weekly_review
+                      description: Filter by document type
+                    required: false
+                    name: type
+                    in: query
+        - schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                    required: false
+                    name: limit
+                    in: query
+      responses:
+        200:
+          description: Document search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    title:
+                      type: string
+                    document_type:
+                      type: string
+                      enum:
+                        - wiki
+                        - issue
+                        - program
+                        - project
+                        - sprint
+                        - person
+                        - weekly_plan
+                        - weekly_retro
+                        - standup
+                        - weekly_review
+                      description: Type of document
+                    content_preview:
+                      type: string
+                      nullable: true
+                    updated_at:
+                      type: string
+                  required:
+                    - id
+                    - title
+                    - document_type
+                    - content_preview
+                    - updated_at
+  /files/upload:
+    post:
+      tags:
+        - Files
+      summary: Get presigned upload URL
+      description: Request a presigned URL to upload a file. Upload the file via PUT to the returned URL.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadRequest"
+      responses:
+        200:
+          description: Upload URL and file metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+        400:
+          description: Invalid request or blocked file type
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  blockedExtensions:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - error
+  /files/{fileId}/attach:
+    post:
+      tags:
+        - Files
+      summary: Attach file to document
+      description: Associate an uploaded file with a document.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: fileId
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                documentId:
+                  type: string
+                  format: uuid
+                  description: UUID identifier
+                  example: 550e8400-e29b-41d4-a716-446655440000
+              required:
+                - documentId
+      responses:
+        200:
+          description: File attached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMetadata"
+        404:
+          description: File or document not found
+  /files/{fileId}:
+    get:
+      tags:
+        - Files
+      summary: Get file metadata
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: fileId
+                    in: path
+      responses:
+        200:
+          description: File metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileMetadata"
+        404:
+          description: File not found
+    delete:
+      tags:
+        - Files
+      summary: Delete file
+      description: Delete a file. Only the uploader or an admin can delete.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: fileId
+                    in: path
+      responses:
+        204:
+          description: File deleted
+        403:
+          description: Forbidden - not the uploader or admin
+        404:
+          description: File not found
+  /activity/{entityType}/{entityId}:
+    get:
+      tags:
+        - Activity
+      summary: Get entity activity
+      description: Get 30 days of activity counts for an entity and its children.
+      parameters:
+        - schema:
+                      type: string
+                      enum:
+                        - program
+                        - project
+                        - sprint
+                      description: Type of entity to get activity for
+                    required: true
+                    name: entityType
+                    in: path
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: entityId
+                    in: path
+      responses:
+        200:
+          description: Activity data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivityResponse"
+        400:
+          description: Invalid entity type
+        404:
+          description: Entity not found
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login
+      description: Authenticate with email and password. Sets a session cookie on success.
+      security:
+[]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        200:
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        401:
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    enum:
+                      - Invalid credentials
+                required:
+                  - error
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout
+      description: End the current session and clear the session cookie.
+      responses:
+        200:
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                required:
+                  - success
+  /auth/session:
+    get:
+      tags:
+        - Authentication
+      summary: Get current session
+      description: Get information about the current authenticated user and workspace.
+      responses:
+        200:
+          description: Session information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        401:
+          description: Not authenticated
+  /api-tokens:
+    get:
+      tags:
+        - API Tokens
+      summary: List API tokens
+      description: List all API tokens for the current user.
+      responses:
+        200:
+          description: List of API tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/APIToken"
+    post:
+      tags:
+        - API Tokens
+      summary: Create API token
+      description: Create a new API token. The full token is only returned once at creation.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAPIToken"
       responses:
         201:
-          description: Project retro created
+          description: Created API token
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProjectRetro"
-        404:
-          description: Project not found
-    patch:
-      summary: Update project retro
+                $ref: "#/components/schemas/CreateAPITokenResponse"
+        400:
+          description: Validation error
+  /api-tokens/{id}:
+    delete:
       tags:
-        - Projects
-        - Project Retros
+        - API Tokens
+      summary: Delete API token
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: Project ID
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        204:
+          description: Token deleted
+        404:
+          description: Token not found
+  /documents/{id}/backlinks:
+    get:
+      tags:
+        - Documents
+      summary: Get document backlinks
+      description: Get all documents that link to this document.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: List of backlinks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Backlink"
+        404:
+          description: Document not found
+  /documents/{id}/links:
+    post:
+      tags:
+        - Documents
+      summary: Update document links
+      description: Update the links from this document to other documents.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
       requestBody:
-        required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProjectRetroInput"
+              type: object
+              properties:
+                target_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                    description: UUID identifier
+                    example: 550e8400-e29b-41d4-a716-446655440000
+              required:
+                - target_ids
       responses:
         200:
-          description: Project retro updated
+          description: Links updated
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ProjectRetro"
+                type: object
+                properties:
+                  added:
+                    type: integer
+                  removed:
+                    type: integer
+                required:
+                  - added
+                  - removed
         404:
-          description: Project not found or user not in workspace
-tags:
-  - name: Sprints
-    description: Sprint management
-  - name: Standups
-    description: Daily standup entries
-  - name: Sprint Reviews
-    description: Sprint review documents
-  - name: Projects
-    description: Project management
-  - name: Project Retros
-    description: Project retrospectives
+          description: Document not found
+  /documents/{id}/associations:
+    get:
+      tags:
+        - Documents
+      summary: Get document associations
+      description: Get associations (belongs_to relationships) for this document.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: List of associations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Association"
+        404:
+          description: Document not found
+    post:
+      tags:
+        - Documents
+      summary: Add document association
+      description: Add an association to a program, project, sprint, or parent document.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                related_id:
+                  type: string
+                  format: uuid
+                  description: UUID identifier
+                  example: 550e8400-e29b-41d4-a716-446655440000
+                relationship_type:
+                  type: string
+                  enum:
+                    - program
+                    - project
+                    - sprint
+                    - parent
+                  description: Type of document association
+              required:
+                - related_id
+                - relationship_type
+      responses:
+        201:
+          description: Association created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Association"
+        400:
+          description: Invalid association
+        404:
+          description: Document not found
+        409:
+          description: Association already exists
+  /documents/{id}/associations/{relatedId}:
+    delete:
+      tags:
+        - Documents
+      summary: Remove document association
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: relatedId
+                    in: path
+      responses:
+        204:
+          description: Association removed
+        404:
+          description: Document or association not found
+  /documents/{id}/reverse-associations:
+    get:
+      tags:
+        - Documents
+      summary: Get reverse associations
+      description: Get documents that are associated with this document.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: List of reverse associations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Association"
+        404:
+          description: Document not found
+  /claude/context:
+    get:
+      tags:
+        - Claude
+      summary: Get context for Claude skills
+      description: Returns comprehensive context for Claude to ask intelligent questions during standups, reviews, and retros.
+      parameters:
+        - schema:
+                      type: string
+                      enum:
+                        - standup
+                        - review
+                        - retro
+                      description: Type of context to fetch
+                    required: true
+                    name: context_type
+                    in: query
+        - schema:
+                      type: string
+                      format: uuid
+                      description: Required for standup and review context
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: false
+                    name: sprint_id
+                    in: query
+        - schema:
+                      type: string
+                      format: uuid
+                      description: Required for retro context
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: false
+                    name: project_id
+                    in: query
+      responses:
+        200:
+          description: Context data (shape depends on context_type)
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/StandupContext"
+                  - $ref: "#/components/schemas/ReviewContext"
+                  - $ref: "#/components/schemas/RetroContext"
+        400:
+          description: Missing required parameter for context_type
+  /dashboard/my-work:
+    get:
+      tags:
+        - Dashboard
+      summary: Get my work items
+      description: "Returns work items for the current user organized by urgency: issues assigned, projects owned, and active sprints."
+      responses:
+        200:
+          description: Work items organized by urgency
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyWorkResponse"
+  /accountability/action-items:
+    get:
+      tags:
+        - Accountability
+      summary: Get inferred action items
+      description: Returns action items computed dynamically from project/sprint state. No issues are created; items are inferred on each request.
+      responses:
+        200:
+          description: Inferred action items sorted by urgency
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountabilityActionItemsResponse"
