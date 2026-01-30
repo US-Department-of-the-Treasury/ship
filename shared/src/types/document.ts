@@ -170,8 +170,23 @@ export interface WikiProperties {
   maintainer_id?: string | null;
   [key: string]: unknown;
 }
-export type WeeklyPlanProperties = Record<string, unknown>;
-export type WeeklyRetroProperties = Record<string, unknown>;
+// Weekly plan properties - per-person accountability document
+export interface WeeklyPlanProperties {
+  person_id: string;       // REQUIRED - person document ID who wrote this plan
+  project_id: string;      // REQUIRED - project this plan is for
+  week_number: number;     // REQUIRED - week number (same as sprint_number concept)
+  submitted_at?: string | null;  // ISO timestamp when first saved with content
+  [key: string]: unknown;
+}
+
+// Weekly retro properties - per-person retrospective document
+export interface WeeklyRetroProperties {
+  person_id: string;       // REQUIRED - person document ID who wrote this retro
+  project_id: string;      // REQUIRED - project this retro is for
+  week_number: number;     // REQUIRED - week number (same as sprint_number concept)
+  submitted_at?: string | null;  // ISO timestamp when first saved with content
+  [key: string]: unknown;
+}
 
 // Standup properties - comment-like entries on sprints
 export interface StandupProperties {
