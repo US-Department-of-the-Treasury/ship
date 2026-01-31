@@ -5,6 +5,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { handleVisibilityChange, handleDocumentConversion, invalidateDocumentCache, broadcastToUser } from '../collaboration/index.js';
 import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, extractVisionFromContent, extractGoalsFromContent, checkDocumentCompleteness } from '../utils/extractHypothesis.js';
 import { loadContentFromYjsState } from '../utils/yjsConverter.js';
+import { logDocumentView, logDocumentViewDenied, logDocumentCreate, logDocumentUpdate, logDocumentDelete } from '../services/audit.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -363,7 +364,7 @@ router.get('/:id/content', authMiddleware, async (req: Request, res: Response) =
 
     // Verify document exists and user can access it
     const result = await pool.query(
-      `SELECT d.id, d.content, d.yjs_state, d.title,
+      `SELECT d.id, d.content, d.yjs_state, d.title, d.document_type,
               (d.visibility = 'workspace' OR d.created_by = $2 OR
                (SELECT role FROM workspace_memberships WHERE workspace_id = $3 AND user_id = $2) = 'admin') as can_access
        FROM documents d
@@ -372,6 +373,14 @@ router.get('/:id/content', authMiddleware, async (req: Request, res: Response) =
     );
 
     if (result.rows.length === 0) {
+      // Log denied access attempt (not_found or wrong_workspace)
+      await logDocumentViewDenied({
+        workspaceId,
+        actorUserId: userId,
+        documentId: id,
+        reason: 'not_found',
+        req,
+      });
       res.status(404).json({ error: 'Document not found' });
       return;
     }
@@ -379,9 +388,27 @@ router.get('/:id/content', authMiddleware, async (req: Request, res: Response) =
     const doc = result.rows[0];
 
     if (!doc.can_access) {
+      // Log denied access attempt (private document)
+      await logDocumentViewDenied({
+        workspaceId,
+        actorUserId: userId,
+        documentId: id,
+        reason: 'private',
+        req,
+      });
       res.status(404).json({ error: 'Document not found' });
       return;
     }
+
+    // Log document view (with deduplication)
+    await logDocumentView({
+      workspaceId,
+      actorUserId: userId,
+      documentId: id,
+      documentType: doc.document_type || 'unknown',
+      accessMethod: 'api',
+      req,
+    });
 
     let content = doc.content;
 
@@ -555,6 +582,18 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
         [newDoc.id, program_id]
       );
     }
+
+    // Log document creation (critical - must succeed for transaction to commit)
+    await logDocumentCreate({
+      workspaceId: req.workspaceId!,
+      actorUserId: req.userId!,
+      documentId: newDoc.id,
+      documentType: document_type,
+      title,
+      req,
+      critical: true,
+      client,
+    });
 
     await client.query('COMMIT');
 
@@ -900,6 +939,65 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       [...values, id, workspaceId]
     );
 
+    // Track changed fields for audit logging
+    const changedFields: string[] = [];
+    const changes: Record<string, { old: unknown; new: unknown }> = {};
+    const updatedDoc = result.rows[0];
+
+    // Compare key fields
+    if (data.title !== undefined && data.title !== existing.title) {
+      changedFields.push('title');
+      changes['title'] = { old: existing.title, new: data.title };
+    }
+    if (data.visibility !== undefined && data.visibility !== existing.visibility) {
+      changedFields.push('visibility');
+      changes['visibility'] = { old: existing.visibility, new: data.visibility };
+    }
+    if (data.parent_id !== undefined && data.parent_id !== existing.parent_id) {
+      changedFields.push('parent_id');
+      changes['parent_id'] = { old: existing.parent_id, new: data.parent_id };
+    }
+    if (data.document_type !== undefined && data.document_type !== existing.document_type) {
+      changedFields.push('document_type');
+      changes['document_type'] = { old: existing.document_type, new: data.document_type };
+    }
+    if (contentUpdated) {
+      changedFields.push('content');
+      // Don't log actual content in changes, just that it changed
+    }
+    // Track property changes
+    if (hasTopLevelProps) {
+      const existingProps = existing.properties || {};
+      for (const [key, newValue] of Object.entries(topLevelProps)) {
+        const oldValue = existingProps[key];
+        if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+          changedFields.push(`properties.${key}`);
+          changes[`properties.${key}`] = { old: oldValue, new: newValue };
+        }
+      }
+    }
+    if (hasBelongsToUpdate) {
+      changedFields.push('belongs_to');
+      // Don't log full belongs_to changes, just that associations changed
+    }
+    if (hasSprintIdUpdate) {
+      changedFields.push('sprint_id');
+    }
+    if (hasProgramIdUpdate) {
+      changedFields.push('program_id');
+    }
+
+    // Log document update (critical - must succeed or request fails)
+    await logDocumentUpdate({
+      workspaceId,
+      actorUserId: userId,
+      documentId: id,
+      changedFields,
+      changes,
+      req,
+      critical: true,
+    });
+
     // Invalidate collaboration cache when content is updated via API
     if (contentUpdated) {
       invalidateDocumentCache(id);
@@ -926,7 +1024,6 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     // Flatten properties for backwards compatibility (match GET endpoint format)
-    const updatedDoc = result.rows[0];
     const props = updatedDoc.properties || {};
 
     // Get owner details for projects (owner_id is a user_id, lookup person document by user_id)
@@ -975,38 +1072,60 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
 // Delete document
 router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
+  const id = String(req.params.id);
+  const userId = String(req.userId);
+  const workspaceId = String(req.workspaceId);
+
+  // Check if user can access the document (outside transaction)
+  const { canAccess, doc } = await canAccessDocument(id, userId, workspaceId);
+
+  if (!doc) {
+    res.status(404).json({ error: 'Document not found' });
+    return;
+  }
+
+  if (!canAccess) {
+    res.status(404).json({ error: 'Document not found' });
+    return;
+  }
+
+  const client = await pool.connect();
   try {
-    const id = String(req.params.id);
-    const userId = String(req.userId);
-    const workspaceId = String(req.workspaceId);
+    await client.query('BEGIN');
 
-    // Check if user can access the document
-    const { canAccess, doc } = await canAccessDocument(id, userId, workspaceId);
+    // Log document deletion BEFORE the actual delete (to capture the snapshot)
+    // Critical: must succeed for transaction to commit
+    await logDocumentDelete({
+      workspaceId,
+      actorUserId: userId,
+      documentId: id,
+      documentType: doc.document_type,
+      title: doc.title,
+      properties: doc.properties || {},
+      req,
+      critical: true,
+      client,
+    });
 
-    if (!doc) {
-      res.status(404).json({ error: 'Document not found' });
-      return;
-    }
-
-    if (!canAccess) {
-      res.status(404).json({ error: 'Document not found' });
-      return;
-    }
-
-    const result = await pool.query(
+    const result = await client.query(
       'DELETE FROM documents WHERE id = $1 AND workspace_id = $2 RETURNING id',
       [id, workspaceId]
     );
 
     if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       res.status(404).json({ error: 'Document not found' });
       return;
     }
 
+    await client.query('COMMIT');
     res.status(204).send();
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Delete document error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 

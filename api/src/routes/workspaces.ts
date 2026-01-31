@@ -1018,23 +1018,70 @@ router.delete('/:id/invites/:inviteId', authMiddleware, workspaceAdminMiddleware
 });
 
 // GET /api/workspaces/:id/audit-logs - Get workspace audit logs (admin only)
+// Supports filtering by: action, resource_type, resource_id, actor_user_id, start_date, end_date
 router.get('/:id/audit-logs', authMiddleware, workspaceAdminMiddleware, async (req: Request, res: Response): Promise<void> => {
   const workspaceId = String(req.params.id);
-  const { limit = '100', offset = '0' } = req.query;
+  const {
+    limit: rawLimit = '100',
+    offset: rawOffset = '0',
+    action,
+    resource_type,
+    resource_id,
+    actor_user_id,
+    start_date,
+    end_date,
+  } = req.query;
+
+  // Parse and enforce limits
+  const limit = Math.min(Math.max(1, parseInt(rawLimit as string) || 100), 1000);
+  const offset = Math.max(0, parseInt(rawOffset as string) || 0);
 
   try {
+    // Build dynamic WHERE clause with parameterized queries
+    const conditions: string[] = ['al.workspace_id = $1'];
+    const params: (string | number)[] = [workspaceId];
+    let paramIndex = 2;
+
+    if (action) {
+      conditions.push(`al.action = $${paramIndex++}`);
+      params.push(action as string);
+    }
+    if (resource_type) {
+      conditions.push(`al.resource_type = $${paramIndex++}`);
+      params.push(resource_type as string);
+    }
+    if (resource_id) {
+      conditions.push(`al.resource_id = $${paramIndex++}`);
+      params.push(resource_id as string);
+    }
+    if (actor_user_id) {
+      conditions.push(`al.actor_user_id = $${paramIndex++}`);
+      params.push(actor_user_id as string);
+    }
+    if (start_date) {
+      conditions.push(`al.created_at >= $${paramIndex++}`);
+      params.push(start_date as string);
+    }
+    if (end_date) {
+      conditions.push(`al.created_at <= $${paramIndex++}`);
+      params.push(end_date as string);
+    }
+
+    // Add pagination params
+    params.push(limit, offset);
+
     const result = await pool.query(
       `SELECT al.id, al.action, al.resource_type, al.resource_id, al.details,
-              al.ip_address, al.user_agent, al.created_at,
+              al.ip_address, al.user_agent, al.created_at, al.record_hash,
               u.email as actor_email, u.name as actor_name,
               iu.email as impersonating_email
        FROM audit_logs al
-       JOIN users u ON al.actor_user_id = u.id
+       LEFT JOIN users u ON al.actor_user_id = u.id
        LEFT JOIN users iu ON al.impersonating_user_id = iu.id
-       WHERE al.workspace_id = $1
+       WHERE ${conditions.join(' AND ')}
        ORDER BY al.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [workspaceId, parseInt(limit as string), parseInt(offset as string)]
+       LIMIT $${paramIndex++} OFFSET $${paramIndex}`,
+      params
     );
 
     const logs = result.rows.map(row => ({
@@ -1046,6 +1093,7 @@ router.get('/:id/audit-logs', authMiddleware, workspaceAdminMiddleware, async (r
       ipAddress: row.ip_address,
       userAgent: row.user_agent,
       createdAt: row.created_at,
+      recordHash: row.record_hash,
       actorEmail: row.actor_email,
       actorName: row.actor_name,
       impersonatingEmail: row.impersonating_email,

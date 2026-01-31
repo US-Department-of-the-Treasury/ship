@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import session from 'express-session';
 import { csrfSync } from 'csrf-sync';
 import rateLimit from 'express-rate-limit';
+import { pool } from './db/client.js';
 import authRoutes from './routes/auth.js';
 import documentsRoutes from './routes/documents.js';
 import issuesRoutes from './routes/issues.js';
@@ -30,8 +31,10 @@ import activityRoutes from './routes/activity.js';
 import dashboardRoutes from './routes/dashboard.js';
 import associationsRoutes from './routes/associations.js';
 import accountabilityRoutes from './routes/accountability.js';
+import auditRoutes from './routes/audit.js';
 import { setupSwagger } from './swagger.js';
 import { initializeCAIA } from './services/caia.js';
+import { getCloudWatchAuditStatus } from './services/audit.js';
 
 // Validate SESSION_SECRET in production
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -158,8 +161,44 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   });
 
   // Health check (no CSRF needed)
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok' });
+  app.get('/health', async (_req, res) => {
+    let auditStatus = 'ok';
+    let auditError: string | undefined;
+    let auditLogsSizeBytes: number | undefined;
+    let auditLogsSizeWarning: string | undefined;
+
+    // Configurable threshold (default 1GB)
+    const AUDIT_SIZE_WARNING_THRESHOLD = parseInt(process.env.AUDIT_SIZE_WARNING_BYTES || '1073741824');
+
+    try {
+      // Verify audit_logs table is accessible and triggers are functional
+      await pool.query('SELECT 1 FROM audit_logs LIMIT 1');
+
+      // Get audit_logs table size (AU-4 compliance - storage monitoring)
+      const sizeResult = await pool.query("SELECT pg_total_relation_size('audit_logs') as size");
+      auditLogsSizeBytes = parseInt(sizeResult.rows[0].size);
+
+      if (auditLogsSizeBytes > AUDIT_SIZE_WARNING_THRESHOLD) {
+        auditLogsSizeWarning = `Audit logs table size (${Math.round(auditLogsSizeBytes / 1024 / 1024)}MB) exceeds threshold (${Math.round(AUDIT_SIZE_WARNING_THRESHOLD / 1024 / 1024)}MB)`;
+      }
+    } catch (error) {
+      auditStatus = 'error';
+      auditError = error instanceof Error ? error.message : 'Unknown error';
+    }
+
+    // Check CloudWatch audit status
+    const cloudWatchStatus = await getCloudWatchAuditStatus();
+
+    const isHealthy = auditStatus === 'ok';
+    res.status(isHealthy ? 200 : 503).json({
+      status: isHealthy ? 'ok' : 'unhealthy',
+      audit_status: auditStatus,
+      ...(auditError && { audit_error: auditError }),
+      ...(auditLogsSizeBytes !== undefined && { audit_logs_size_bytes: auditLogsSizeBytes }),
+      ...(auditLogsSizeWarning && { audit_logs_size_warning: auditLogsSizeWarning }),
+      cloudwatch_audit_status: cloudWatchStatus.status,
+      ...(cloudWatchStatus.error && { cloudwatch_audit_error: cloudWatchStatus.error }),
+    });
   });
 
   // API documentation (no auth needed)
@@ -206,6 +245,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // Accountability routes - inference-based action items (read-only GET)
   app.use('/api/accountability', accountabilityRoutes);
+
+  // Audit routes - cross-workspace audit logs (super-admin only)
+  app.use('/api/audit-logs', auditRoutes);
 
   // CAIA auth routes - no CSRF protection (OAuth flow with external callback)
   // This is the single identity provider for PIV authentication

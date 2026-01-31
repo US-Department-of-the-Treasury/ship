@@ -294,6 +294,13 @@ resource "aws_elastic_beanstalk_environment" "api" {
     value     = var.aws_region
   }
 
+  # CloudWatch Audit Log Group (for FedRAMP AU-9 compliance)
+  setting {
+    namespace = "aws:elasticbeanstalk:application:environment"
+    name      = "CLOUDWATCH_AUDIT_LOG_GROUP"
+    value     = aws_cloudwatch_log_group.audit_logs.name
+  }
+
   # Health Check Path
   setting {
     namespace = "aws:elasticbeanstalk:environment:process:default"

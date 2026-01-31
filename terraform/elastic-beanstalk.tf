@@ -243,6 +243,13 @@ resource "aws_elastic_beanstalk_environment" "api" {
     value     = var.aws_region
   }
 
+  # CloudWatch Audit Log Group (for FedRAMP AU-9 compliance)
+  setting {
+    namespace = "aws:elasticbeanstalk:application:environment"
+    name      = "CLOUDWATCH_AUDIT_LOG_GROUP"
+    value     = aws_cloudwatch_log_group.audit_logs.name
+  }
+
   # Health Check Path
   setting {
     namespace = "aws:elasticbeanstalk:environment:process:default"
@@ -267,6 +274,50 @@ resource "aws_elastic_beanstalk_environment" "api" {
   tags = {
     Name = "${var.project_name}-api-prod"
   }
+}
+
+# CloudWatch Log Group for FedRAMP AU-9 Compliant Audit Logs
+# This provides true immutability - the app can write but IAM prevents delete/modify
+resource "aws_cloudwatch_log_group" "audit_logs" {
+  name              = "/ship/audit-logs/prod"
+  retention_in_days = 1096  # 3 years (minimum that exceeds 30-month FedRAMP requirement)
+
+  tags = {
+    Name        = "${var.project_name}-audit-logs-prod"
+    Environment = "prod"
+    Purpose     = "FedRAMP AU-9 Compliant Audit Trail"
+  }
+}
+
+# IAM Policy for write-only CloudWatch access (AU-9 compliance)
+# App can ONLY write logs - no read, no delete, no modify
+resource "aws_iam_role_policy" "audit_logs_write_only" {
+  name = "audit-logs-write-only"
+  role = aws_iam_role.eb_instance.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowCreateLogStream"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogStream"
+        ]
+        Resource = "${aws_cloudwatch_log_group.audit_logs.arn}:*"
+      },
+      {
+        Sid    = "AllowPutLogEvents"
+        Effect = "Allow"
+        Action = [
+          "logs:PutLogEvents"
+        ]
+        Resource = "${aws_cloudwatch_log_group.audit_logs.arn}:*"
+      }
+      # NOTE: Deliberately NO CreateLogGroup, DeleteLogGroup, DeleteLogStream, DescribeLogStreams
+      # This ensures immutability - once written, logs cannot be modified or deleted by the app
+    ]
+  })
 }
 
 output "eb_application_name" {
@@ -317,4 +368,14 @@ output "eb_instance_security_group" {
 output "eb_alb_security_group" {
   description = "Security group for ALB"
   value       = aws_security_group.alb.id
+}
+
+output "audit_log_group_name" {
+  description = "CloudWatch Log Group name for audit logs (FedRAMP AU-9)"
+  value       = aws_cloudwatch_log_group.audit_logs.name
+}
+
+output "audit_log_group_arn" {
+  description = "CloudWatch Log Group ARN for audit logs"
+  value       = aws_cloudwatch_log_group.audit_logs.arn
 }

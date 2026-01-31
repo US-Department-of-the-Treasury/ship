@@ -122,8 +122,13 @@ describe('Document Visibility', () => {
     await pool.query('DELETE FROM sessions WHERE user_id IN ($1, $2, $3)', [user1Id, user2Id, adminId]);
     await pool.query('DELETE FROM documents WHERE workspace_id = $1', [testWorkspaceId]);
     await pool.query('DELETE FROM workspace_memberships WHERE workspace_id = $1', [testWorkspaceId]);
+    // Disable audit triggers to allow user cleanup (FK ON DELETE SET NULL would trigger update)
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_update');
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_delete');
     await pool.query('DELETE FROM users WHERE id IN ($1, $2, $3)', [user1Id, user2Id, adminId]);
     await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId]);
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_update');
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_delete');
   });
 
   // Clean up documents before each test
