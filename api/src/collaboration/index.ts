@@ -9,6 +9,7 @@ import { pool } from '../db/client.js';
 import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, extractVisionFromContent, extractGoalsFromContent } from '../utils/extractHypothesis.js';
 import { SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS } from '@ship/shared';
 import cookie from 'cookie';
+import { logDocumentView, logDocumentViewDenied, logDocumentContentSave } from '../services/audit.js';
 
 const messageSync = 0;
 const messageAwareness = 1;
@@ -96,6 +97,10 @@ const eventConns = new Map<WebSocket, { userId: string; workspaceId: string }>()
 // Debounce persistence (save every 2 seconds after changes)
 const pendingSaves = new Map<string, NodeJS.Timeout>();
 
+// Track last editor for each document (for audit logging)
+// Stores { userId, workspaceId } of the last user who sent sync data
+const lastEditors = new Map<string, { userId: string; workspaceId: string }>();
+
 // Extract document ID from room name (format: "type:uuid")
 // All document types (doc, issue, program, sprint) map to the unified documents table
 function parseDocId(docName: string): string {
@@ -142,6 +147,18 @@ async function persistDocument(docName: string, doc: Y.Doc) {
       `UPDATE documents SET yjs_state = $1, content = $2, properties = $3, updated_at = now() WHERE id = $4`,
       [Buffer.from(state), JSON.stringify(content), JSON.stringify(updatedProps), docId]
     );
+
+    // Log content save for audit trail (only log content length, NOT actual content)
+    const lastEditor = lastEditors.get(docName);
+    if (lastEditor) {
+      const contentLength = JSON.stringify(content).length;
+      await logDocumentContentSave({
+        workspaceId: lastEditor.workspaceId,
+        actorUserId: lastEditor.userId,
+        documentId: docId,
+        contentLength,
+      });
+    }
   } catch (err) {
     console.error('Failed to persist document:', err);
   }
@@ -438,6 +455,12 @@ function handleMessage(ws: WebSocket, message: Uint8Array, docName: string, doc:
       // Pass ws as origin so broadcast excludes the sender
       syncProtocol.readSyncMessage(decoder, encoder, doc, ws);
 
+      // Track this user as the last editor for audit logging
+      const connInfo = conns.get(ws);
+      if (connInfo) {
+        lastEditors.set(docName, { userId: connInfo.userId, workspaceId: connInfo.workspaceId });
+      }
+
       if (encoding.length(encoder) > 1) {
         ws.send(encoding.toUint8Array(encoder));
       }
@@ -516,13 +539,34 @@ async function validateWebSocketSession(request: IncomingMessage): Promise<{ use
   }
 }
 
+interface AccessCheckResult {
+  canAccess: boolean;
+  denialReason?: 'not_found' | 'private' | 'wrong_workspace';
+}
+
 // Check if user can access a document for collaboration (visibility check)
 async function canAccessDocumentForCollab(
   docId: string,
   userId: string,
   workspaceId: string
-): Promise<boolean> {
+): Promise<AccessCheckResult> {
   try {
+    // First check if document exists at all (in any workspace)
+    const existsResult = await pool.query(
+      `SELECT workspace_id FROM documents WHERE id = $1`,
+      [docId]
+    );
+
+    if (existsResult.rows.length === 0) {
+      return { canAccess: false, denialReason: 'not_found' };
+    }
+
+    // Document exists - check if it's in the user's workspace
+    if (existsResult.rows[0].workspace_id !== workspaceId) {
+      return { canAccess: false, denialReason: 'wrong_workspace' };
+    }
+
+    // Document is in user's workspace - check visibility
     const result = await pool.query(
       `SELECT d.id,
               (d.visibility = 'workspace' OR d.created_by = $2 OR
@@ -533,12 +577,16 @@ async function canAccessDocumentForCollab(
     );
 
     if (result.rows.length === 0) {
-      return false;
+      return { canAccess: false, denialReason: 'not_found' };
     }
 
-    return result.rows[0].can_access;
+    if (!result.rows[0].can_access) {
+      return { canAccess: false, denialReason: 'private' };
+    }
+
+    return { canAccess: true };
   } catch {
-    return false;
+    return { canAccess: false, denialReason: 'not_found' };
   }
 }
 
@@ -686,10 +734,18 @@ export async function handleVisibilityChange(
     }
 
     // Check if user is admin
-    const canAccess = await canAccessDocumentForCollab(docId, conn.userId, conn.workspaceId);
+    const accessResult = await canAccessDocumentForCollab(docId, conn.userId, conn.workspaceId);
 
-    if (!canAccess) {
+    if (!accessResult.canAccess) {
       console.log(`[Collaboration] Disconnecting user ${conn.userId} from private doc ${docId}`);
+
+      // Log the access revocation
+      logDocumentViewDenied({
+        workspaceId: conn.workspaceId,
+        actorUserId: conn.userId,
+        documentId: docId,
+        reason: 'private', // Visibility change means it went private
+      }).catch(err => console.error('Failed to log document view denied:', err));
 
       // Close with code 4403 (custom code for "access revoked")
       // Frontend should handle this code and show appropriate message
@@ -792,8 +848,17 @@ export function setupCollaboration(server: Server) {
     const docId = parseDocId(docName);
 
     // Check document access (visibility check)
-    const canAccess = await canAccessDocumentForCollab(docId, sessionData.userId, sessionData.workspaceId);
-    if (!canAccess) {
+    const accessResult = await canAccessDocumentForCollab(docId, sessionData.userId, sessionData.workspaceId);
+    if (!accessResult.canAccess) {
+      // Log the denied access attempt
+      logDocumentViewDenied({
+        workspaceId: sessionData.workspaceId,
+        actorUserId: sessionData.userId,
+        documentId: docId,
+        reason: accessResult.denialReason || 'not_found',
+        wsRequest: request,
+      }).catch(err => console.error('Failed to log document view denied:', err));
+
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
@@ -804,13 +869,31 @@ export function setupCollaboration(server: Server) {
     });
   });
 
-  wss.on('connection', async (ws: WebSocket, _request: IncomingMessage, docName: string, sessionData: { userId: string; workspaceId: string }) => {
+  wss.on('connection', async (ws: WebSocket, request: IncomingMessage, docName: string, sessionData: { userId: string; workspaceId: string }) => {
     const doc = await getOrCreateDoc(docName);
     const aw = getAwareness(docName, doc);
 
     // Track this connection with user info for visibility change handling
     const clientId = doc.clientID;
     conns.set(ws, { docName, awarenessClientId: clientId, userId: sessionData.userId, workspaceId: sessionData.workspaceId });
+
+    // Log document view (with deduplication)
+    // docName format is "{docType}:{docId}"
+    const colonIndex = docName.indexOf(':');
+    if (colonIndex > 0) {
+      const docType = docName.substring(0, colonIndex);
+      const docId = docName.substring(colonIndex + 1);
+
+      // Fire-and-forget: don't block connection on audit logging
+      logDocumentView({
+        workspaceId: sessionData.workspaceId,
+        actorUserId: sessionData.userId,
+        documentId: docId,
+        documentType: docType,
+        accessMethod: 'websocket',
+        wsRequest: request,
+      }).catch(err => console.error('Failed to log document view:', err));
+    }
 
     // If this doc was loaded fresh from JSON (API-created or API-updated content),
     // tell the browser to clear its IndexedDB cache before sync to prevent stale content merge

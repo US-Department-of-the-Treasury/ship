@@ -75,8 +75,13 @@ describe('Documents API - PATCH with Issue Fields', () => {
     await pool.query('DELETE FROM sessions WHERE user_id = $1', [testUserId])
     await pool.query('DELETE FROM documents WHERE workspace_id = $1', [testWorkspaceId])
     await pool.query('DELETE FROM workspace_memberships WHERE user_id = $1', [testUserId])
+    // Disable audit triggers to allow user cleanup (FK ON DELETE SET NULL would trigger update)
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_update')
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_delete')
     await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
     await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId])
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_update')
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_delete')
   })
 
   beforeEach(async () => {
@@ -262,8 +267,13 @@ describe('Documents API - Delete', () => {
     await pool.query('DELETE FROM sessions WHERE user_id = $1', [testUserId])
     await pool.query('DELETE FROM documents WHERE workspace_id = $1', [testWorkspaceId])
     await pool.query('DELETE FROM workspace_memberships WHERE user_id = $1', [testUserId])
+    // Disable audit triggers to allow user cleanup (FK ON DELETE SET NULL would trigger update)
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_update')
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_delete')
     await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
     await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId])
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_update')
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_delete')
   })
 
   // Create a fresh document before each test
@@ -468,8 +478,13 @@ describe('Documents API - Conversion', () => {
     await pool.query('DELETE FROM sessions WHERE user_id = $1', [testUserId])
     await pool.query('DELETE FROM documents WHERE workspace_id = $1', [testWorkspaceId])
     await pool.query('DELETE FROM workspace_memberships WHERE user_id = $1', [testUserId])
+    // Disable audit triggers to allow user cleanup (FK ON DELETE SET NULL would trigger update)
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_update')
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_delete')
     await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
     await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId])
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_update')
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_delete')
   })
 
   describe('POST /api/documents/:id/convert', () => {

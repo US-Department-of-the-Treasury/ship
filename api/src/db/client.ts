@@ -1,4 +1,4 @@
-import pg from 'pg';
+import pg, { PoolClient } from 'pg';
 import { config } from 'dotenv';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -11,6 +11,9 @@ config({ path: join(__dirname, '../../.env.local') });
 config({ path: join(__dirname, '../../.env') });
 
 const { Pool } = pg;
+
+// Re-export PoolClient type for use in other modules
+export type { PoolClient };
 
 const isProduction = process.env.NODE_ENV === 'production';
 

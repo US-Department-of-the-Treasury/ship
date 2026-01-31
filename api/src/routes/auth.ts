@@ -148,35 +148,51 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const sessionId = generateSecureSessionId();
     const expiresAt = new Date(Date.now() + SESSION_TIMEOUT_MS);
 
-    // Store session with binding data (user_agent, ip_address for audit)
-    await pool.query(
-      `INSERT INTO sessions (id, user_id, workspace_id, expires_at, last_activity, user_agent, ip_address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        sessionId,
-        user.id,
-        workspaceId,
-        expiresAt,
-        new Date(),
-        req.headers['user-agent'] || 'unknown',
-        req.ip || req.socket.remoteAddress || 'unknown',
-      ]
-    );
+    // Use transaction to ensure session creation and audit log are atomic
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    // Update last_workspace_id
-    if (workspaceId) {
-      await pool.query(
-        'UPDATE users SET last_workspace_id = $1, updated_at = NOW() WHERE id = $2',
-        [workspaceId, user.id]
+      // Store session with binding data (user_agent, ip_address for audit)
+      await client.query(
+        `INSERT INTO sessions (id, user_id, workspace_id, expires_at, last_activity, user_agent, ip_address)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          sessionId,
+          user.id,
+          workspaceId,
+          expiresAt,
+          new Date(),
+          req.headers['user-agent'] || 'unknown',
+          req.ip || req.socket.remoteAddress || 'unknown',
+        ]
       );
-    }
 
-    await logAuditEvent({
-      workspaceId: workspaceId || undefined,
-      actorUserId: user.id,
-      action: 'auth.login',
-      req,
-    });
+      // Update last_workspace_id
+      if (workspaceId) {
+        await client.query(
+          'UPDATE users SET last_workspace_id = $1, updated_at = NOW() WHERE id = $2',
+          [workspaceId, user.id]
+        );
+      }
+
+      // Log audit event (critical - must succeed for transaction to commit)
+      await logAuditEvent({
+        workspaceId: workspaceId || undefined,
+        actorUserId: user.id,
+        action: 'auth.login',
+        req,
+        critical: true,
+        client,
+      });
+
+      await client.query('COMMIT');
+    } catch (txError) {
+      await client.query('ROLLBACK');
+      throw txError;
+    } finally {
+      client.release();
+    }
 
     // Pending accountability items will be fetched via /api/accountability/action-items
     const pendingAccountabilityItems: any[] = [];
@@ -226,16 +242,25 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
 // POST /api/auth/logout
 router.post('/logout', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+
+    // Log audit event (critical - must succeed for transaction to commit)
     await logAuditEvent({
       workspaceId: req.workspaceId,
       actorUserId: req.userId!,
       action: 'auth.logout',
       req,
+      critical: true,
+      client,
     });
 
     // Delete session from database
-    await pool.query('DELETE FROM sessions WHERE id = $1', [req.sessionId]);
+    await client.query('DELETE FROM sessions WHERE id = $1', [req.sessionId]);
+
+    await client.query('COMMIT');
+    client.release();
 
     // Clear cookie with same options used when setting it
     res.clearCookie('session_id', {
@@ -247,6 +272,8 @@ router.post('/logout', authMiddleware, async (req: Request, res: Response): Prom
 
     res.json({ success: true });
   } catch (error) {
+    await client.query('ROLLBACK');
+    client.release();
     console.error('Logout error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,

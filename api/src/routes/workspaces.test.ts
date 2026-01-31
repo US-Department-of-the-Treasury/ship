@@ -106,8 +106,14 @@ describe('Workspaces API', () => {
     // Clean up test data in correct order (foreign keys)
     await pool.query('DELETE FROM sessions WHERE user_id IN ($1, $2)', [testUserId, superAdminUserId])
     await pool.query('DELETE FROM workspace_memberships WHERE user_id IN ($1, $2)', [testUserId, superAdminUserId])
+    // audit_logs has immutability triggers - disable for test cleanup
+    // Must disable BOTH because: DELETE users triggers CASCADE, DELETE workspaces triggers SET NULL
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_update')
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_delete')
     await pool.query('DELETE FROM users WHERE id IN ($1, $2)', [testUserId, superAdminUserId])
     await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId])
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_delete')
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_update')
   })
 
   describe('GET /api/workspaces', () => {
@@ -442,10 +448,17 @@ describe('Admin API', () => {
   afterAll(async () => {
     await pool.query('DELETE FROM sessions WHERE user_id IN ($1, $2)', [superAdminUserId, regularUserId])
     await pool.query('DELETE FROM workspace_memberships WHERE user_id IN ($1, $2)', [superAdminUserId, regularUserId])
+    // audit_logs has immutability triggers - disable for test cleanup
+    // Must disable BOTH triggers because FK constraints trigger UPDATE (SET NULL) and DELETE (CASCADE)
+    // Keep disabled until ALL deletions complete
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_update')
+    await pool.query('ALTER TABLE audit_logs DISABLE TRIGGER audit_no_delete')
     await pool.query('DELETE FROM audit_logs WHERE workspace_id = $1', [testWorkspaceId])
     await pool.query('DELETE FROM workspaces WHERE name LIKE $1', ['Admin Created%'])
     await pool.query('DELETE FROM users WHERE id IN ($1, $2)', [superAdminUserId, regularUserId])
     await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId])
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_delete')
+    await pool.query('ALTER TABLE audit_logs ENABLE TRIGGER audit_no_update')
   })
 
   describe('GET /api/admin/workspaces', () => {
