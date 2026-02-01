@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AccountabilityGrid } from '@/components/AccountabilityGrid';
+import { StatusOverviewHeatmap } from '@/components/StatusOverviewHeatmap';
 
 export function StatusOverviewPage() {
   const [showArchived, setShowArchived] = useState(false);
@@ -23,7 +23,7 @@ export function StatusOverviewPage() {
       </header>
 
       {/* Content */}
-      <AccountabilityGrid showArchived={showArchived} />
+      <StatusOverviewHeatmap showArchived={showArchived} />
     </div>
   );
 }
