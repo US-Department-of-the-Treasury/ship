@@ -1,128 +1,388 @@
-import { useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { WeekTimeline, getCurrentSprintNumber, type Sprint } from '@/components/week/WeekTimeline';
-import { WeekDetailView } from '@/components/week/WeekDetailView';
-import { useProjectSprints } from '@/hooks/useWeeksQuery';
+import { cn } from '@/lib/cn';
+import { apiPost } from '@/lib/api';
 import type { DocumentTabProps } from '@/lib/document-tabs';
 
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+type Status = 'done' | 'due' | 'late' | 'future';
+
+interface Week {
+  number: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  isCurrent: boolean;
+}
+
+interface PersonWeekData {
+  isAllocated: boolean;
+  planId: string | null;
+  planStatus: Status;
+  retroId: string | null;
+  retroStatus: Status;
+}
+
+interface Person {
+  id: string;
+  name: string;
+  weeks: Record<number, PersonWeekData>;
+}
+
+interface AllocationGridData {
+  projectId: string;
+  projectTitle: string;
+  currentSprintNumber: number;
+  weeks: Week[];
+  people: Person[];
+}
+
+// Status colors
+const STATUS_COLORS: Record<Status, string> = {
+  done: '#22c55e',   // green
+  due: '#eab308',    // yellow
+  late: '#ef4444',   // red
+  future: '#6b7280', // gray
+};
+
+// User-friendly status text for tooltips
+const STATUS_TEXT: Record<Status, string> = {
+  done: 'done',
+  due: 'due this week',
+  late: 'late',
+  future: 'not yet due',
+};
+
 /**
- * ProjectWeeksTab - Shows weeks associated with a project
- *
- * This is the "Weeks" tab content when viewing a project document.
- * Features a horizontal scrolling WeekTimeline at the top.
- * When nestedPath contains a week ID, shows WeekDetailView inline.
- *
- * Note: Weeks are derived 7-day windows (not documents to create).
+ * StatusCell - Shows Plan/Retro status as two colored squares
  */
-export default function ProjectSprintsTab({ documentId, nestedPath }: DocumentTabProps) {
+function StatusCell({
+  planStatus,
+  retroStatus,
+  onPlanClick,
+  onRetroClick,
+  isNavigating,
+}: {
+  planStatus: Status;
+  retroStatus: Status;
+  onPlanClick?: () => void;
+  onRetroClick?: () => void;
+  isNavigating?: 'plan' | 'retro' | null;
+}) {
+  return (
+    <div className="flex w-full h-full">
+      {/* Plan status (left half) */}
+      <button
+        onClick={onPlanClick}
+        disabled={isNavigating !== null}
+        className={cn(
+          'flex-1 h-full cursor-pointer transition-all hover:brightness-110',
+          isNavigating === 'plan' && 'animate-pulse'
+        )}
+        style={{ backgroundColor: STATUS_COLORS[planStatus] }}
+        title={`Weekly Plan (${STATUS_TEXT[planStatus]})`}
+      />
+      {/* Retro status (right half) */}
+      <button
+        onClick={onRetroClick}
+        disabled={isNavigating !== null}
+        className={cn(
+          'flex-1 h-full cursor-pointer transition-all hover:brightness-110',
+          isNavigating === 'retro' && 'animate-pulse'
+        )}
+        style={{ backgroundColor: STATUS_COLORS[retroStatus] }}
+        title={`Weekly Retro (${STATUS_TEXT[retroStatus]})`}
+      />
+    </div>
+  );
+}
+
+/**
+ * ProjectWeeksTab - Shows plan/retro status for team members allocated to this project
+ *
+ * Each cell shows two colored squares:
+ * - Left: Weekly Plan status
+ * - Right: Weekly Retro status
+ *
+ * Colors: green (done), yellow (due), red (late), gray (future)
+ */
+export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
   const navigate = useNavigate();
-  const { sprints, loading, workspaceSprintStartDate } = useProjectSprints(documentId);
+  const [data, setData] = useState<AllocationGridData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [navigatingCell, setNavigatingCell] = useState<{
+    personId: string;
+    weekNumber: number;
+    type: 'plan' | 'retro';
+  } | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const hasScrolledToCurrentRef = useRef(false);
 
-  // If nestedPath is provided and looks like a UUID, show sprint detail
-  const isUuid = nestedPath && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nestedPath);
-  const selectedSprintId = isUuid ? nestedPath : null;
-
-  // Handle sprint selection from timeline
-  const handleSelectSprint = useCallback((_sprintNumber: number, sprint: Sprint | null) => {
-    if (sprint) {
-      navigate(`/documents/${documentId}/sprints/${sprint.id}`);
+  /**
+   * Navigate to a weekly plan or retro document.
+   * Creates the document if it doesn't exist yet.
+   */
+  async function handleNavigate(
+    personId: string,
+    weekNumber: number,
+    type: 'plan' | 'retro',
+    existingDocId: string | null
+  ) {
+    // If document already exists, navigate directly
+    if (existingDocId) {
+      navigate(`/documents/${existingDocId}`);
+      return;
     }
-  }, [documentId, navigate]);
 
-  // Handle sprint open (double-click or direct navigation)
-  const handleOpenSprint = useCallback((sprintId: string) => {
-    navigate(`/documents/${documentId}/sprints/${sprintId}`);
-  }, [documentId, navigate]);
+    // Create the document first
+    setNavigatingCell({ personId, weekNumber, type });
+    try {
+      const endpoint = type === 'plan' ? '/api/weekly-plans' : '/api/weekly-retros';
+      const response = await apiPost(endpoint, {
+        person_id: personId,
+        project_id: documentId,
+        week_number: weekNumber,
+      });
+
+      if (response.ok) {
+        const doc = await response.json();
+        navigate(`/documents/${doc.id}`);
+      } else {
+        console.error(`Failed to create weekly ${type}:`, await response.text());
+      }
+    } catch (err) {
+      console.error(`Failed to create weekly ${type}:`, err);
+    } finally {
+      setNavigatingCell(null);
+    }
+  }
+
+  // Fetch data on mount
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true);
+        const res = await fetch(
+          `${API_URL}/api/weekly-plans/project-allocation-grid/${documentId}`,
+          { credentials: 'include' }
+        );
+
+        if (!res.ok) {
+          throw new Error('Failed to load allocation data');
+        }
+
+        const gridData: AllocationGridData = await res.json();
+        setData(gridData);
+      } catch (err) {
+        setError('Failed to load allocation data');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [documentId]);
+
+  // Filter to only show weeks where at least one person is allocated
+  const visibleWeeks = useMemo(() => {
+    if (!data) return [];
+    return data.weeks;
+  }, [data]);
+
+  // Scroll to current week on initial load
+  useEffect(() => {
+    if (data && scrollContainerRef.current && !hasScrolledToCurrentRef.current && data.people.length > 0) {
+      const currentWeekIndex = visibleWeeks.findIndex((w) => w.isCurrent);
+      if (currentWeekIndex >= 0) {
+        requestAnimationFrame(() => {
+          if (scrollContainerRef.current) {
+            const columnWidth = 140;
+            const scrollPosition = currentWeekIndex * columnWidth;
+            scrollContainerRef.current.scrollLeft = scrollPosition;
+            hasScrolledToCurrentRef.current = true;
+          }
+        });
+      }
+    }
+  }, [data, visibleWeeks]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-48">
+      <div className="flex h-full items-center justify-center">
         <div className="flex items-center gap-2 text-muted">
           <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          Loading weeks...
+          Loading...
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* Top Section: Horizontal Timeline - fixed height */}
-      <div className="flex-shrink-0 border-b border-border p-4">
-        <h3 className="mb-3 text-sm font-medium text-muted uppercase tracking-wide">Timeline</h3>
-        <WeekTimeline
-          sprints={sprints}
-          workspaceSprintStartDate={workspaceSprintStartDate}
-          selectedSprintId={selectedSprintId ?? undefined}
-          onSelectSprint={handleSelectSprint}
-          onOpenSprint={handleOpenSprint}
-        />
-      </div>
-
-      {/* Bottom Section: Sprint Details or Empty State */}
-      <div className="flex-1 min-h-0 overflow-auto">
-        {selectedSprintId ? (
-          <WeekDetailView
-            sprintId={selectedSprintId}
-            projectId={documentId}
-            onBack={() => navigate(`/documents/${documentId}/sprints`)}
-          />
-        ) : (
-          <EmptySprintState
-            sprints={sprints}
-            workspaceSprintStartDate={workspaceSprintStartDate}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Empty state when no sprint is selected
-interface EmptySprintStateProps {
-  sprints: Sprint[];
-  workspaceSprintStartDate: Date;
-}
-
-function EmptySprintState({
-  sprints,
-  workspaceSprintStartDate,
-}: EmptySprintStateProps) {
-  const currentSprintNumber = getCurrentSprintNumber(workspaceSprintStartDate);
-  const activeSprint = sprints.find(s => s.sprint_number === currentSprintNumber);
-
-  if (sprints.length === 0) {
+  if (error && !data) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-muted p-8">
+      <div className="flex h-full items-center justify-center">
+        <div className="text-red-500">{error}</div>
+      </div>
+    );
+  }
+
+  // Empty state when no allocations
+  if (!data || data.people.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center text-muted p-8">
         <svg className="w-16 h-16 mb-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
         </svg>
-        <p className="text-lg font-medium mb-2">No weeks with issues</p>
+        <p className="text-lg font-medium mb-2">No team allocations</p>
         <p className="text-sm text-center max-w-md">
-          Assign issues to weeks from the Issues view to see them here.
+          Assign team members to this project in Team → Allocation to see them here.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full text-muted p-8">
-      <svg className="w-16 h-16 mb-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-      </svg>
-      <p className="text-lg font-medium mb-2">Select a week</p>
-      <p className="text-sm text-center max-w-md">
-        Click on a week in the timeline above to view its details, issues, and progress.
-        {activeSprint && (
-          <span className="block mt-2 text-accent">
-            The current week is active.
-          </span>
-        )}
-      </p>
+    <div className="flex h-full flex-col">
+      {/* Legend */}
+      <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs">
+        <span className="text-muted">Status:</span>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: STATUS_COLORS.done }} />
+          <span>Done</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: STATUS_COLORS.due }} />
+          <span>Due</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: STATUS_COLORS.late }} />
+          <span>Late</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: STATUS_COLORS.future }} />
+          <span>Future</span>
+        </div>
+        <span className="text-muted ml-4">|</span>
+        <span className="text-muted">Left = Plan, Right = Retro</span>
+      </div>
+
+      {/* Grid container */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto pb-20">
+        <div className="inline-flex min-w-full">
+          {/* Sticky left column - Team members */}
+          <div className="flex flex-col sticky left-0 z-20 bg-background border-r border-border">
+            {/* Header cell */}
+            <div className="flex h-10 w-[180px] items-center border-b border-border px-3 sticky top-0 z-30 bg-background">
+              <span className="text-xs font-medium text-muted">Team Member</span>
+            </div>
+
+            {/* Users */}
+            {data.people.map((person) => (
+              <div
+                key={person.id}
+                className="flex h-12 w-[180px] items-center border-b border-border px-3 bg-background"
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white bg-accent/80">
+                    {person.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="truncate text-sm text-foreground">
+                    {person.name}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Week columns */}
+          <div className="flex">
+            {visibleWeeks.map((week) => (
+              <div key={week.number} className="flex flex-col">
+                {/* Week header */}
+                <div
+                  className={cn(
+                    'flex h-10 w-[140px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background',
+                    week.isCurrent && 'ring-1 ring-inset ring-accent/30'
+                  )}
+                >
+                  <span className={cn('text-xs font-medium', week.isCurrent ? 'text-accent' : 'text-foreground')}>
+                    {week.name}
+                  </span>
+                  <span className="text-[10px] text-muted">
+                    {formatDateRange(week.startDate, week.endDate)}
+                  </span>
+                </div>
+
+                {/* User cells for this week */}
+                {data.people.map((person) => {
+                  const weekData = person.weeks[week.number];
+
+                  // If not allocated to this project this week, show empty cell
+                  if (!weekData?.isAllocated) {
+                    return (
+                      <div
+                        key={person.id}
+                        className={cn(
+                          'flex h-12 w-[140px] items-center justify-center border-b border-r border-border',
+                          week.isCurrent && 'bg-accent/5'
+                        )}
+                      >
+                        <span className="text-xs text-muted">-</span>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={person.id}
+                      className={cn(
+                        'flex h-12 w-[140px] border-b border-r border-border overflow-hidden',
+                        week.isCurrent && 'bg-accent/5'
+                      )}
+                    >
+                      <StatusCell
+                        planStatus={weekData.planStatus}
+                        retroStatus={weekData.retroStatus}
+                        onPlanClick={() =>
+                          handleNavigate(person.id, week.number, 'plan', weekData.planId)
+                        }
+                        onRetroClick={() =>
+                          handleNavigate(person.id, week.number, 'retro', weekData.retroId)
+                        }
+                        isNavigating={
+                          navigatingCell?.personId === person.id &&
+                          navigatingCell?.weekNumber === week.number
+                            ? navigatingCell.type
+                            : null
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
+function formatDateRange(startDate: string, endDate: string): string {
+  const start = new Date(startDate + 'T00:00:00Z');
+  const end = new Date(endDate + 'T00:00:00Z');
+
+  const startMonth = start.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  const startDay = start.getUTCDate();
+  const endMonth = end.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  const endDay = end.getUTCDate();
+
+  if (startMonth === endMonth) {
+    return `${startMonth} ${startDay}-${endDay}`;
+  }
+  return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
+}

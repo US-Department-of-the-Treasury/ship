@@ -1,11 +1,14 @@
+import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { useActionItemsQuery, ActionItem } from '@/hooks/useActionItemsQuery';
+import { apiPost } from '@/lib/api';
 
 const ACCOUNTABILITY_TYPE_LABELS: Record<string, string> = {
   standup: 'Post standup',
   weekly_plan: 'Write plan',
+  weekly_retro: 'Write retro',
   weekly_review: 'Complete review',
   week_start: 'Start week',
   week_issues: 'Add issues',
@@ -22,6 +25,11 @@ const ACCOUNTABILITY_TYPE_ICONS: Record<string, React.ReactNode> = {
   weekly_plan: (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+    </svg>
+  ),
+  weekly_retro: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
     </svg>
   ),
   weekly_review: (
@@ -70,7 +78,12 @@ function formatDueDate(dueDate: string | null, daysOverdue: number): { text: str
   }
 }
 
-function getTargetUrl(item: ActionItem): string {
+function getTargetUrl(item: ActionItem): string | null {
+  // For weekly_plan and weekly_retro items, we need to call the API first - return null to signal async handling
+  if ((item.accountability_type === 'weekly_plan' || item.accountability_type === 'weekly_retro') &&
+      item.person_id && item.project_id && item.week_number) {
+    return null; // Signal that this needs async handling
+  }
   // For standup items, use deep link to sprint with action param
   if (item.accountability_type === 'standup' && item.accountability_target_id) {
     return `/documents/${item.accountability_target_id}?action=new-standup`;
@@ -83,7 +96,43 @@ function getTargetUrl(item: ActionItem): string {
   return `/documents/${item.id}`;
 }
 
-function ActionItemRow({ item, onItemClick }: { item: ActionItem; onItemClick: (url: string) => void }) {
+/**
+ * Create or get existing weekly plan/retro document and return its URL.
+ * Returns null if the API call fails or required data is missing.
+ */
+async function createWeeklyDocumentAndGetUrl(item: ActionItem): Promise<string | null> {
+  if (!item.person_id || !item.project_id || item.week_number == null) {
+    // Missing required data, fall back to target document
+    return item.accountability_target_id ? `/documents/${item.accountability_target_id}` : null;
+  }
+
+  // Determine which API endpoint to call based on accountability type
+  const endpoint = item.accountability_type === 'weekly_retro'
+    ? '/api/weekly-retros'
+    : '/api/weekly-plans';
+
+  try {
+    const response = await apiPost(endpoint, {
+      person_id: item.person_id,
+      project_id: item.project_id,
+      week_number: item.week_number,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return `/documents/${data.id}`;
+    } else {
+      console.error(`Failed to create ${item.accountability_type}:`, await response.text());
+      // Fall back to sprint document
+      return item.accountability_target_id ? `/documents/${item.accountability_target_id}` : null;
+    }
+  } catch (error) {
+    console.error(`Error creating ${item.accountability_type}:`, error);
+    return item.accountability_target_id ? `/documents/${item.accountability_target_id}` : null;
+  }
+}
+
+function ActionItemRow({ item, onItemClick, isLoading }: { item: ActionItem; onItemClick: (item: ActionItem) => void; isLoading?: boolean }) {
   const typeLabel = item.accountability_type
     ? ACCOUNTABILITY_TYPE_LABELS[item.accountability_type] || item.accountability_type
     : 'Action Item';
@@ -91,12 +140,12 @@ function ActionItemRow({ item, onItemClick }: { item: ActionItem; onItemClick: (
     ? ACCOUNTABILITY_TYPE_ICONS[item.accountability_type]
     : null;
   const { text: dueText, isOverdue } = formatDueDate(item.due_date, item.days_overdue);
-  const targetUrl = getTargetUrl(item);
 
   return (
     <button
-      onClick={() => onItemClick(targetUrl)}
-      className="w-full flex items-center gap-4 px-4 py-3 hover:bg-border/50 transition-colors text-left"
+      onClick={() => onItemClick(item)}
+      disabled={isLoading}
+      className="w-full flex items-center gap-4 px-4 py-3 hover:bg-border/50 transition-colors text-left disabled:opacity-50"
     >
       {/* Type icon */}
       <span className={cn(
@@ -143,12 +192,37 @@ interface ActionItemsModalProps {
 export function ActionItemsModal({ open, onClose }: ActionItemsModalProps) {
   const navigate = useNavigate();
   const { data, isLoading } = useActionItemsQuery();
+  const [navigatingItemId, setNavigatingItemId] = useState<string | null>(null);
 
-  const handleItemClick = (url: string) => {
-    // Close modal and navigate in same window
-    // User can reopen modal via the persistent banner
-    onClose();
-    navigate(url);
+  const handleItemClick = async (item: ActionItem) => {
+    // Check if this is a weekly_plan or weekly_retro item that needs async handling
+    const targetUrl = getTargetUrl(item);
+
+    if (targetUrl === null && (item.accountability_type === 'weekly_plan' || item.accountability_type === 'weekly_retro')) {
+      // Need to create/get the weekly plan/retro document first
+      setNavigatingItemId(item.id);
+      try {
+        const docUrl = await createWeeklyDocumentAndGetUrl(item);
+        if (docUrl) {
+          onClose();
+          navigate(docUrl);
+        } else {
+          // Fallback to target document if API fails
+          const fallbackUrl = item.accountability_target_id
+            ? `/documents/${item.accountability_target_id}`
+            : `/documents/${item.id}`;
+          onClose();
+          navigate(fallbackUrl);
+        }
+      } finally {
+        setNavigatingItemId(null);
+      }
+    } else {
+      // Close modal and navigate in same window
+      // User can reopen modal via the persistent banner
+      onClose();
+      navigate(targetUrl || `/documents/${item.id}`);
+    }
   };
 
   const items = data?.items ?? [];
@@ -219,7 +293,12 @@ export function ActionItemsModal({ open, onClose }: ActionItemsModalProps) {
             ) : (
               <div className="divide-y divide-border">
                 {items.map((item) => (
-                  <ActionItemRow key={item.id} item={item} onItemClick={handleItemClick} />
+                  <ActionItemRow
+                    key={item.id}
+                    item={item}
+                    onItemClick={handleItemClick}
+                    isLoading={navigatingItemId === item.id}
+                  />
                 ))}
               </div>
             )}

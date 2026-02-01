@@ -5,18 +5,21 @@
  * It adapts based on document_type while maintaining the same rendering patterns.
  */
 import { useMemo, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
 import { WeekSidebar } from '@/components/sidebars/WeekSidebar';
 import { ProgramSidebar } from '@/components/sidebars/ProgramSidebar';
+import { ContentHistoryPanel } from '@/components/ContentHistoryPanel';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
+import { apiGet } from '@/lib/api';
 import type { Person } from '@/components/PersonCombobox';
 import type { BelongsTo, ApprovalTracking } from '@ship/shared';
 
 // Document types that have properties panels
-export type PanelDocumentType = 'wiki' | 'issue' | 'project' | 'sprint' | 'program';
+export type PanelDocumentType = 'wiki' | 'issue' | 'project' | 'sprint' | 'program' | 'weekly_plan' | 'weekly_retro';
 
 // Base document interface
 interface BaseDocument {
@@ -110,8 +113,30 @@ interface ProgramDocument extends BaseDocument {
   informed_ids?: string[];
 }
 
+// Weekly plan document properties
+interface WeeklyPlanDocument extends BaseDocument {
+  document_type: 'weekly_plan';
+  properties?: {
+    person_id?: string;
+    project_id?: string;
+    week_number?: number;
+    submitted_at?: string | null;
+  };
+}
+
+// Weekly retro document properties
+interface WeeklyRetroDocument extends BaseDocument {
+  document_type: 'weekly_retro';
+  properties?: {
+    person_id?: string;
+    project_id?: string;
+    week_number?: number;
+    submitted_at?: string | null;
+  };
+}
+
 // Union type for all documents
-export type PanelDocument = WikiDocument | IssueDocument | ProjectDocument | SprintDocument | ProgramDocument;
+export type PanelDocument = WikiDocument | IssueDocument | ProjectDocument | SprintDocument | ProgramDocument | WeeklyPlanDocument | WeeklyRetroDocument;
 
 // Props for wiki panel
 interface WikiPanelProps {
@@ -178,6 +203,87 @@ interface PropertiesPanelProps {
   onUpdate: (updates: Partial<PanelDocument>) => Promise<void>;
   /** Fields to highlight as missing (e.g., after type conversion) */
   highlightedFields?: string[];
+}
+
+/**
+ * WeeklyDocumentSidebar - Renders sidebar for weekly_plan/weekly_retro documents
+ * with human-readable names instead of UUIDs
+ */
+function WeeklyDocumentSidebar({
+  document,
+}: {
+  document: WeeklyPlanDocument | WeeklyRetroDocument;
+}) {
+  const docProperties = document.properties || {};
+  const weekNumber = docProperties.week_number as number | undefined;
+  const personId = docProperties.person_id as string | undefined;
+  const projectId = docProperties.project_id as string | undefined;
+
+  // Fetch person name
+  const { data: personDoc } = useQuery<{ title: string }>({
+    queryKey: ['document', personId],
+    queryFn: async () => {
+      const res = await apiGet(`/api/documents/${personId}`);
+      if (!res.ok) throw new Error('Failed to fetch person');
+      return res.json();
+    },
+    enabled: !!personId,
+  });
+
+  // Fetch project name
+  const { data: projectDoc } = useQuery<{ title: string }>({
+    queryKey: ['document', projectId],
+    queryFn: async () => {
+      const res = await apiGet(`/api/documents/${projectId}`);
+      if (!res.ok) throw new Error('Failed to fetch project');
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  const personName = personDoc?.title || (personId ? `${personId.substring(0, 8)}...` : null);
+  const projectName = projectDoc?.title || (projectId ? `${projectId.substring(0, 8)}...` : null);
+
+  return (
+    <div className="space-y-4 p-4">
+      {/* Header */}
+      <div className="border-b border-border pb-3">
+        <h3 className="text-sm font-medium text-foreground">
+          {document.document_type === 'weekly_plan' ? 'Weekly Plan' : 'Weekly Retro'}
+        </h3>
+        {weekNumber && (
+          <p className="text-sm text-muted mt-1">Week {weekNumber}</p>
+        )}
+      </div>
+
+      {/* Person */}
+      {personId && (
+        <div>
+          <label className="text-xs font-medium text-muted mb-1 block">Person</label>
+          <p className="text-sm text-foreground">{personName}</p>
+        </div>
+      )}
+
+      {/* Project */}
+      {projectId && (
+        <div>
+          <label className="text-xs font-medium text-muted mb-1 block">Project</label>
+          <a
+            href={`/documents/${projectId}/weeks`}
+            className="text-sm text-accent hover:underline"
+          >
+            {projectName}
+          </a>
+        </div>
+      )}
+
+      {/* Content History Panel */}
+      <ContentHistoryPanel
+        documentId={document.id}
+        documentType={document.document_type as 'weekly_plan' | 'weekly_retro'}
+      />
+    </div>
+  );
 }
 
 /**
@@ -321,6 +427,17 @@ export function PropertiesPanel({
             people={programProps.people || []}
             onUpdate={onUpdate as (updates: Partial<ProgramDocument>) => Promise<void>}
             highlightedFields={highlightedFields}
+          />
+        );
+      }
+
+      case 'weekly_plan':
+      case 'weekly_retro': {
+        // Weekly plan and retro documents get a minimal sidebar with history panel
+        // Names are fetched via WeeklyDocumentSidebar component
+        return (
+          <WeeklyDocumentSidebar
+            document={document as WeeklyPlanDocument | WeeklyRetroDocument}
           />
         );
       }

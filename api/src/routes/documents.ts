@@ -295,6 +295,19 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
+    // Compute title for weekly_plan/weekly_retro documents (includes person name for entity reference)
+    let computedTitle = doc.title;
+    if ((doc.document_type === 'weekly_plan' || doc.document_type === 'weekly_retro') && props.person_id) {
+      const personResult = await pool.query(
+        `SELECT title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'person'`,
+        [props.person_id, workspaceId]
+      );
+      if (personResult.rows.length > 0) {
+        const personName = personResult.rows[0].title;
+        computedTitle = `${doc.title} - ${personName}`;
+      }
+    }
+
     // Get belongs_to associations from junction table (for issues, wikis, sprints, and projects)
     let belongs_to: Array<{ id: string; type: string; title?: string; color?: string }> = [];
     if (doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint' || doc.document_type === 'project') {
@@ -317,6 +330,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Return with flattened properties for backwards compatibility
     res.json({
       ...doc,
+      // Use computed title for weekly_plan/weekly_retro (includes person name)
+      title: computedTitle,
       // Issue properties
       state: props.state,
       priority: props.priority,

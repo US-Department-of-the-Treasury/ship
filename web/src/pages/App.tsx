@@ -33,8 +33,9 @@ import { ProjectSetupWizard, ProjectSetupData } from '@/components/ProjectSetupW
 import { SelectionPersistenceProvider } from '@/contexts/SelectionPersistenceContext';
 import { ActionItemsModal } from '@/components/ActionItemsModal';
 import { AccountabilityBanner } from '@/components/AccountabilityBanner';
+import { ProjectContextSidebar } from '@/components/sidebars/ProjectContextSidebar';
 
-type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week';
+type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week' | 'project-context';
 
 export function AppLayout() {
   const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
@@ -142,7 +143,7 @@ export function AppLayout() {
   }, []);
 
   // Get current document type and ID for /documents/:id routes
-  const { currentDocumentType, currentDocumentId } = useCurrentDocument();
+  const { currentDocumentType, currentDocumentId, currentDocumentProjectId } = useCurrentDocument();
 
   // Determine active mode from path or document type
   const getActiveMode = (): Mode => {
@@ -156,6 +157,10 @@ export function AppLayout() {
       if (currentDocumentType === 'program') return 'programs';
       if (currentDocumentType === 'sprint') return 'docs'; // Sprint documents open without special sidebar
       if (currentDocumentType === 'person') return 'team';
+      // Weekly docs with a project_id stay in projects mode (sidebar shows position)
+      if ((currentDocumentType === 'weekly_plan' || currentDocumentType === 'weekly_retro') && currentDocumentProjectId) {
+        return 'projects';
+      }
       // Default to docs while loading or for unknown types
       return 'docs';
     }
@@ -441,6 +446,7 @@ export function AppLayout() {
                 {activeMode === 'sprints' && 'Weeks'}
                 {activeMode === 'team' && 'Teams'}
                 {activeMode === 'settings' && 'Settings'}
+                {activeMode === 'project-context' && 'Project'}
               </h2>
               <div className="flex items-center gap-1">
                 {activeMode === 'docs' && (
@@ -508,6 +514,7 @@ export function AppLayout() {
                 <ProjectsList
                   projects={projects}
                   activeId={activeDocumentId}
+                  currentProjectId={currentDocumentProjectId}
                   onUpdateProject={updateProject}
                 />
               )}
@@ -530,6 +537,12 @@ export function AppLayout() {
               )}
               {activeMode === 'my-week' && (
                 <div className="px-3 py-2 text-sm text-muted">Your week assignments</div>
+              )}
+              {activeMode === 'project-context' && currentDocumentProjectId && (
+                <ProjectContextSidebar
+                  projectId={currentDocumentProjectId}
+                  activeDocumentId={activeDocumentId}
+                />
               )}
             </div>
 
@@ -1128,14 +1141,87 @@ function IssueStatusIcon({ state }: { state: string }) {
 function ProjectsList({
   projects,
   activeId,
+  currentProjectId,
   onUpdateProject,
 }: {
   projects: Project[];
   activeId?: string;
+  currentProjectId?: string | null;
   onUpdateProject: (id: string, updates: Partial<Project>) => Promise<Project | null>;
 }) {
+  const location = useLocation();
+  const { currentDocumentType } = useCurrentDocument();
   const { showToast } = useToast();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
+
+  // Determine if we're viewing a project's tab (details/weeks/issues/retro)
+  const getActiveProjectTab = (): string | null => {
+    const path = location.pathname;
+    if (!activeId) return null;
+    // Check if viewing any tab of a project that exists in the list
+    const projectIds = projects.map(p => p.id);
+    if (!projectIds.includes(activeId)) return null;
+    if (path === `/documents/${activeId}`) return 'details';
+    if (path === `/documents/${activeId}/weeks`) return 'weeks';
+    if (path === `/documents/${activeId}/issues`) return 'issues';
+    if (path === `/documents/${activeId}/retro`) return 'retro';
+    return null;
+  };
+
+  const activeProjectTab = getActiveProjectTab();
+
+  // Auto-expand projects that contain the current document
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => {
+    // If viewing a weekly doc with a project, auto-expand that project
+    if (currentProjectId) {
+      return new Set([currentProjectId]);
+    }
+    // If viewing a project's tab directly, auto-expand that project
+    if (activeId && projects.some(p => p.id === activeId)) {
+      return new Set([activeId]);
+    }
+    return new Set();
+  });
+
+  // Auto-expand when currentProjectId or activeId changes
+  useEffect(() => {
+    if (currentProjectId && !expandedProjects.has(currentProjectId)) {
+      setExpandedProjects(prev => new Set([...prev, currentProjectId]));
+    }
+  }, [currentProjectId]);
+
+  // Auto-expand when viewing a project's tab
+  useEffect(() => {
+    if (activeId && activeProjectTab && !expandedProjects.has(activeId)) {
+      setExpandedProjects(prev => new Set([...prev, activeId]));
+    }
+  }, [activeId, activeProjectTab]);
+
+  const toggleProject = useCallback((projectId: string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Determine current tab from URL (weeks, issues, retro, or details)
+  const getCurrentTab = (projectId: string): string | null => {
+    const path = location.pathname;
+    if (path === `/documents/${projectId}`) return 'details';
+    if (path === `/documents/${projectId}/weeks`) return 'weeks';
+    if (path === `/documents/${projectId}/issues`) return 'issues';
+    if (path === `/documents/${projectId}/retro`) return 'retro';
+    // If viewing a weekly doc that belongs to this project, highlight "weeks"
+    if (currentProjectId === projectId && (currentDocumentType === 'weekly_plan' || currentDocumentType === 'weekly_retro')) {
+      return 'weeks';
+    }
+    return null;
+  };
 
   const handleContextMenu = useCallback((e: React.MouseEvent, project: Project) => {
     e.preventDefault();
@@ -1162,40 +1248,125 @@ function ProjectsList({
 
   return (
     <>
-      <ul className="space-y-0.5 px-2" data-testid="projects-list">
-        {projects.map((project) => (
-          <li key={project.id} data-testid="project-item" className="group relative">
-            <Link
-              to={`/documents/${project.id}`}
-              onContextMenu={(e) => handleContextMenu(e, project)}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                activeId === project.id
-                  ? 'bg-border/50 text-foreground'
-                  : 'text-muted hover:bg-border/30 hover:text-foreground'
+      <ul className="space-y-0.5 px-2" role="tree" data-testid="projects-list">
+        {projects.map((project) => {
+          const isExpanded = expandedProjects.has(project.id);
+          const currentTab = getCurrentTab(project.id);
+          return (
+            <li key={project.id} data-testid="project-item" role="treeitem" aria-expanded={isExpanded}>
+              <div className="group relative">
+                <div
+                  onContextMenu={(e) => handleContextMenu(e, project)}
+                  className={cn(
+                    'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                    activeId === project.id
+                      ? 'bg-border/50 text-foreground'
+                      : 'text-muted hover:bg-border/30 hover:text-foreground'
+                  )}
+                >
+                  {/* Expand/collapse chevron */}
+                  <button
+                    type="button"
+                    onClick={() => toggleProject(project.id)}
+                    className="w-4 h-4 flex-shrink-0 flex items-center justify-center p-0 rounded hover:bg-border/50"
+                    aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                  >
+                    <ChevronIcon isOpen={isExpanded} />
+                  </button>
+                  {/* Project color dot */}
+                  <span
+                    className="h-2 w-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: project.color || '#6366f1' }}
+                  />
+                  {/* Project link */}
+                  <Link
+                    to={`/documents/${project.id}`}
+                    className="flex-1 truncate"
+                  >
+                    {project.title || 'Untitled'}
+                  </Link>
+                  {/* ICE score */}
+                  <span className="text-xs text-muted">{project.ice_score}</span>
+                </div>
+                {/* Three-dot menu button */}
+                <button
+                  type="button"
+                  onClick={(e) => handleMenuClick(e, project)}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
+                  aria-label={`Actions for ${project.title || 'Untitled'}`}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="5" r="2" />
+                    <circle cx="12" cy="12" r="2" />
+                    <circle cx="12" cy="19" r="2" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Expanded content - Project tabs */}
+              {isExpanded && (
+                <ul className="ml-6 space-y-0.5 mt-0.5" role="group">
+                  <li role="treeitem">
+                    <Link
+                      to={`/documents/${project.id}`}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+                        currentTab === 'details'
+                          ? 'bg-border/50 text-foreground'
+                          : 'text-muted hover:bg-border/30 hover:text-foreground'
+                      )}
+                    >
+                      <DocIcon />
+                      <span>Details</span>
+                    </Link>
+                  </li>
+                  <li role="treeitem">
+                    <Link
+                      to={`/documents/${project.id}/weeks`}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+                        currentTab === 'weeks'
+                          ? 'bg-border/50 text-foreground'
+                          : 'text-muted hover:bg-border/30 hover:text-foreground'
+                      )}
+                    >
+                      <CalendarIcon />
+                      <span>Weeks</span>
+                    </Link>
+                  </li>
+                  <li role="treeitem">
+                    <Link
+                      to={`/documents/${project.id}/issues`}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+                        currentTab === 'issues'
+                          ? 'bg-border/50 text-foreground'
+                          : 'text-muted hover:bg-border/30 hover:text-foreground'
+                      )}
+                    >
+                      <IssueIcon />
+                      <span>Issues</span>
+                    </Link>
+                  </li>
+                  <li role="treeitem">
+                    <Link
+                      to={`/documents/${project.id}/retro`}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+                        currentTab === 'retro'
+                          ? 'bg-border/50 text-foreground'
+                          : 'text-muted hover:bg-border/30 hover:text-foreground'
+                      )}
+                    >
+                      <RetroIcon />
+                      <span>Retro</span>
+                    </Link>
+                  </li>
+                </ul>
               )}
-            >
-              <span
-                className="h-2 w-2 rounded-full flex-shrink-0"
-                style={{ backgroundColor: project.color || '#6366f1' }}
-              />
-              <span className="flex-1 truncate">{project.title || 'Untitled'}</span>
-              <span className="text-xs text-muted">{project.ice_score}</span>
-            </Link>
-            <button
-              type="button"
-              onClick={(e) => handleMenuClick(e, project)}
-              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
-              aria-label={`Actions for ${project.title || 'Untitled'}`}
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="5" r="2" />
-                <circle cx="12" cy="12" r="2" />
-                <circle cx="12" cy="19" r="2" />
-              </svg>
-            </button>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
 
       {contextMenu && (
@@ -1207,6 +1378,30 @@ function ProjectsList({
         </ContextMenu>
       )}
     </>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
+function IssueIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+    </svg>
+  );
+}
+
+function RetroIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
+    </svg>
   );
 }
 

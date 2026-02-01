@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
-type DocumentType = 'wiki' | 'issue' | 'project' | 'program' | 'sprint' | 'person' | null;
+type DocumentType = 'wiki' | 'issue' | 'project' | 'program' | 'sprint' | 'person' | 'weekly_plan' | 'weekly_retro' | null;
 
 interface CurrentDocumentContextValue {
   currentDocumentType: DocumentType;
   currentDocumentId: string | null;
-  setCurrentDocument: (id: string | null, type: DocumentType) => void;
+  currentDocumentProjectId: string | null;
+  setCurrentDocument: (id: string | null, type: DocumentType, projectId?: string | null) => void;
   clearCurrentDocument: () => void;
 }
 
@@ -14,15 +15,18 @@ const CurrentDocumentContext = createContext<CurrentDocumentContextValue | undef
 export function CurrentDocumentProvider({ children }: { children: ReactNode }) {
   const [currentDocumentId, setCurrentDocumentId] = useState<string | null>(null);
   const [currentDocumentType, setCurrentDocumentType] = useState<DocumentType>(null);
+  const [currentDocumentProjectId, setCurrentDocumentProjectId] = useState<string | null>(null);
 
-  const setCurrentDocument = useCallback((id: string | null, type: DocumentType) => {
+  const setCurrentDocument = useCallback((id: string | null, type: DocumentType, projectId?: string | null) => {
     setCurrentDocumentId(id);
     setCurrentDocumentType(type);
+    setCurrentDocumentProjectId(projectId ?? null);
   }, []);
 
   const clearCurrentDocument = useCallback(() => {
     setCurrentDocumentId(null);
     setCurrentDocumentType(null);
+    setCurrentDocumentProjectId(null);
   }, []);
 
   return (
@@ -30,6 +34,7 @@ export function CurrentDocumentProvider({ children }: { children: ReactNode }) {
       value={{
         currentDocumentType,
         currentDocumentId,
+        currentDocumentProjectId,
         setCurrentDocument,
         clearCurrentDocument,
       }}

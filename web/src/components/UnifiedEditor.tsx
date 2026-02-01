@@ -17,7 +17,7 @@ import { useAutoSave } from '@/hooks/useAutoSave';
 import type { Person } from '@/components/PersonCombobox';
 import type { BelongsTo } from '@ship/shared';
 
-export type DocumentType = 'wiki' | 'issue' | 'project' | 'sprint' | 'program' | 'person';
+export type DocumentType = 'wiki' | 'issue' | 'project' | 'sprint' | 'program' | 'person' | 'weekly_plan' | 'weekly_retro';
 
 // Base document interface - common properties across all document types
 interface BaseDocument {
@@ -325,7 +325,7 @@ export function UnifiedEditor({
   // Render the type-specific sidebar content via unified PropertiesPanel
   const typeSpecificSidebar = useMemo(() => {
     // Check if document type has a properties panel
-    if (!['wiki', 'issue', 'project', 'sprint', 'program'].includes(document.document_type)) {
+    if (!['wiki', 'issue', 'project', 'sprint', 'program', 'weekly_plan', 'weekly_retro'].includes(document.document_type)) {
       return (
         <div className="p-4">
           <p className="text-xs text-muted">
@@ -339,7 +339,7 @@ export function UnifiedEditor({
       <PropertiesPanel
         document={document as PanelDocument}
         panelProps={panelProps}
-        onUpdate={onUpdate}
+        onUpdate={onUpdate as (updates: Partial<PanelDocument>) => Promise<void>}
         highlightedFields={missingFields}
       />
     );
@@ -380,12 +380,16 @@ export function UnifiedEditor({
     return null;
   }
 
+  // Weekly plans and retros have computed titles (includes person name) - make read-only
+  const isTitleReadOnly = document.document_type === 'weekly_plan' || document.document_type === 'weekly_retro';
+
   return (
     <Editor
       documentId={document.id}
       userName={user.name}
       initialTitle={document.title}
-      onTitleChange={throttledTitleSave}
+      onTitleChange={isTitleReadOnly ? undefined : throttledTitleSave}
+      titleReadOnly={isTitleReadOnly}
       onBack={onBack}
       backLabel={backLabel}
       onDelete={onDelete}

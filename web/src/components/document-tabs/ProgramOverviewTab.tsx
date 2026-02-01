@@ -125,7 +125,7 @@ export default function ProgramOverviewTab({ documentId, document }: DocumentTab
       sidebarData={sidebarData}
       onUpdate={handleUpdate}
       onBack={handleBack}
-      backLabel="Back to programs"
+      backLabel="programs"
       onDelete={handleDelete}
       showTypeSelector={false}
     />

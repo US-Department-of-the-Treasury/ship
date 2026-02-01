@@ -236,7 +236,7 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
       onTypeChange={handleTypeChange}
       onDocumentConverted={handleDocumentConverted}
       onBack={handleBack}
-      backLabel="Back to projects"
+      backLabel="projects"
       onDelete={handleDelete}
       showTypeSelector={true}
     />

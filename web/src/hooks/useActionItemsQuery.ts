@@ -14,6 +14,10 @@ export interface ActionItem {
   accountability_target_id: string | null;
   target_title?: string;
   days_overdue: number;
+  // Additional metadata for weekly_plan/weekly_retro navigation
+  person_id?: string | null;
+  project_id?: string | null;
+  week_number?: number | null;
 }
 
 interface ActionItemsResponse {

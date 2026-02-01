@@ -30,6 +30,7 @@ import activityRoutes from './routes/activity.js';
 import dashboardRoutes from './routes/dashboard.js';
 import associationsRoutes from './routes/associations.js';
 import accountabilityRoutes from './routes/accountability.js';
+import weeklyPlansRoutes, { weeklyRetrosRouter } from './routes/weekly-plans.js';
 import { setupSwagger } from './swagger.js';
 import { initializeCAIA } from './services/caia.js';
 
@@ -58,9 +59,10 @@ const conditionalCsrf = (req: Request, res: Response, next: NextFunction) => {
 };
 
 // Rate limiting configurations
-// In test environment, use much higher limits to avoid flaky tests
+// In test/dev environment, use much higher limits to avoid issues
 // Production limits: login=5/15min (failed only), api=100/min
 const isTestEnv = process.env.NODE_ENV === 'test' || process.env.E2E_TEST === '1';
+const isDevEnv = process.env.NODE_ENV !== 'production';
 
 // Strict rate limit for login (5 failed attempts / 15 min) - brute force protection
 // skipSuccessfulRequests: true means only failed attempts count toward the limit
@@ -73,10 +75,10 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true, // Only count failed login attempts
 });
 
-// General API rate limit (100 req/min)
+// General API rate limit (100 req/min in prod, 1000 in dev)
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: isTestEnv ? 10000 : 100, // High limit for tests
+  max: isTestEnv ? 10000 : isDevEnv ? 1000 : 100, // High limit for tests/dev
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please slow down.' },
@@ -206,6 +208,12 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // Accountability routes - inference-based action items (read-only GET)
   app.use('/api/accountability', accountabilityRoutes);
+
+  // Weekly plans routes - per-person accountability documents (CSRF protected)
+  app.use('/api/weekly-plans', conditionalCsrf, weeklyPlansRoutes);
+
+  // Weekly retros routes - per-person accountability documents (CSRF protected)
+  app.use('/api/weekly-retros', conditionalCsrf, weeklyRetrosRouter);
 
   // CAIA auth routes - no CSRF protection (OAuth flow with external callback)
   // This is the single identity provider for PIV authentication
