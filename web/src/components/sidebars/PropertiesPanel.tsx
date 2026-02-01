@@ -245,36 +245,37 @@ function WeeklyDocumentSidebar({
   const projectName = projectDoc?.title || (projectId ? `${projectId.substring(0, 8)}...` : null);
 
   return (
-    <div className="p-4 space-y-4">
-      <div>
-        <h3 className="text-sm font-medium text-neutral-900 mb-2">
+    <div className="space-y-4 p-4">
+      {/* Header */}
+      <div className="border-b border-border pb-3">
+        <h3 className="text-sm font-medium text-foreground">
           {document.document_type === 'weekly_plan' ? 'Weekly Plan' : 'Weekly Retro'}
         </h3>
         {weekNumber && (
-          <p className="text-xs text-neutral-500">Week {weekNumber}</p>
+          <p className="text-sm text-muted mt-1">Week {weekNumber}</p>
         )}
       </div>
 
-      {/* Properties summary with human-readable names */}
-      <div className="space-y-2 text-xs text-neutral-600">
-        {personId && (
-          <div>
-            <span className="text-neutral-400">Person:</span>{' '}
-            <span className="font-medium">{personName}</span>
-          </div>
-        )}
-        {projectId && (
-          <div>
-            <span className="text-neutral-400">Project:</span>{' '}
-            <a
-              href={`/documents/${projectId}/weeks`}
-              className="font-medium text-accent hover:underline"
-            >
-              {projectName}
-            </a>
-          </div>
-        )}
-      </div>
+      {/* Person */}
+      {personId && (
+        <div>
+          <label className="text-xs font-medium text-muted mb-1 block">Person</label>
+          <p className="text-sm text-foreground">{personName}</p>
+        </div>
+      )}
+
+      {/* Project */}
+      {projectId && (
+        <div>
+          <label className="text-xs font-medium text-muted mb-1 block">Project</label>
+          <a
+            href={`/documents/${projectId}/weeks`}
+            className="text-sm text-accent hover:underline"
+          >
+            {projectName}
+          </a>
+        </div>
+      )}
 
       {/* Content History Panel */}
       <ContentHistoryPanel

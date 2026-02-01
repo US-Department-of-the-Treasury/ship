@@ -44,6 +44,8 @@ interface EditorProps {
   userColor?: string;
   onTitleChange?: (title: string) => void;
   initialTitle?: string;
+  /** Whether the title is read-only (e.g., for weekly plans/retros with computed titles) */
+  titleReadOnly?: boolean;
   onBack?: () => void;
   /** Label for back button (e.g., parent document title) */
   backLabel?: string;
@@ -147,6 +149,7 @@ export function Editor({
   userColor,
   onTitleChange,
   initialTitle = 'Untitled',
+  titleReadOnly = false,
   onBack,
   backLabel,
   roomPrefix = 'doc',
@@ -780,7 +783,7 @@ export function Editor({
               ref={titleInputRef}
               type="text"
               value={title}
-              onChange={handleTitleChange}
+              onChange={titleReadOnly ? undefined : handleTitleChange}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -788,7 +791,11 @@ export function Editor({
                 }
               }}
               placeholder="Untitled"
-              className="mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none pl-8"
+              readOnly={titleReadOnly}
+              className={cn(
+                "mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none pl-8",
+                titleReadOnly && "cursor-default"
+              )}
             />
             <div className="tiptap-wrapper" data-testid="tiptap-editor">
               <EditorContent editor={editor} />

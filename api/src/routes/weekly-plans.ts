@@ -7,6 +7,56 @@ import { v4 as uuidv4 } from 'uuid';
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
+// Templates for weekly plan and retro documents
+// These provide structure for users to fill in, and "done" status is based on adding content beyond the template
+const WEEKLY_PLAN_TEMPLATE = {
+  type: 'doc',
+  content: [
+    {
+      type: 'heading',
+      attrs: { level: 2 },
+      content: [{ type: 'text', text: 'What I plan to accomplish this week' }]
+    },
+    {
+      type: 'bulletList',
+      content: [
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+      ]
+    }
+  ]
+};
+
+const WEEKLY_RETRO_TEMPLATE = {
+  type: 'doc',
+  content: [
+    {
+      type: 'heading',
+      attrs: { level: 2 },
+      content: [{ type: 'text', text: 'What I delivered this week' }]
+    },
+    {
+      type: 'bulletList',
+      content: [
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+      ]
+    }
+  ]
+};
+
+// Template heading texts - used to check if user has added content beyond the template
+const TEMPLATE_HEADINGS = [
+  'What I plan to accomplish this week',
+  'What I delivered this week',
+];
+
 // Schema for creating/getting a weekly plan
 const weeklyPlanSchema = z.object({
   person_id: z.string().uuid(),
@@ -99,9 +149,11 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     if (existingResult.rows.length > 0) {
       // Return existing document with 200
       const doc = existingResult.rows[0];
+      // Compute full title with person name for entity reference
+      const computedTitle = personName ? `${doc.title} - ${personName}` : doc.title;
       res.status(200).json({
         id: doc.id,
-        title: doc.title,
+        title: computedTitle,
         document_type: 'weekly_plan',
         content: doc.content,
         properties: doc.properties,
@@ -115,7 +167,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     await client.query('BEGIN');
 
     const docId = uuidv4();
-    const title = 'Untitled'; // Per Ship convention, all new docs are "Untitled"
+    const title = `Week ${week_number} Plan`; // Base title without person name
     const properties = {
       person_id,
       project_id,
@@ -123,12 +175,12 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       submitted_at: null,
     };
 
-    // Insert the document
+    // Insert the document with template content
     const insertResult = await client.query(
       `INSERT INTO documents (id, workspace_id, document_type, title, content, properties, visibility, created_by, position)
        VALUES ($1, $2, 'weekly_plan', $3, $4, $5, 'workspace', $6, 0)
        RETURNING id, title, content, properties, created_at, updated_at`,
-      [docId, workspaceId, title, JSON.stringify({ type: 'doc', content: [] }), JSON.stringify(properties), userId]
+      [docId, workspaceId, title, JSON.stringify(WEEKLY_PLAN_TEMPLATE), JSON.stringify(properties), userId]
     );
 
     // Create association with project
@@ -141,9 +193,11 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     await client.query('COMMIT');
 
     const doc = insertResult.rows[0];
+    // Compute full title with person name for entity reference
+    const computedTitle = personName ? `${doc.title} - ${personName}` : doc.title;
     res.status(201).json({
       id: doc.id,
-      title: doc.title,
+      title: computedTitle,
       document_type: 'weekly_plan',
       content: doc.content,
       properties: doc.properties,
@@ -221,17 +275,21 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
     const result = await pool.query(query, params);
 
-    const plans = result.rows.map(row => ({
-      id: row.id,
-      title: row.title,
-      document_type: 'weekly_plan' as const,
-      content: row.content,
-      properties: row.properties,
-      person_name: row.person_name,
-      project_name: row.project_name,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    }));
+    const plans = result.rows.map(row => {
+      // Compute full title with person name for entity reference
+      const computedTitle = row.person_name ? `${row.title} - ${row.person_name}` : row.title;
+      return {
+        id: row.id,
+        title: computedTitle,
+        document_type: 'weekly_plan' as const,
+        content: row.content,
+        properties: row.properties,
+        person_name: row.person_name,
+        project_name: row.project_name,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+    });
 
     res.json(plans);
   } catch (err) {
@@ -347,9 +405,11 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     const row = result.rows[0];
+    // Compute full title with person name for entity reference
+    const computedTitle = row.person_name ? `${row.title} - ${row.person_name}` : row.title;
     res.json({
       id: row.id,
-      title: row.title,
+      title: computedTitle,
       document_type: 'weekly_plan' as const,
       content: row.content,
       properties: row.properties,
@@ -431,6 +491,7 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
       res.status(404).json({ error: 'Person not found' });
       return;
     }
+    const personName = personResult.rows[0].title;
 
     // Verify project exists in this workspace
     const projectResult = await client.query(
@@ -457,9 +518,11 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
     if (existingResult.rows.length > 0) {
       // Return existing document with 200
       const doc = existingResult.rows[0];
+      // Compute full title with person name for entity reference
+      const computedTitle = personName ? `${doc.title} - ${personName}` : doc.title;
       res.status(200).json({
         id: doc.id,
-        title: doc.title,
+        title: computedTitle,
         document_type: 'weekly_retro',
         content: doc.content,
         properties: doc.properties,
@@ -473,7 +536,7 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
     await client.query('BEGIN');
 
     const docId = uuidv4();
-    const title = 'Untitled'; // Per Ship convention
+    const title = `Week ${week_number} Retro`; // Base title without person name
     const properties = {
       person_id,
       project_id,
@@ -481,12 +544,12 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
       submitted_at: null,
     };
 
-    // Insert the document
+    // Insert the document with template content
     const insertResult = await client.query(
       `INSERT INTO documents (id, workspace_id, document_type, title, content, properties, visibility, created_by, position)
        VALUES ($1, $2, 'weekly_retro', $3, $4, $5, 'workspace', $6, 0)
        RETURNING id, title, content, properties, created_at, updated_at`,
-      [docId, workspaceId, title, JSON.stringify({ type: 'doc', content: [] }), JSON.stringify(properties), userId]
+      [docId, workspaceId, title, JSON.stringify(WEEKLY_RETRO_TEMPLATE), JSON.stringify(properties), userId]
     );
 
     // Create association with project
@@ -499,9 +562,11 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
     await client.query('COMMIT');
 
     const doc = insertResult.rows[0];
+    // Compute full title with person name for entity reference
+    const computedTitle = personName ? `${doc.title} - ${personName}` : doc.title;
     res.status(201).json({
       id: doc.id,
-      title: doc.title,
+      title: computedTitle,
       document_type: 'weekly_retro',
       content: doc.content,
       properties: doc.properties,
@@ -579,17 +644,21 @@ weeklyRetrosRouter.get('/', authMiddleware, async (req: Request, res: Response) 
 
     const result = await pool.query(query, params);
 
-    const retros = result.rows.map(row => ({
-      id: row.id,
-      title: row.title,
-      document_type: 'weekly_retro' as const,
-      content: row.content,
-      properties: row.properties,
-      person_name: row.person_name,
-      project_name: row.project_name,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    }));
+    const retros = result.rows.map(row => {
+      // Compute full title with person name for entity reference
+      const computedTitle = row.person_name ? `${row.title} - ${row.person_name}` : row.title;
+      return {
+        id: row.id,
+        title: computedTitle,
+        document_type: 'weekly_retro' as const,
+        content: row.content,
+        properties: row.properties,
+        person_name: row.person_name,
+        project_name: row.project_name,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+    });
 
     res.json(retros);
   } catch (err) {
@@ -705,9 +774,11 @@ weeklyRetrosRouter.get('/:id', authMiddleware, async (req: Request, res: Respons
     }
 
     const row = result.rows[0];
+    // Compute full title with person name for entity reference
+    const computedTitle = row.person_name ? `${row.title} - ${row.person_name}` : row.title;
     res.json({
       id: row.id,
-      title: row.title,
+      title: computedTitle,
       document_type: 'weekly_retro' as const,
       content: row.content,
       properties: row.properties,
@@ -824,11 +895,35 @@ router.get('/project-allocation-grid/:projectId', authMiddleware, async (req: Re
       [workspaceId, projectId]
     );
 
-    // Helper to check if document has content (not empty TipTap doc)
+    // Helper to extract all text from a TipTap document
+    const extractText = (node: unknown): string => {
+      if (!node || typeof node !== 'object') return '';
+      const n = node as { type?: string; text?: string; content?: unknown[] };
+      if (n.type === 'text' && n.text) return n.text;
+      if (Array.isArray(n.content)) {
+        return n.content.map(extractText).join('');
+      }
+      return '';
+    };
+
+    // Helper to check if document has content beyond the template
+    // "Done" means user has added their own text (not just the template heading)
     const hasContent = (content: unknown): boolean => {
       if (!content || typeof content !== 'object') return false;
       const doc = content as { content?: unknown[] };
-      return Array.isArray(doc.content) && doc.content.length > 0;
+      if (!Array.isArray(doc.content) || doc.content.length === 0) return false;
+
+      // Extract all text from the document
+      const allText = extractText(content).trim();
+
+      // Remove template heading texts to see if anything user-written remains
+      let textWithoutTemplate = allText;
+      for (const heading of TEMPLATE_HEADINGS) {
+        textWithoutTemplate = textWithoutTemplate.replace(heading, '');
+      }
+
+      // If there's any non-whitespace text left, the user has added content
+      return textWithoutTemplate.trim().length > 0;
     };
 
     // Helper to calculate plan/retro status based on timing
