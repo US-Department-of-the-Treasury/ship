@@ -310,14 +310,14 @@ export function UnifiedDocumentPage() {
     }
   }, [document, navigate]);
 
-  // Compute back label based on document type
+  // Compute back label based on document type (just the noun - Editor adds "Back to")
   const backLabel = useMemo(() => {
     switch (document?.document_type) {
-      case 'issue': return 'Back to issues';
-      case 'project': return 'Back to projects';
-      case 'sprint': return 'Back to weeks';
-      case 'program': return 'Back to programs';
-      default: return 'Back to docs';
+      case 'issue': return 'issues';
+      case 'project': return 'projects';
+      case 'sprint': return 'weeks';
+      case 'program': return 'programs';
+      default: return 'docs';
     }
   }, [document?.document_type]);
 

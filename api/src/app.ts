@@ -59,9 +59,10 @@ const conditionalCsrf = (req: Request, res: Response, next: NextFunction) => {
 };
 
 // Rate limiting configurations
-// In test environment, use much higher limits to avoid flaky tests
+// In test/dev environment, use much higher limits to avoid issues
 // Production limits: login=5/15min (failed only), api=100/min
 const isTestEnv = process.env.NODE_ENV === 'test' || process.env.E2E_TEST === '1';
+const isDevEnv = process.env.NODE_ENV !== 'production';
 
 // Strict rate limit for login (5 failed attempts / 15 min) - brute force protection
 // skipSuccessfulRequests: true means only failed attempts count toward the limit
@@ -74,10 +75,10 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true, // Only count failed login attempts
 });
 
-// General API rate limit (100 req/min)
+// General API rate limit (100 req/min in prod, 1000 in dev)
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: isTestEnv ? 10000 : 100, // High limit for tests
+  max: isTestEnv ? 10000 : isDevEnv ? 1000 : 100, // High limit for tests/dev
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please slow down.' },

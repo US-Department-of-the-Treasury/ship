@@ -805,9 +805,9 @@ router.get('/project-allocation-grid/:projectId', authMiddleware, async (req: Re
       peopleMap.get(row.person_id)!.allocatedWeeks.add(row.week_number);
     }
 
-    // Get all weekly plans for this project
+    // Get all weekly plans for this project (include content to check if "done")
     const plansResult = await pool.query(
-      `SELECT (properties->>'person_id') as person_id, (properties->>'week_number')::int as week_number, id
+      `SELECT (properties->>'person_id') as person_id, (properties->>'week_number')::int as week_number, id, content
        FROM documents
        WHERE workspace_id = $1
          AND document_type = 'weekly_plan'
@@ -816,9 +816,9 @@ router.get('/project-allocation-grid/:projectId', authMiddleware, async (req: Re
       [workspaceId, projectId]
     );
 
-    // Get all weekly retros for this project
+    // Get all weekly retros for this project (include content to check if "done")
     const retrosResult = await pool.query(
-      `SELECT (properties->>'person_id') as person_id, (properties->>'week_number')::int as week_number, id
+      `SELECT (properties->>'person_id') as person_id, (properties->>'week_number')::int as week_number, id, content
        FROM documents
        WHERE workspace_id = $1
          AND document_type = 'weekly_retro'
@@ -827,15 +827,66 @@ router.get('/project-allocation-grid/:projectId', authMiddleware, async (req: Re
       [workspaceId, projectId]
     );
 
-    // Build plan/retro status maps
-    const plans = new Map<string, string>(); // `${personId}_${weekNumber}` -> planId
+    // Helper to check if document has content (not empty TipTap doc)
+    const hasContent = (content: unknown): boolean => {
+      if (!content || typeof content !== 'object') return false;
+      const doc = content as { content?: unknown[] };
+      return Array.isArray(doc.content) && doc.content.length > 0;
+    };
+
+    // Helper to calculate plan/retro status based on timing
+    // Plan: yellow Sat 00:00 → Mon 23:59, red after Tue 00:00
+    // Retro: yellow Fri 00:00 → Sun 23:59, red after Mon 00:00
+    const calculateStatus = (
+      docId: string | null,
+      docContent: unknown,
+      weekStartDate: Date,
+      type: 'plan' | 'retro'
+    ): 'done' | 'due' | 'late' | 'future' => {
+      // If document exists with content, it's done
+      if (docId && hasContent(docContent)) {
+        return 'done';
+      }
+
+      const now = new Date();
+      now.setUTCHours(0, 0, 0, 0);
+
+      if (type === 'plan') {
+        // Plan timing relative to week start:
+        // Yellow: Saturday before (week start - 2 days) through Monday EOD (week start + 1 day)
+        // Red: After Monday (week start + 2 days onwards)
+        const yellowStart = new Date(weekStartDate);
+        yellowStart.setUTCDate(yellowStart.getUTCDate() - 2); // Saturday
+        const redStart = new Date(weekStartDate);
+        redStart.setUTCDate(redStart.getUTCDate() + 2); // Tuesday 00:00
+
+        if (now < yellowStart) return 'future';
+        if (now >= redStart) return 'late';
+        return 'due';
+      } else {
+        // Retro timing relative to week start:
+        // Yellow: Friday (week start + 4 days) through Sunday (week start + 6 days)
+        // Red: Monday of next week (week start + 7 days)
+        const yellowStart = new Date(weekStartDate);
+        yellowStart.setUTCDate(yellowStart.getUTCDate() + 4); // Friday
+        const redStart = new Date(weekStartDate);
+        redStart.setUTCDate(redStart.getUTCDate() + 7); // Monday of next week
+
+        if (now < yellowStart) return 'future';
+        if (now >= redStart) return 'late';
+        return 'due';
+      }
+    };
+
+    // Build plan/retro maps with content for status calculation
+    const plans = new Map<string, { id: string; content: unknown }>(); // `${personId}_${weekNumber}` -> {id, content}
     for (const row of plansResult.rows) {
-      plans.set(`${row.person_id}_${row.week_number}`, row.id);
+      plans.set(`${row.person_id}_${row.week_number}`, { id: row.id, content: row.content });
     }
 
-    const retros = new Map<string, string>(); // `${personId}_${weekNumber}` -> retroId
+    const retros = new Map<string, { id: string; content: unknown }>(); // `${personId}_${weekNumber}` -> {id, content}
     for (const row of retrosResult.rows) {
-      retros.set(`${row.person_id}_${row.week_number}`, row.id);
+      retros.set(`${row.person_id}_${row.week_number}`, { id: row.id, content: row.content });
     }
 
     // Determine week range to show (min/max allocated weeks or current sprint)
@@ -870,14 +921,22 @@ router.get('/project-allocation-grid/:projectId', authMiddleware, async (req: Re
       id: person.id,
       name: person.name,
       weeks: Object.fromEntries(
-        weeks.map(week => [
-          week.number,
-          {
-            isAllocated: person.allocatedWeeks.has(week.number),
-            planId: plans.get(`${person.id}_${week.number}`) || null,
-            retroId: retros.get(`${person.id}_${week.number}`) || null,
-          },
-        ])
+        weeks.map(week => {
+          const weekStartDate = new Date(week.startDate);
+          const planData = plans.get(`${person.id}_${week.number}`);
+          const retroData = retros.get(`${person.id}_${week.number}`);
+
+          return [
+            week.number,
+            {
+              isAllocated: person.allocatedWeeks.has(week.number),
+              planId: planData?.id || null,
+              planStatus: calculateStatus(planData?.id || null, planData?.content, weekStartDate, 'plan'),
+              retroId: retroData?.id || null,
+              retroStatus: calculateStatus(retroData?.id || null, retroData?.content, weekStartDate, 'retro'),
+            },
+          ];
+        })
       ),
     }));
 

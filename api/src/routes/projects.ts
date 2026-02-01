@@ -1185,7 +1185,67 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
   }
 });
 
-// GET /api/projects/:id/sprints - List sprints for a project
+// GET /api/projects/:id/weeks - List weeks (sprints) for a project
+// Note: "weeks" is the user-facing terminology, "sprints" is internal
+router.get('/:id/weeks', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify project exists and user can access it
+    const projectCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (projectCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // Get sprints associated with this project via junction table
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
+              p.title as program_name, p.properties->>'prefix' as program_prefix,
+              w.sprint_start_date as workspace_sprint_start_date,
+              proj.id as project_id, proj.title as project_name,
+              u.id as owner_id, u.name as owner_name, u.email as owner_email,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id
+       LEFT JOIN documents proj ON proj.id = $1
+       JOIN workspaces w ON d.workspace_id = w.id
+       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       WHERE d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
+       ORDER BY (d.properties->>'sprint_number')::int DESC`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    res.json(result.rows.map(extractSprintFromRow));
+  } catch (err) {
+    console.error('Get project weeks error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/projects/:id/sprints - List sprints for a project (deprecated, use /weeks)
 router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

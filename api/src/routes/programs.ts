@@ -598,7 +598,7 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
 
     res.json({
       workspace_sprint_start_date: sprintStartDate,
-      sprints,
+      weeks: sprints,
     });
   } catch (err) {
     console.error('Get program sprints error:', err);

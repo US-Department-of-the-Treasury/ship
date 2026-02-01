@@ -85,7 +85,7 @@ export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
     },
     {
       id: 'sprints',
-      label: (_, counts) => counts?.weeks ? `Weeks (${counts.weeks})` : 'Weeks',
+      label: 'Weeks',
       component: ProjectWeeksTab,
     },
     {

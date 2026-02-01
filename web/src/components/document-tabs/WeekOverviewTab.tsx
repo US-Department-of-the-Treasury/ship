@@ -137,7 +137,7 @@ export default function SprintOverviewTab({ documentId, document }: DocumentTabP
       sidebarData={sidebarData}
       onUpdate={handleUpdate}
       onBack={handleBack}
-      backLabel="Back to weeks"
+      backLabel="weeks"
       onDelete={handleDelete}
       showTypeSelector={false}
     />
