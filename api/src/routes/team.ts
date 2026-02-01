@@ -1042,6 +1042,325 @@ router.get('/people/:personId/sprint-metrics', authMiddleware, async (req: Reque
   }
 });
 
+// Templates for weekly plan and retro - used to check if document has content
+const TEMPLATE_HEADINGS = [
+  'What I plan to accomplish this week',
+  'What I delivered this week',
+];
+
+// GET /api/team/accountability-grid-v2 - Get per-person plan/retro status for all projects
+// Returns: { programs: [{ projects: [{ people: [{ weeks }] }] }], weeks, currentSprintNumber }
+// Query params:
+//   showArchived: boolean - include archived projects (default: false)
+router.get('/accountability-grid-v2', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+    const showArchived = req.query.showArchived === 'true';
+
+    // Check if user is admin
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    // Get workspace sprint config
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    if (workspaceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Workspace not found' });
+      return;
+    }
+
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
+    const sprintDurationDays = 7;
+    const today = new Date();
+
+    let sprintStartDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      sprintStartDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      sprintStartDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      sprintStartDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
+
+    // Calculate current sprint number
+    const daysSinceStart = Math.floor((today.getTime() - sprintStartDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
+
+    // Get sprint range (last 6 sprints + current + next 2)
+    const fromSprint = Math.max(1, currentSprintNumber - 6);
+    const toSprint = currentSprintNumber + 2;
+
+    // Generate weeks array
+    const weeks: { number: number; name: string; startDate: string; endDate: string; isCurrent: boolean }[] = [];
+    for (let i = fromSprint; i <= toSprint; i++) {
+      const weekStart = new Date(sprintStartDate);
+      weekStart.setUTCDate(weekStart.getUTCDate() + (i - 1) * sprintDurationDays);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setUTCDate(weekEnd.getUTCDate() + sprintDurationDays - 1);
+
+      weeks.push({
+        number: i,
+        name: `Week ${i}`,
+        startDate: weekStart.toISOString().split('T')[0] || '',
+        endDate: weekEnd.toISOString().split('T')[0] || '',
+        isCurrent: i === currentSprintNumber,
+      });
+    }
+
+    // Get all workspace people
+    const peopleResult = await pool.query(
+      `SELECT id, title as name
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'person'
+         AND archived_at IS NULL
+       ORDER BY title`,
+      [workspaceId]
+    );
+
+    // Get all programs with their projects
+    const programsResult = await pool.query(
+      `SELECT
+         prog.id as program_id,
+         prog.title as program_name,
+         prog.properties->>'color' as program_color,
+         proj.id as project_id,
+         proj.title as project_title,
+         proj.properties->>'color' as project_color,
+         proj.archived_at as project_archived_at
+       FROM documents prog
+       LEFT JOIN document_associations da ON da.related_id = prog.id AND da.relationship_type = 'program'
+       LEFT JOIN documents proj ON proj.id = da.document_id AND proj.document_type = 'project'
+       WHERE prog.workspace_id = $1
+         AND prog.document_type = 'program'
+         AND prog.archived_at IS NULL
+         AND (proj.id IS NULL OR ($2 OR proj.archived_at IS NULL))
+       ORDER BY prog.title, proj.title`,
+      [workspaceId, showArchived]
+    );
+
+    // Also get projects without a program
+    const unassignedProjectsResult = await pool.query(
+      `SELECT
+         proj.id as project_id,
+         proj.title as project_title,
+         proj.properties->>'color' as project_color,
+         proj.archived_at as project_archived_at
+       FROM documents proj
+       WHERE proj.workspace_id = $1
+         AND proj.document_type = 'project'
+         AND ($2 OR proj.archived_at IS NULL)
+         AND NOT EXISTS (
+           SELECT 1 FROM document_associations da
+           WHERE da.document_id = proj.id AND da.relationship_type = 'program'
+         )
+       ORDER BY proj.title`,
+      [workspaceId, showArchived]
+    );
+
+    // Get ALL weekly plans in the workspace for the week range
+    const plansResult = await pool.query(
+      `SELECT
+         (properties->>'person_id') as person_id,
+         (properties->>'project_id') as project_id,
+         (properties->>'week_number')::int as week_number,
+         id,
+         content
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_plan'
+         AND deleted_at IS NULL
+         AND (properties->>'week_number')::int BETWEEN $2 AND $3`,
+      [workspaceId, fromSprint, toSprint]
+    );
+
+    // Get ALL weekly retros in the workspace for the week range
+    const retrosResult = await pool.query(
+      `SELECT
+         (properties->>'person_id') as person_id,
+         (properties->>'project_id') as project_id,
+         (properties->>'week_number')::int as week_number,
+         id,
+         content
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_retro'
+         AND deleted_at IS NULL
+         AND (properties->>'week_number')::int BETWEEN $2 AND $3`,
+      [workspaceId, fromSprint, toSprint]
+    );
+
+    // Helper to extract all text from a TipTap document
+    const extractText = (node: unknown): string => {
+      if (!node || typeof node !== 'object') return '';
+      const n = node as { type?: string; text?: string; content?: unknown[] };
+      if (n.type === 'text' && n.text) return n.text;
+      if (Array.isArray(n.content)) {
+        return n.content.map(extractText).join('');
+      }
+      return '';
+    };
+
+    // Helper to check if document has content beyond the template
+    const hasContent = (content: unknown): boolean => {
+      if (!content || typeof content !== 'object') return false;
+      const doc = content as { content?: unknown[] };
+      if (!Array.isArray(doc.content) || doc.content.length === 0) return false;
+
+      const allText = extractText(content).trim();
+      let textWithoutTemplate = allText;
+      for (const heading of TEMPLATE_HEADINGS) {
+        textWithoutTemplate = textWithoutTemplate.replace(heading, '');
+      }
+      return textWithoutTemplate.trim().length > 0;
+    };
+
+    // Helper to calculate plan/retro status based on timing
+    const calculateStatus = (
+      docId: string | null,
+      docContent: unknown,
+      weekStartDate: Date,
+      type: 'plan' | 'retro'
+    ): 'done' | 'due' | 'late' | 'future' => {
+      if (docId && hasContent(docContent)) {
+        return 'done';
+      }
+
+      const now = new Date();
+      now.setUTCHours(0, 0, 0, 0);
+
+      if (type === 'plan') {
+        const yellowStart = new Date(weekStartDate);
+        yellowStart.setUTCDate(yellowStart.getUTCDate() - 2); // Saturday
+        const redStart = new Date(weekStartDate);
+        redStart.setUTCDate(redStart.getUTCDate() + 2); // Tuesday 00:00
+
+        if (now < yellowStart) return 'future';
+        if (now >= redStart) return 'late';
+        return 'due';
+      } else {
+        const yellowStart = new Date(weekStartDate);
+        yellowStart.setUTCDate(yellowStart.getUTCDate() + 4); // Friday
+        const redStart = new Date(weekStartDate);
+        redStart.setUTCDate(redStart.getUTCDate() + 7); // Monday of next week
+
+        if (now < yellowStart) return 'future';
+        if (now >= redStart) return 'late';
+        return 'due';
+      }
+    };
+
+    // Build plan/retro maps: `${projectId}_${personId}_${weekNumber}` -> { id, content }
+    const plans = new Map<string, { id: string; content: unknown }>();
+    for (const row of plansResult.rows) {
+      plans.set(`${row.project_id}_${row.person_id}_${row.week_number}`, { id: row.id, content: row.content });
+    }
+
+    const retros = new Map<string, { id: string; content: unknown }>();
+    for (const row of retrosResult.rows) {
+      retros.set(`${row.project_id}_${row.person_id}_${row.week_number}`, { id: row.id, content: row.content });
+    }
+
+    // Build program -> projects structure
+    const programsMap = new Map<string, {
+      id: string;
+      name: string;
+      color: string;
+      projects: Map<string, { id: string; title: string; color: string; isArchived: boolean }>;
+    }>();
+
+    for (const row of programsResult.rows) {
+      if (!programsMap.has(row.program_id)) {
+        programsMap.set(row.program_id, {
+          id: row.program_id,
+          name: row.program_name,
+          color: row.program_color || '#6b7280',
+          projects: new Map(),
+        });
+      }
+      if (row.project_id) {
+        programsMap.get(row.program_id)!.projects.set(row.project_id, {
+          id: row.project_id,
+          title: row.project_title,
+          color: row.project_color || '#6b7280',
+          isArchived: !!row.project_archived_at,
+        });
+      }
+    }
+
+    // Build people data with weeks for each project
+    const buildPeopleForProject = (projectId: string) => {
+      return peopleResult.rows.map(person => ({
+        id: person.id,
+        name: person.name,
+        weeks: Object.fromEntries(
+          weeks.map(week => {
+            const weekStartDate = new Date(week.startDate);
+            const planData = plans.get(`${projectId}_${person.id}_${week.number}`);
+            const retroData = retros.get(`${projectId}_${person.id}_${week.number}`);
+
+            return [
+              week.number,
+              {
+                planId: planData?.id || null,
+                planStatus: calculateStatus(planData?.id || null, planData?.content, weekStartDate, 'plan'),
+                retroId: retroData?.id || null,
+                retroStatus: calculateStatus(retroData?.id || null, retroData?.content, weekStartDate, 'retro'),
+              },
+            ];
+          })
+        ),
+      }));
+    };
+
+    // Build final programs array
+    const programs = Array.from(programsMap.values()).map(program => ({
+      id: program.id,
+      name: program.name,
+      color: program.color,
+      projects: Array.from(program.projects.values()).map(project => ({
+        id: project.id,
+        title: project.title,
+        color: project.color,
+        isArchived: project.isArchived,
+        people: buildPeopleForProject(project.id),
+      })),
+    }));
+
+    // Add unassigned projects as a pseudo-program
+    if (unassignedProjectsResult.rows.length > 0) {
+      programs.push({
+        id: 'unassigned',
+        name: 'No Program',
+        color: '#6b7280',
+        projects: unassignedProjectsResult.rows.map(row => ({
+          id: row.project_id,
+          title: row.project_title,
+          color: row.project_color || '#6b7280',
+          isArchived: !!row.project_archived_at,
+          people: buildPeopleForProject(row.project_id),
+        })),
+      });
+    }
+
+    res.json({
+      programs,
+      weeks,
+      currentSprintNumber,
+    });
+  } catch (err) {
+    console.error('Get accountability grid v2 error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/team/accountability-grid - Get accountability grid data (hypothesis/review status)
 // Returns: { sprints, projects, sprintAccountability } for admin accountability view
 router.get('/accountability-grid', authMiddleware, async (req: Request, res: Response) => {
