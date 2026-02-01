@@ -5,6 +5,7 @@
  * It adapts based on document_type while maintaining the same rendering patterns.
  */
 import { useMemo, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
@@ -13,6 +14,7 @@ import { ProgramSidebar } from '@/components/sidebars/ProgramSidebar';
 import { ContentHistoryPanel } from '@/components/ContentHistoryPanel';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
+import { apiGet } from '@/lib/api';
 import type { Person } from '@/components/PersonCombobox';
 import type { BelongsTo, ApprovalTracking } from '@ship/shared';
 
@@ -204,6 +206,86 @@ interface PropertiesPanelProps {
 }
 
 /**
+ * WeeklyDocumentSidebar - Renders sidebar for weekly_plan/weekly_retro documents
+ * with human-readable names instead of UUIDs
+ */
+function WeeklyDocumentSidebar({
+  document,
+}: {
+  document: WeeklyPlanDocument | WeeklyRetroDocument;
+}) {
+  const docProperties = document.properties || {};
+  const weekNumber = docProperties.week_number as number | undefined;
+  const personId = docProperties.person_id as string | undefined;
+  const projectId = docProperties.project_id as string | undefined;
+
+  // Fetch person name
+  const { data: personDoc } = useQuery<{ title: string }>({
+    queryKey: ['document', personId],
+    queryFn: async () => {
+      const res = await apiGet(`/api/documents/${personId}`);
+      if (!res.ok) throw new Error('Failed to fetch person');
+      return res.json();
+    },
+    enabled: !!personId,
+  });
+
+  // Fetch project name
+  const { data: projectDoc } = useQuery<{ title: string }>({
+    queryKey: ['document', projectId],
+    queryFn: async () => {
+      const res = await apiGet(`/api/documents/${projectId}`);
+      if (!res.ok) throw new Error('Failed to fetch project');
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  const personName = personDoc?.title || (personId ? `${personId.substring(0, 8)}...` : null);
+  const projectName = projectDoc?.title || (projectId ? `${projectId.substring(0, 8)}...` : null);
+
+  return (
+    <div className="p-4 space-y-4">
+      <div>
+        <h3 className="text-sm font-medium text-neutral-900 mb-2">
+          {document.document_type === 'weekly_plan' ? 'Weekly Plan' : 'Weekly Retro'}
+        </h3>
+        {weekNumber && (
+          <p className="text-xs text-neutral-500">Week {weekNumber}</p>
+        )}
+      </div>
+
+      {/* Properties summary with human-readable names */}
+      <div className="space-y-2 text-xs text-neutral-600">
+        {personId && (
+          <div>
+            <span className="text-neutral-400">Person:</span>{' '}
+            <span className="font-medium">{personName}</span>
+          </div>
+        )}
+        {projectId && (
+          <div>
+            <span className="text-neutral-400">Project:</span>{' '}
+            <a
+              href={`/documents/${projectId}/weeks`}
+              className="font-medium text-accent hover:underline"
+            >
+              {projectName}
+            </a>
+          </div>
+        )}
+      </div>
+
+      {/* Content History Panel */}
+      <ContentHistoryPanel
+        documentId={document.id}
+        documentType={document.document_type as 'weekly_plan' | 'weekly_retro'}
+      />
+    </div>
+  );
+}
+
+/**
  * PropertiesPanel - Unified component that renders the appropriate sidebar
  * based on document_type.
  *
@@ -351,44 +433,11 @@ export function PropertiesPanel({
       case 'weekly_plan':
       case 'weekly_retro': {
         // Weekly plan and retro documents get a minimal sidebar with history panel
-        const docProperties = document.properties || {};
-        const weekNumber = docProperties.week_number as number | undefined;
-        const personId = docProperties.person_id as string | undefined;
-        const projectId = docProperties.project_id as string | undefined;
-
+        // Names are fetched via WeeklyDocumentSidebar component
         return (
-          <div className="p-4 space-y-4">
-            <div>
-              <h3 className="text-sm font-medium text-neutral-900 mb-2">
-                {document.document_type === 'weekly_plan' ? 'Weekly Plan' : 'Weekly Retro'}
-              </h3>
-              {weekNumber && (
-                <p className="text-xs text-neutral-500">Week {weekNumber}</p>
-              )}
-            </div>
-
-            {/* Properties summary */}
-            <div className="space-y-2 text-xs text-neutral-600">
-              {personId && (
-                <div>
-                  <span className="text-neutral-400">Person:</span>{' '}
-                  <span>{personId.substring(0, 8)}...</span>
-                </div>
-              )}
-              {projectId && (
-                <div>
-                  <span className="text-neutral-400">Project:</span>{' '}
-                  <span>{projectId.substring(0, 8)}...</span>
-                </div>
-              )}
-            </div>
-
-            {/* Content History Panel */}
-            <ContentHistoryPanel
-              documentId={document.id}
-              documentType={document.document_type as 'weekly_plan' | 'weekly_retro'}
-            />
-          </div>
+          <WeeklyDocumentSidebar
+            document={document as WeeklyPlanDocument | WeeklyRetroDocument}
+          />
         );
       }
 
