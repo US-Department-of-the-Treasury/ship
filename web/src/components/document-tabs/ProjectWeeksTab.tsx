@@ -1,31 +1,10 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ProjectCombobox, Project } from '@/components/ProjectCombobox';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { cn } from '@/lib/cn';
 import type { DocumentTabProps } from '@/lib/document-tabs';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
-// CSRF token cache
-let csrfToken: string | null = null;
-
-async function getCsrfToken(): Promise<string> {
-  if (!csrfToken) {
-    const res = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
-    const data = await res.json();
-    csrfToken = data.token;
-  }
-  return csrfToken!;
-}
-
-interface User {
-  personId: string;
-  id: string | null;
-  name: string;
-  email: string;
-  isArchived?: boolean;
-  isPending?: boolean;
-}
+type Status = 'done' | 'due' | 'late' | 'future';
 
 interface Week {
   number: number;
@@ -35,68 +14,102 @@ interface Week {
   isCurrent: boolean;
 }
 
-interface Assignment {
-  projectId: string | null;
-  projectName: string | null;
-  projectColor: string | null;
-  programId: string | null;
-  programName: string | null;
-  emoji?: string | null;
-  color: string | null;
+interface PersonWeekData {
+  isAllocated: boolean;
+  planId: string | null;
+  planStatus: Status;
+  retroId: string | null;
+  retroStatus: Status;
 }
 
-interface TeamGridData {
-  users: User[];
-  weeks: Week[];
+interface Person {
+  id: string;
+  name: string;
+  weeks: Record<number, PersonWeekData>;
+}
+
+interface AllocationGridData {
+  projectId: string;
+  projectTitle: string;
   currentSprintNumber: number;
+  weeks: Week[];
+  people: Person[];
 }
 
-interface ProgramGroup {
-  programId: string | null;
-  programName: string;
-  emoji: string | null;
-  color: string | null;
-  users: User[];
+// Status colors
+const STATUS_COLORS: Record<Status, string> = {
+  done: '#22c55e',   // green
+  due: '#eab308',    // yellow
+  late: '#ef4444',   // red
+  future: '#6b7280', // gray
+};
+
+/**
+ * StatusCell - Shows Plan/Retro status as two colored squares
+ */
+function StatusCell({
+  planStatus,
+  retroStatus,
+  onPlanClick,
+  onRetroClick,
+}: {
+  planStatus: Status;
+  retroStatus: Status;
+  onPlanClick?: () => void;
+  onRetroClick?: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-1 w-full h-full">
+      {/* Plan status (left) */}
+      <button
+        onClick={onPlanClick}
+        className="w-8 h-8 rounded cursor-pointer transition-all hover:brightness-110 hover:scale-105"
+        style={{ backgroundColor: STATUS_COLORS[planStatus] }}
+        title={`Weekly Plan (${planStatus})`}
+      />
+      {/* Retro status (right) */}
+      <button
+        onClick={onRetroClick}
+        className="w-8 h-8 rounded cursor-pointer transition-all hover:brightness-110 hover:scale-105"
+        style={{ backgroundColor: STATUS_COLORS[retroStatus] }}
+        title={`Weekly Retro (${retroStatus})`}
+      />
+    </div>
+  );
 }
 
 /**
- * ProjectWeeksTab - Shows team allocation for this project
+ * ProjectWeeksTab - Shows plan/retro status for team members allocated to this project
  *
- * Same UI as Team → Allocation, but filtered to show only users
- * who have been allocated to this project.
+ * Each cell shows two colored squares:
+ * - Left: Weekly Plan status
+ * - Right: Weekly Retro status
+ *
+ * Colors: green (done), yellow (due), red (late), gray (future)
  */
 export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
-  const navigate = useNavigate();
-  const [data, setData] = useState<TeamGridData | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [assignments, setAssignments] = useState<Record<string, Record<number, Assignment>>>({});
+  const [data, setData] = useState<AllocationGridData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
 
-  // Fetch all data on mount
+  // Fetch data on mount
   useEffect(() => {
     async function fetchData() {
       try {
         setLoading(true);
-        const [gridRes, projectsRes, assignmentsRes] = await Promise.all([
-          fetch(`${API_URL}/api/team/grid`, { credentials: 'include' }),
-          fetch(`${API_URL}/api/team/projects`, { credentials: 'include' }),
-          fetch(`${API_URL}/api/team/assignments`, { credentials: 'include' }),
-        ]);
+        const res = await fetch(
+          `${API_URL}/api/weekly-plans/project-allocation-grid/${documentId}`,
+          { credentials: 'include' }
+        );
 
-        if (!gridRes.ok || !projectsRes.ok || !assignmentsRes.ok) {
-          throw new Error('Failed to load team data');
+        if (!res.ok) {
+          throw new Error('Failed to load allocation data');
         }
 
-        const gridData: TeamGridData = await gridRes.json();
-        const projectsData: Project[] = await projectsRes.json();
-        const assignmentsData: Record<string, Record<number, Assignment>> = await assignmentsRes.json();
-
+        const gridData: AllocationGridData = await res.json();
         setData(gridData);
-        setProjects(projectsData);
-        setAssignments(assignmentsData);
       } catch (err) {
         setError('Failed to load allocation data');
       } finally {
@@ -107,71 +120,20 @@ export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
     fetchData();
   }, [documentId]);
 
-  // Filter users to only those allocated to this project in any week
-  const filteredUsers = useMemo(() => {
+  // Filter to only show weeks where at least one person is allocated
+  const visibleWeeks = useMemo(() => {
     if (!data) return [];
-
-    return data.users.filter((user) => {
-      const userAssignments = assignments[user.personId];
-      if (!userAssignments) return false;
-
-      return Object.values(userAssignments).some(
-        (assignment) => assignment.projectId === documentId
-      );
-    });
-  }, [data, assignments, documentId]);
-
-  // Group filtered users by their current sprint assignment's program
-  const programGroups = useMemo((): ProgramGroup[] => {
-    if (!data || filteredUsers.length === 0) return [];
-
-    const groups: Map<string, ProgramGroup> = new Map();
-    const UNASSIGNED_KEY = '__unassigned__';
-    const currentSprintNumber = data.currentSprintNumber;
-
-    for (const user of filteredUsers) {
-      const currentAssignment = currentSprintNumber
-        ? assignments[user.personId]?.[currentSprintNumber]
-        : null;
-
-      const groupKey = currentAssignment?.programId || UNASSIGNED_KEY;
-
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, {
-          programId: currentAssignment?.programId || null,
-          programName: currentAssignment?.programName || 'Unassigned',
-          emoji: currentAssignment?.emoji || null,
-          color: currentAssignment?.color || null,
-          users: [],
-        });
-      }
-
-      groups.get(groupKey)!.users.push(user);
-    }
-
-    // Sort groups alphabetically, with Unassigned last
-    const sortedGroups = Array.from(groups.values()).sort((a, b) => {
-      if (a.programId === null) return 1;
-      if (b.programId === null) return -1;
-      return a.programName.localeCompare(b.programName);
-    });
-
-    // Sort users within each group alphabetically
-    for (const group of sortedGroups) {
-      group.users.sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    return sortedGroups;
-  }, [data, filteredUsers, assignments]);
+    return data.weeks;
+  }, [data]);
 
   // Scroll to current week on initial load
   useEffect(() => {
-    if (data && scrollContainerRef.current && !hasScrolledToCurrentRef.current && filteredUsers.length > 0) {
-      const currentWeekIndex = data.weeks.findIndex((w) => w.isCurrent);
+    if (data && scrollContainerRef.current && !hasScrolledToCurrentRef.current && data.people.length > 0) {
+      const currentWeekIndex = visibleWeeks.findIndex((w) => w.isCurrent);
       if (currentWeekIndex >= 0) {
         requestAnimationFrame(() => {
           if (scrollContainerRef.current) {
-            const columnWidth = 180;
+            const columnWidth = 140;
             const scrollPosition = currentWeekIndex * columnWidth;
             scrollContainerRef.current.scrollLeft = scrollPosition;
             hasScrolledToCurrentRef.current = true;
@@ -179,133 +141,7 @@ export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
         });
       }
     }
-  }, [data, filteredUsers.length]);
-
-  // Handle assignment
-  const handleAssign = useCallback(async (personId: string, projectId: string, sprintNumber: number) => {
-    const project = projects.find(p => p.id === projectId);
-    if (!project) return;
-
-    // Optimistic update
-    const previousAssignment = assignments[personId]?.[sprintNumber];
-    setAssignments(prev => ({
-      ...prev,
-      [personId]: {
-        ...prev[personId],
-        [sprintNumber]: {
-          projectId,
-          projectName: project.title,
-          projectColor: project.color ?? null,
-          programId: project.programId,
-          programName: project.programName,
-          emoji: project.programEmoji ?? null,
-          color: project.programColor ?? null,
-        },
-      },
-    }));
-
-    try {
-      const token = await getCsrfToken();
-      const res = await fetch(`${API_URL}/api/team/assign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-        credentials: 'include',
-        body: JSON.stringify({ personId, projectId, sprintNumber }),
-      });
-
-      if (!res.ok) {
-        // Rollback
-        setAssignments(prev => {
-          const newAssignments = { ...prev };
-          if (previousAssignment) {
-            newAssignments[personId] = { ...newAssignments[personId], [sprintNumber]: previousAssignment };
-          } else {
-            const { [sprintNumber]: _, ...rest } = newAssignments[personId] || {};
-            newAssignments[personId] = rest;
-          }
-          return newAssignments;
-        });
-        setError('Failed to assign');
-      }
-    } catch {
-      // Rollback
-      setAssignments(prev => {
-        const newAssignments = { ...prev };
-        if (previousAssignment) {
-          newAssignments[personId] = { ...newAssignments[personId], [sprintNumber]: previousAssignment };
-        } else {
-          const { [sprintNumber]: _, ...rest } = newAssignments[personId] || {};
-          newAssignments[personId] = rest;
-        }
-        return newAssignments;
-      });
-      setError('Failed to assign user');
-    }
-  }, [projects, assignments]);
-
-  // Handle unassignment
-  const handleUnassign = useCallback(async (personId: string, sprintNumber: number) => {
-    const previousAssignment = assignments[personId]?.[sprintNumber];
-
-    // Optimistic update
-    setAssignments(prev => {
-      const newAssignments = { ...prev };
-      if (newAssignments[personId]) {
-        const { [sprintNumber]: _, ...rest } = newAssignments[personId];
-        newAssignments[personId] = rest;
-      }
-      return newAssignments;
-    });
-
-    try {
-      const token = await getCsrfToken();
-      const res = await fetch(`${API_URL}/api/team/assign`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-        credentials: 'include',
-        body: JSON.stringify({ personId, sprintNumber }),
-      });
-
-      if (!res.ok) {
-        // Rollback
-        if (previousAssignment) {
-          setAssignments(prev => ({
-            ...prev,
-            [personId]: { ...prev[personId], [sprintNumber]: previousAssignment },
-          }));
-        }
-        setError('Failed to unassign');
-      }
-    } catch {
-      // Rollback
-      if (previousAssignment) {
-        setAssignments(prev => ({
-          ...prev,
-          [personId]: { ...prev[personId], [sprintNumber]: previousAssignment },
-        }));
-      }
-      setError('Failed to unassign user');
-    }
-  }, [assignments]);
-
-  // Handle cell change
-  const handleCellChange = useCallback((personId: string, sprintNumber: number, newProjectId: string | null, currentAssignment: Assignment | null) => {
-    if (newProjectId === currentAssignment?.projectId) return;
-
-    if (newProjectId === null && currentAssignment) {
-      handleUnassign(personId, sprintNumber);
-    } else if (newProjectId) {
-      handleAssign(personId, newProjectId, sprintNumber);
-    }
-  }, [handleAssign, handleUnassign]);
-
-  // Clear error after 3 seconds
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => setError(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [error]);
+  }, [data, visibleWeeks]);
 
   if (loading) {
     return (
@@ -315,7 +151,7 @@ export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
-          Loading allocations...
+          Loading...
         </div>
       </div>
     );
@@ -330,7 +166,7 @@ export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
   }
 
   // Empty state when no allocations
-  if (filteredUsers.length === 0) {
+  if (!data || data.people.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center text-muted p-8">
         <svg className="w-16 h-16 mb-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -346,12 +182,28 @@ export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Error toast */}
-      {error && (
-        <div className="absolute right-4 top-4 z-50 rounded-md bg-red-500/90 px-4 py-2 text-sm text-white shadow-lg">
-          {error}
+      {/* Legend */}
+      <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs">
+        <span className="text-muted">Status:</span>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: STATUS_COLORS.done }} />
+          <span>Done</span>
         </div>
-      )}
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: STATUS_COLORS.due }} />
+          <span>Due</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: STATUS_COLORS.late }} />
+          <span>Late</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: STATUS_COLORS.future }} />
+          <span>Future</span>
+        </div>
+        <span className="text-muted ml-4">|</span>
+        <span className="text-muted">Left = Plan, Right = Retro</span>
+      </div>
 
       {/* Grid container */}
       <div ref={scrollContainerRef} className="flex-1 overflow-auto pb-20">
@@ -363,75 +215,32 @@ export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
               <span className="text-xs font-medium text-muted">Team Member</span>
             </div>
 
-            {/* Program groups with users */}
-            {programGroups.map((group) => (
-              <div key={group.programId || '__unassigned__'}>
-                {/* Program header */}
-                <div className="flex h-8 w-[180px] items-center gap-2 border-b border-border bg-border/30 px-3">
-                  {group.programId ? (
-                    <span
-                      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-white"
-                      style={{ backgroundColor: group.color || '#6b7280' }}
-                    >
-                      {group.emoji || group.programName[0]}
-                    </span>
-                  ) : (
-                    <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-white bg-gray-500">
-                      ?
-                    </span>
-                  )}
-                  <span className="truncate text-xs font-medium text-foreground">
-                    {group.programName}
-                  </span>
-                  <span className="ml-auto text-[10px] text-muted">
-                    {group.users.length}
+            {/* Users */}
+            {data.people.map((person) => (
+              <div
+                key={person.id}
+                className="flex h-12 w-[180px] items-center border-b border-border px-3 bg-background"
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white bg-accent/80">
+                    {person.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="truncate text-sm text-foreground">
+                    {person.name}
                   </span>
                 </div>
-
-                {/* Users in this group */}
-                {group.users.map((user) => (
-                  <div
-                    key={user.personId}
-                    className={cn(
-                      'flex h-12 w-[180px] items-center border-b border-border px-3 bg-background',
-                      user.isArchived && 'opacity-50',
-                      user.isPending && 'opacity-70'
-                    )}
-                  >
-                    <div className="flex items-center gap-2 overflow-hidden">
-                      <div
-                        className={cn(
-                          'flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white',
-                          user.isArchived ? 'bg-gray-400' : user.isPending ? 'bg-gray-400' : 'bg-accent/80'
-                        )}
-                      >
-                        {user.name.charAt(0).toUpperCase()}
-                      </div>
-                      <span
-                        className={cn(
-                          'truncate text-sm',
-                          user.isArchived ? 'text-muted' : user.isPending ? 'text-muted italic' : 'text-foreground'
-                        )}
-                      >
-                        {user.name}
-                        {user.isArchived && <span className="ml-1 text-xs">(archived)</span>}
-                        {user.isPending && <span className="ml-1 text-xs font-normal not-italic">(pending)</span>}
-                      </span>
-                    </div>
-                  </div>
-                ))}
               </div>
             ))}
           </div>
 
           {/* Week columns */}
           <div className="flex">
-            {data?.weeks.map((week) => (
+            {visibleWeeks.map((week) => (
               <div key={week.number} className="flex flex-col">
                 {/* Week header */}
                 <div
                   className={cn(
-                    'flex h-10 w-[180px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background',
+                    'flex h-10 w-[140px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background',
                     week.isCurrent && 'ring-1 ring-inset ring-accent/30'
                   )}
                 >
@@ -443,65 +252,40 @@ export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
                   </span>
                 </div>
 
-                {/* Cells per program group */}
-                {programGroups.map((group) => (
-                  <div key={group.programId || '__unassigned__'}>
-                    {/* Program header spacer */}
+                {/* User cells for this week */}
+                {data.people.map((person) => {
+                  const weekData = person.weeks[week.number];
+
+                  // If not allocated to this project this week, show empty cell
+                  if (!weekData?.isAllocated) {
+                    return (
+                      <div
+                        key={person.id}
+                        className={cn(
+                          'flex h-12 w-[140px] items-center justify-center border-b border-r border-border',
+                          week.isCurrent && 'bg-accent/5'
+                        )}
+                      >
+                        <span className="text-xs text-muted">-</span>
+                      </div>
+                    );
+                  }
+
+                  return (
                     <div
+                      key={person.id}
                       className={cn(
-                        'h-8 w-[180px] border-b border-r border-border bg-border/30',
+                        'flex h-12 w-[140px] items-center justify-center border-b border-r border-border p-1',
                         week.isCurrent && 'bg-accent/5'
                       )}
-                    />
-
-                    {/* User cells for this week */}
-                    {group.users.map((user) => {
-                      const assignment = assignments[user.personId]?.[week.number];
-                      const previousWeekAssignment = assignments[user.personId]?.[week.number - 1];
-                      const isPending = user.isPending || !user.id;
-
-                      // Convert previous week assignment to Project format
-                      const previousWeekProject: Project | null =
-                        previousWeekAssignment?.projectId && previousWeekAssignment?.projectName
-                          ? {
-                              id: previousWeekAssignment.projectId,
-                              title: previousWeekAssignment.projectName,
-                              color: previousWeekAssignment.projectColor,
-                              programId: previousWeekAssignment.programId,
-                              programName: previousWeekAssignment.programName,
-                              programEmoji: previousWeekAssignment.emoji,
-                              programColor: previousWeekAssignment.color,
-                            }
-                          : null;
-
-                      return (
-                        <div
-                          key={user.personId}
-                          className={cn(
-                            'flex h-12 w-[180px] items-center justify-start border-b border-r border-border px-1',
-                            week.isCurrent && 'bg-accent/5',
-                            isPending && 'border-dashed'
-                          )}
-                        >
-                          <ProjectCombobox
-                            projects={projects}
-                            value={assignment?.projectId || null}
-                            onChange={(projectId) =>
-                              handleCellChange(user.personId, week.number, projectId, assignment || null)
-                            }
-                            onNavigate={(projectId) => navigate(`/documents/${projectId}`)}
-                            placeholder="+"
-                            previousWeekProject={previousWeekProject}
-                            triggerClassName={cn(
-                              'w-full h-full justify-start',
-                              !assignment && 'hover:bg-border/30'
-                            )}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
+                    >
+                      <StatusCell
+                        planStatus={weekData.planStatus}
+                        retroStatus={weekData.retroStatus}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             ))}
           </div>
