@@ -775,20 +775,17 @@ router.get('/project-allocation-grid/:projectId', authMiddleware, async (req: Re
     const daysSinceStart = Math.floor((today.getTime() - sprintStartDate.getTime()) / (24 * 60 * 60 * 1000));
     const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDuration) + 1);
 
-    // Find all people who have assigned issues in sprints for this project
+    // Find all people allocated to sprints for this project (via assignee_ids + project_id in sprint properties)
+    // Note: team.ts stores project assignment in properties.project_id, NOT document_associations
     const allocatedPeopleResult = await pool.query(
       `SELECT DISTINCT p.id as person_id, p.title as person_name, (s.properties->>'sprint_number')::int as week_number
-       FROM documents i
-       JOIN document_associations sprint_da ON sprint_da.document_id = i.id AND sprint_da.relationship_type = 'sprint'
-       JOIN documents s ON s.id = sprint_da.related_id AND s.document_type = 'sprint'
-       JOIN document_associations proj_da ON proj_da.document_id = s.id AND proj_da.relationship_type = 'project'
-       JOIN documents p ON (i.properties->>'assignee_id')::uuid = p.id AND p.document_type = 'person'
-       WHERE i.workspace_id = $1
-         AND i.document_type = 'issue'
-         AND proj_da.related_id = $2
-         AND i.deleted_at IS NULL
-         AND s.deleted_at IS NULL
-         AND i.properties->>'assignee_id' IS NOT NULL`,
+       FROM documents s
+       CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(s.properties->'assignee_ids', '[]'::jsonb)) AS assignee_id
+       JOIN documents p ON p.id = assignee_id::uuid AND p.document_type = 'person'
+       WHERE s.workspace_id = $1
+         AND s.document_type = 'sprint'
+         AND (s.properties->>'project_id')::uuid = $2
+         AND s.deleted_at IS NULL`,
       [workspaceId, projectId]
     );
 

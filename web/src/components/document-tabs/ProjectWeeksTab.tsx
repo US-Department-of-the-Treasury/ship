@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
+import { apiPost } from '@/lib/api';
 import type { DocumentTabProps } from '@/lib/document-tabs';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -44,6 +46,14 @@ const STATUS_COLORS: Record<Status, string> = {
   future: '#6b7280', // gray
 };
 
+// User-friendly status text for tooltips
+const STATUS_TEXT: Record<Status, string> = {
+  done: 'done',
+  due: 'due this week',
+  late: 'late',
+  future: 'not yet due',
+};
+
 /**
  * StatusCell - Shows Plan/Retro status as two colored squares
  */
@@ -52,27 +62,37 @@ function StatusCell({
   retroStatus,
   onPlanClick,
   onRetroClick,
+  isNavigating,
 }: {
   planStatus: Status;
   retroStatus: Status;
   onPlanClick?: () => void;
   onRetroClick?: () => void;
+  isNavigating?: 'plan' | 'retro' | null;
 }) {
   return (
-    <div className="flex items-center justify-center gap-1 w-full h-full">
-      {/* Plan status (left) */}
+    <div className="flex w-full h-full">
+      {/* Plan status (left half) */}
       <button
         onClick={onPlanClick}
-        className="w-8 h-8 rounded cursor-pointer transition-all hover:brightness-110 hover:scale-105"
+        disabled={isNavigating !== null}
+        className={cn(
+          'flex-1 h-full cursor-pointer transition-all hover:brightness-110',
+          isNavigating === 'plan' && 'animate-pulse'
+        )}
         style={{ backgroundColor: STATUS_COLORS[planStatus] }}
-        title={`Weekly Plan (${planStatus})`}
+        title={`Weekly Plan (${STATUS_TEXT[planStatus]})`}
       />
-      {/* Retro status (right) */}
+      {/* Retro status (right half) */}
       <button
         onClick={onRetroClick}
-        className="w-8 h-8 rounded cursor-pointer transition-all hover:brightness-110 hover:scale-105"
+        disabled={isNavigating !== null}
+        className={cn(
+          'flex-1 h-full cursor-pointer transition-all hover:brightness-110',
+          isNavigating === 'retro' && 'animate-pulse'
+        )}
         style={{ backgroundColor: STATUS_COLORS[retroStatus] }}
-        title={`Weekly Retro (${retroStatus})`}
+        title={`Weekly Retro (${STATUS_TEXT[retroStatus]})`}
       />
     </div>
   );
@@ -88,11 +108,56 @@ function StatusCell({
  * Colors: green (done), yellow (due), red (late), gray (future)
  */
 export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
+  const navigate = useNavigate();
   const [data, setData] = useState<AllocationGridData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [navigatingCell, setNavigatingCell] = useState<{
+    personId: string;
+    weekNumber: number;
+    type: 'plan' | 'retro';
+  } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
+
+  /**
+   * Navigate to a weekly plan or retro document.
+   * Creates the document if it doesn't exist yet.
+   */
+  async function handleNavigate(
+    personId: string,
+    weekNumber: number,
+    type: 'plan' | 'retro',
+    existingDocId: string | null
+  ) {
+    // If document already exists, navigate directly
+    if (existingDocId) {
+      navigate(`/documents/${existingDocId}`);
+      return;
+    }
+
+    // Create the document first
+    setNavigatingCell({ personId, weekNumber, type });
+    try {
+      const endpoint = type === 'plan' ? '/api/weekly-plans' : '/api/weekly-retros';
+      const response = await apiPost(endpoint, {
+        person_id: personId,
+        project_id: documentId,
+        week_number: weekNumber,
+      });
+
+      if (response.ok) {
+        const doc = await response.json();
+        navigate(`/documents/${doc.id}`);
+      } else {
+        console.error(`Failed to create weekly ${type}:`, await response.text());
+      }
+    } catch (err) {
+      console.error(`Failed to create weekly ${type}:`, err);
+    } finally {
+      setNavigatingCell(null);
+    }
+  }
 
   // Fetch data on mount
   useEffect(() => {
@@ -275,13 +340,25 @@ export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
                     <div
                       key={person.id}
                       className={cn(
-                        'flex h-12 w-[140px] items-center justify-center border-b border-r border-border p-1',
+                        'flex h-12 w-[140px] border-b border-r border-border overflow-hidden',
                         week.isCurrent && 'bg-accent/5'
                       )}
                     >
                       <StatusCell
                         planStatus={weekData.planStatus}
                         retroStatus={weekData.retroStatus}
+                        onPlanClick={() =>
+                          handleNavigate(person.id, week.number, 'plan', weekData.planId)
+                        }
+                        onRetroClick={() =>
+                          handleNavigate(person.id, week.number, 'retro', weekData.retroId)
+                        }
+                        isNavigating={
+                          navigatingCell?.personId === person.id &&
+                          navigatingCell?.weekNumber === week.number
+                            ? navigatingCell.type
+                            : null
+                        }
                       />
                     </div>
                   );

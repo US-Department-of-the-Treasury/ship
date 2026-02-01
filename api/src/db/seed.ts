@@ -182,9 +182,12 @@ async function seed() {
     }
 
     // Get all user IDs for assignment (join through workspace_memberships)
+    // Also get person document IDs for team allocation
     const allUsersResult = await pool.query(
-      `SELECT u.id, u.name FROM users u
+      `SELECT u.id, u.name, d.id as person_doc_id FROM users u
        JOIN workspace_memberships wm ON wm.user_id = u.id
+       LEFT JOIN documents d ON d.workspace_id = wm.workspace_id
+         AND d.document_type = 'person' AND d.properties->>'user_id' = u.id::text
        WHERE wm.workspace_id = $1`,
       [workspaceId]
     );
@@ -433,10 +436,12 @@ async function seed() {
         else if (sprintOffset === 1) baseConfidence = 60; // Next sprint - medium
         else baseConfidence = 40; // Future sprints - lower confidence
 
+        const otherUser = allUsers[(sprint.ownerIdx + 1) % allUsers.length]!;
         const sprintProperties = {
           sprint_number: sprint.number,
           owner_id: owner.id,
-          assignee_ids: [owner.id, allUsers[(sprint.ownerIdx + 1) % allUsers.length]!.id], // Owner + one other
+          project_id: sprint.projectId, // Required for team allocation
+          assignee_ids: [owner.person_doc_id, otherUser.person_doc_id].filter(Boolean), // Person doc IDs for allocation
           plan: sprintPlans[sprint.number % sprintPlans.length],
           success_criteria: sprintSuccessCriteria[sprint.number % sprintSuccessCriteria.length],
           confidence: baseConfidence + (Math.random() * 10 - 5), // Add some variance
