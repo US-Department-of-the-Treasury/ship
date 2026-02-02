@@ -13,7 +13,7 @@ async function login(page: Page) {
 async function createNewDocument(page: Page) {
   await page.goto('/docs');
   await page.getByRole('button', { name: 'New Document', exact: true }).click();
-  await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 });
+  await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 });
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
 }
 
@@ -159,18 +159,25 @@ test.describe('Critical Blocker: Consistent Auth Across Routes', () => {
 });
 
 test.describe('Critical Blocker: WebSocket Rate Limiting', () => {
-  test('multiple concurrent WebSocket connections work within rate limit', async ({ page, apiServer }) => {
+  test('multiple concurrent WebSocket connections work within rate limit', async ({ page }) => {
     // Rate limit: 30 connections per minute per IP
     // Test: Verify multiple concurrent connections succeed within the limit
     await login(page);
 
     // Create a document to get a valid ID for WebSocket connections
     await createNewDocument(page);
-    const docId = page.url().split('/docs/')[1];
+    const docId = page.url().split('/documents/')[1];
     expect(docId).toBeTruthy();
 
+    // Give the document time to be fully created and available for WebSocket connections
+    await page.waitForTimeout(500);
+
     // Get the WebSocket URL for this document
-    const wsUrl = apiServer.url.replace('http://', 'ws://') + `/collaboration/wiki:${docId}`;
+    // Use the web server URL (page origin), NOT apiServer directly
+    // Cookies are set for the web server's domain, so WebSocket must go through the Vite proxy
+    // (just like the app does - see Editor.tsx wsUrl construction)
+    const pageOrigin = new URL(page.url()).origin;
+    const wsUrl = pageOrigin.replace('http://', 'ws://') + `/collaboration/wiki:${docId}`;
 
     // Make concurrent WebSocket connections within the rate limit (10 connections)
     // This proves the rate limiter doesn't block legitimate concurrent use
@@ -208,6 +215,9 @@ test.describe('Critical Blocker: WebSocket Rate Limiting', () => {
       });
 
       await Promise.all(promises);
+
+      // Give connections time to fully establish before cleanup
+      await new Promise((r) => setTimeout(r, 500));
 
       // Clean up - close all connections
       connections.forEach((ws) => {

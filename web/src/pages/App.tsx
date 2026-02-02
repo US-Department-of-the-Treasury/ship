@@ -1,21 +1,26 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
+import { useRealtimeEvent } from '@/hooks/useRealtimeEvents';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
 import { useProjects, Project } from '@/contexts/ProjectsContext';
+import { useCurrentDocumentType, useCurrentDocument } from '@/contexts/CurrentDocumentContext';
 import { documentKeys } from '@/hooks/useDocumentsQuery';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { programKeys } from '@/hooks/useProgramsQuery';
-import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
 import { useStandupStatusQuery } from '@/hooks/useStandupStatusQuery';
+import { useActionItemsQuery, actionItemsKeys } from '@/hooks/useActionItemsQuery';
+import { useTeamMembersQuery } from '@/hooks/useTeamMembersQuery';
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { buildDocumentTree, DocumentTreeNode } from '@/lib/documentTree';
 import { CommandPalette } from '@/components/CommandPalette';
 import { SessionTimeoutModal } from '@/components/SessionTimeoutModal';
+import { UploadNavigationWarning } from '@/components/UploadNavigationWarning';
 import { useSessionTimeout } from '@/hooks/useSessionTimeout';
 import { CacheCorruptionAlert } from '@/components/CacheCorruptionAlert';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
@@ -25,8 +30,12 @@ import { VISIBILITY_OPTIONS } from '@/lib/contextMenuActions';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { ContextTreeNav } from '@/components/ContextTreeNav';
 import { ProjectSetupWizard, ProjectSetupData } from '@/components/ProjectSetupWizard';
+import { SelectionPersistenceProvider } from '@/contexts/SelectionPersistenceContext';
+import { ActionItemsModal } from '@/components/ActionItemsModal';
+import { AccountabilityBanner } from '@/components/AccountabilityBanner';
+import { ProjectContextSidebar } from '@/components/sidebars/ProjectContextSidebar';
 
-type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week';
+type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week' | 'project-context';
 
 export function AppLayout() {
   const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
@@ -43,6 +52,8 @@ export function AppLayout() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
   const [projectSetupWizardOpen, setProjectSetupWizardOpen] = useState(false);
+  const [actionItemsModalOpen, setActionItemsModalOpen] = useState(false);
+  const [actionItemsModalShownOnLoad, setActionItemsModalShownOnLoad] = useState(false);
 
   // Session timeout handling
   const handleSessionTimeout = useCallback(() => {
@@ -61,6 +72,55 @@ export function AppLayout() {
   // Check if user needs to post a standup today
   const { data: standupStatus } = useStandupStatusQuery();
   const standupDue = standupStatus?.due ?? false;
+
+  // Check if user has pending action items (accountability tasks)
+  const { data: actionItemsData } = useActionItemsQuery();
+  const hasActionItems = (actionItemsData?.items?.length ?? 0) > 0;
+  const queryClient = useQueryClient();
+
+  // Celebration state for when user completes an accountability item
+  const [isCelebrating, setIsCelebrating] = useState(false);
+  const celebrationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Listen for realtime accountability updates
+  const handleAccountabilityUpdate = useCallback(() => {
+    // Show celebration banner
+    setIsCelebrating(true);
+
+    // Clear any existing timeout
+    if (celebrationTimeoutRef.current) {
+      clearTimeout(celebrationTimeoutRef.current);
+    }
+
+    // After 4 seconds, invalidate query and hide celebration
+    celebrationTimeoutRef.current = setTimeout(() => {
+      // Invalidate action items to refetch
+      queryClient.invalidateQueries({ queryKey: actionItemsKeys.all });
+      setIsCelebrating(false);
+      celebrationTimeoutRef.current = null;
+    }, 4000);
+  }, [queryClient]);
+
+  useRealtimeEvent('accountability:updated', handleAccountabilityUpdate);
+
+  // Cleanup celebration timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (celebrationTimeoutRef.current) {
+        clearTimeout(celebrationTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Show action items modal on initial load if there are pending items
+  // Disabled when localStorage flag is set (used by E2E tests to avoid blocking interactions)
+  useEffect(() => {
+    if (localStorage.getItem('ship:disableActionItemsModal') === 'true') return;
+    if (!actionItemsModalShownOnLoad && hasActionItems && actionItemsData?.items) {
+      setActionItemsModalOpen(true);
+      setActionItemsModalShownOnLoad(true);
+    }
+  }, [actionItemsModalShownOnLoad, hasActionItems, actionItemsData?.items]);
 
   // Accessibility: focus management on navigation
   useFocusOnNavigate();
@@ -82,10 +142,28 @@ export function AppLayout() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Determine active mode from path
+  // Get current document type and ID for /documents/:id routes
+  const { currentDocumentType, currentDocumentId, currentDocumentProjectId } = useCurrentDocument();
+
+  // Determine active mode from path or document type
   const getActiveMode = (): Mode => {
     if (location.pathname.startsWith('/dashboard')) return 'dashboard';
     if (location.pathname.startsWith('/my-week')) return 'my-week';
+    // For /documents/:id routes, use document type from context
+    if (location.pathname.startsWith('/documents/')) {
+      if (currentDocumentType === 'wiki') return 'docs';
+      if (currentDocumentType === 'issue') return 'issues';
+      if (currentDocumentType === 'project') return 'projects';
+      if (currentDocumentType === 'program') return 'programs';
+      if (currentDocumentType === 'sprint') return 'docs'; // Sprint documents open without special sidebar
+      if (currentDocumentType === 'person') return 'team';
+      // Weekly docs with a project_id stay in projects mode (sidebar shows position)
+      if ((currentDocumentType === 'weekly_plan' || currentDocumentType === 'weekly_retro') && currentDocumentProjectId) {
+        return 'projects';
+      }
+      // Default to docs while loading or for unknown types
+      return 'docs';
+    }
     if (location.pathname.startsWith('/docs')) return 'docs';
     if (location.pathname.startsWith('/issues')) return 'issues';
     if (location.pathname.startsWith('/projects')) return 'projects';
@@ -99,6 +177,23 @@ export function AppLayout() {
   };
 
   const activeMode = getActiveMode();
+
+  // Get the active document ID from URL - works for /documents/:id and legacy routes
+  const getActiveDocumentId = (): string | undefined => {
+    // For unified /documents/:id route
+    if (location.pathname.startsWith('/documents/')) {
+      const parts = location.pathname.split('/documents/')[1];
+      return parts?.split('/')[0]; // Handle /documents/:id/:tab
+    }
+    // Legacy routes
+    if (location.pathname.startsWith('/docs/')) return location.pathname.split('/docs/')[1];
+    if (location.pathname.startsWith('/issues/')) return location.pathname.split('/issues/')[1];
+    if (location.pathname.startsWith('/projects/')) return location.pathname.split('/projects/')[1];
+    if (location.pathname.startsWith('/programs/')) return location.pathname.split('/programs/')[1]?.split('/')[0];
+    return undefined;
+  };
+
+  const activeDocumentId = getActiveDocumentId();
 
   const handleModeClick = (mode: Mode) => {
     switch (mode) {
@@ -117,14 +212,14 @@ export function AppLayout() {
   const handleCreateIssue = async () => {
     const issue = await createIssue();
     if (issue) {
-      navigate(`/issues/${issue.id}`);
+      navigate(`/documents/${issue.id}`);
     }
   };
 
   const handleCreateDocument = async () => {
     const doc = await createDocument();
     if (doc) {
-      navigate(`/docs/${doc.id}`);
+      navigate(`/documents/${doc.id}`);
     }
   };
 
@@ -139,12 +234,12 @@ export function AppLayout() {
       owner_id: user.id,
       title: data.title,
       program_id: data.program_id,
-      hypothesis: data.hypothesis,
+      plan: data.plan,
       target_date: data.target_date ? new Date(data.target_date).toISOString() : undefined,
     });
     if (project) {
       setProjectSetupWizardOpen(false);
-      navigate(`/projects/${project.id}`);
+      navigate(`/documents/${project.id}`);
     }
   };
 
@@ -159,6 +254,7 @@ export function AppLayout() {
 
   return (
     <TooltipProvider delayDuration={300}>
+    <SelectionPersistenceProvider>
     <div className="flex h-screen flex-col overflow-hidden bg-background">
       {/* Skip link for keyboard/screen reader users - Section 508 compliance */}
       <a
@@ -185,6 +281,13 @@ export function AppLayout() {
           </button>
         </div>
       )}
+
+      {/* Accountability banner - persistent until all items complete */}
+      <AccountabilityBanner
+        itemCount={actionItemsData?.items?.length ?? 0}
+        onBannerClick={() => setActionItemsModalOpen(true)}
+        isCelebrating={isCelebrating}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Icon Rail - Navigation landmark */}
@@ -270,13 +373,6 @@ export function AppLayout() {
               onClick={() => handleModeClick('projects')}
             />
             <RailIcon
-              icon={<SprintsIcon />}
-              label={standupDue ? "Sprints (standup due)" : "Sprints"}
-              active={activeMode === 'sprints'}
-              onClick={() => handleModeClick('sprints')}
-              showBadge={standupDue}
-            />
-            <RailIcon
               icon={<IssuesIcon />}
               label="Issues"
               active={activeMode === 'issues'}
@@ -284,15 +380,17 @@ export function AppLayout() {
             />
             <RailIcon
               icon={<MyWeekIcon />}
-              label="My Week"
+              label={hasActionItems ? "My Week (action items)" : "My Week"}
               active={activeMode === 'my-week'}
               onClick={() => handleModeClick('my-week')}
+              showBadge={hasActionItems}
             />
             <RailIcon
               icon={<TeamIcon />}
-              label="Teams"
+              label={standupDue ? "Teams (standup due)" : "Teams"}
               active={activeMode === 'team'}
               onClick={() => handleModeClick('team')}
+              showBadge={standupDue}
             />
           </div>
 
@@ -345,9 +443,10 @@ export function AppLayout() {
                 {activeMode === 'issues' && 'Issues'}
                 {activeMode === 'projects' && 'Projects'}
                 {activeMode === 'programs' && 'Programs'}
-                {activeMode === 'sprints' && 'Sprints'}
+                {activeMode === 'sprints' && 'Weeks'}
                 {activeMode === 'team' && 'Teams'}
                 {activeMode === 'settings' && 'Settings'}
+                {activeMode === 'project-context' && 'Project'}
               </h2>
               <div className="flex items-center gap-1">
                 {activeMode === 'docs' && (
@@ -400,34 +499,32 @@ export function AppLayout() {
               {activeMode === 'docs' && (
                 <DocumentsTree
                   documents={documents}
-                  activeId={location.pathname.split('/docs/')[1]}
-                  onSelect={(id) => navigate(`/docs/${id}`)}
+                  activeId={activeDocumentId}
+                  onSelect={(id) => navigate(`/documents/${id}`)}
                 />
               )}
               {activeMode === 'issues' && (
                 <IssuesSidebar
                   issues={issues}
-                  activeId={location.pathname.split('/issues/')[1]}
+                  activeId={activeDocumentId}
                   onUpdateIssue={updateIssue}
                 />
               )}
               {activeMode === 'projects' && (
                 <ProjectsList
                   projects={projects}
-                  activeId={location.pathname.split('/projects/')[1]}
+                  activeId={activeDocumentId}
+                  currentProjectId={currentDocumentProjectId}
                   onUpdateProject={updateProject}
                 />
               )}
               {activeMode === 'programs' && (
                 <ProgramsList
                   programs={programs}
-                  activeId={location.pathname.split('/programs/')[1]}
-                  onSelect={(id) => navigate(`/programs/${id}`)}
+                  activeId={activeDocumentId}
+                  onSelect={(id) => navigate(`/documents/${id}`)}
                   onUpdateProgram={updateProgram}
                 />
-              )}
-              {activeMode === 'sprints' && (
-                <SprintsList />
               )}
               {activeMode === 'team' && (
                 <TeamSidebar />
@@ -439,7 +536,13 @@ export function AppLayout() {
                 <DashboardSidebar />
               )}
               {activeMode === 'my-week' && (
-                <div className="px-3 py-2 text-sm text-muted">Your sprint assignments</div>
+                <div className="px-3 py-2 text-sm text-muted">Your week assignments</div>
+              )}
+              {activeMode === 'project-context' && currentDocumentProjectId && (
+                <ProjectContextSidebar
+                  projectId={currentDocumentProjectId}
+                  activeDocumentId={activeDocumentId}
+                />
               )}
             </div>
 
@@ -473,7 +576,17 @@ export function AppLayout() {
         warningType={warningType}
         onStayLoggedIn={resetSessionTimer}
       />
+
+      {/* Upload Navigation Warning Modal */}
+      <UploadNavigationWarning />
+
+      {/* Action Items Modal - shows on login when user has pending accountability tasks */}
+      <ActionItemsModal
+        open={actionItemsModalOpen}
+        onClose={() => setActionItemsModalOpen(false)}
+      />
     </div>
+    </SelectionPersistenceProvider>
     </TooltipProvider>
   );
 }
@@ -660,14 +773,14 @@ function DocumentTreeItem({
     closeContextMenu();
     const newDoc = await createDocument(document.id);
     if (newDoc) {
-      navigate(`/docs/${newDoc.id}`);
+      navigate(`/documents/${newDoc.id}`);
     }
   }, [createDocument, document.id, navigate, closeContextMenu]);
 
   const handleRename = useCallback(() => {
     closeContextMenu();
     // Navigate to document and focus title (the title becomes editable when you click it)
-    navigate(`/docs/${document.id}`);
+    navigate(`/documents/${document.id}`);
   }, [document.id, navigate, closeContextMenu]);
 
   const handleChangeVisibility = useCallback(async (visibility: string) => {
@@ -748,7 +861,7 @@ function DocumentTreeItem({
         )}
         {/* Main navigation link */}
         <Link
-          to={`/docs/${document.id}`}
+          to={`/documents/${document.id}`}
           className="flex-1 truncate text-left cursor-pointer flex items-center gap-1"
           aria-current={isActive ? 'page' : undefined}
         >
@@ -951,7 +1064,7 @@ function IssuesList({
         {issues.map((issue) => (
           <li key={issue.id} data-testid="issue-item" className="group relative">
             <Link
-              to={`/issues/${issue.id}`}
+              to={`/documents/${issue.id}`}
               onContextMenu={(e) => handleContextMenu(e, issue)}
               className={cn(
                 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
@@ -1028,14 +1141,87 @@ function IssueStatusIcon({ state }: { state: string }) {
 function ProjectsList({
   projects,
   activeId,
+  currentProjectId,
   onUpdateProject,
 }: {
   projects: Project[];
   activeId?: string;
+  currentProjectId?: string | null;
   onUpdateProject: (id: string, updates: Partial<Project>) => Promise<Project | null>;
 }) {
+  const location = useLocation();
+  const { currentDocumentType } = useCurrentDocument();
   const { showToast } = useToast();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
+
+  // Determine if we're viewing a project's tab (details/weeks/issues/retro)
+  const getActiveProjectTab = (): string | null => {
+    const path = location.pathname;
+    if (!activeId) return null;
+    // Check if viewing any tab of a project that exists in the list
+    const projectIds = projects.map(p => p.id);
+    if (!projectIds.includes(activeId)) return null;
+    if (path === `/documents/${activeId}`) return 'details';
+    if (path === `/documents/${activeId}/weeks`) return 'weeks';
+    if (path === `/documents/${activeId}/issues`) return 'issues';
+    if (path === `/documents/${activeId}/retro`) return 'retro';
+    return null;
+  };
+
+  const activeProjectTab = getActiveProjectTab();
+
+  // Auto-expand projects that contain the current document
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => {
+    // If viewing a weekly doc with a project, auto-expand that project
+    if (currentProjectId) {
+      return new Set([currentProjectId]);
+    }
+    // If viewing a project's tab directly, auto-expand that project
+    if (activeId && projects.some(p => p.id === activeId)) {
+      return new Set([activeId]);
+    }
+    return new Set();
+  });
+
+  // Auto-expand when currentProjectId or activeId changes
+  useEffect(() => {
+    if (currentProjectId && !expandedProjects.has(currentProjectId)) {
+      setExpandedProjects(prev => new Set([...prev, currentProjectId]));
+    }
+  }, [currentProjectId]);
+
+  // Auto-expand when viewing a project's tab
+  useEffect(() => {
+    if (activeId && activeProjectTab && !expandedProjects.has(activeId)) {
+      setExpandedProjects(prev => new Set([...prev, activeId]));
+    }
+  }, [activeId, activeProjectTab]);
+
+  const toggleProject = useCallback((projectId: string) => {
+    setExpandedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Determine current tab from URL (weeks, issues, retro, or details)
+  const getCurrentTab = (projectId: string): string | null => {
+    const path = location.pathname;
+    if (path === `/documents/${projectId}`) return 'details';
+    if (path === `/documents/${projectId}/weeks`) return 'weeks';
+    if (path === `/documents/${projectId}/issues`) return 'issues';
+    if (path === `/documents/${projectId}/retro`) return 'retro';
+    // If viewing a weekly doc that belongs to this project, highlight "weeks"
+    if (currentProjectId === projectId && (currentDocumentType === 'weekly_plan' || currentDocumentType === 'weekly_retro')) {
+      return 'weeks';
+    }
+    return null;
+  };
 
   const handleContextMenu = useCallback((e: React.MouseEvent, project: Project) => {
     e.preventDefault();
@@ -1062,40 +1248,125 @@ function ProjectsList({
 
   return (
     <>
-      <ul className="space-y-0.5 px-2" data-testid="projects-list">
-        {projects.map((project) => (
-          <li key={project.id} data-testid="project-item" className="group relative">
-            <Link
-              to={`/projects/${project.id}`}
-              onContextMenu={(e) => handleContextMenu(e, project)}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                activeId === project.id
-                  ? 'bg-border/50 text-foreground'
-                  : 'text-muted hover:bg-border/30 hover:text-foreground'
+      <ul className="space-y-0.5 px-2" role="tree" data-testid="projects-list">
+        {projects.map((project) => {
+          const isExpanded = expandedProjects.has(project.id);
+          const currentTab = getCurrentTab(project.id);
+          return (
+            <li key={project.id} data-testid="project-item" role="treeitem" aria-expanded={isExpanded}>
+              <div className="group relative">
+                <div
+                  onContextMenu={(e) => handleContextMenu(e, project)}
+                  className={cn(
+                    'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                    activeId === project.id
+                      ? 'bg-border/50 text-foreground'
+                      : 'text-muted hover:bg-border/30 hover:text-foreground'
+                  )}
+                >
+                  {/* Expand/collapse chevron */}
+                  <button
+                    type="button"
+                    onClick={() => toggleProject(project.id)}
+                    className="w-4 h-4 flex-shrink-0 flex items-center justify-center p-0 rounded hover:bg-border/50"
+                    aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                  >
+                    <ChevronIcon isOpen={isExpanded} />
+                  </button>
+                  {/* Project color dot */}
+                  <span
+                    className="h-2 w-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: project.color || '#6366f1' }}
+                  />
+                  {/* Project link */}
+                  <Link
+                    to={`/documents/${project.id}`}
+                    className="flex-1 truncate"
+                  >
+                    {project.title || 'Untitled'}
+                  </Link>
+                  {/* ICE score */}
+                  <span className="text-xs text-muted">{project.ice_score}</span>
+                </div>
+                {/* Three-dot menu button */}
+                <button
+                  type="button"
+                  onClick={(e) => handleMenuClick(e, project)}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
+                  aria-label={`Actions for ${project.title || 'Untitled'}`}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="5" r="2" />
+                    <circle cx="12" cy="12" r="2" />
+                    <circle cx="12" cy="19" r="2" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Expanded content - Project tabs */}
+              {isExpanded && (
+                <ul className="ml-6 space-y-0.5 mt-0.5" role="group">
+                  <li role="treeitem">
+                    <Link
+                      to={`/documents/${project.id}`}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+                        currentTab === 'details'
+                          ? 'bg-border/50 text-foreground'
+                          : 'text-muted hover:bg-border/30 hover:text-foreground'
+                      )}
+                    >
+                      <DocIcon />
+                      <span>Details</span>
+                    </Link>
+                  </li>
+                  <li role="treeitem">
+                    <Link
+                      to={`/documents/${project.id}/weeks`}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+                        currentTab === 'weeks'
+                          ? 'bg-border/50 text-foreground'
+                          : 'text-muted hover:bg-border/30 hover:text-foreground'
+                      )}
+                    >
+                      <CalendarIcon />
+                      <span>Weeks</span>
+                    </Link>
+                  </li>
+                  <li role="treeitem">
+                    <Link
+                      to={`/documents/${project.id}/issues`}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+                        currentTab === 'issues'
+                          ? 'bg-border/50 text-foreground'
+                          : 'text-muted hover:bg-border/30 hover:text-foreground'
+                      )}
+                    >
+                      <IssueIcon />
+                      <span>Issues</span>
+                    </Link>
+                  </li>
+                  <li role="treeitem">
+                    <Link
+                      to={`/documents/${project.id}/retro`}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors",
+                        currentTab === 'retro'
+                          ? 'bg-border/50 text-foreground'
+                          : 'text-muted hover:bg-border/30 hover:text-foreground'
+                      )}
+                    >
+                      <RetroIcon />
+                      <span>Retro</span>
+                    </Link>
+                  </li>
+                </ul>
               )}
-            >
-              <span
-                className="h-2 w-2 rounded-full flex-shrink-0"
-                style={{ backgroundColor: project.color || '#6366f1' }}
-              />
-              <span className="flex-1 truncate">{project.title || 'Untitled'}</span>
-              <span className="text-xs text-muted">{project.ice_score}</span>
-            </Link>
-            <button
-              type="button"
-              onClick={(e) => handleMenuClick(e, project)}
-              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-border/50 text-muted hover:text-foreground transition-opacity"
-              aria-label={`Actions for ${project.title || 'Untitled'}`}
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="5" r="2" />
-                <circle cx="12" cy="12" r="2" />
-                <circle cx="12" cy="19" r="2" />
-              </svg>
-            </button>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
 
       {contextMenu && (
@@ -1107,6 +1378,30 @@ function ProjectsList({
         </ContextMenu>
       )}
     </>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
+function IssueIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+    </svg>
+  );
+}
+
+function RetroIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
+    </svg>
   );
 }
 
@@ -1312,144 +1607,111 @@ function ArchiveIcon({ className }: { className?: string }) {
   );
 }
 
-function SprintsList() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { data, isLoading, error } = useActiveSprintsQuery();
-
-  // Extract active sprint ID from URL if viewing a sprint
-  const getActiveSprintId = (): string | undefined => {
-    // Match /sprints/:id or /programs/:programId/sprints/:id
-    const sprintMatch = location.pathname.match(/\/sprints\/([^/]+)/);
-    return sprintMatch ? sprintMatch[1] : undefined;
-  };
-
-  const activeId = getActiveSprintId();
-
-  if (isLoading) {
-    return <div className="px-3 py-2 text-sm text-muted">Loading sprints...</div>;
-  }
-
-  if (error) {
-    return <div className="px-3 py-2 text-sm text-muted">Failed to load sprints</div>;
-  }
-
-  const sprints = data?.sprints || [];
-
-  if (sprints.length === 0) {
-    return (
-      <div className="px-3 py-2 text-sm text-muted">
-        <p>No active sprints</p>
-        <p className="mt-1 text-xs">Check Programs to see upcoming sprints</p>
-      </div>
-    );
-  }
-
-  return (
-    <ul className="space-y-0.5 px-2" data-testid="sprints-list">
-      {sprints.map((sprint) => {
-        const isEnded = sprint.days_remaining <= 0;
-        const isEndingSoon = !isEnded && sprint.days_remaining <= 2;
-        const showReviewIndicator = isEnded || isEndingSoon;
-        return (
-          <li key={sprint.id} data-testid="sprint-item">
-            <div
-              className={cn(
-                'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                activeId === sprint.id
-                  ? 'bg-border/50 text-foreground'
-                  : 'text-muted hover:bg-border/30 hover:text-foreground'
-              )}
-            >
-              {/* Owner avatar */}
-              <button
-                onClick={() => navigate(`/programs/${sprint.program_id}/sprints/${sprint.id}`)}
-                className="flex items-center gap-2 flex-1 min-w-0"
-              >
-                {sprint.owner ? (
-                  <span
-                    className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent/80 text-[10px] font-medium text-white"
-                    title={sprint.owner.name}
-                  >
-                    {sprint.owner.name?.charAt(0).toUpperCase() || '?'}
-                  </span>
-                ) : (
-                  <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-border text-[10px] text-muted">
-                    ?
-                  </span>
-                )}
-                {/* Program name (sprint number is redundant since all active sprints are the same) */}
-                <span className="flex-1 truncate">{sprint.program_name || 'Untitled'}</span>
-              </button>
-              {/* Sprint ended / Review due badge and quick action */}
-              {showReviewIndicator && (
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <span className={cn(
-                    'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-                    isEnded
-                      ? 'bg-red-500/20 text-red-400'
-                      : 'bg-amber-500/20 text-amber-400'
-                  )}>
-                    {isEnded ? 'Sprint ended' : 'Review due'}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/sprints/${sprint.id}/review`);
-                    }}
-                    className="hidden group-hover:inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium text-accent hover:bg-accent/20"
-                    title="Go to sprint review"
-                  >
-                    Review
-                  </button>
-                </div>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 function TeamSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { currentDocumentType } = useCurrentDocument();
+  const { id: personIdFromUrl } = useParams<{ id: string }>();
+
+  // Check if we're viewing a person profile (at /team/:personId)
+  const isViewingPerson = location.pathname.startsWith('/team/') &&
+    location.pathname !== '/team/allocation' &&
+    location.pathname !== '/team/directory' &&
+    location.pathname !== '/team/status';
 
   const isAllocation = location.pathname === '/team/allocation' || location.pathname === '/team';
-  const isDirectory = location.pathname === '/team/directory';
+  // Directory is active when on /team/directory OR viewing a person document
+  const isDirectory = location.pathname === '/team/directory' ||
+    isViewingPerson ||
+    (location.pathname.startsWith('/documents/') && currentDocumentType === 'person');
+  const isStatusOverview = location.pathname === '/team/status';
+
+  // Fetch people for the sidebar list when viewing a person
+  const { data: people = [] } = useTeamMembersQuery();
+
+  // Filter out pending users for the sidebar list
+  const activePeople = people.filter(p => !p.isPending);
 
   return (
-    <ul className="space-y-0.5 px-2">
-      <li>
-        <button
-          onClick={() => navigate('/team/allocation')}
-          className={cn(
-            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-            isAllocation
-              ? 'bg-border/50 text-foreground'
-              : 'text-muted hover:bg-border/30 hover:text-foreground'
-          )}
-        >
-          <GridIcon />
-          <span>Allocation</span>
-        </button>
-      </li>
-      <li>
-        <button
-          onClick={() => navigate('/team/directory')}
-          className={cn(
-            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-            isDirectory
-              ? 'bg-border/50 text-foreground'
-              : 'text-muted hover:bg-border/30 hover:text-foreground'
-          )}
-        >
-          <PeopleIcon />
-          <span>Directory</span>
-        </button>
-      </li>
-    </ul>
+    <div className="space-y-3 px-2">
+      {/* Navigation buttons */}
+      <ul className="space-y-0.5">
+        <li>
+          <button
+            onClick={() => navigate('/team/allocation')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              isAllocation
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <GridIcon />
+            <span>Allocation</span>
+          </button>
+        </li>
+        <li>
+          <button
+            onClick={() => navigate('/team/directory')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              isDirectory
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <PeopleIcon />
+            <span>Directory</span>
+          </button>
+        </li>
+        <li>
+          <button
+            onClick={() => navigate('/team/status')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              isStatusOverview
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <ActivityIcon />
+            <span>Status Overview</span>
+          </button>
+        </li>
+      </ul>
+
+      {/* People list when viewing a person */}
+      {isViewingPerson && activePeople.length > 0 && (
+        <div className="border-t border-border pt-3">
+          <div className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted">
+            Team Members
+          </div>
+          <ul className="space-y-0.5">
+            {activePeople.map(person => (
+              <li key={person.id}>
+                <button
+                  onClick={() => navigate(`/team/${person.id}`)}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                    personIdFromUrl === person.id
+                      ? 'bg-border/50 text-foreground'
+                      : 'text-muted hover:bg-border/30 hover:text-foreground'
+                  )}
+                >
+                  <div className={cn(
+                    'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white',
+                    personIdFromUrl === person.id ? 'bg-accent' : 'bg-accent/60'
+                  )}>
+                    {person.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="truncate">{person.name}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1465,6 +1727,14 @@ function PeopleIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
+  );
+}
+
+function ActivityIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M22 12h-4l-3 9L9 3l-3 9H2" />
     </svg>
   );
 }
@@ -1498,15 +1768,6 @@ function ProjectsIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-    </svg>
-  );
-}
-
-function SprintsIcon() {
-  // Lightning bolt icon (Zap - represents velocity/sprints)
-  return (
-    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
     </svg>
   );
 }

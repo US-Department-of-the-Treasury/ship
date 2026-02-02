@@ -1,6 +1,6 @@
 # Ship + Claude Code Integration Guide
 
-This guide documents how to use Ship as a real-time observability dashboard for Claude Code workflows, enabling knowledge compounding across development sprints.
+This guide documents how to use Ship as a real-time observability dashboard for Claude Code workflows, enabling knowledge compounding across development weeks.
 
 ## Getting Started
 
@@ -8,10 +8,10 @@ This guide documents how to use Ship as a real-time observability dashboard for 
 
 Ship is a project management platform designed for AI-assisted development. It provides:
 
-- **Sprint Planning**: Organize work into time-boxed sprints with hypotheses and user stories
+- **Week Planning**: Organize work into time-boxed weeks with hypotheses and user stories
 - **Issue Tracking**: Track issues through todo → in_progress → done states
 - **Real-time Sync**: See Claude's work progress in real-time as stories complete
-- **Knowledge Compounding**: Learnings from past sprints inform future planning
+- **Knowledge Compounding**: Learnings from past weeks inform future planning
 
 ### What is Claude Code?
 
@@ -29,7 +29,7 @@ When Ship and Claude Code are integrated:
 
 1. **Visibility**: Watch Claude work in real-time through Ship's dashboard
 2. **Traceability**: Every story, iteration, and verification failure is logged
-3. **Knowledge**: Learnings from completed sprints inform future planning
+3. **Knowledge**: Learnings from completed weeks inform future planning
 4. **Telemetry**: Track iterations, confidence levels, and time per story
 
 ## Setup and Authentication
@@ -59,7 +59,7 @@ Add your Ship API token to `~/.claude/.env`:
 # Ship API Configuration
 SHIP_API_TOKEN=ship_your_token_here
 SHIP_API_URL=https://your-ship-instance.example.com/api
-SHIP_PROGRAM_ID=your-program-uuid  # Optional: default program for sprints
+SHIP_PROGRAM_ID=your-program-uuid  # Optional: default program for weeks
 ```
 
 ### Step 4: Verify Connection
@@ -82,13 +82,13 @@ The `/prd` command (alias `/workflows:plan`) creates structured product requirem
 
 When you run `/prd`:
 
-1. **Sprint Created**: A new sprint is created under your program with:
+1. **Week Created**: A new week is created under your program with:
    - Title matching the feature name
    - Hypothesis describing expected outcome
    - Confidence level (default 70%)
 
 2. **Issues Created**: Each user story becomes a Ship issue:
-   - Linked to the sprint
+   - Linked to the week
    - State set to "todo"
    - Verification criteria in description
    - Priority mapped (high/medium/low)
@@ -98,9 +98,9 @@ When you run `/prd`:
 ### Observable Outcomes in Ship UI
 
 After `/prd` completes:
-- New sprint visible in Sprint view
+- New week visible in Week view
 - Issues appear in backlog
-- Sprint timeline shows start date
+- Week timeline shows start date
 - Issue count reflects story count
 
 ## Execution Phase: /work
@@ -139,7 +139,7 @@ Each completed story records:
 
 While `/work` runs:
 - Issue cards move across Kanban columns
-- Sprint progress percentage updates
+- Week progress percentage updates
 - Issue history shows verification attempts
 - Telemetry appears in issue properties
 
@@ -156,7 +156,7 @@ The `/standup` command generates daily progress summaries with Ship data.
 What it pulls from Ship:
 - Completed issues since last standup
 - In-progress issues
-- Sprint velocity metrics
+- Week velocity metrics
 - Blockers and risks
 
 ### /review (PR Review)
@@ -172,9 +172,9 @@ When integrated with Ship:
 - Updates issue status based on PR state
 - Records review findings
 
-### Sprint Retrospective
+### Weekly Retrospective
 
-At sprint end, Ship captures:
+At week end, Ship captures:
 - **Outcome**: What was achieved
 - **Learnings**: Key insights documented as wiki docs
 - **Metrics**: Velocity, completion rate, average iterations
@@ -188,8 +188,8 @@ The `/deploy` command handles deployment with verification.
 ```
 
 Ship Integration:
-- Deployment status visible in sprint view
-- Links deployment to completed sprint
+- Deployment status visible in week view
+- Links deployment to completed week
 - Rollback history tracked
 
 ### Rollback Considerations
@@ -212,7 +212,7 @@ Queue operations include:
 - Issue state updates
 - Verification failure logs
 - Telemetry data
-- Sprint updates
+- Week updates
 
 When connection restores, you'll see:
 ```
@@ -232,7 +232,7 @@ Keep Ship open in a browser tab while `/work` runs. You'll see real-time progres
 
 ### 3. Review Telemetry
 
-After sprints, review telemetry to understand:
+After weeks, review telemetry to understand:
 - Which stories took most iterations
 - Common verification failures
 - Time distribution across stories

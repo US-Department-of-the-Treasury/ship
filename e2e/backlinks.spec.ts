@@ -19,7 +19,7 @@ async function login(page: Page) {
 async function createNewDocument(page: Page) {
   await page.goto('/docs')
   await page.getByRole('button', { name: 'New Document', exact: true }).click()
-  await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+  await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
   return page.url()
 }
@@ -67,9 +67,12 @@ test.describe('Backlinks', () => {
 
     const editor = page.locator('.ProseMirror')
     await editor.click()
+    // Wait for editor to be focused and ready to receive input
+    await expect(editor).toBeFocused({ timeout: 3000 })
+    await page.waitForTimeout(200) // Small delay for TipTap initialization
 
-    // Create mention to Document A
-    await page.keyboard.type('@Document A')
+    // Create mention to Document A - type slowly to ensure all keystrokes register
+    await page.keyboard.type('@Document A', { delay: 50 })
     await page.waitForTimeout(500)
 
     // Wait for mention popup
@@ -121,9 +124,12 @@ test.describe('Backlinks', () => {
 
     const editor = page.locator('.ProseMirror')
     await editor.click()
+    // Wait for editor to be focused and ready to receive input
+    await expect(editor).toBeFocused({ timeout: 3000 })
+    await page.waitForTimeout(200) // Small delay for TipTap initialization
 
-    // Create mention to Document A
-    await page.keyboard.type('@Doc to Mention')
+    // Create mention to Document A - type slowly to ensure all keystrokes register
+    await page.keyboard.type('@Doc to Mention', { delay: 50 })
     await page.waitForTimeout(500)
 
     const mentionPopup = page.locator('[role="listbox"]')
@@ -203,9 +209,12 @@ test.describe('Backlinks', () => {
 
     const editor = page.locator('.ProseMirror')
     await editor.click()
+    // Wait for editor to be focused and ready to receive input
+    await expect(editor).toBeFocused({ timeout: 3000 })
+    await page.waitForTimeout(200) // Small delay for TipTap initialization
 
-    // Mention Target Document
-    await page.keyboard.type('@Target Document')
+    // Mention Target Document - type slowly to ensure all keystrokes register
+    await page.keyboard.type('@Target Document', { delay: 50 })
     await page.waitForTimeout(500)
 
     const mentionPopup = page.locator('[role="listbox"]')
@@ -265,9 +274,12 @@ test.describe('Backlinks', () => {
 
     const editor = page.locator('.ProseMirror')
     await editor.click()
+    // Wait for editor to be focused and ready to receive input
+    await expect(editor).toBeFocused({ timeout: 3000 })
+    await page.waitForTimeout(200) // Small delay for TipTap initialization
 
-    // Mention Document M
-    await page.keyboard.type('@Mentioned Doc')
+    // Mention Document M - type slowly to ensure all keystrokes register
+    await page.keyboard.type('@Mentioned Doc', { delay: 50 })
     await page.waitForTimeout(500)
 
     const mentionPopup = page.locator('[role="listbox"]')
@@ -339,8 +351,12 @@ test.describe('Backlinks', () => {
 
     // Create Document Q in second tab
     await page2.goto('/docs')
+    // Wait for page to stabilize and dismiss any modal that might be open
+    await page2.waitForTimeout(500)
+    await page2.keyboard.press('Escape')
+    await page2.waitForTimeout(300)
     await page2.getByRole('button', { name: 'New Document', exact: true }).click()
-    await expect(page2).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+    await expect(page2).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
     await expect(page2.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
 
     const titleInput2 = page2.getByPlaceholder('Untitled')
@@ -444,7 +460,7 @@ test.describe('Backlinks', () => {
     for (let i = 1; i <= 2; i++) {
       await page.goto('/docs')
       await page.getByRole('button', { name: 'New Document', exact: true }).click()
-      await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
       await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
 
       const titleInput = page.getByPlaceholder('Untitled')
@@ -455,21 +471,43 @@ test.describe('Backlinks', () => {
       )
 
       const editor = page.locator('.ProseMirror')
+
+      // Blur title input first by pressing Tab, then focus editor
+      await page.keyboard.press('Tab')
+      await page.waitForTimeout(200)
+
+      // Click editor to ensure focus
       await editor.click()
+      await page.waitForTimeout(500)
 
-      // Mention Popular Doc - wait for popup and select
-      await page.keyboard.type('@Popular Doc')
+      // Ensure editor has focus by checking it's the active element
+      await page.evaluate(() => {
+        const editor = document.querySelector('.ProseMirror')
+        if (editor instanceof HTMLElement) editor.focus()
+      })
+      await page.waitForTimeout(200)
 
-      // Wait for mention popup to appear
+      // Type @ to trigger mention popup
+      await page.keyboard.type('@')
+
+      // Wait for mention popup to appear (may take a moment for API call)
       const mentionPopup = page.locator('[role="listbox"]')
-      await expect(mentionPopup).toBeVisible({ timeout: 5000 })
+      await expect(mentionPopup).toBeVisible({ timeout: 10000 })
 
-      // Click the option
+      // Type search term
+      await page.keyboard.type('Popular Doc')
+
+      // Wait for results to filter
+      await page.waitForTimeout(500)
+
+      // Wait for our document to appear in results and select it
       const docOption = page.locator('[role="option"]').filter({ hasText: 'Popular Doc' })
       await expect(docOption).toBeVisible({ timeout: 3000 })
-      await docOption.click()
 
-      // Wait for mention to be inserted (check for mention element in editor)
+      // Press Enter to select
+      await page.keyboard.press('Enter')
+
+      // Wait for mention to be inserted
       await expect(editor.locator('[data-type="mention"], .mention')).toBeVisible({ timeout: 3000 })
 
       // Wait for link sync to complete

@@ -41,10 +41,10 @@ async function getFirstDocumentId(page: Page): Promise<string | null> {
   if (await docLink.count() === 0) return null
 
   await docLink.click()
-  await page.waitForURL(/\/docs\//)
+  await page.waitForURL(/\/documents\//)
 
   const url = page.url()
-  const match = url.match(/\/docs\/([a-f0-9-]+)/)
+  const match = url.match(/\/documents\/([a-f0-9-]+)/)
   return match ? match[1] : null
 }
 
@@ -154,15 +154,14 @@ test.describe('Authorization - Cross-Workspace Isolation', () => {
     await loginAsMember(page)
 
     // Try to access a document that doesn't exist (simulates cross-workspace access)
-    await page.goto('/docs/00000000-0000-0000-0000-000000000000')
+    await page.goto('/documents/00000000-0000-0000-0000-000000000000')
 
-    // Wait for the app to detect the invalid document and redirect
-    // The redirect happens asynchronously after a refresh attempt and timeout
-    await page.waitForURL(url => !url.toString().includes('00000000-0000-0000-0000-000000000000'), { timeout: 5000 })
+    // The app should show an error state for non-existent documents
+    // UnifiedDocumentPage shows "Document not found" message instead of redirecting
+    await expect(page.getByText('Document not found')).toBeVisible({ timeout: 5000 })
 
-    // Should be redirected away from the invalid document URL
-    // The app redirects to the last visited document or a default
-    expect(page.url()).not.toContain('00000000-0000-0000-0000-000000000000')
+    // There should be a link to go back to documents
+    await expect(page.getByText('Go to Documents')).toBeVisible({ timeout: 3000 })
   })
 
   test('API rejects document access for wrong workspace', async ({ page, request }) => {

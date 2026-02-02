@@ -15,7 +15,7 @@ export function FeedbackEditorPage() {
   useEffect(() => {
     if (id) {
       // Redirect to issue editor - feedback is now just an issue with source='external'
-      navigate(`/issues/${id}`, { replace: true });
+      navigate(`/documents/${id}`, { replace: true });
     } else {
       navigate('/issues', { replace: true });
     }

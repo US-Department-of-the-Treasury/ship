@@ -37,7 +37,7 @@ test.describe('Programs', () => {
     await page.getByRole('button', { name: /new program/i }).click()
 
     // Should navigate to program editor
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
   })
 
   test('new program appears in sidebar list', async ({ page }) => {
@@ -51,7 +51,7 @@ test.describe('Programs', () => {
     await page.getByRole('button', { name: /new program/i }).click()
 
     // Wait for navigation
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Program should appear in sidebar
     await page.waitForTimeout(500)
@@ -59,35 +59,18 @@ test.describe('Programs', () => {
     expect(newCount).toBeGreaterThanOrEqual(initialCount)
   })
 
-  test('program editor has Overview tab with icon and color properties', async ({ page }) => {
+  test('program editor has tabbed navigation (Overview, Issues, Weeks)', async ({ page }) => {
     await page.goto('/programs')
 
     // Create new program
     await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Should see Overview tab (default tab)
-    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
-
-    // Should see icon label in properties sidebar (emoji picker)
-    await expect(page.getByText('Icon')).toBeVisible({ timeout: 5000 })
-
-    // Should see color label for color picker
-    await expect(page.getByText('Color')).toBeVisible({ timeout: 5000 })
-  })
-
-  test('program editor has tabbed navigation (Overview, Issues, Sprints)', async ({ page }) => {
-    await page.goto('/programs')
-
-    // Create new program
-    await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Should see all tabs (scoped to main to avoid icon rail)
     const main = page.locator('main')
     await expect(main.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
     await expect(main.getByRole('tab', { name: 'Issues' })).toBeVisible({ timeout: 5000 })
-    await expect(main.getByRole('tab', { name: 'Sprints' })).toBeVisible({ timeout: 5000 })
+    await expect(main.getByRole('tab', { name: 'Weeks' })).toBeVisible({ timeout: 5000 })
   })
 
   test('can switch between program tabs', async ({ page }) => {
@@ -95,7 +78,7 @@ test.describe('Programs', () => {
 
     // Create new program
     await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Scope to main to avoid icon rail buttons
     const main = page.locator('main')
@@ -106,11 +89,11 @@ test.describe('Programs', () => {
     // Should see New Issue button in issues tab
     await expect(page.getByRole('button', { name: 'New Issue' })).toBeVisible({ timeout: 5000 })
 
-    // Click Sprints tab
-    await main.getByRole('tab', { name: 'Sprints' }).click()
+    // Click Weeks tab
+    await main.getByRole('tab', { name: 'Weeks' }).click()
 
-    // Should see Create sprint link in the timeline
-    await expect(page.getByText(/\+ Create sprint/).first()).toBeVisible({ timeout: 5000 })
+    // Should see Timeline heading in the Weeks tab (weeks are auto-generated)
+    await expect(page.getByRole('heading', { name: 'Timeline', level: 3 })).toBeVisible({ timeout: 5000 })
   })
 
   test('Issues tab shows list and kanban view toggle', async ({ page }) => {
@@ -118,7 +101,7 @@ test.describe('Programs', () => {
 
     // Create new program
     await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Click Issues tab (scoped to main to avoid icon rail)
     await page.locator('main').getByRole('tab', { name: 'Issues' }).click()
@@ -133,7 +116,7 @@ test.describe('Programs', () => {
 
     // Create new program
     await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Wait for program editor to fully load - verify we have the tab bar
     await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 5000 })
@@ -146,57 +129,34 @@ test.describe('Programs', () => {
     // Use data-testid to ensure we click the program's New Issue button, not sidebar
     await expect(page.getByTestId('program-new-issue')).toBeVisible({ timeout: 5000 })
 
-    // Verify we're still on the program page (not global /issues)
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/)
+    // Verify we're still on the program page (unified document routing)
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/)
 
     // Click New Issue button using data-testid
     await page.getByTestId('program-new-issue').click()
 
-    // Should navigate to issue editor
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    // Should navigate to issue document (unified document routing)
+    // Wait for URL to change from the program's issues tab to the new issue document
+    await expect(page).not.toHaveURL(/\/issues$/, { timeout: 10000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+$/, { timeout: 5000 })
   })
 
-  test('can create sprint from program Sprints tab', async ({ page }) => {
+  test('Weeks tab shows auto-generated week timeline', async ({ page }) => {
     await page.goto('/programs')
 
     // Create new program
     await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
-    // Click Sprints tab
-    await page.getByRole('tab', { name: 'Sprints' }).click()
+    // Click Weeks tab (scope to main to avoid icon rail)
+    await page.locator('main').getByRole('tab', { name: 'Weeks' }).click()
 
-    // Click Create sprint in the timeline
-    await page.getByText(/\+ Create sprint/).first().click()
+    // Should see Timeline heading
+    await expect(page.getByRole('heading', { name: 'Timeline', level: 3 })).toBeVisible({ timeout: 5000 })
 
-    // Should show sprint creation modal with heading and owner selection
-    await expect(page.getByRole('heading', { name: /create sprint/i })).toBeVisible({ timeout: 5000 })
-
-    // Modal should have owner selection and action buttons
-    await expect(page.getByText(/who should own this sprint/i)).toBeVisible()
-    await expect(page.getByRole('button', { name: /cancel/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /create/i })).toBeVisible()
-  })
-
-  test('sprint creation modal can be closed', async ({ page }) => {
-    await page.goto('/programs')
-
-    // Create new program
-    await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Click Sprints tab
-    await page.getByRole('tab', { name: 'Sprints' }).click()
-
-    // Open sprint creation modal
-    await page.getByText(/\+ Create sprint/).first().click()
-    await expect(page.getByRole('heading', { name: /create sprint/i })).toBeVisible({ timeout: 5000 })
-
-    // Click Cancel
-    await page.getByRole('button', { name: /cancel/i }).click()
-
-    // Modal should be closed
-    await expect(page.getByRole('heading', { name: /create sprint/i })).not.toBeVisible({ timeout: 2000 })
+    // Should see auto-generated week cards (weeks are created automatically)
+    // Look for any "Week of" text which indicates week cards are visible
+    await expect(page.getByText(/Week of/).first()).toBeVisible({ timeout: 5000 })
   })
 
   test('program list shows issue and sprint counts', async ({ page }) => {
@@ -217,7 +177,7 @@ test.describe('Programs', () => {
 
     // Create first program
     await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
     const firstProgramUrl = page.url()
 
     // Go back to programs list
@@ -225,37 +185,14 @@ test.describe('Programs', () => {
 
     // Create second program
     await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
     expect(page.url()).not.toBe(firstProgramUrl)
 
     // Click first program in sidebar
     const sidebarItems = page.locator('aside ul li button')
     if (await sidebarItems.count() >= 2) {
       await sidebarItems.first().click()
-      await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/)
-    }
-  })
-
-  test('can change program color in Overview tab', async ({ page }) => {
-    await page.goto('/programs')
-
-    // Create new program
-    await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
-
-    // Should be on Overview tab by default
-    await expect(page.getByText('Color')).toBeVisible({ timeout: 5000 })
-
-    // Find color buttons (small circular buttons)
-    const colorButtons = page.locator('button.rounded-full')
-    const colorCount = await colorButtons.count()
-    expect(colorCount).toBeGreaterThan(0)
-
-    // Click a color button to change color
-    if (colorCount > 1) {
-      await colorButtons.nth(1).click()
-      // Wait for update
-      await page.waitForTimeout(500)
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/)
     }
   })
 
@@ -264,7 +201,7 @@ test.describe('Programs', () => {
 
     // Create new program
     await page.getByRole('button', { name: /new program/i }).click()
-    await expect(page).toHaveURL(/\/programs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Should see editor with editable title area
     const editor = page.locator('.ProseMirror, .tiptap, [data-testid="editor"]')
@@ -293,4 +230,51 @@ test.describe('Programs', () => {
     // Should see New Program button even with existing programs
     await expect(page.getByRole('button', { name: /new program/i })).toBeVisible({ timeout: 5000 })
   })
+
+  test('can create project from program Projects tab', async ({ page }) => {
+    await page.goto('/programs')
+
+    // Create new program
+    await page.getByRole('button', { name: /new program/i }).click()
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
+    const programUrl = page.url()
+    const programId = programUrl.split('/documents/')[1]
+
+    // Click Projects tab
+    await page.locator('main').getByRole('tab', { name: 'Projects' }).click()
+
+    // Should see New Project button
+    const newProjectButton = page.getByRole('button', { name: /new project/i })
+    await expect(newProjectButton).toBeVisible({ timeout: 5000 })
+
+    // Click New Project button
+    await newProjectButton.click()
+
+    // Should navigate to new project document
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
+  })
+
+  test('Plan Week button navigates to week planning page', async ({ page }) => {
+    await page.goto('/programs')
+
+    // Create new program
+    await page.getByRole('button', { name: /new program/i }).click()
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
+    const programUrl = page.url()
+    const programId = programUrl.split('/documents/')[1]
+
+    // Click Weeks tab
+    await page.locator('main').getByRole('tab', { name: 'Weeks' }).click()
+
+    // Look for Plan Week button (may appear if weeks exist)
+    const planWeekButton = page.getByRole('button', { name: /plan week/i })
+
+    // If button exists, click it
+    if (await planWeekButton.count() > 0) {
+      await planWeekButton.click()
+      // Should navigate to week planning page
+      await expect(page).toHaveURL(/\/sprints\/.+\/plan/, { timeout: 5000 })
+    }
+  })
+
 })

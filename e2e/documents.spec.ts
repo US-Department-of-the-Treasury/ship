@@ -29,7 +29,7 @@ test.describe('Documents', () => {
     await newButton.click()
 
     // Should navigate to editor
-    await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
   })
 
@@ -42,7 +42,7 @@ test.describe('Documents', () => {
     await newButton.click()
 
     // Wait for editor
-    await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
 
     // Find title input (large title input in editor) and enter text
@@ -68,7 +68,7 @@ test.describe('Documents', () => {
     await newButton.click()
 
     // Wait for editor
-    await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 10000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 })
 
     // Give title so it shows in sidebar - use unique timestamp to avoid conflicts
     const uniqueTitle = `Test Doc ${Date.now()}`

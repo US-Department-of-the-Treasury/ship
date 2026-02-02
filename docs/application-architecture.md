@@ -502,7 +502,7 @@ test("create and edit document", async ({ page }) => {
 pnpm test:e2e
 
 # Run specific test file
-pnpm test:e2e e2e/sprints.spec.ts
+pnpm test:e2e e2e/weeks.spec.ts
 ```
 
 ### Test Categories
@@ -727,12 +727,12 @@ Ship integrates with Claude Code CLI for AI-assisted development workflows. See 
 
 | API Endpoint | Purpose | Claude Workflow |
 |--------------|---------|-----------------|
-| `POST /api/sprints` | Create sprint from PRD | `/prd` |
+| `POST /api/weeks` | Create week from PRD | `/prd` |
 | `POST /api/issues` | Create issues from user stories | `/prd` |
 | `PATCH /api/issues/:id` | Update issue state, add telemetry | `/work` |
-| `POST /api/sprints/:id/iterations` | Log iteration attempts | `/work` |
+| `POST /api/weeks/:id/iterations` | Log iteration attempts | `/work` |
 | `POST /api/issues/:id/history` | Log verification failures | `/work` |
-| `GET /api/sprints/:id/iterations` | Get sprint progress | `/standup` |
+| `GET /api/weeks/:id/iterations` | Get week progress | `/standup` |
 | `POST /api/documents` | Create retro/wiki docs | `/document` |
 | `GET /api/search/learnings` | Query past learnings | `/prd` |
 
@@ -760,13 +760,13 @@ interface ClaudeMetadata {
 }
 ```
 
-### Sprint Iterations
+### Week Iterations
 
-The `sprint_iterations` table logs each attempt at completing a story:
+The `sprint_iterations` table (historical name) logs each attempt at completing a story:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `sprint_id` | UUID | Parent sprint |
+| `sprint_id` | UUID | Parent week (historical column name) |
 | `story_id` | VARCHAR | PRD story ID |
 | `story_title` | VARCHAR | Story name |
 | `status` | ENUM | `pass`, `fail`, `in_progress` |
@@ -776,7 +776,7 @@ The `sprint_iterations` table logs each attempt at completing a story:
 
 This enables:
 - Real-time progress visibility in Ship dashboard
-- Sprint velocity analysis
+- Week velocity analysis
 - Learning extraction from failed attempts
 
 ## Decision Log
@@ -962,4 +962,4 @@ const results = await db
 
 - [Unified Document Model](./unified-document-model.md) - Data model
 - [Document Model Conventions](./document-model-conventions.md) - Terminology
-- [Sprint Documentation Philosophy](./sprint-documentation-philosophy.md) - Sprint workflow
+- [Week Documentation Philosophy](./week-documentation-philosophy.md) - Week workflow

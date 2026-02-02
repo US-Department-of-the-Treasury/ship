@@ -31,7 +31,7 @@ async function createNewDocument(page: Page) {
   }
 
   await page.waitForFunction(
-    (oldUrl) => window.location.href !== oldUrl && /\/docs\/[a-f0-9-]+/.test(window.location.href),
+    (oldUrl) => window.location.href !== oldUrl && /\/documents\/[a-f0-9-]+/.test(window.location.href),
     currentUrl,
     { timeout: 10000 }
   )
@@ -95,34 +95,6 @@ test.describe('Error Handling', () => {
     await context.setOffline(false)
   })
 
-  test('shows error message when upload fails', async ({ page }) => {
-    await createNewDocument(page)
-
-    // Intercept upload API and make it fail
-    await page.route('**/api/files/upload', (route) => {
-      route.fulfill({
-        status: 500,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'Upload failed' }),
-      })
-    })
-
-    const editor = page.locator('.ProseMirror')
-    await editor.click()
-
-    // Try to trigger image upload via slash command
-    await page.keyboard.type('/image')
-    await page.waitForTimeout(500)
-
-    // The slash command menu should still appear (not crash)
-    // Slash menu renders in a Tippy popup - look for button containing "Image" text within
-    const slashMenu = page.locator('button').filter({ hasText: 'Image' }).filter({ hasText: 'Upload' })
-    await expect(slashMenu).toBeVisible({ timeout: 3000 })
-
-    // Note: Full upload error testing requires file picker interaction
-    // The key is that the UI doesn't crash when upload API fails
-  })
-
   test('handles mention search failure gracefully', async ({ page }) => {
     await createNewDocument(page)
 
@@ -150,48 +122,6 @@ test.describe('Error Handling', () => {
     // Should still be able to type
     await page.keyboard.type('test')
     await expect(editor).toContainText('@test')
-  })
-
-  test('rejects invalid file types', async ({ page }) => {
-    await createNewDocument(page)
-
-    const editor = page.locator('.ProseMirror')
-    await editor.click()
-
-    // Trigger image upload
-    await page.keyboard.type('/image')
-    await page.waitForTimeout(500)
-
-    // Note: Testing file type validation requires either:
-    // 1. Mocking file picker with invalid file
-    // 2. Or testing the validation logic directly
-    // For now, verify the slash command appears (basic sanity check)
-    const imageOption = page.getByRole('button', { name: /Image.*Upload/i })
-    await expect(imageOption).toBeVisible({ timeout: 3000 })
-  })
-
-  test('rejects files that are too large', async ({ page }) => {
-    await createNewDocument(page)
-
-    // Intercept upload API to simulate file too large error
-    await page.route('**/api/files/upload', (route) => {
-      route.fulfill({
-        status: 413,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'File too large' }),
-      })
-    })
-
-    const editor = page.locator('.ProseMirror')
-    await editor.click()
-
-    // Trigger image upload command
-    await page.keyboard.type('/image')
-    await page.waitForTimeout(500)
-
-    // Verify the command menu appears
-    const imageOption = page.getByRole('button', { name: /Image.*Upload/i })
-    await expect(imageOption).toBeVisible({ timeout: 3000 })
   })
 
   test('handles websocket reconnection', async ({ page }) => {

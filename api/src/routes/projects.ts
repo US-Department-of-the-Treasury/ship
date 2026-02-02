@@ -5,6 +5,8 @@ import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visib
 import { authMiddleware } from '../middleware/auth.js';
 import { DEFAULT_PROJECT_PROPERTIES, computeICEScore } from '@ship/shared';
 import { checkDocumentCompleteness } from '../utils/extractHypothesis.js';
+import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
+import { broadcastToUser } from '../collaboration/index.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -53,6 +55,17 @@ function extractProjectFromRow(row: any) {
     inferred_status: row.inferred_status as InferredProjectStatus || 'backlog',
     // Conversion tracking
     converted_from_id: row.converted_from_id || null,
+    // RACI fields
+    owner_id: props.owner_id || null,
+    accountable_id: props.accountable_id || null,
+    consulted_ids: props.consulted_ids || [],
+    informed_ids: props.informed_ids || [],
+    // Hypothesis and approval tracking
+    plan: props.plan || null,
+    plan_approval: props.plan_approval || null,
+    retro_approval: props.retro_approval || null,
+    has_retro: props.has_retro ?? false,
+    target_date: props.target_date || null,
   };
 }
 
@@ -64,11 +77,14 @@ const createProjectSchema = z.object({
   impact: iceScoreSchema.optional().nullable().default(null),
   confidence: iceScoreSchema.optional().nullable().default(null),
   ease: iceScoreSchema.optional().nullable().default(null),
-  owner_id: z.string().uuid().optional().nullable().default(null), // Optional - can be unassigned
+  owner_id: z.string().uuid().optional().nullable().default(null), // R - Responsible (does the work)
+  accountable_id: z.string().uuid().optional().nullable().default(null), // A - Accountable (approver)
+  consulted_ids: z.array(z.string().uuid()).optional().default([]), // C - Consulted (provide input)
+  informed_ids: z.array(z.string().uuid()).optional().default([]), // I - Informed (kept in loop)
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default('#6366f1'),
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
-  hypothesis: z.string().max(2000).optional().nullable(),
+  plan: z.string().max(2000).optional().nullable(),
   target_date: z.string().datetime().optional().nullable(),
 });
 
@@ -77,18 +93,21 @@ const updateProjectSchema = z.object({
   impact: iceScoreSchema.optional().nullable(),
   confidence: iceScoreSchema.optional().nullable(),
   ease: iceScoreSchema.optional().nullable(),
-  owner_id: z.string().uuid().optional().nullable(), // Can be cleared (set to null)
+  owner_id: z.string().uuid().optional().nullable(), // R - Responsible (can be cleared)
+  accountable_id: z.string().uuid().optional().nullable(), // A - Accountable (can be cleared)
+  consulted_ids: z.array(z.string().uuid()).optional(), // C - Consulted
+  informed_ids: z.array(z.string().uuid()).optional(), // I - Informed
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   emoji: z.string().max(10).optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
   archived_at: z.string().datetime().optional().nullable(),
-  hypothesis: z.string().max(2000).optional().nullable(),
+  plan: z.string().max(2000).optional().nullable(),
   target_date: z.string().datetime().optional().nullable(),
 });
 
 // Schema for project retro
 const projectRetroSchema = z.object({
-  hypothesis_validated: z.boolean().nullable().optional(),
+  plan_validated: z.boolean().nullable().optional(),
   monetary_impact_actual: z.string().max(500).nullable().optional(),
   success_criteria: z.array(z.string().max(500)).nullable().optional(),
   next_steps: z.string().max(2000).nullable().optional(),
@@ -173,7 +192,7 @@ async function generatePrefilledRetroContent(projectData: any, sprints: any[], i
     content.content.push({
       type: 'heading',
       attrs: { level: 3 },
-      content: [{ type: 'text', text: `Sprints (${sprints.length})` }],
+      content: [{ type: 'text', text: `Weeks (${sprints.length})` }],
     });
     content.content.push({
       type: 'bulletList',
@@ -181,7 +200,7 @@ async function generatePrefilledRetroContent(projectData: any, sprints: any[], i
         type: 'listItem',
         content: [{
           type: 'paragraph',
-          content: [{ type: 'text', text: `Sprint ${s.sprint_number}: ${s.title}` }],
+          content: [{ type: 'text', text: `Week ${s.sprint_number}: ${s.title}` }],
         }],
       })),
     });
@@ -235,7 +254,7 @@ async function generatePrefilledRetroContent(projectData: any, sprints: any[], i
     });
   }
 
-  // Add hypothesis validation section
+  // Add plan validation section
   content.content.push({
     type: 'heading',
     attrs: { level: 3 },
@@ -243,7 +262,7 @@ async function generatePrefilledRetroContent(projectData: any, sprints: any[], i
   });
   content.content.push({
     type: 'paragraph',
-    content: [{ type: 'text', text: 'Was the hypothesis validated? (Set in properties)' }],
+    content: [{ type: 'text', text: 'Was the plan validated? (Set in properties)' }],
   });
 
   // Add monetary impact actual section
@@ -316,43 +335,42 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       orderByClause = `d.${sortField} ${sortDir}`;
     }
 
-    // Subquery to compute inferred status based on sprint relationships
-    // Priority: archived (if archived_at set) > active (issues in active sprint) > planned (upcoming) > completed > backlog
-    // Sprint status is computed from sprint_number + workspace.sprint_start_date:
-    //   - active: today is within the sprint's 7-day window
-    //   - upcoming: sprint hasn't started yet
-    //   - completed: sprint window has passed
+    // Subquery to compute inferred status based on sprint allocations
+    // Priority: archived > completed (retro done) > active (current sprint allocation) > planned (future allocation) > backlog
+    // Sprint timing is computed from sprint_number + workspace.sprint_start_date:
+    //   - current: today is within the sprint's 7-day window
+    //   - future: sprint hasn't started yet
+    //   - past: sprint window has passed
+    // Allocations are tracked via sprint documents with properties.project_id
     const inferredStatusSubquery = `
       CASE
         WHEN d.archived_at IS NOT NULL THEN 'archived'
+        WHEN d.properties->>'plan_validated' IS NOT NULL THEN 'completed'
         ELSE COALESCE(
           (
             SELECT
               CASE MAX(
                 CASE
-                  -- Compute sprint status: active=3, upcoming=2, completed=1
+                  -- Compute sprint timing: current=3, future=2, past=1
                   WHEN CURRENT_DATE BETWEEN
                     (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
                     AND (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7 + 6)
-                  THEN 3  -- active
+                  THEN 3  -- current sprint
                   WHEN CURRENT_DATE < (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
-                  THEN 2  -- upcoming
-                  ELSE 1  -- completed
+                  THEN 2  -- future sprint
+                  ELSE 1  -- past sprint
                 END
               )
               WHEN 3 THEN 'active'
               WHEN 2 THEN 'planned'
-              WHEN 1 THEN 'completed'
-              ELSE NULL
+              ELSE NULL  -- past allocations don't count
               END
-            FROM documents issue
-            JOIN document_associations da_project ON da_project.document_id = issue.id
-              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
-            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
-              AND da_sprint.relationship_type = 'sprint'
-            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
-            JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.document_type = 'issue'
+            FROM documents sprint
+            JOIN workspaces w ON w.id = sprint.workspace_id
+            WHERE sprint.document_type = 'sprint'
+              AND sprint.workspace_id = d.workspace_id
+              AND (sprint.properties->>'project_id')::uuid = d.id
+              AND jsonb_array_length(COALESCE(sprint.properties->'assignee_ids', '[]'::jsonb)) > 0
           ),
           'backlog'
         )
@@ -360,17 +378,20 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     `;
 
     let query = `
-      SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+      SELECT d.id, d.title, d.properties, prog_da.related_id as program_id, d.archived_at, d.created_at, d.updated_at,
              d.converted_from_id,
              (d.properties->>'owner_id')::uuid as owner_id,
              u.name as owner_name, u.email as owner_email,
-             (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
+             (SELECT COUNT(*) FROM documents s
+              JOIN document_associations da ON da.document_id = s.id AND da.related_id = d.id AND da.relationship_type = 'project'
+              WHERE s.document_type = 'sprint') as sprint_count,
              (SELECT COUNT(*) FROM documents i
               JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
               WHERE i.document_type = 'issue') as issue_count,
              (${inferredStatusSubquery}) as inferred_status
       FROM documents d
       LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
+      LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
       WHERE d.workspace_id = $1 AND d.document_type = 'project'
         AND ${VISIBILITY_FILTER_SQL('d', '$2', '$3')}
     `;
@@ -400,10 +421,11 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Get visibility context for filtering
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
-    // Same inferred status subquery as list endpoint
+    // Same inferred status subquery as list endpoint (allocation-based)
     const inferredStatusSubquery = `
       CASE
         WHEN d.archived_at IS NOT NULL THEN 'archived'
+        WHEN d.properties->>'plan_validated' IS NOT NULL THEN 'completed'
         ELSE COALESCE(
           (
             SELECT
@@ -412,25 +434,22 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
                   WHEN CURRENT_DATE BETWEEN
                     (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
                     AND (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7 + 6)
-                  THEN 3
+                  THEN 3  -- current sprint
                   WHEN CURRENT_DATE < (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
-                  THEN 2
-                  ELSE 1
+                  THEN 2  -- future sprint
+                  ELSE 1  -- past sprint
                 END
               )
               WHEN 3 THEN 'active'
               WHEN 2 THEN 'planned'
-              WHEN 1 THEN 'completed'
-              ELSE NULL
+              ELSE NULL  -- past allocations don't count
               END
-            FROM documents issue
-            JOIN document_associations da_project ON da_project.document_id = issue.id
-              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
-            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
-              AND da_sprint.relationship_type = 'sprint'
-            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
-            JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.document_type = 'issue'
+            FROM documents sprint
+            JOIN workspaces w ON w.id = sprint.workspace_id
+            WHERE sprint.document_type = 'sprint'
+              AND sprint.workspace_id = d.workspace_id
+              AND (sprint.properties->>'project_id')::uuid = d.id
+              AND jsonb_array_length(COALESCE(sprint.properties->'assignee_ids', '[]'::jsonb)) > 0
           ),
           'backlog'
         )
@@ -438,17 +457,20 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     `;
 
     const result = await pool.query(
-      `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+      `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id, d.archived_at, d.created_at, d.updated_at,
               d.converted_to_id, d.converted_from_id,
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
+              (SELECT COUNT(*) FROM documents s
+               JOIN document_associations da ON da.document_id = s.id AND da.related_id = d.id AND da.relationship_type = 'project'
+               WHERE s.document_type = 'sprint') as sprint_count,
               (SELECT COUNT(*) FROM documents i
                JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
                WHERE i.document_type = 'issue') as issue_count,
               (${inferredStatusSubquery}) as inferred_status
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'project'
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
@@ -496,21 +518,24 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, impact, confidence, ease, owner_id, color, emoji, program_id, hypothesis, target_date } = parsed.data;
+    const { title, impact, confidence, ease, owner_id, accountable_id, consulted_ids, informed_ids, color, emoji, program_id, plan, target_date } = parsed.data;
 
-    // Build properties JSONB
+    // Build properties JSONB with RACI fields
     const properties: Record<string, unknown> = {
       impact,
       confidence,
       ease,
-      owner_id,
+      owner_id, // R - Responsible
+      accountable_id, // A - Accountable
+      consulted_ids, // C - Consulted
+      informed_ids, // I - Informed
       color,
     };
     if (emoji) {
       properties.emoji = emoji;
     }
-    if (hypothesis) {
-      properties.hypothesis = hypothesis;
+    if (plan) {
+      properties.plan = plan;
     }
     if (target_date) {
       properties.target_date = target_date;
@@ -522,11 +547,21 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     properties.missing_fields = completeness.missingFields;
 
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, properties, program_id, created_by)
-       VALUES ($1, 'project', $2, $3, $4, $5)
-       RETURNING id, title, properties, program_id, archived_at, created_at, updated_at`,
-      [req.workspaceId, title, JSON.stringify(properties), program_id || null, req.userId]
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+       VALUES ($1, 'project', $2, $3, $4)
+       RETURNING id, title, properties, archived_at, created_at, updated_at`,
+      [req.workspaceId, title, JSON.stringify(properties), req.userId]
     );
+
+    // Create program association in junction table (mirrors PATCH behavior)
+    if (program_id) {
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')
+         ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+        [result.rows[0].id, program_id]
+      );
+    }
 
     // Get user info for owner response (only if owner_id is set)
     let owner = null;
@@ -546,7 +581,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     }
 
     res.status(201).json({
-      ...extractProjectFromRow({ ...result.rows[0], inferred_status: 'backlog' }),
+      ...extractProjectFromRow({ ...result.rows[0], program_id: program_id || null, inferred_status: 'backlog' }),
       sprint_count: 0,
       issue_count: 0,
       owner,
@@ -599,11 +634,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       values.push(data.title);
     }
 
-    // Handle program_id update (regular column)
-    if (data.program_id !== undefined) {
-      updates.push(`program_id = $${paramIndex++}`);
-      values.push(data.program_id);
-    }
+    // Note: program_id is handled via document_associations after main update
 
     // Handle properties updates
     const newProps = { ...currentProps };
@@ -629,6 +660,21 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    if (data.accountable_id !== undefined) {
+      newProps.accountable_id = data.accountable_id;
+      propsChanged = true;
+    }
+
+    if (data.consulted_ids !== undefined) {
+      newProps.consulted_ids = data.consulted_ids;
+      propsChanged = true;
+    }
+
+    if (data.informed_ids !== undefined) {
+      newProps.informed_ids = data.informed_ids;
+      propsChanged = true;
+    }
+
     if (data.color !== undefined) {
       newProps.color = data.color;
       propsChanged = true;
@@ -639,9 +685,24 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
-    if (data.hypothesis !== undefined) {
-      newProps.hypothesis = data.hypothesis;
+    // Track if plan was written for the first time
+    let planWasWritten = false;
+    if (data.plan !== undefined) {
+      // Check if this is the first time writing a non-empty plan
+      if (data.plan && !currentProps.plan) {
+        planWasWritten = true;
+      }
+      newProps.plan = data.plan;
       propsChanged = true;
+
+      // If plan changed and was previously approved, transition to 'changed_since_approved'
+      if (data.plan !== currentProps.plan &&
+          currentProps.plan_approval?.state === 'approved') {
+        newProps.plan_approval = {
+          ...currentProps.plan_approval,
+          state: 'changed_since_approved',
+        };
+      }
     }
 
     if (data.target_date !== undefined) {
@@ -665,23 +726,60 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       values.push(data.archived_at);
     }
 
-    if (updates.length === 0) {
+    if (updates.length === 0 && data.program_id === undefined) {
       res.status(400).json({ error: 'No fields to update' });
       return;
     }
 
-    updates.push(`updated_at = now()`);
+    if (updates.length > 0) {
+      updates.push(`updated_at = now()`);
 
-    await pool.query(
-      `UPDATE documents SET ${updates.join(', ')}
-       WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'project'`,
-      [...values, id, req.workspaceId]
-    );
+      await pool.query(
+        `UPDATE documents SET ${updates.join(', ')}
+         WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} AND document_type = 'project'`,
+        [...values, id, req.workspaceId]
+      );
+    }
 
-    // Re-query to get full project with owner info and inferred status
+    // Broadcast celebration when plan is added
+    if (data.plan && data.plan.trim() !== '') {
+      broadcastToUser(userId, 'accountability:updated', { type: 'project_plan', targetId: id as string });
+    }
+
+    // Log plan changes to document_history for approval workflow tracking
+    if (data.plan !== undefined && data.plan !== currentProps.plan) {
+      await logDocumentChange(
+        id as string,
+        'plan',
+        currentProps.plan || null,
+        data.plan || null,
+        userId
+      );
+    }
+
+    // Handle program_id update via document_associations
+    if (data.program_id !== undefined) {
+      // First delete any existing program association
+      await pool.query(
+        `DELETE FROM document_associations WHERE document_id = $1 AND relationship_type = 'program'`,
+        [id]
+      );
+      // If program_id is not null, create new association
+      if (data.program_id) {
+        await pool.query(
+          `INSERT INTO document_associations (document_id, related_id, relationship_type)
+           VALUES ($1, $2, 'program')
+           ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+          [id, data.program_id]
+        );
+      }
+    }
+
+    // Re-query to get full project with owner info and inferred status (allocation-based)
     const updateInferredStatusSubquery = `
       CASE
         WHEN d.archived_at IS NOT NULL THEN 'archived'
+        WHEN d.properties->>'plan_validated' IS NOT NULL THEN 'completed'
         ELSE COALESCE(
           (
             SELECT
@@ -690,25 +788,22 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
                   WHEN CURRENT_DATE BETWEEN
                     (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
                     AND (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7 + 6)
-                  THEN 3
+                  THEN 3  -- current sprint
                   WHEN CURRENT_DATE < (w.sprint_start_date + ((sprint.properties->>'sprint_number')::int - 1) * 7)
-                  THEN 2
-                  ELSE 1
+                  THEN 2  -- future sprint
+                  ELSE 1  -- past sprint
                 END
               )
               WHEN 3 THEN 'active'
               WHEN 2 THEN 'planned'
-              WHEN 1 THEN 'completed'
-              ELSE NULL
+              ELSE NULL  -- past allocations don't count
               END
-            FROM documents issue
-            JOIN document_associations da_project ON da_project.document_id = issue.id
-              AND da_project.related_id = d.id AND da_project.relationship_type = 'project'
-            JOIN document_associations da_sprint ON da_sprint.document_id = issue.id
-              AND da_sprint.relationship_type = 'sprint'
-            JOIN documents sprint ON sprint.id = da_sprint.related_id AND sprint.document_type = 'sprint'
-            JOIN workspaces w ON w.id = d.workspace_id
-            WHERE issue.document_type = 'issue'
+            FROM documents sprint
+            JOIN workspaces w ON w.id = sprint.workspace_id
+            WHERE sprint.document_type = 'sprint'
+              AND sprint.workspace_id = d.workspace_id
+              AND (sprint.properties->>'project_id')::uuid = d.id
+              AND jsonb_array_length(COALESCE(sprint.properties->'assignee_ids', '[]'::jsonb)) > 0
           ),
           'backlog'
         )
@@ -716,17 +811,20 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     `;
 
     const result = await pool.query(
-      `SELECT d.id, d.title, d.properties, d.program_id, d.archived_at, d.created_at, d.updated_at,
+      `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id, d.archived_at, d.created_at, d.updated_at,
               d.converted_from_id,
               (d.properties->>'owner_id')::uuid as owner_id,
               u.name as owner_name, u.email as owner_email,
-              (SELECT COUNT(*) FROM documents s WHERE s.project_id = d.id AND s.document_type = 'sprint') as sprint_count,
+              (SELECT COUNT(*) FROM documents s
+               JOIN document_associations da ON da.document_id = s.id AND da.related_id = d.id AND da.relationship_type = 'project'
+               WHERE s.document_type = 'sprint') as sprint_count,
               (SELECT COUNT(*) FROM documents i
                JOIN document_associations da ON da.document_id = i.id AND da.related_id = d.id AND da.relationship_type = 'project'
                WHERE i.document_type = 'issue') as issue_count,
               (${updateInferredStatusSubquery}) as inferred_status
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'owner_id')::uuid
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
        WHERE d.id = $1 AND d.document_type = 'project'`,
       [id]
     );
@@ -761,9 +859,9 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Remove project_id from child documents first
+    // Remove project associations from child documents via junction table
     await pool.query(
-      `UPDATE documents SET project_id = NULL WHERE project_id = $1`,
+      `DELETE FROM document_associations WHERE related_id = $1 AND relationship_type = 'project'`,
       [id]
     );
 
@@ -806,15 +904,16 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
     const projectData = projectResult.rows[0];
     const props = projectData.properties || {};
 
-    // Check if retro has been filled (has hypothesis_validated set)
-    const hasRetro = props.hypothesis_validated !== undefined && props.hypothesis_validated !== null;
+    // Check if retro has been filled (has plan_validated set)
+    const hasRetro = props.plan_validated !== undefined && props.plan_validated !== null;
 
-    // Get sprints for this project
+    // Get sprints for this project via junction table
     const sprintsResult = await pool.query(
-      `SELECT id, title, properties->>'sprint_number' as sprint_number
-       FROM documents
-       WHERE project_id = $1 AND document_type = 'sprint'
-       ORDER BY (properties->>'sprint_number')::int ASC`,
+      `SELECT d.id, d.title, d.properties->>'sprint_number' as sprint_number
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
+       WHERE d.document_type = 'sprint'
+       ORDER BY (d.properties->>'sprint_number')::int ASC`,
       [id]
     );
 
@@ -833,13 +932,13 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
       // Return existing retro data
       res.json({
         is_draft: false,
-        hypothesis_validated: props.hypothesis_validated,
+        plan_validated: props.plan_validated,
         monetary_impact_expected: props.monetary_impact_expected || null,
         monetary_impact_actual: props.monetary_impact_actual || null,
         success_criteria: props.success_criteria || [],
         next_steps: props.next_steps || null,
         content: projectData.content || {},
-        sprints: sprintsResult.rows,
+        weeks: sprintsResult.rows,
         issues_summary: {
           total: issuesResult.rows.length,
           completed: issuesResult.rows.filter((i: any) => i.state === 'done').length,
@@ -857,13 +956,13 @@ router.get('/:id/retro', authMiddleware, async (req: Request, res: Response) => 
 
       res.json({
         is_draft: true,
-        hypothesis_validated: null,
+        plan_validated: null,
         monetary_impact_expected: props.monetary_impact_expected || null,
         monetary_impact_actual: null,
         success_criteria: [],
         next_steps: null,
         content: prefilledContent,
-        sprints: sprintsResult.rows,
+        weeks: sprintsResult.rows,
         issues_summary: {
           total: issuesResult.rows.length,
           completed: issuesResult.rows.filter((i: any) => i.state === 'done').length,
@@ -908,12 +1007,12 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
     }
 
     const currentProps = existing.rows[0].properties || {};
-    const { hypothesis_validated, monetary_impact_actual, success_criteria, next_steps, content } = parsed.data;
+    const { plan_validated, monetary_impact_actual, success_criteria, next_steps, content } = parsed.data;
 
     // Update properties with retro data
     const newProps = {
       ...currentProps,
-      hypothesis_validated: hypothesis_validated ?? currentProps.hypothesis_validated,
+      plan_validated: plan_validated ?? currentProps.plan_validated,
       monetary_impact_actual: monetary_impact_actual ?? currentProps.monetary_impact_actual,
       success_criteria: success_criteria ?? currentProps.success_criteria,
       next_steps: next_steps ?? currentProps.next_steps,
@@ -934,6 +1033,20 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
       [...values, id, workspaceId]
     );
 
+    // Broadcast celebration when project retro is completed
+    broadcastToUser(userId, 'accountability:updated', { type: 'project_retro', targetId: id as string });
+
+    // Log initial retro content to document_history for approval workflow tracking
+    if (content) {
+      await logDocumentChange(
+        id as string,
+        'retro_content',
+        null,
+        JSON.stringify(content),
+        userId
+      );
+    }
+
     // Re-query to get updated data
     const result = await pool.query(
       `SELECT id, title, content, properties FROM documents WHERE id = $1`,
@@ -943,7 +1056,7 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
     const updatedProps = result.rows[0].properties || {};
     res.status(201).json({
       is_draft: false,
-      hypothesis_validated: updatedProps.hypothesis_validated,
+      plan_validated: updatedProps.plan_validated,
       monetary_impact_expected: updatedProps.monetary_impact_expected || null,
       monetary_impact_actual: updatedProps.monetary_impact_actual || null,
       success_criteria: updatedProps.success_criteria || [],
@@ -965,8 +1078,7 @@ const createProjectSprintSchema = z.object({
   title: z.string().min(1).max(200).optional().default('Untitled'),
   sprint_number: z.number().int().positive().optional(), // Auto-incremented if not provided
   owner_id: z.string().uuid().optional(),
-  goal: z.string().max(500).optional(),
-  hypothesis: z.string().max(2000).optional(),
+  plan: z.string().max(2000).optional(),
   success_criteria: z.array(z.string().max(500)).max(20).optional(),
   confidence: z.number().int().min(0).max(100).optional(),
 });
@@ -978,6 +1090,7 @@ function extractSprintFromRow(row: any) {
     id: row.id,
     name: row.title,
     sprint_number: props.sprint_number || 1,
+    status: props.status || 'planning',  // Default to 'planning' for sprints without status
     owner: row.owner_id ? {
       id: row.owner_id,
       name: row.owner_name,
@@ -992,8 +1105,7 @@ function extractSprintFromRow(row: any) {
     issue_count: parseInt(row.issue_count) || 0,
     completed_count: parseInt(row.completed_count) || 0,
     started_count: parseInt(row.started_count) || 0,
-    goal: props.goal || null,
-    hypothesis: props.hypothesis || null,
+    plan: props.plan || null,
     success_criteria: props.success_criteria || null,
     confidence: typeof props.confidence === 'number' ? props.confidence : null,
   };
@@ -1073,7 +1185,67 @@ router.get('/:id/issues', authMiddleware, async (req: Request, res: Response) =>
   }
 });
 
-// GET /api/projects/:id/sprints - List sprints for a project
+// GET /api/projects/:id/weeks - List weeks (sprints) for a project
+// Note: "weeks" is the user-facing terminology, "sprints" is internal
+router.get('/:id/weeks', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for filtering
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify project exists and user can access it
+    const projectCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (projectCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // Get sprints associated with this project via junction table
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
+              p.title as program_name, p.properties->>'prefix' as program_prefix,
+              w.sprint_start_date as workspace_sprint_start_date,
+              proj.id as project_id, proj.title as project_name,
+              u.id as owner_id, u.name as owner_name, u.email as owner_email,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue') as issue_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue' AND i.properties->>'state' = 'done') as completed_count,
+              (SELECT COUNT(*) FROM documents i
+               JOIN document_associations da_i ON da_i.document_id = i.id AND da_i.related_id = d.id AND da_i.relationship_type = 'sprint'
+               WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id
+       LEFT JOIN documents proj ON proj.id = $1
+       JOIN workspaces w ON d.workspace_id = w.id
+       LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
+       WHERE d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}
+       ORDER BY (d.properties->>'sprint_number')::int DESC`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    res.json(result.rows.map(extractSprintFromRow));
+  } catch (err) {
+    console.error('Get project weeks error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/projects/:id/sprints - List sprints for a project (deprecated, use /weeks)
 router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -1098,7 +1270,7 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
 
     // Get sprints associated with this project via junction table
     const result = await pool.query(
-      `SELECT d.id, d.title, d.properties, d.program_id,
+      `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               w.sprint_start_date as workspace_sprint_start_date,
               proj.id as project_id, proj.title as project_name,
@@ -1114,7 +1286,8 @@ router.get('/:id/sprints', authMiddleware, async (req: Request, res: Response) =
                WHERE i.document_type = 'issue' AND i.properties->>'state' IN ('in_progress', 'in_review')) as started_count
        FROM documents d
        JOIN document_associations da ON da.document_id = d.id AND da.related_id = $1 AND da.relationship_type = 'project'
-       LEFT JOIN documents p ON d.program_id = p.id
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id
        LEFT JOIN documents proj ON proj.id = $1
        JOIN workspaces w ON d.workspace_id = w.id
        LEFT JOIN users u ON (d.properties->>'owner_id')::uuid = u.id
@@ -1149,9 +1322,10 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
 
     // Verify project exists, user can access it, and get workspace info
     const projectCheck = await pool.query(
-      `SELECT d.id, d.program_id, w.sprint_start_date
+      `SELECT d.id, prog_da.related_id as program_id, w.sprint_start_date
        FROM documents d
        JOIN workspaces w ON d.workspace_id = w.id
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'project'
          AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
@@ -1163,7 +1337,7 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     }
 
     const project = projectCheck.rows[0];
-    const { title, owner_id, goal, hypothesis, success_criteria, confidence } = parsed.data;
+    const { title, owner_id, plan, success_criteria, confidence } = parsed.data;
     let { sprint_number } = parsed.data;
 
     // If sprint_number not provided, auto-increment based on project's existing sprints
@@ -1187,7 +1361,7 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     );
 
     if (existingCheck.rows.length > 0) {
-      res.status(400).json({ error: `Sprint ${sprint_number} already exists for this project` });
+      res.status(400).json({ error: `Week ${sprint_number} already exists for this project` });
       return;
     }
 
@@ -1211,11 +1385,10 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     // Build properties JSONB
     const properties: Record<string, unknown> = { sprint_number };
     if (owner_id) properties.owner_id = owner_id;
-    if (goal) properties.goal = goal;
-    if (hypothesis) {
-      properties.hypothesis = hypothesis;
-      properties.hypothesis_history = [{
-        hypothesis,
+    if (plan) {
+      properties.plan = plan;
+      properties.plan_history = [{
+        plan,
         timestamp: new Date().toISOString(),
         author_id: userId,
       }];
@@ -1223,24 +1396,59 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
     if (success_criteria) properties.success_criteria = success_criteria;
     if (confidence !== undefined) properties.confidence = confidence;
 
+    // Default TipTap content for new sprints with Hypothesis and Success Criteria headings
+    const defaultContent = {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 2 },
+          content: [{ type: 'text', text: 'Hypothesis' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'What do we believe will happen? What are we trying to learn or prove?' }]
+        },
+        {
+          type: 'heading',
+          attrs: { level: 2 },
+          content: [{ type: 'text', text: 'Success Criteria' }]
+        },
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: 'How will we know if the plan is validated? What metrics or outcomes will we measure?' }]
+        }
+      ]
+    };
+
     // Create the sprint document
-    // Use project's program_id for backward compatibility
+    // program_id is set via document_associations below (not directly on documents table)
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, program_id, properties, created_by)
+      `INSERT INTO documents (workspace_id, document_type, title, properties, created_by, content)
        VALUES ($1, 'sprint', $2, $3, $4, $5)
-       RETURNING id, title, properties, program_id`,
-      [workspaceId, title, project.program_id, JSON.stringify(properties), userId]
+       RETURNING id, title, properties`,
+      [workspaceId, title, JSON.stringify(properties), userId, JSON.stringify(defaultContent)]
     );
 
     const sprint = result.rows[0];
 
-    // Create association in junction table
+    // Create association in junction table for project
     await pool.query(
       `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata)
        VALUES ($1, $2, 'project', $3)
        ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
       [sprint.id, id, JSON.stringify({ created_via: 'POST /api/projects/:id/sprints' })]
     );
+
+    // Create association in junction table for program (if project has one)
+    if (project.program_id) {
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')
+         ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+        [sprint.id, project.program_id]
+      );
+    }
 
     res.status(201).json({
       id: sprint.id,
@@ -1257,8 +1465,7 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
       issue_count: 0,
       completed_count: 0,
       started_count: 0,
-      goal: properties.goal || null,
-      hypothesis: properties.hypothesis || null,
+      plan: properties.plan || null,
       success_criteria: properties.success_criteria || null,
       confidence: properties.confidence ?? null,
     });
@@ -1286,7 +1493,7 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
 
     // Verify project exists and user can access it
     const existing = await pool.query(
-      `SELECT id, properties FROM documents
+      `SELECT id, properties, content FROM documents
        WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
          AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
       [id, workspaceId, userId, isAdmin]
@@ -1298,12 +1505,13 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
     }
 
     const currentProps = existing.rows[0].properties || {};
-    const { hypothesis_validated, monetary_impact_actual, success_criteria, next_steps, content } = parsed.data;
+    const currentContent = existing.rows[0].content;
+    const { plan_validated, monetary_impact_actual, success_criteria, next_steps, content } = parsed.data;
 
     // Update properties with retro data (only update fields that are provided)
     const newProps = { ...currentProps };
-    if (hypothesis_validated !== undefined) {
-      newProps.hypothesis_validated = hypothesis_validated;
+    if (plan_validated !== undefined) {
+      newProps.plan_validated = plan_validated;
     }
     if (monetary_impact_actual !== undefined) {
       newProps.monetary_impact_actual = monetary_impact_actual;
@@ -1313,6 +1521,20 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
     }
     if (next_steps !== undefined) {
       newProps.next_steps = next_steps;
+    }
+
+    // If any retro fields changed and was previously approved, transition to 'changed_since_approved'
+    const retroFieldsChanged = plan_validated !== undefined ||
+      monetary_impact_actual !== undefined ||
+      success_criteria !== undefined ||
+      next_steps !== undefined ||
+      content !== undefined;
+
+    if (retroFieldsChanged && currentProps.retro_approval?.state === 'approved') {
+      newProps.retro_approval = {
+        ...currentProps.retro_approval,
+        state: 'changed_since_approved',
+      };
     }
 
     // Update project with retro properties and optional content
@@ -1330,6 +1552,21 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
       [...values, id, workspaceId]
     );
 
+    // Log retro content changes to document_history for approval workflow tracking
+    if (content !== undefined) {
+      const oldContent = currentContent ? JSON.stringify(currentContent) : null;
+      const newContent = JSON.stringify(content);
+      if (oldContent !== newContent) {
+        await logDocumentChange(
+          id as string,
+          'retro_content',
+          oldContent,
+          newContent,
+          userId
+        );
+      }
+    }
+
     // Re-query to get updated data
     const result = await pool.query(
       `SELECT id, title, content, properties FROM documents WHERE id = $1`,
@@ -1339,7 +1576,7 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
     const updatedProps = result.rows[0].properties || {};
     res.json({
       is_draft: false,
-      hypothesis_validated: updatedProps.hypothesis_validated,
+      plan_validated: updatedProps.plan_validated,
       monetary_impact_expected: updatedProps.monetary_impact_expected || null,
       monetary_impact_actual: updatedProps.monetary_impact_actual || null,
       success_criteria: updatedProps.success_criteria || [],
@@ -1348,6 +1585,134 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
     });
   } catch (err) {
     console.error('Update project retro error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/projects/:id/approve-plan - Approve project plan
+router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for admin check
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify project exists and get its properties
+    const projectResult = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (projectResult.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    const project = projectResult.rows[0];
+    const currentProps = project.properties || {};
+    const accountableId = currentProps.accountable_id;
+
+    // Check authorization: must be project's accountable_id OR workspace admin
+    if (accountableId !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the project accountable person or admin can approve plans' });
+      return;
+    }
+
+    // Get the latest plan history entry for version tracking
+    const historyEntry = await getLatestDocumentFieldHistory(id as string, 'plan');
+    const versionId = historyEntry?.id || null;
+
+    // Update project properties with approval
+    const newProps = {
+      ...currentProps,
+      plan_approval: {
+        state: 'approved',
+        approved_by: userId,
+        approved_at: new Date().toISOString(),
+        approved_version_id: versionId,
+      },
+    };
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND document_type = 'project'`,
+      [JSON.stringify(newProps), id]
+    );
+
+    res.json({
+      success: true,
+      approval: newProps.plan_approval,
+    });
+  } catch (err) {
+    console.error('Approve project plan error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/projects/:id/approve-retro - Approve project retro
+router.post('/:id/approve-retro', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Get visibility context for admin check
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify project exists and get its properties
+    const projectResult = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'
+         AND ${VISIBILITY_FILTER_SQL('documents', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (projectResult.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    const project = projectResult.rows[0];
+    const currentProps = project.properties || {};
+    const accountableId = currentProps.accountable_id;
+
+    // Check authorization: must be project's accountable_id OR workspace admin
+    if (accountableId !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the project accountable person or admin can approve retros' });
+      return;
+    }
+
+    // Get the latest retro content history entry for version tracking
+    const historyEntry = await getLatestDocumentFieldHistory(id as string, 'retro_content');
+    const versionId = historyEntry?.id || null;
+
+    // Update project properties with retro approval
+    const newProps = {
+      ...currentProps,
+      retro_approval: {
+        state: 'approved',
+        approved_by: userId,
+        approved_at: new Date().toISOString(),
+        approved_version_id: versionId,
+      },
+    };
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND document_type = 'project'`,
+      [JSON.stringify(newProps), id]
+    );
+
+    res.json({
+      success: true,
+      approval: newProps.retro_approval,
+    });
+  } catch (err) {
+    console.error('Approve project retro error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

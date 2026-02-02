@@ -178,6 +178,9 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       req,
     });
 
+    // Pending accountability items will be fetched via /api/accountability/action-items
+    const pendingAccountabilityItems: any[] = [];
+
     // Set cookie with hardened security options
     res.cookie('session_id', sessionId, {
       httpOnly: true,
@@ -206,6 +209,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
           name: w.name,
           role: w.role,
         })),
+        pendingAccountabilityItems,
       },
     });
   } catch (error) {
@@ -304,6 +308,9 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
       }
     }
 
+    // Pending accountability items will be fetched via /api/accountability/action-items
+    const pendingAccountabilityItems: any[] = [];
+
     res.json({
       success: true,
       data: {
@@ -319,6 +326,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
           name: w.name,
           role: w.role,
         })),
+        pendingAccountabilityItems,
       },
     });
   } catch (error) {

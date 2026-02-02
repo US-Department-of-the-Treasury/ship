@@ -60,7 +60,7 @@ router.get('/:entityType/:entityId', authMiddleware, async (req: Request, res: R
     // Validate entity type
     const typeResult = entityTypeSchema.safeParse(entityType);
     if (!typeResult.success) {
-      res.status(400).json({ error: 'Invalid entity type. Must be program, project, or sprint.' });
+      res.status(400).json({ error: 'Invalid entity type. Must be program, project, or week.' });
       return;
     }
 
@@ -95,26 +95,28 @@ router.get('/:entityType/:entityId', authMiddleware, async (req: Request, res: R
             )::date AS date
           ),
           program_projects AS (
-            SELECT id FROM documents
-            WHERE program_id = $1 AND document_type = 'project' AND workspace_id = $2
+            SELECT d.id FROM documents d
+            JOIN document_associations da ON d.id = da.document_id
+              AND da.relationship_type = 'program' AND da.related_id = $1
+            WHERE d.document_type = 'project' AND d.workspace_id = $2
           ),
           program_sprints AS (
-            SELECT id FROM documents
-            WHERE project_id IN (SELECT id FROM program_projects)
-              AND document_type = 'sprint'
-              AND workspace_id = $2
+            SELECT d.id FROM documents d
+            JOIN document_associations da ON d.id = da.document_id
+              AND da.relationship_type = 'project' AND da.related_id IN (SELECT id FROM program_projects)
+            WHERE d.document_type = 'sprint' AND d.workspace_id = $2
           ),
           activity_counts AS (
             SELECT updated_at::date AS activity_date, COUNT(*) AS count
             FROM documents
             WHERE workspace_id = $2
               AND (
-                -- Direct program documents
-                program_id = $1
-                -- Project documents
-                OR project_id IN (SELECT id FROM program_projects)
-                -- Sprint documents (issues, standups)
-                OR sprint_id IN (SELECT id FROM program_sprints)
+                -- Direct program documents (linked via document_associations)
+                id IN (SELECT document_id FROM document_associations WHERE related_id = $1 AND relationship_type = 'program')
+                -- Project documents (linked to projects in this program)
+                OR id IN (SELECT document_id FROM document_associations WHERE related_id IN (SELECT id FROM program_projects) AND relationship_type = 'project')
+                -- Sprint documents (issues, standups linked via document_associations)
+                OR id IN (SELECT document_id FROM document_associations WHERE related_id IN (SELECT id FROM program_sprints) AND relationship_type = 'sprint')
                 -- The program document itself
                 OR id = $1
               )
@@ -139,16 +141,18 @@ router.get('/:entityType/:entityId', authMiddleware, async (req: Request, res: R
             )::date AS date
           ),
           project_sprints AS (
-            SELECT id FROM documents
-            WHERE project_id = $1 AND document_type = 'sprint' AND workspace_id = $2
+            SELECT da.document_id as id FROM document_associations da
+            JOIN documents d ON d.id = da.document_id
+            WHERE da.related_id = $1 AND da.relationship_type = 'project'
+              AND d.document_type = 'sprint' AND d.workspace_id = $2
           ),
           activity_counts AS (
             SELECT updated_at::date AS activity_date, COUNT(*) AS count
             FROM documents
             WHERE workspace_id = $2
               AND (
-                -- Direct project documents (sprints use project_id column)
-                project_id = $1
+                -- Sprints linked to this project via document_associations
+                id IN (SELECT id FROM project_sprints)
                 -- Documents linked to sprints via junction table (issues)
                 OR id IN (SELECT da.document_id FROM document_associations da
                           JOIN project_sprints ps ON ps.id = da.related_id AND da.relationship_type = 'sprint')

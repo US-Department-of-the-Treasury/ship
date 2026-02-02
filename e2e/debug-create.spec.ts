@@ -58,5 +58,5 @@ test('debug document creation', async ({ page }) => {
   console.log('=== End console messages ===\n');
 
   // This test is just for debugging - check if URL changed
-  expect(currentUrl).toMatch(/\/docs\/[a-f0-9-]+/);
+  expect(currentUrl).toMatch(/\/documents\/[a-f0-9-]+/);
 });

@@ -1,3 +1,14 @@
+/**
+ * @deprecated Use useUnifiedDocuments from '@/hooks/useUnifiedDocuments' instead.
+ *
+ * This context is maintained for backward compatibility but should not be used
+ * for new code. The unified document model treats all document types consistently
+ * through a single hook.
+ *
+ * Migration:
+ *   Before: const { programs } = usePrograms()
+ *   After:  const { byType: { program: programs } } = useUnifiedDocuments({ type: 'program' })
+ */
 import { createContext, useContext, ReactNode } from 'react';
 import { usePrograms as useProgramsQuery, Program, ProgramOwner } from '@/hooks/useProgramsQuery';
 

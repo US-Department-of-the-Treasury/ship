@@ -1,0 +1,1051 @@
+import { Router, Request, Response } from 'express';
+import { pool } from '../db/client.js';
+import { z } from 'zod';
+import { authMiddleware } from '../middleware/auth.js';
+import { v4 as uuidv4 } from 'uuid';
+
+type RouterType = ReturnType<typeof Router>;
+const router: RouterType = Router();
+
+// Templates for weekly plan and retro documents
+// These provide structure for users to fill in, and "done" status is based on adding content beyond the template
+const WEEKLY_PLAN_TEMPLATE = {
+  type: 'doc',
+  content: [
+    {
+      type: 'heading',
+      attrs: { level: 2 },
+      content: [{ type: 'text', text: 'What I plan to accomplish this week' }]
+    },
+    {
+      type: 'bulletList',
+      content: [
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+      ]
+    }
+  ]
+};
+
+const WEEKLY_RETRO_TEMPLATE = {
+  type: 'doc',
+  content: [
+    {
+      type: 'heading',
+      attrs: { level: 2 },
+      content: [{ type: 'text', text: 'What I delivered this week' }]
+    },
+    {
+      type: 'bulletList',
+      content: [
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+        { type: 'listItem', content: [{ type: 'paragraph' }] },
+      ]
+    }
+  ]
+};
+
+// Template heading texts - used to check if user has added content beyond the template
+const TEMPLATE_HEADINGS = [
+  'What I plan to accomplish this week',
+  'What I delivered this week',
+];
+
+// Schema for creating/getting a weekly plan
+const weeklyPlanSchema = z.object({
+  person_id: z.string().uuid(),
+  project_id: z.string().uuid(),
+  week_number: z.number().int().min(1),
+});
+
+/**
+ * @swagger
+ * /weekly-plans:
+ *   post:
+ *     summary: Create or get existing weekly plan document (idempotent)
+ *     tags: [Weekly Plans]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - person_id
+ *               - project_id
+ *               - week_number
+ *             properties:
+ *               person_id:
+ *                 type: string
+ *                 format: uuid
+ *               project_id:
+ *                 type: string
+ *                 format: uuid
+ *               week_number:
+ *                 type: integer
+ *                 minimum: 1
+ *     responses:
+ *       200:
+ *         description: Existing weekly plan document returned
+ *       201:
+ *         description: New weekly plan document created
+ *       400:
+ *         description: Invalid input
+ *       404:
+ *         description: Person or project not found
+ */
+router.post('/', authMiddleware, async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    const parsed = weeklyPlanSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    const { person_id, project_id, week_number } = parsed.data;
+    const workspaceId = req.workspaceId!;
+    const userId = req.userId!;
+
+    // Verify person exists in this workspace
+    const personResult = await client.query(
+      `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'person'`,
+      [person_id, workspaceId]
+    );
+    if (personResult.rows.length === 0) {
+      res.status(404).json({ error: 'Person not found' });
+      return;
+    }
+    const personName = personResult.rows[0].title;
+
+    // Verify project exists in this workspace
+    const projectResult = await client.query(
+      `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+      [project_id, workspaceId]
+    );
+    if (projectResult.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // Check if weekly plan already exists for this person+project+week
+    const existingResult = await client.query(
+      `SELECT id, title, content, properties, created_at, updated_at
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_plan'
+         AND (properties->>'person_id') = $2
+         AND (properties->>'project_id') = $3
+         AND (properties->>'week_number')::int = $4`,
+      [workspaceId, person_id, project_id, week_number]
+    );
+
+    if (existingResult.rows.length > 0) {
+      // Return existing document with 200
+      const doc = existingResult.rows[0];
+      // Compute full title with person name for entity reference
+      const computedTitle = personName ? `${doc.title} - ${personName}` : doc.title;
+      res.status(200).json({
+        id: doc.id,
+        title: computedTitle,
+        document_type: 'weekly_plan',
+        content: doc.content,
+        properties: doc.properties,
+        created_at: doc.created_at,
+        updated_at: doc.updated_at,
+      });
+      return;
+    }
+
+    // Create new weekly plan document
+    await client.query('BEGIN');
+
+    const docId = uuidv4();
+    const title = `Week ${week_number} Plan`; // Base title without person name
+    const properties = {
+      person_id,
+      project_id,
+      week_number,
+      submitted_at: null,
+    };
+
+    // Insert the document with template content
+    const insertResult = await client.query(
+      `INSERT INTO documents (id, workspace_id, document_type, title, content, properties, visibility, created_by, position)
+       VALUES ($1, $2, 'weekly_plan', $3, $4, $5, 'workspace', $6, 0)
+       RETURNING id, title, content, properties, created_at, updated_at`,
+      [docId, workspaceId, title, JSON.stringify(WEEKLY_PLAN_TEMPLATE), JSON.stringify(properties), userId]
+    );
+
+    // Create association with project
+    await client.query(
+      `INSERT INTO document_associations (id, document_id, related_id, relationship_type)
+       VALUES ($1, $2, $3, 'project')`,
+      [uuidv4(), docId, project_id]
+    );
+
+    await client.query('COMMIT');
+
+    const doc = insertResult.rows[0];
+    // Compute full title with person name for entity reference
+    const computedTitle = personName ? `${doc.title} - ${personName}` : doc.title;
+    res.status(201).json({
+      id: doc.id,
+      title: computedTitle,
+      document_type: 'weekly_plan',
+      content: doc.content,
+      properties: doc.properties,
+      created_at: doc.created_at,
+      updated_at: doc.updated_at,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Create weekly plan error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * @swagger
+ * /weekly-plans:
+ *   get:
+ *     summary: Query weekly plan documents
+ *     tags: [Weekly Plans]
+ *     parameters:
+ *       - in: query
+ *         name: person_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *       - in: query
+ *         name: project_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *       - in: query
+ *         name: week_number
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of weekly plans matching query
+ */
+router.get('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const { person_id, project_id, week_number } = req.query;
+
+    let query = `
+      SELECT d.id, d.title, d.content, d.properties, d.created_at, d.updated_at,
+             p.title as person_name, pr.title as project_name
+      FROM documents d
+      LEFT JOIN documents p ON (d.properties->>'person_id')::uuid = p.id
+      LEFT JOIN documents pr ON (d.properties->>'project_id')::uuid = pr.id
+      WHERE d.workspace_id = $1
+        AND d.document_type = 'weekly_plan'
+        AND d.archived_at IS NULL
+    `;
+    const params: (string | number)[] = [workspaceId];
+    let paramIndex = 2;
+
+    if (person_id) {
+      query += ` AND (d.properties->>'person_id') = $${paramIndex++}`;
+      params.push(person_id as string);
+    }
+
+    if (project_id) {
+      query += ` AND (d.properties->>'project_id') = $${paramIndex++}`;
+      params.push(project_id as string);
+    }
+
+    if (week_number) {
+      query += ` AND (d.properties->>'week_number')::int = $${paramIndex++}`;
+      params.push(parseInt(week_number as string, 10));
+    }
+
+    query += ` ORDER BY (d.properties->>'week_number')::int DESC, d.created_at DESC`;
+
+    const result = await pool.query(query, params);
+
+    const plans = result.rows.map(row => {
+      // Compute full title with person name for entity reference
+      const computedTitle = row.person_name ? `${row.title} - ${row.person_name}` : row.title;
+      return {
+        id: row.id,
+        title: computedTitle,
+        document_type: 'weekly_plan' as const,
+        content: row.content,
+        properties: row.properties,
+        person_name: row.person_name,
+        project_name: row.project_name,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+    });
+
+    res.json(plans);
+  } catch (err) {
+    console.error('Get weekly plans error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /weekly-plans/{id}/history:
+ *   get:
+ *     summary: Get content version history for a weekly plan
+ *     tags: [Weekly Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: List of content versions
+ *       404:
+ *         description: Weekly plan not found
+ */
+router.get('/:id/history', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const workspaceId = req.workspaceId!;
+
+    // Verify document exists and is a weekly_plan
+    const docCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'weekly_plan'`,
+      [id, workspaceId]
+    );
+
+    if (docCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Weekly plan not found' });
+      return;
+    }
+
+    // Get content history entries
+    const result = await pool.query(
+      `SELECT h.id, h.old_value, h.new_value, h.created_at,
+              u.id as changed_by_id, u.name as changed_by_name
+       FROM document_history h
+       LEFT JOIN users u ON h.changed_by = u.id
+       WHERE h.document_id = $1 AND h.field = 'content'
+       ORDER BY h.created_at DESC`,
+      [id]
+    );
+
+    const history = result.rows.map(row => ({
+      id: row.id,
+      old_content: row.old_value ? JSON.parse(row.old_value) : null,
+      new_content: row.new_value ? JSON.parse(row.new_value) : null,
+      created_at: row.created_at,
+      changed_by: row.changed_by_id ? {
+        id: row.changed_by_id,
+        name: row.changed_by_name,
+      } : null,
+    }));
+
+    res.json(history);
+  } catch (err) {
+    console.error('Get weekly plan history error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /weekly-plans/{id}:
+ *   get:
+ *     summary: Get a specific weekly plan by ID
+ *     tags: [Weekly Plans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Weekly plan document
+ *       404:
+ *         description: Weekly plan not found
+ */
+router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const workspaceId = req.workspaceId!;
+
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.content, d.properties, d.created_at, d.updated_at,
+              p.title as person_name, pr.title as project_name
+       FROM documents d
+       LEFT JOIN documents p ON (d.properties->>'person_id')::uuid = p.id
+       LEFT JOIN documents pr ON (d.properties->>'project_id')::uuid = pr.id
+       WHERE d.id = $1
+         AND d.workspace_id = $2
+         AND d.document_type = 'weekly_plan'`,
+      [id, workspaceId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Weekly plan not found' });
+      return;
+    }
+
+    const row = result.rows[0];
+    // Compute full title with person name for entity reference
+    const computedTitle = row.person_name ? `${row.title} - ${row.person_name}` : row.title;
+    res.json({
+      id: row.id,
+      title: computedTitle,
+      document_type: 'weekly_plan' as const,
+      content: row.content,
+      properties: row.properties,
+      person_name: row.person_name,
+      project_name: row.project_name,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    });
+  } catch (err) {
+    console.error('Get weekly plan error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ============================================
+// WEEKLY RETROS ROUTES
+// ============================================
+
+// Schema for creating/getting a weekly retro
+const weeklyRetroSchema = z.object({
+  person_id: z.string().uuid(),
+  project_id: z.string().uuid(),
+  week_number: z.number().int().min(1),
+});
+
+/**
+ * @swagger
+ * /weekly-retros:
+ *   post:
+ *     summary: Create or get existing weekly retro document (idempotent)
+ *     tags: [Weekly Retros]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - person_id
+ *               - project_id
+ *               - week_number
+ *             properties:
+ *               person_id:
+ *                 type: string
+ *                 format: uuid
+ *               project_id:
+ *                 type: string
+ *                 format: uuid
+ *               week_number:
+ *                 type: integer
+ *                 minimum: 1
+ *     responses:
+ *       200:
+ *         description: Existing weekly retro document returned
+ *       201:
+ *         description: New weekly retro document created
+ */
+export const weeklyRetrosRouter: RouterType = Router();
+
+weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    const parsed = weeklyRetroSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      return;
+    }
+
+    const { person_id, project_id, week_number } = parsed.data;
+    const workspaceId = req.workspaceId!;
+    const userId = req.userId!;
+
+    // Verify person exists in this workspace
+    const personResult = await client.query(
+      `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'person'`,
+      [person_id, workspaceId]
+    );
+    if (personResult.rows.length === 0) {
+      res.status(404).json({ error: 'Person not found' });
+      return;
+    }
+    const personName = personResult.rows[0].title;
+
+    // Verify project exists in this workspace
+    const projectResult = await client.query(
+      `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+      [project_id, workspaceId]
+    );
+    if (projectResult.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // Check if weekly retro already exists for this person+project+week
+    const existingResult = await client.query(
+      `SELECT id, title, content, properties, created_at, updated_at
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_retro'
+         AND (properties->>'person_id') = $2
+         AND (properties->>'project_id') = $3
+         AND (properties->>'week_number')::int = $4`,
+      [workspaceId, person_id, project_id, week_number]
+    );
+
+    if (existingResult.rows.length > 0) {
+      // Return existing document with 200
+      const doc = existingResult.rows[0];
+      // Compute full title with person name for entity reference
+      const computedTitle = personName ? `${doc.title} - ${personName}` : doc.title;
+      res.status(200).json({
+        id: doc.id,
+        title: computedTitle,
+        document_type: 'weekly_retro',
+        content: doc.content,
+        properties: doc.properties,
+        created_at: doc.created_at,
+        updated_at: doc.updated_at,
+      });
+      return;
+    }
+
+    // Create new weekly retro document
+    await client.query('BEGIN');
+
+    const docId = uuidv4();
+    const title = `Week ${week_number} Retro`; // Base title without person name
+    const properties = {
+      person_id,
+      project_id,
+      week_number,
+      submitted_at: null,
+    };
+
+    // Insert the document with template content
+    const insertResult = await client.query(
+      `INSERT INTO documents (id, workspace_id, document_type, title, content, properties, visibility, created_by, position)
+       VALUES ($1, $2, 'weekly_retro', $3, $4, $5, 'workspace', $6, 0)
+       RETURNING id, title, content, properties, created_at, updated_at`,
+      [docId, workspaceId, title, JSON.stringify(WEEKLY_RETRO_TEMPLATE), JSON.stringify(properties), userId]
+    );
+
+    // Create association with project
+    await client.query(
+      `INSERT INTO document_associations (id, document_id, related_id, relationship_type)
+       VALUES ($1, $2, $3, 'project')`,
+      [uuidv4(), docId, project_id]
+    );
+
+    await client.query('COMMIT');
+
+    const doc = insertResult.rows[0];
+    // Compute full title with person name for entity reference
+    const computedTitle = personName ? `${doc.title} - ${personName}` : doc.title;
+    res.status(201).json({
+      id: doc.id,
+      title: computedTitle,
+      document_type: 'weekly_retro',
+      content: doc.content,
+      properties: doc.properties,
+      created_at: doc.created_at,
+      updated_at: doc.updated_at,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Create weekly retro error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * @swagger
+ * /weekly-retros:
+ *   get:
+ *     summary: Query weekly retro documents
+ *     tags: [Weekly Retros]
+ *     parameters:
+ *       - in: query
+ *         name: person_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *       - in: query
+ *         name: project_id
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *       - in: query
+ *         name: week_number
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: List of weekly retros matching query
+ */
+weeklyRetrosRouter.get('/', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const { person_id, project_id, week_number } = req.query;
+
+    let query = `
+      SELECT d.id, d.title, d.content, d.properties, d.created_at, d.updated_at,
+             p.title as person_name, pr.title as project_name
+      FROM documents d
+      LEFT JOIN documents p ON (d.properties->>'person_id')::uuid = p.id
+      LEFT JOIN documents pr ON (d.properties->>'project_id')::uuid = pr.id
+      WHERE d.workspace_id = $1
+        AND d.document_type = 'weekly_retro'
+        AND d.archived_at IS NULL
+    `;
+    const params: (string | number)[] = [workspaceId];
+    let paramIndex = 2;
+
+    if (person_id) {
+      query += ` AND (d.properties->>'person_id') = $${paramIndex++}`;
+      params.push(person_id as string);
+    }
+
+    if (project_id) {
+      query += ` AND (d.properties->>'project_id') = $${paramIndex++}`;
+      params.push(project_id as string);
+    }
+
+    if (week_number) {
+      query += ` AND (d.properties->>'week_number')::int = $${paramIndex++}`;
+      params.push(parseInt(week_number as string, 10));
+    }
+
+    query += ` ORDER BY (d.properties->>'week_number')::int DESC, d.created_at DESC`;
+
+    const result = await pool.query(query, params);
+
+    const retros = result.rows.map(row => {
+      // Compute full title with person name for entity reference
+      const computedTitle = row.person_name ? `${row.title} - ${row.person_name}` : row.title;
+      return {
+        id: row.id,
+        title: computedTitle,
+        document_type: 'weekly_retro' as const,
+        content: row.content,
+        properties: row.properties,
+        person_name: row.person_name,
+        project_name: row.project_name,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+    });
+
+    res.json(retros);
+  } catch (err) {
+    console.error('Get weekly retros error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /weekly-retros/{id}/history:
+ *   get:
+ *     summary: Get content version history for a weekly retro
+ *     tags: [Weekly Retros]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: List of content versions
+ *       404:
+ *         description: Weekly retro not found
+ */
+weeklyRetrosRouter.get('/:id/history', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const workspaceId = req.workspaceId!;
+
+    // Verify document exists and is a weekly_retro
+    const docCheck = await pool.query(
+      `SELECT id FROM documents
+       WHERE id = $1 AND workspace_id = $2 AND document_type = 'weekly_retro'`,
+      [id, workspaceId]
+    );
+
+    if (docCheck.rows.length === 0) {
+      res.status(404).json({ error: 'Weekly retro not found' });
+      return;
+    }
+
+    // Get content history entries
+    const result = await pool.query(
+      `SELECT h.id, h.old_value, h.new_value, h.created_at,
+              u.id as changed_by_id, u.name as changed_by_name
+       FROM document_history h
+       LEFT JOIN users u ON h.changed_by = u.id
+       WHERE h.document_id = $1 AND h.field = 'content'
+       ORDER BY h.created_at DESC`,
+      [id]
+    );
+
+    const history = result.rows.map(row => ({
+      id: row.id,
+      old_content: row.old_value ? JSON.parse(row.old_value) : null,
+      new_content: row.new_value ? JSON.parse(row.new_value) : null,
+      created_at: row.created_at,
+      changed_by: row.changed_by_id ? {
+        id: row.changed_by_id,
+        name: row.changed_by_name,
+      } : null,
+    }));
+
+    res.json(history);
+  } catch (err) {
+    console.error('Get weekly retro history error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /weekly-retros/{id}:
+ *   get:
+ *     summary: Get a specific weekly retro by ID
+ *     tags: [Weekly Retros]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Weekly retro document
+ *       404:
+ *         description: Weekly retro not found
+ */
+weeklyRetrosRouter.get('/:id', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const workspaceId = req.workspaceId!;
+
+    const result = await pool.query(
+      `SELECT d.id, d.title, d.content, d.properties, d.created_at, d.updated_at,
+              p.title as person_name, pr.title as project_name
+       FROM documents d
+       LEFT JOIN documents p ON (d.properties->>'person_id')::uuid = p.id
+       LEFT JOIN documents pr ON (d.properties->>'project_id')::uuid = pr.id
+       WHERE d.id = $1
+         AND d.workspace_id = $2
+         AND d.document_type = 'weekly_retro'`,
+      [id, workspaceId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Weekly retro not found' });
+      return;
+    }
+
+    const row = result.rows[0];
+    // Compute full title with person name for entity reference
+    const computedTitle = row.person_name ? `${row.title} - ${row.person_name}` : row.title;
+    res.json({
+      id: row.id,
+      title: computedTitle,
+      document_type: 'weekly_retro' as const,
+      content: row.content,
+      properties: row.properties,
+      person_name: row.person_name,
+      project_name: row.project_name,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    });
+  } catch (err) {
+    console.error('Get weekly retro error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /project-allocation-grid/{projectId}:
+ *   get:
+ *     summary: Get allocation grid data for a project
+ *     description: Returns people allocated to a project (via assigned issues), weeks, and plan/retro status
+ *     tags: [Weekly Plans]
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Allocation grid data
+ */
+router.get('/project-allocation-grid/:projectId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { projectId } = req.params;
+    const workspaceId = req.workspaceId!;
+
+    // Verify project exists
+    const projectResult = await pool.query(
+      `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+      [projectId, workspaceId]
+    );
+
+    if (projectResult.rows.length === 0) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // Get workspace sprint config
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    if (workspaceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Workspace not found' });
+      return;
+    }
+
+    const sprintStartDate = new Date(workspaceResult.rows[0].sprint_start_date);
+    const sprintDuration = 7; // 1 week sprints (standard for Ship)
+
+    // Calculate current sprint number
+    const today = new Date();
+    const daysSinceStart = Math.floor((today.getTime() - sprintStartDate.getTime()) / (24 * 60 * 60 * 1000));
+    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDuration) + 1);
+
+    // Find all people allocated to sprints for this project (via assignee_ids + project_id in sprint properties)
+    // Note: team.ts stores project assignment in properties.project_id, NOT document_associations
+    const allocatedPeopleResult = await pool.query(
+      `SELECT DISTINCT p.id as person_id, p.title as person_name, (s.properties->>'sprint_number')::int as week_number
+       FROM documents s
+       CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(s.properties->'assignee_ids', '[]'::jsonb)) AS assignee_id
+       JOIN documents p ON p.id = assignee_id::uuid AND p.document_type = 'person'
+       WHERE s.workspace_id = $1
+         AND s.document_type = 'sprint'
+         AND (s.properties->>'project_id')::uuid = $2
+         AND s.deleted_at IS NULL`,
+      [workspaceId, projectId]
+    );
+
+    // Group allocations by person
+    const peopleMap = new Map<string, { id: string; name: string; allocatedWeeks: Set<number> }>();
+    for (const row of allocatedPeopleResult.rows) {
+      if (!peopleMap.has(row.person_id)) {
+        peopleMap.set(row.person_id, {
+          id: row.person_id,
+          name: row.person_name || 'Unknown',
+          allocatedWeeks: new Set(),
+        });
+      }
+      peopleMap.get(row.person_id)!.allocatedWeeks.add(row.week_number);
+    }
+
+    // Get all weekly plans for this project (include content to check if "done")
+    const plansResult = await pool.query(
+      `SELECT (properties->>'person_id') as person_id, (properties->>'week_number')::int as week_number, id, content
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_plan'
+         AND (properties->>'project_id') = $2
+         AND deleted_at IS NULL`,
+      [workspaceId, projectId]
+    );
+
+    // Get all weekly retros for this project (include content to check if "done")
+    const retrosResult = await pool.query(
+      `SELECT (properties->>'person_id') as person_id, (properties->>'week_number')::int as week_number, id, content
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_retro'
+         AND (properties->>'project_id') = $2
+         AND deleted_at IS NULL`,
+      [workspaceId, projectId]
+    );
+
+    // Helper to extract all text from a TipTap document
+    const extractText = (node: unknown): string => {
+      if (!node || typeof node !== 'object') return '';
+      const n = node as { type?: string; text?: string; content?: unknown[] };
+      if (n.type === 'text' && n.text) return n.text;
+      if (Array.isArray(n.content)) {
+        return n.content.map(extractText).join('');
+      }
+      return '';
+    };
+
+    // Helper to check if document has content beyond the template
+    // "Done" means user has added their own text (not just the template heading)
+    const hasContent = (content: unknown): boolean => {
+      if (!content || typeof content !== 'object') return false;
+      const doc = content as { content?: unknown[] };
+      if (!Array.isArray(doc.content) || doc.content.length === 0) return false;
+
+      // Extract all text from the document
+      const allText = extractText(content).trim();
+
+      // Remove template heading texts to see if anything user-written remains
+      let textWithoutTemplate = allText;
+      for (const heading of TEMPLATE_HEADINGS) {
+        textWithoutTemplate = textWithoutTemplate.replace(heading, '');
+      }
+
+      // If there's any non-whitespace text left, the user has added content
+      return textWithoutTemplate.trim().length > 0;
+    };
+
+    // Helper to calculate plan/retro status based on timing
+    // Plan: yellow Sat 00:00 → Mon 23:59, red after Tue 00:00
+    // Retro: yellow Fri 00:00 → Sun 23:59, red after Mon 00:00
+    const calculateStatus = (
+      docId: string | null,
+      docContent: unknown,
+      weekStartDate: Date,
+      type: 'plan' | 'retro'
+    ): 'done' | 'due' | 'late' | 'future' => {
+      // If document exists with content, it's done
+      if (docId && hasContent(docContent)) {
+        return 'done';
+      }
+
+      const now = new Date();
+      now.setUTCHours(0, 0, 0, 0);
+
+      if (type === 'plan') {
+        // Plan timing relative to week start:
+        // Yellow: Saturday before (week start - 2 days) through Monday EOD (week start + 1 day)
+        // Red: After Monday (week start + 2 days onwards)
+        const yellowStart = new Date(weekStartDate);
+        yellowStart.setUTCDate(yellowStart.getUTCDate() - 2); // Saturday
+        const redStart = new Date(weekStartDate);
+        redStart.setUTCDate(redStart.getUTCDate() + 2); // Tuesday 00:00
+
+        if (now < yellowStart) return 'future';
+        if (now >= redStart) return 'late';
+        return 'due';
+      } else {
+        // Retro timing relative to week start:
+        // Yellow: Friday (week start + 4 days) through Sunday (week start + 6 days)
+        // Red: Monday of next week (week start + 7 days)
+        const yellowStart = new Date(weekStartDate);
+        yellowStart.setUTCDate(yellowStart.getUTCDate() + 4); // Friday
+        const redStart = new Date(weekStartDate);
+        redStart.setUTCDate(redStart.getUTCDate() + 7); // Monday of next week
+
+        if (now < yellowStart) return 'future';
+        if (now >= redStart) return 'late';
+        return 'due';
+      }
+    };
+
+    // Build plan/retro maps with content for status calculation
+    const plans = new Map<string, { id: string; content: unknown }>(); // `${personId}_${weekNumber}` -> {id, content}
+    for (const row of plansResult.rows) {
+      plans.set(`${row.person_id}_${row.week_number}`, { id: row.id, content: row.content });
+    }
+
+    const retros = new Map<string, { id: string; content: unknown }>(); // `${personId}_${weekNumber}` -> {id, content}
+    for (const row of retrosResult.rows) {
+      retros.set(`${row.person_id}_${row.week_number}`, { id: row.id, content: row.content });
+    }
+
+    // Determine week range to show (min/max allocated weeks or current sprint)
+    let minWeek = currentSprintNumber;
+    let maxWeek = currentSprintNumber;
+    for (const person of peopleMap.values()) {
+      for (const week of person.allocatedWeeks) {
+        minWeek = Math.min(minWeek, week);
+        maxWeek = Math.max(maxWeek, week);
+      }
+    }
+
+    // Generate weeks array
+    const weeks: { number: number; name: string; startDate: string; endDate: string; isCurrent: boolean }[] = [];
+    for (let n = minWeek; n <= maxWeek; n++) {
+      const weekStart = new Date(sprintStartDate);
+      weekStart.setUTCDate(weekStart.getUTCDate() + (n - 1) * sprintDuration);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setUTCDate(weekEnd.getUTCDate() + sprintDuration - 1);
+
+      weeks.push({
+        number: n,
+        name: `Week ${n}`,
+        startDate: weekStart.toISOString().split('T')[0] || '',
+        endDate: weekEnd.toISOString().split('T')[0] || '',
+        isCurrent: n === currentSprintNumber,
+      });
+    }
+
+    // Build people array with allocation and status per week
+    const people = Array.from(peopleMap.values()).map(person => ({
+      id: person.id,
+      name: person.name,
+      weeks: Object.fromEntries(
+        weeks.map(week => {
+          const weekStartDate = new Date(week.startDate);
+          const planData = plans.get(`${person.id}_${week.number}`);
+          const retroData = retros.get(`${person.id}_${week.number}`);
+
+          return [
+            week.number,
+            {
+              isAllocated: person.allocatedWeeks.has(week.number),
+              planId: planData?.id || null,
+              planStatus: calculateStatus(planData?.id || null, planData?.content, weekStartDate, 'plan'),
+              retroId: retroData?.id || null,
+              retroStatus: calculateStatus(retroData?.id || null, retroData?.content, weekStartDate, 'retro'),
+            },
+          ];
+        })
+      ),
+    }));
+
+    // Sort people alphabetically
+    people.sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json({
+      projectId,
+      projectTitle: projectResult.rows[0].title,
+      currentSprintNumber,
+      weeks,
+      people,
+    });
+  } catch (err) {
+    console.error('Get project allocation grid error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+export default router;

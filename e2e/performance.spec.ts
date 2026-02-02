@@ -34,7 +34,7 @@ async function createNewDocument(page: Page) {
   }
 
   await page.waitForFunction(
-    (oldUrl) => window.location.href !== oldUrl && /\/docs\/[a-f0-9-]+/.test(window.location.href),
+    (oldUrl) => window.location.href !== oldUrl && /\/documents\/[a-f0-9-]+/.test(window.location.href),
     currentUrl,
     { timeout: 10000 }
   )
@@ -356,6 +356,8 @@ test.describe('Performance - Large Documents', () => {
   })
 })
 
+// FIXME: Slash command dropdown inconsistent + filechooser event not firing reliably
+// Same issue as images.spec.ts and data-integrity.spec.ts
 test.describe('Performance - Many Images', () => {
   test.beforeEach(async ({ page }) => {
     await login(page)

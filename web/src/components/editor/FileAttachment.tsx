@@ -1,11 +1,14 @@
 /**
  * TipTap File Attachment Extension
  * Handles file attachments (PDF, DOCX, etc.) as embedded cards with download links
+ * Supports drag-and-drop and paste for non-image files
  */
 import { Node, mergeAttributes } from '@tiptap/core';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
-import { uploadFile, isAllowedFileType, getMimeTypeFromExtension } from '@/services/upload';
-import { useState, useEffect } from 'react';
+import { uploadFile, isAllowedFileType, getMimeTypeFromExtension, isImageFile, MAX_FILE_SIZE, MAX_FILE_SIZE_DISPLAY } from '@/services/upload';
+import { registerUpload, updateUploadProgress, unregisterUpload } from '@/services/uploadTracker';
+import { useState } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -135,109 +138,219 @@ export const FileAttachmentExtension = Node.create({
           }),
     } as any;
   },
+
+  addProseMirrorPlugins() {
+    const extensionThis = this;
+
+    return [
+      new Plugin({
+        key: new PluginKey('fileAttachmentDrop'),
+        props: {
+          handleDrop(view, event) {
+            const files = Array.from(event.dataTransfer?.files || []);
+            // Filter to non-image files only (images are handled by ImageUploadExtension)
+            const nonImageFiles = files.filter((file) => !isImageFile(file.type));
+
+            if (nonImageFiles.length === 0) {
+              return false; // Let other handlers deal with it
+            }
+
+            event.preventDefault();
+
+            // Upload all dropped non-image files
+            nonImageFiles.forEach((file) => {
+              handleFileUpload(extensionThis.editor, file);
+            });
+
+            return true;
+          },
+
+          handlePaste(view, event) {
+            const items = Array.from(event.clipboardData?.items || []);
+            // Find non-image file items
+            const fileItems = items.filter(
+              (item) => item.kind === 'file' && !item.type.startsWith('image/')
+            );
+
+            if (fileItems.length === 0) {
+              return false; // Let other handlers deal with it
+            }
+
+            event.preventDefault();
+
+            fileItems.forEach((item) => {
+              const file = item.getAsFile();
+              if (file) {
+                handleFileUpload(extensionThis.editor, file);
+              }
+            });
+
+            return true;
+          },
+        },
+      }),
+    ];
+  },
 });
 
 /**
- * Trigger file picker for file upload
+ * Handle file upload and insertion into editor
+ * Used by both drag-and-drop and file picker
+ * @param editor - TipTap editor instance
+ * @param file - File to upload
+ * @param signal - Optional AbortSignal for cancelling uploads on navigation/cleanup
  */
-export function triggerFileUpload(editor: any) {
+async function handleFileUpload(editor: any, file: File, signal?: AbortSignal) {
+  // Check if already aborted
+  if (signal?.aborted) {
+    return;
+  }
+
+  // Check file size before uploading
+  if (file.size > MAX_FILE_SIZE) {
+    console.error('File too large:', { name: file.name, size: file.size, maxSize: MAX_FILE_SIZE });
+    alert(`File "${file.name}" is too large.\n\nMaximum file size is ${MAX_FILE_SIZE_DISPLAY}.`);
+    return;
+  }
+
+  // Check if file type is blocked (executables/scripts are blocked for security)
+  if (!isAllowedFileType(file.type, file.name)) {
+    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    console.error('File type blocked:', { name: file.name, type: file.type, extension: ext });
+    alert(`Cannot upload "${ext}" files.\n\nExecutable files and scripts are blocked for security reasons.`);
+    return;
+  }
+
+  // Get effective MIME type (use extension fallback if browser returns empty)
+  const effectiveMimeType = file.type || getMimeTypeFromExtension(file.name) || 'application/octet-stream';
+
+  // Generate unique upload ID for tracking navigation warnings
+  const uploadId = crypto.randomUUID();
+  registerUpload(uploadId, file.name);
+
+  // Insert placeholder with uploading state
+  editor
+    .chain()
+    .focus()
+    .setFileAttachment({
+      filename: file.name,
+      url: '',
+      size: file.size,
+      mimeType: effectiveMimeType,
+      uploading: true,
+    })
+    .run();
+
+  try {
+    // Upload file with abort signal
+    const result = await uploadFile(file, (progress) => {
+      // Update global tracker for navigation warning
+      updateUploadProgress(uploadId, progress.progress);
+    }, signal);
+
+    // Check if aborted before updating the editor
+    if (signal?.aborted) {
+      console.log('File upload completed but was cancelled - not updating editor');
+      return;
+    }
+
+    // Find and update the attachment node
+    const { state, view } = editor;
+    let attachmentPos: number | null = null;
+
+    state.doc.descendants((node: any, nodePos: number) => {
+      if (
+        node.type.name === 'fileAttachment' &&
+        node.attrs.filename === file.name &&
+        node.attrs.uploading === true
+      ) {
+        attachmentPos = nodePos;
+        return false; // Stop searching
+      }
+      return true;
+    });
+
+    if (attachmentPos !== null) {
+      const cdnUrl = result.cdnUrl.startsWith('http')
+        ? result.cdnUrl
+        : `${API_URL}${result.cdnUrl}`;
+
+      // Update the node with the CDN URL and remove uploading state
+      const transaction = state.tr.setNodeMarkup(attachmentPos, undefined, {
+        filename: file.name,
+        url: cdnUrl,
+        size: file.size,
+        mimeType: effectiveMimeType,
+        uploading: false,
+      });
+      view.dispatch(transaction);
+    }
+
+    // Upload complete - unregister from tracker
+    unregisterUpload(uploadId);
+  } catch (error) {
+    // Upload failed - unregister from tracker
+    unregisterUpload(uploadId);
+
+    // Don't report cancellation as an error - it's intentional
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.log('File upload cancelled');
+      return;
+    }
+
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('File upload failed:', { filename: file.name, error: errorMessage, fullError: error });
+    alert(`Upload failed: ${errorMessage}\n\nPlease try again.`);
+
+    // Remove the failed upload node
+    const { state, view } = editor;
+    let attachmentPos: number | null = null;
+
+    state.doc.descendants((node: any, nodePos: number) => {
+      if (
+        node.type.name === 'fileAttachment' &&
+        node.attrs.filename === file.name &&
+        node.attrs.uploading === true
+      ) {
+        attachmentPos = nodePos;
+        return false;
+      }
+      return true;
+    });
+
+    if (attachmentPos !== null) {
+      const transaction = state.tr.delete(attachmentPos, attachmentPos + 1);
+      view.dispatch(transaction);
+    }
+  }
+}
+
+/**
+ * Trigger file picker for file upload
+ * @param editor - TipTap editor instance
+ * @param signal - Optional AbortSignal for cancelling uploads on navigation/cleanup
+ */
+export function triggerFileUpload(editor: any, signal?: AbortSignal) {
+  // Check if already aborted
+  if (signal?.aborted) {
+    return;
+  }
+
   const input = document.createElement('input');
   input.type = 'file';
   // No accept restriction - allow any file type (blocklist enforced in isAllowedFileType)
   input.multiple = false;
 
   input.onchange = async () => {
-    const file = input.files?.[0];
-    if (!file) return;
-
-    // Check if file type is blocked (executables/scripts are blocked for security)
-    if (!isAllowedFileType(file.type, file.name)) {
-      const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-      console.error('File type blocked:', { name: file.name, type: file.type, extension: ext });
-      alert(`Cannot upload "${ext}" files.\n\nExecutable files and scripts are blocked for security reasons.`);
+    // Check if aborted while file picker was open
+    if (signal?.aborted) {
       return;
     }
 
-    // Get effective MIME type (use extension fallback if browser returns empty)
-    const effectiveMimeType = file.type || getMimeTypeFromExtension(file.name) || 'application/octet-stream';
+    const file = input.files?.[0];
+    if (!file) return;
 
-    // Insert placeholder with uploading state
-    const pos = editor.state.selection.from;
-    editor
-      .chain()
-      .focus()
-      .setFileAttachment({
-        filename: file.name,
-        url: '',
-        size: file.size,
-        mimeType: effectiveMimeType,
-        uploading: true,
-      })
-      .run();
-
-    try {
-      // Upload file
-      const result = await uploadFile(file, (progress) => {
-        console.log(`Upload progress: ${progress.progress}%`);
-      });
-
-      // Find and update the attachment node
-      const { state, view } = editor;
-      let attachmentPos: number | null = null;
-
-      state.doc.descendants((node: any, nodePos: number) => {
-        if (
-          node.type.name === 'fileAttachment' &&
-          node.attrs.filename === file.name &&
-          node.attrs.uploading === true
-        ) {
-          attachmentPos = nodePos;
-          return false; // Stop searching
-        }
-        return true;
-      });
-
-      if (attachmentPos !== null) {
-        const cdnUrl = result.cdnUrl.startsWith('http')
-          ? result.cdnUrl
-          : `${API_URL}${result.cdnUrl}`;
-
-        // Update the node with the CDN URL and remove uploading state
-        const transaction = state.tr.setNodeMarkup(attachmentPos, undefined, {
-          filename: file.name,
-          url: cdnUrl,
-          size: file.size,
-          mimeType: file.type,
-          uploading: false,
-        });
-        view.dispatch(transaction);
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('File upload failed:', { filename: file.name, error: errorMessage, fullError: error });
-      alert(`Upload failed: ${errorMessage}\n\nPlease try again.`);
-
-      // Remove the failed upload node
-      const { state, view } = editor;
-      let attachmentPos: number | null = null;
-
-      state.doc.descendants((node: any, nodePos: number) => {
-        if (
-          node.type.name === 'fileAttachment' &&
-          node.attrs.filename === file.name &&
-          node.attrs.uploading === true
-        ) {
-          attachmentPos = nodePos;
-          return false;
-        }
-        return true;
-      });
-
-      if (attachmentPos !== null) {
-        const transaction = state.tr.delete(attachmentPos, attachmentPos + 1);
-        view.dispatch(transaction);
-      }
-    }
+    await handleFileUpload(editor, file, signal);
   };
 
   input.click();

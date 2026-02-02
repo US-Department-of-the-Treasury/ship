@@ -14,7 +14,7 @@ const ALL_COLUMNS: ColumnDefinition[] = [
   { key: 'name', label: 'Name', hideable: false },
   { key: 'owner', label: 'Owner', hideable: true },
   { key: 'issue_count', label: 'Issues', hideable: true },
-  { key: 'sprint_count', label: 'Sprints', hideable: true },
+  { key: 'sprint_count', label: 'Weeks', hideable: true },
   { key: 'created', label: 'Created', hideable: true },
   { key: 'updated', label: 'Updated', hideable: true },
 ];
@@ -91,7 +91,7 @@ export function ProgramsPage() {
     try {
       const program = await createProgram();
       if (program) {
-        navigate(`/programs/${program.id}`);
+        navigate(`/documents/${program.id}`);
       }
     } catch (err) {
       console.error('Failed to create program:', err);
@@ -196,14 +196,14 @@ export function ProgramsPage() {
       </div>
 
       {/* Programs List */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto pb-20">
         <SelectableList
           items={sortedPrograms}
           loading={loading}
           renderRow={renderProgramRow}
           columns={columns}
           emptyState={emptyState}
-          onItemClick={(program) => navigate(`/programs/${program.id}`)}
+          onItemClick={(program) => navigate(`/documents/${program.id}`)}
           selectable={true}
           onSelectionChange={handleSelectionChange}
           onContextMenu={handleContextMenu}

@@ -131,7 +131,7 @@ describe('Project Retros API', () => {
        VALUES ($1, 'project', 'Test Project', $2, $3, 'workspace', $4)
        RETURNING id`,
       [testWorkspaceId, testUserId, testProgramId, JSON.stringify({
-        hypothesis: 'We believe that X will result in Y',
+        plan: 'We believe that X will result in Y',
         impact: 8,
         confidence: 7,
         ease: 5,
@@ -164,11 +164,19 @@ describe('Project Retros API', () => {
     })
 
     it('pre-fill includes sprints list associated with project', async () => {
-      // Create a sprint linked to the project
+      // Create a sprint linked to the project via document_associations
+      const sprintResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility)
+         VALUES ($1, 'sprint', 'Sprint 1', $2, 'workspace')
+         RETURNING id`,
+        [testWorkspaceId, testUserId]
+      )
+      const sprintId = sprintResult.rows[0].id
+      // Create project association for the sprint
       await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, project_id, parent_id, program_id, created_by, visibility)
-         VALUES ($1, 'sprint', 'Sprint 1', $2, $3, $3, $4, 'workspace')`,
-        [testWorkspaceId, testProjectId, testProgramId, testUserId]
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'project')`,
+        [sprintId, testProjectId]
       )
 
       const response = await request(app)
@@ -176,9 +184,9 @@ describe('Project Retros API', () => {
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(200)
-      expect(response.body.sprints).toBeDefined()
-      expect(response.body.sprints.length).toBe(1)
-      expect(response.body.sprints[0].title).toBe('Sprint 1')
+      expect(response.body.weeks).toBeDefined()
+      expect(response.body.weeks.length).toBe(1)
+      expect(response.body.weeks[0].title).toBe('Sprint 1')
     })
 
     it('pre-fill includes issues categorized (completed/active/cancelled)', async () => {
@@ -241,20 +249,20 @@ describe('Project Retros API', () => {
   })
 
   describe('POST /api/projects/:id/retro', () => {
-    it('updates project properties (hypothesis_validated, monetary_impact_actual, etc)', async () => {
+    it('updates project properties (plan_validated, monetary_impact_actual, etc)', async () => {
       const response = await request(app)
         .post(`/api/projects/${testProjectId}/retro`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
-          hypothesis_validated: true,
+          plan_validated: true,
           monetary_impact_actual: '$75,000',
           success_criteria: ['Increased signups by 20%', 'Reduced churn by 15%'],
           next_steps: 'Scale to all users'
         })
 
       expect(response.status).toBe(201)
-      expect(response.body.hypothesis_validated).toBe(true)
+      expect(response.body.plan_validated).toBe(true)
       expect(response.body.monetary_impact_actual).toBe('$75,000')
       expect(response.body.success_criteria).toEqual(['Increased signups by 20%', 'Reduced churn by 15%'])
       expect(response.body.next_steps).toBe('Scale to all users')
@@ -263,7 +271,7 @@ describe('Project Retros API', () => {
     it('returns 403 without auth (CSRF check first)', async () => {
       const response = await request(app)
         .post(`/api/projects/${testProjectId}/retro`)
-        .send({ hypothesis_validated: true })
+        .send({ plan_validated: true })
 
       expect(response.status).toBe(403)
     })
@@ -274,7 +282,7 @@ describe('Project Retros API', () => {
         .post(`/api/projects/${fakeProjectId}/retro`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
-        .send({ hypothesis_validated: true })
+        .send({ plan_validated: true })
 
       expect(response.status).toBe(404)
     })
@@ -288,7 +296,7 @@ describe('Project Retros API', () => {
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
-          hypothesis_validated: null,
+          plan_validated: null,
           monetary_impact_actual: '',
           success_criteria: [],
           next_steps: ''
@@ -301,13 +309,13 @@ describe('Project Retros API', () => {
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
-          hypothesis_validated: false,
+          plan_validated: false,
           monetary_impact_actual: '$10,000',
           next_steps: 'Pivot to new approach'
         })
 
       expect(response.status).toBe(200)
-      expect(response.body.hypothesis_validated).toBe(false)
+      expect(response.body.plan_validated).toBe(false)
       expect(response.body.monetary_impact_actual).toBe('$10,000')
       expect(response.body.next_steps).toBe('Pivot to new approach')
     })
@@ -317,7 +325,7 @@ describe('Project Retros API', () => {
         .patch(`/api/projects/${testProjectId}/retro`)
         .set('Cookie', otherSessionCookie)
         .set('x-csrf-token', otherCsrfToken)
-        .send({ hypothesis_validated: true })
+        .send({ plan_validated: true })
 
       expect(response.status).toBe(404)
     })
@@ -328,7 +336,7 @@ describe('Project Retros API', () => {
         .patch(`/api/projects/${fakeProjectId}/retro`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
-        .send({ hypothesis_validated: true })
+        .send({ plan_validated: true })
 
       expect(response.status).toBe(404)
     })

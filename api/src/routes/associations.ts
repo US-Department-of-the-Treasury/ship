@@ -248,10 +248,14 @@ router.get('/:id/context', authMiddleware, async (req: Request, res: Response) =
     // Get the current document
     // Programs are stored as documents with document_type = 'program', not a separate table
     const currentDoc = await pool.query(
-      `SELECT d.id, d.title, d.document_type, d.ticket_number, d.program_id,
-              (SELECT title FROM documents WHERE id = d.program_id AND document_type = 'program') as program_name,
-              (SELECT properties->>'color' FROM documents WHERE id = d.program_id AND document_type = 'program') as program_color
-       FROM documents d WHERE d.id = $1`,
+      `SELECT d.id, d.title, d.document_type, d.ticket_number,
+              prog_da.related_id as program_id,
+              prog.title as program_name,
+              prog.properties->>'color' as program_color
+       FROM documents d
+       LEFT JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id AND prog.document_type = 'program'
+       WHERE d.id = $1`,
       [id]
     );
 

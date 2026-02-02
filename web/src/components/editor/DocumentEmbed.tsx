@@ -8,7 +8,7 @@ function DocumentEmbedComponent({ node }: NodeViewProps) {
   const { documentId, title } = node.attrs as { documentId: string; title: string };
 
   const handleClick = () => {
-    navigate(`/docs/${documentId}`);
+    navigate(`/documents/${documentId}`);
   };
 
   return (

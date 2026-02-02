@@ -1,5 +1,49 @@
 data "aws_caller_identity" "current" {}
 
+# Origin Request Policy for API - forwards all headers, cookies, and query strings
+# Using managed policy AllViewerExceptHostHeader to avoid body size limits
+# that occur with legacy forwarded_values headers=["*"]
+resource "aws_cloudfront_origin_request_policy" "api" {
+  name    = "${var.project_name}-${var.environment}-api-origin-request"
+  comment = "Forward all viewer data to API origin"
+
+  cookies_config {
+    cookie_behavior = "all"
+  }
+
+  headers_config {
+    header_behavior = "allViewerAndWhitelistCloudFront"
+    headers {
+      items = ["CloudFront-Forwarded-Proto"]
+    }
+  }
+
+  query_strings_config {
+    query_string_behavior = "all"
+  }
+}
+
+# Cache Policy for API - disable caching
+resource "aws_cloudfront_cache_policy" "api_no_cache" {
+  name        = "${var.project_name}-${var.environment}-api-no-cache"
+  comment     = "Disable caching for API routes"
+  default_ttl = 0
+  max_ttl     = 0
+  min_ttl     = 0
+
+  parameters_in_cache_key_and_forwarded_to_origin {
+    cookies_config {
+      cookie_behavior = "none"
+    }
+    headers_config {
+      header_behavior = "none"
+    }
+    query_strings_config {
+      query_string_behavior = "none"
+    }
+  }
+}
+
 # S3 Bucket for React Frontend (includes account ID for global uniqueness)
 resource "aws_s3_bucket" "frontend" {
   bucket = "${var.project_name}-frontend-${var.environment}-${data.aws_caller_identity.current.account_id}"
@@ -37,6 +81,37 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "frontend" {
       sse_algorithm = "AES256"
     }
   }
+}
+
+# CloudFront Function for SPA routing
+# This function runs on viewer-request for the S3 origin (default cache behavior).
+# It rewrites requests for SPA routes to /index.html while passing through static assets.
+# We use a function instead of custom_error_response because custom_error_response
+# applies to ALL origins including API, which would break API 404 responses.
+resource "aws_cloudfront_function" "spa_routing" {
+  name    = "${var.project_name}-${var.environment}-spa-routing"
+  runtime = "cloudfront-js-2.0"
+  comment = "SPA routing - rewrites non-file requests to /index.html"
+  publish = true
+
+  code = <<-EOF
+    // CloudFront Function for SPA routing
+    // Rewrites requests for SPA routes to /index.html while passing through static assets
+    function handler(event) {
+        var request = event.request;
+        var uri = request.uri;
+
+        // Check if the URI has a file extension (static asset)
+        var hasExtension = /\.(html|css|js|json|ico|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot|map|txt|xml|webmanifest)$/i.test(uri);
+
+        // If no file extension, rewrite to index.html for SPA routing
+        if (!hasExtension && uri !== '/') {
+            request.uri = '/index.html';
+        }
+
+        return request;
+    }
+  EOF
 }
 
 # CloudFront Origin Access Control
@@ -82,6 +157,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   # API routes - forward to EB (only when EB is configured)
+  # Uses origin request policy instead of legacy forwarded_values to avoid body size limits
   dynamic "ordered_cache_behavior" {
     for_each = var.eb_environment_cname != "" ? [1] : []
     content {
@@ -91,17 +167,10 @@ resource "aws_cloudfront_distribution" "frontend" {
       allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
       cached_methods         = ["GET", "HEAD"]
       compress               = true
-      min_ttl                = 0
-      default_ttl            = 0
-      max_ttl                = 0
 
-      forwarded_values {
-        query_string = true
-        headers      = ["*"] # Forward all headers including CloudFront-Forwarded-Proto for trust proxy
-        cookies {
-          forward = "all"
-        }
-      }
+      # Use policies instead of forwarded_values for larger request body support
+      cache_policy_id          = aws_cloudfront_cache_policy.api_no_cache.id
+      origin_request_policy_id = aws_cloudfront_origin_request_policy.api.id
     }
   }
 
@@ -129,6 +198,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   # WebSocket collaboration endpoint (only when EB is configured)
+  # Uses origin request policy for WebSocket compatibility
   dynamic "ordered_cache_behavior" {
     for_each = var.eb_environment_cname != "" ? [1] : []
     content {
@@ -138,17 +208,10 @@ resource "aws_cloudfront_distribution" "frontend" {
       allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
       cached_methods         = ["GET", "HEAD"]
       compress               = false
-      min_ttl                = 0
-      default_ttl            = 0
-      max_ttl                = 0
 
-      forwarded_values {
-        query_string = true
-        headers      = ["*"]
-        cookies {
-          forward = "all"
-        }
-      }
+      # Use policies instead of forwarded_values
+      cache_policy_id          = aws_cloudfront_cache_policy.api_no_cache.id
+      origin_request_policy_id = aws_cloudfront_origin_request_policy.api.id
     }
   }
 
@@ -191,21 +254,13 @@ resource "aws_cloudfront_distribution" "frontend" {
         forward = "none"
       }
     }
-  }
 
-  # SPA routing - redirect 404s to index.html
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 300
-  }
-
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 300
+    # SPA routing via CloudFront function (not custom_error_response)
+    # This ensures only S3 origin requests are rewritten, not API error responses
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_routing.arn
+    }
   }
 
   viewer_certificate {
@@ -301,5 +356,75 @@ resource "aws_route53_record" "app" {
     name                   = aws_cloudfront_distribution.frontend.domain_name
     zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
     evaluate_target_health = false
+  }
+}
+
+# =============================================================================
+# S3 Bucket for File Uploads
+# =============================================================================
+
+# S3 Bucket for user file uploads (documents, videos, etc.)
+resource "aws_s3_bucket" "uploads" {
+  bucket = "${var.project_name}-uploads-${var.environment}-${data.aws_caller_identity.current.account_id}"
+
+  tags = {
+    Name = "${var.project_name}-${var.environment}-uploads"
+  }
+}
+
+# Block all public access (files served via presigned URLs)
+resource "aws_s3_bucket_public_access_block" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Enable versioning for compliance and recovery
+resource "aws_s3_bucket_versioning" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Server-side encryption (AES256)
+resource "aws_s3_bucket_server_side_encryption_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# CORS configuration for browser uploads
+resource "aws_s3_bucket_cors_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["PUT", "POST"]
+    allowed_origins = var.upload_cors_origins
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3600
+  }
+}
+
+# Lifecycle rule to clean up incomplete multipart uploads
+resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
   }
 }

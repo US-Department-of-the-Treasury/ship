@@ -48,6 +48,7 @@ export function IssuesPage() {
       enableKeyboardNavigation={true}
       showPromoteToProject={true}
       headerContent={<h1 className="text-xl font-semibold text-foreground">Issues</h1>}
+      selectionPersistenceKey="issues"
     />
   );
 }

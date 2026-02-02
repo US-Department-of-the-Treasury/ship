@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Combobox } from '@/components/ui/Combobox';
 import { MultiAssociationChips } from '@/components/ui/MultiAssociationChips';
+import { PropertyRow } from '@/components/ui/PropertyRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { isCascadeWarningError, type IncompleteChild } from '@/hooks/useIssuesQuery';
 import { apiPost, apiDelete } from '@/lib/api';
@@ -16,8 +17,6 @@ interface Issue {
   assignee_id: string | null;
   assignee_name?: string | null;
   assignee_archived?: boolean;
-  program_id: string | null;
-  sprint_id: string | null;
   source?: 'internal' | 'external';
   rejection_reason?: string | null;
   converted_from_id?: string | null;
@@ -177,9 +176,9 @@ export function IssueSidebar({
 
   // Fetch sprints when issue's program changes
   useEffect(() => {
-    // Get program from belongs_to or legacy program_id
+    // Get program from belongs_to
     const programAssoc = belongsTo.find(bt => bt.type === 'program');
-    const programId = programAssoc?.id || issue.program_id;
+    const programId = programAssoc?.id;
 
     if (!programId) {
       setSprints([]);
@@ -190,10 +189,10 @@ export function IssueSidebar({
     let cancelled = false;
 
     fetch(`${API_URL}/api/programs/${programId}/sprints`, { credentials: 'include' })
-      .then(res => res.ok ? res.json() : { sprints: [], workspace_sprint_start_date: null })
+      .then(res => res.ok ? res.json() : { weeks: [], workspace_sprint_start_date: null })
       .then(data => {
         if (!cancelled) {
-          setSprints(data.sprints || []);
+          setSprints(data.weeks || []);
           if (data.workspace_sprint_start_date) {
             setWorkspaceSprintStartDate(new Date(data.workspace_sprint_start_date));
           }
@@ -207,7 +206,7 @@ export function IssueSidebar({
       });
 
     return () => { cancelled = true; };
-  }, [belongsTo, issue.program_id]);
+  }, [belongsTo]);
 
   // Add association via junction table API
   const handleAddAssociation = useCallback(async (relatedId: string, type: BelongsToType) => {
@@ -245,7 +244,7 @@ export function IssueSidebar({
   // Legacy sprint change handler
   const handleSprintChange = async (sprintId: string | null) => {
     if (sprintId && !issue.estimate) {
-      setSprintError('Please add an estimate before assigning to a sprint');
+      setSprintError('Please add an estimate before assigning to a week');
       return;
     }
     setSprintError(null);
@@ -265,9 +264,9 @@ export function IssueSidebar({
     }
   };
 
-  // Get current program/sprint from belongs_to for legacy display
-  const currentProgramId = belongsTo.find(bt => bt.type === 'program')?.id || issue.program_id;
-  const currentSprintId = belongsTo.find(bt => bt.type === 'sprint')?.id || issue.sprint_id;
+  // Get current program/sprint from belongs_to
+  const currentProgramId = belongsTo.find(bt => bt.type === 'program')?.id ?? null;
+  const currentSprintId = belongsTo.find(bt => bt.type === 'sprint')?.id ?? null;
 
   return (
     <div className="space-y-4 p-4">
@@ -452,9 +451,9 @@ export function IssueSidebar({
         />
       </PropertyRow>
 
-      {/* Sprint - still uses single-select since sprints depend on program selection */}
+      {/* Week - still uses single-select since weeks depend on program selection */}
       {currentProgramId && (
-        <PropertyRow label="Sprint">
+        <PropertyRow label="Week">
           <Combobox
             options={sprints.map((s) => {
               let dateRange = '';
@@ -466,11 +465,11 @@ export function IssueSidebar({
             })}
             value={currentSprintId}
             onChange={(value) => handleSprintChange(value)}
-            placeholder="No Sprint"
-            clearLabel="No Sprint"
-            searchPlaceholder="Search sprints..."
-            emptyText="No sprints found"
-            aria-label="Sprint"
+            placeholder="No Week"
+            clearLabel="No Week"
+            searchPlaceholder="Search weeks..."
+            emptyText="No weeks found"
+            aria-label="Week"
           />
           {sprintError && (
             <p className="mt-1 text-xs text-red-500">{sprintError}</p>
@@ -550,14 +549,3 @@ export function IssueSidebar({
   );
 }
 
-function PropertyRow({ label, highlighted, children }: { label: string; highlighted?: boolean; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className={`mb-1 block text-xs font-medium ${highlighted ? 'text-amber-500' : 'text-muted'}`}>
-        {label}
-        {highlighted && <span className="ml-1 text-amber-500">*</span>}
-      </label>
-      {children}
-    </div>
-  );
-}

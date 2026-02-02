@@ -42,6 +42,9 @@ Thumbs.db
 # Playwright MCP screenshots
 .playwright-mcp/
 
+# Evidence/verification screenshots
+evidence/
+
 # Playwright test artifacts
 playwright-report/
 test-results/
@@ -65,6 +68,8 @@ terraform/terraform.tfstate.backup
 terraform/*.tfplan
 terraform/tfplan
 terraform/terraform.tfvars
+terraform/environments/*/terraform.tfvars
+terraform/environments/*/.terraform.lock.hcl
 terraform/bootstrap/.terraform/
 terraform/bootstrap/.terraform.lock.hcl
 terraform/bootstrap/terraform.tfstate
@@ -97,3 +102,5 @@ vendor/
 
 # SSDF-Helper - Memory Safety Analysis Reports (CUI/ISVI)
 /SSDF-Helper/
+.pr-checklist.json
+.dev-ports

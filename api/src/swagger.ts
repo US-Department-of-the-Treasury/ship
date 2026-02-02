@@ -42,7 +42,7 @@ const options: swaggerJsdoc.Options = {
             title: { type: 'string' },
             document_type: {
               type: 'string',
-              enum: ['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'standup', 'sprint_review'],
+              enum: ['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'standup', 'weekly_review', 'weekly_plan', 'weekly_retro'],
             },
             content: { type: 'object' },
             properties: { type: 'object' },
@@ -75,10 +75,9 @@ const options: swaggerJsdoc.Options = {
           properties: {
             id: { type: 'string', format: 'uuid' },
             title: { type: 'string' },
-            start_date: { type: 'string', format: 'date' },
-            end_date: { type: 'string', format: 'date' },
-            hypothesis: { type: 'string', nullable: true },
-            goal: { type: 'string', nullable: true },
+            sprint_number: { type: 'integer', description: 'Sprint sequence number (dates computed from workspace.sprint_start_date)' },
+            plan: { type: 'string', nullable: true, description: 'What will we learn or validate?' },
+            workspace_sprint_start_date: { type: 'string', format: 'date', description: 'Workspace anchor date for computing sprint dates' },
           },
         },
         Project: {
@@ -87,7 +86,7 @@ const options: swaggerJsdoc.Options = {
             id: { type: 'string', format: 'uuid' },
             title: { type: 'string' },
             content: { type: 'object' },
-            hypothesis: { type: 'string', nullable: true },
+            plan: { type: 'string', nullable: true },
             ice_impact: { type: 'number', nullable: true },
             ice_confidence: { type: 'number', nullable: true },
             ice_ease: { type: 'number', nullable: true },

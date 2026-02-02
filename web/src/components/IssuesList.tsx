@@ -1,14 +1,16 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { SelectableList, RowRenderProps, UseSelectionReturn } from '@/components/SelectableList';
 import { BulkActionBar } from '@/components/BulkActionBar';
 import { DocumentListToolbar } from '@/components/DocumentListToolbar';
 import { Issue } from '@/contexts/IssuesContext';
-import { useBulkUpdateIssues, issueKeys } from '@/hooks/useIssuesQuery';
+import { useBulkUpdateIssues, useIssuesQuery, useCreateIssue, useUpdateIssue, issueKeys, getProgramId, getProgramTitle, getProjectId, getProjectTitle, getSprintId, getSprintTitle } from '@/hooks/useIssuesQuery';
+import type { BelongsTo } from '@ship/shared';
 import { projectKeys, useProjectsQuery } from '@/hooks/useProjectsQuery';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
+import { useSprintsQuery } from '@/hooks/useWeeksQuery';
 import { useColumnVisibility, ColumnDefinition } from '@/hooks/useColumnVisibility';
 import { useListFilters, ViewMode } from '@/hooks/useListFilters';
 import { useGlobalListNavigation } from '@/hooks/useGlobalListNavigation';
@@ -18,7 +20,11 @@ import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from '@/components/ui/ContextMenu';
 import { cn } from '@/lib/cn';
 import { FilterTabs, FilterTab } from '@/components/FilterTabs';
-import { apiPost } from '@/lib/api';
+import { apiPost, apiPatch } from '@/lib/api';
+import { ConversionDialog } from '@/components/dialogs/ConversionDialog';
+import { BacklogPickerModal } from '@/components/dialogs/BacklogPickerModal';
+import { useSelectionPersistenceOptional } from '@/contexts/SelectionPersistenceContext';
+import { InlineWeekSelector } from '@/components/InlineWeekSelector';
 
 // Re-export Issue type for convenience
 export type { Issue } from '@/contexts/IssuesContext';
@@ -30,6 +36,7 @@ export const ALL_COLUMNS: ColumnDefinition[] = [
   { key: 'status', label: 'Status', hideable: true },
   { key: 'source', label: 'Source', hideable: true },
   { key: 'program', label: 'Program', hideable: true },
+  { key: 'sprint', label: 'Week', hideable: true },
   { key: 'priority', label: 'Priority', hideable: true },
   { key: 'assignee', label: 'Assignee', hideable: true },
   { key: 'updated', label: 'Updated', hideable: true },
@@ -66,10 +73,10 @@ const PRIORITY_LABELS: Record<string, string> = {
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  urgent: 'text-red-400',
-  high: 'text-orange-400',
-  medium: 'text-yellow-400',
-  low: 'text-blue-400',
+  urgent: 'text-red-500',
+  high: 'text-orange-500',
+  medium: 'text-yellow-500',
+  low: 'text-blue-500',
   none: 'text-muted',
 };
 
@@ -94,8 +101,8 @@ export const DEFAULT_FILTER_TABS: FilterTab[] = [
 ];
 
 export interface IssuesListProps {
-  /** Issues to display */
-  issues: Issue[];
+  /** Issues to display. Optional when using locked filters (will self-fetch). */
+  issues?: Issue[];
   /** Whether data is loading */
   loading?: boolean;
   /** Callback to update an issue */
@@ -112,12 +119,33 @@ export interface IssuesListProps {
   initialStateFilter?: string;
   /** Called when state filter changes */
   onStateFilterChange?: (filter: string) => void;
+  /** URL parameter name for state filter sync (e.g., 'state' or 'issues_state'). When provided, syncs filter to URL. */
+  urlParamPrefix?: string;
   /** Whether to show program filter dropdown */
   showProgramFilter?: boolean;
+  /** Whether to show project filter dropdown (default: true) */
+  showProjectFilter?: boolean;
+  /** Whether to show sprint filter dropdown (default: true) */
+  showSprintFilter?: boolean;
+  /** Locked program filter - cannot be changed by user, triggers self-fetch */
+  lockedProgramId?: string;
+  /** Locked project filter - cannot be changed by user, triggers self-fetch */
+  lockedProjectId?: string;
+  /** Locked sprint filter - cannot be changed by user, triggers self-fetch */
+  lockedSprintId?: string;
+  /** Context to inherit when creating new issues (derived from locked filters if not provided) */
+  inheritedContext?: {
+    programId?: string;
+    projectId?: string;
+    sprintId?: string;
+    assigneeId?: string;
+  };
   /** Whether to show the create button */
   showCreateButton?: boolean;
   /** Label for the create button */
   createButtonLabel?: string;
+  /** Test ID for the create button */
+  createButtonTestId?: string;
   /** Available view modes */
   viewModes?: ViewMode[];
   /** Initial view mode */
@@ -138,6 +166,14 @@ export interface IssuesListProps {
   hideHeader?: boolean;
   /** Additional toolbar content (rendered in toolbar) */
   toolbarContent?: React.ReactNode;
+  /** Key for persisting selection state across navigation (e.g., 'issues' or 'project:uuid'). When provided, selections survive navigation. */
+  selectionPersistenceKey?: string;
+  /** Enable inline sprint assignment dropdown in the sprint column. Requires lockedProgramId to fetch available sprints. */
+  enableInlineSprintAssignment?: boolean;
+  /** Show "Add from Backlog" button to add existing issues to the current context (sprint/project/program) */
+  showBacklogPicker?: boolean;
+  /** Allow toggling "Show All Issues" to display out-of-context issues with reduced opacity and '+' button */
+  allowShowAllIssues?: boolean;
 }
 
 /**
@@ -154,8 +190,8 @@ export interface IssuesListProps {
  * - Promote to project action
  */
 export function IssuesList({
-  issues,
-  loading = false,
+  issues: issuesProp,
+  loading: loadingProp = false,
   onUpdateIssue,
   onCreateIssue,
   onRefreshIssues,
@@ -163,9 +199,17 @@ export function IssuesList({
   filterTabs = DEFAULT_FILTER_TABS,
   initialStateFilter = '',
   onStateFilterChange,
+  urlParamPrefix,
   showProgramFilter = false,
+  showProjectFilter = true,
+  showSprintFilter = true,
+  lockedProgramId,
+  lockedProjectId,
+  lockedSprintId,
+  inheritedContext,
   showCreateButton = true,
   createButtonLabel = 'New Issue',
+  createButtonTestId,
   viewModes = ['list', 'kanban'],
   initialViewMode = 'list',
   defaultColumns,
@@ -176,13 +220,109 @@ export function IssuesList({
   headerContent,
   hideHeader = false,
   toolbarContent,
+  selectionPersistenceKey,
+  enableInlineSprintAssignment = false,
+  showBacklogPicker = false,
+  allowShowAllIssues = false,
 }: IssuesListProps) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const bulkUpdate = useBulkUpdateIssues();
+  const updateIssueMutation = useUpdateIssue();
   const { data: teamMembers = [] } = useAssignableMembersQuery();
   const { data: projects = [] } = useProjectsQuery();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+
+  // Fetch sprints when program context is available (for bulk actions and inline assignment)
+  const { data: sprintsData } = useSprintsQuery(lockedProgramId);
+  const availableSprints = useMemo(() => {
+    if (!sprintsData?.weeks) return [];
+    return sprintsData.weeks.map(s => ({ id: s.id, name: s.name }));
+  }, [sprintsData]);
+
+  // Determine if we should self-fetch based on locked filters
+  const shouldSelfFetch = Boolean(lockedProgramId || lockedProjectId || lockedSprintId);
+
+  // State for "Show All Issues" toggle
+  const [showAllIssues, setShowAllIssues] = useState(false);
+
+  // Self-fetch issues when using locked filters
+  const { data: fetchedIssues, isLoading: isFetchingIssues } = useIssuesQuery(
+    shouldSelfFetch ? {
+      programId: lockedProgramId,
+      projectId: lockedProjectId,
+      sprintId: lockedSprintId,
+    } : {},
+    { enabled: shouldSelfFetch }
+  );
+
+  // Also fetch ALL issues when showAllIssues toggle is enabled (for inline add feature)
+  const { data: allIssuesData, isLoading: isLoadingAllIssues } = useIssuesQuery(
+    {},
+    { enabled: allowShowAllIssues && showAllIssues && shouldSelfFetch }
+  );
+
+  // Internal create issue mutation for self-fetching mode
+  const createIssueMutation = useCreateIssue();
+
+  // Compute effective context for issue creation (from inheritedContext or locked filters)
+  const effectiveContext = useMemo(() => {
+    // Prefer explicit inheritedContext over locked filters
+    const projectId = inheritedContext?.projectId ?? lockedProjectId;
+    const sprintId = inheritedContext?.sprintId ?? lockedSprintId;
+    let programId = inheritedContext?.programId ?? lockedProgramId;
+
+    // Infer program from project if project is set and program isn't
+    if (projectId && !programId) {
+      const project = projects.find(p => p.id === projectId);
+      if (project?.program_id) {
+        programId = project.program_id;
+      }
+    }
+
+    return {
+      programId,
+      projectId,
+      sprintId,
+      assigneeId: inheritedContext?.assigneeId,
+    };
+  }, [inheritedContext, lockedProgramId, lockedProjectId, lockedSprintId, projects]);
+
+  // Build belongs_to array from effective context
+  const buildBelongsTo = useCallback((): BelongsTo[] => {
+    const belongs_to: BelongsTo[] = [];
+    if (effectiveContext.programId) {
+      belongs_to.push({ id: effectiveContext.programId, type: 'program' });
+    }
+    if (effectiveContext.projectId) {
+      belongs_to.push({ id: effectiveContext.projectId, type: 'project' });
+    }
+    if (effectiveContext.sprintId) {
+      belongs_to.push({ id: effectiveContext.sprintId, type: 'sprint' });
+    }
+    return belongs_to;
+  }, [effectiveContext]);
+
+  // Use fetched issues when self-fetching, otherwise use the prop
+  const inContextIssues = shouldSelfFetch ? (fetchedIssues ?? []) : (issuesProp ?? []);
+  const loading = shouldSelfFetch ? (isFetchingIssues || (showAllIssues && isLoadingAllIssues)) : loadingProp;
+
+  // Create set of in-context issue IDs for quick lookup
+  const inContextIds = useMemo(() => {
+    return new Set(inContextIssues.map(i => i.id));
+  }, [inContextIssues]);
+
+  // Combine in-context and out-of-context issues when showAllIssues toggle is enabled
+  const issues = useMemo(() => {
+    if (!showAllIssues || !allIssuesData) {
+      return inContextIssues;
+    }
+    // Get out-of-context issues (not already in the in-context set)
+    const outOfContextIssues = allIssuesData.filter(issue => !inContextIds.has(issue.id));
+    // Return in-context first, then out-of-context
+    return [...inContextIssues, ...outOfContextIssues];
+  }, [showAllIssues, inContextIssues, allIssuesData, inContextIds]);
 
   // Use shared hooks for list state management
   const { sortBy, setSortBy, viewMode, setViewMode } = useListFilters({
@@ -197,31 +337,181 @@ export function IssuesList({
     defaultVisible: defaultColumns,
   });
 
-  const [stateFilter, setStateFilter] = useState(initialStateFilter);
+  // URL param name for state filter (if URL sync is enabled)
+  const stateUrlParam = urlParamPrefix ? `${urlParamPrefix}_state` : null;
+
+  // Initialize state from URL if URL sync is enabled, otherwise use prop
+  const getInitialStateFilter = () => {
+    if (stateUrlParam) {
+      return searchParams.get(stateUrlParam) ?? initialStateFilter;
+    }
+    return initialStateFilter;
+  };
+
+  const [stateFilter, setStateFilter] = useState(getInitialStateFilter);
   const [programFilter, setProgramFilter] = useState<string | null>(null);
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const [sprintFilter, setSprintFilter] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; selection: UseSelectionReturn } | null>(null);
 
   // Conversion state
   const [convertingIssue, setConvertingIssue] = useState<Issue | null>(null);
   const [isConverting, setIsConverting] = useState(false);
 
+  // Backlog picker state
+  const [isBacklogPickerOpen, setIsBacklogPickerOpen] = useState(false);
+
+  // Undo state for bulk actions - using ref to avoid stale closure issues
+  // (state updates are async, but we need the value immediately when toast onClick fires)
+  interface UndoState {
+    action: 'status' | 'sprint' | 'assign' | 'project';
+    ids: string[];
+    previousValues: Map<string, { state?: string; sprint_id?: string | null; assignee_id?: string | null; project_id?: string | null }>;
+    timestamp: number;
+  }
+  const undoStateRef = useRef<UndoState | null>(null);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clear undo state helper
+  const clearUndoState = useCallback(() => {
+    if (undoTimeoutRef.current) {
+      clearTimeout(undoTimeoutRef.current);
+      undoTimeoutRef.current = null;
+    }
+    undoStateRef.current = null;
+  }, []);
+
+  // Set undo state with 30s timeout
+  const setUndoWithTimeout = useCallback((state: UndoState) => {
+    clearUndoState();
+    undoStateRef.current = state;
+    undoTimeoutRef.current = setTimeout(() => {
+      undoStateRef.current = null;
+    }, 30000);
+  }, [clearUndoState]);
+
+  // Execute undo action
+  const executeUndo = useCallback(() => {
+    const undoState = undoStateRef.current;
+    if (!undoState) return;
+
+    const { action, ids, previousValues } = undoState;
+
+    // Group issues by their previous values for efficient batch updates
+    const updatesByValue = new Map<string, string[]>();
+    ids.forEach(id => {
+      const prev = previousValues.get(id);
+      if (!prev) return;
+
+      let key: string;
+      switch (action) {
+        case 'status':
+          key = `state:${prev.state}`;
+          break;
+        case 'sprint':
+          key = `sprint:${prev.sprint_id ?? 'null'}`;
+          break;
+        case 'assign':
+          key = `assignee:${prev.assignee_id ?? 'null'}`;
+          break;
+        case 'project':
+          key = `project:${prev.project_id ?? 'null'}`;
+          break;
+        default:
+          return;
+      }
+      const existing = updatesByValue.get(key) || [];
+      existing.push(id);
+      updatesByValue.set(key, existing);
+    });
+
+    // Execute each group of updates
+    updatesByValue.forEach((issueIds, key) => {
+      const [type, value] = key.split(':');
+      const actualValue = value === 'null' ? null : value;
+
+      switch (type) {
+        case 'state':
+          bulkUpdate.mutate({ ids: issueIds, action: 'update', updates: { state: actualValue as string } });
+          break;
+        case 'sprint':
+          bulkUpdate.mutate({ ids: issueIds, action: 'update', updates: { sprint_id: actualValue } });
+          break;
+        case 'assignee':
+          bulkUpdate.mutate({ ids: issueIds, action: 'update', updates: { assignee_id: actualValue } });
+          break;
+        case 'project':
+          bulkUpdate.mutate({ ids: issueIds, action: 'update', updates: { project_id: actualValue } });
+          break;
+      }
+    });
+
+    showToast('Changes undone', 'info');
+    clearUndoState();
+  }, [bulkUpdate, showToast, clearUndoState]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Selection persistence context (optional - only works when provider is present)
+  const selectionPersistence = useSelectionPersistenceOptional();
+
+  // Get initial selection from persistence context
+  const getInitialSelection = useCallback((): Set<string> => {
+    if (selectionPersistenceKey && selectionPersistence) {
+      const persisted = selectionPersistence.getSelection(selectionPersistenceKey);
+      return persisted.selectedIds;
+    }
+    return new Set();
+  }, [selectionPersistenceKey, selectionPersistence]);
+
   // Track selection state for BulkActionBar and global keyboard navigation
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(getInitialSelection);
   const selectionRef = useRef<UseSelectionReturn | null>(null);
   // Force re-render trigger for when selection ref updates (used by useGlobalListNavigation)
   const [, forceUpdate] = useState(0);
 
-  // Sync state filter with external state
+  // Persist selection changes to context
   useEffect(() => {
-    setStateFilter(initialStateFilter);
-  }, [initialStateFilter]);
+    if (selectionPersistenceKey && selectionPersistence) {
+      selectionPersistence.setSelection(selectionPersistenceKey, {
+        selectedIds,
+        lastSelectedId: null, // We don't track lastSelectedId at this level yet
+      });
+    }
+  }, [selectedIds, selectionPersistenceKey, selectionPersistence]);
+
+  // Sync state filter with external state (when not using URL sync)
+  useEffect(() => {
+    if (!stateUrlParam) {
+      setStateFilter(initialStateFilter);
+    }
+  }, [initialStateFilter, stateUrlParam]);
+
+  // Sync state filter from URL (when using URL sync)
+  useEffect(() => {
+    if (stateUrlParam) {
+      const urlValue = searchParams.get(stateUrlParam) ?? '';
+      if (urlValue !== stateFilter) {
+        setStateFilter(urlValue);
+      }
+    }
+  }, [searchParams, stateUrlParam, stateFilter]);
 
   // Compute unique programs from issues for the filter dropdown
   const programOptions = useMemo(() => {
     const programMap = new Map<string, string>();
     issues.forEach(issue => {
-      if (issue.program_id && issue.program_name) {
-        programMap.set(issue.program_id, issue.program_name);
+      const programId = getProgramId(issue);
+      const programName = getProgramTitle(issue);
+      if (programId && programName) {
+        programMap.set(programId, programName);
       }
     });
     return Array.from(programMap.entries())
@@ -229,13 +519,53 @@ export function IssuesList({
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [issues]);
 
-  // Filter issues based on state filter AND program filter
+  // Compute unique projects from issues for the filter dropdown
+  const projectOptions = useMemo(() => {
+    const projectMap = new Map<string, string>();
+    issues.forEach(issue => {
+      const projectId = getProjectId(issue);
+      const projectName = getProjectTitle(issue);
+      if (projectId && projectName) {
+        projectMap.set(projectId, projectName);
+      }
+    });
+    return Array.from(projectMap.entries())
+      .map(([id, name]) => ({ value: id, label: name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [issues]);
+
+  // Compute unique sprints from issues for the filter dropdown
+  const sprintOptions = useMemo(() => {
+    const sprintMap = new Map<string, string>();
+    issues.forEach(issue => {
+      const sprintId = getSprintId(issue);
+      const sprintName = getSprintTitle(issue);
+      if (sprintId && sprintName) {
+        sprintMap.set(sprintId, sprintName);
+      }
+    });
+    return Array.from(sprintMap.entries())
+      .map(([id, name]) => ({ value: id, label: name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [issues]);
+
+  // Filter issues based on state filter AND program/project/sprint filters
   const filteredIssues = useMemo(() => {
     let result = issues;
 
     // Apply program filter
     if (programFilter) {
-      result = result.filter(issue => issue.program_id === programFilter);
+      result = result.filter(issue => getProgramId(issue) === programFilter);
+    }
+
+    // Apply project filter
+    if (projectFilter) {
+      result = result.filter(issue => getProjectId(issue) === projectFilter);
+    }
+
+    // Apply sprint filter
+    if (sprintFilter) {
+      result = result.filter(issue => getSprintId(issue) === sprintFilter);
     }
 
     // Apply state filter
@@ -245,20 +575,78 @@ export function IssuesList({
     }
 
     return result;
-  }, [issues, stateFilter, programFilter]);
+  }, [issues, stateFilter, programFilter, projectFilter, sprintFilter]);
 
   const handleCreateIssue = useCallback(async () => {
+    // When self-fetching with context, use internal creation
+    if (shouldSelfFetch) {
+      const belongs_to = buildBelongsTo();
+      const issue = await createIssueMutation.mutateAsync({ belongs_to });
+      if (issue) {
+        navigate(`/documents/${issue.id}`);
+      }
+      return;
+    }
+    // Otherwise, use external callback
     if (!onCreateIssue) return;
     const issue = await onCreateIssue();
     if (issue) {
-      navigate(`/issues/${issue.id}`);
+      navigate(`/documents/${issue.id}`);
     }
-  }, [onCreateIssue, navigate]);
+  }, [shouldSelfFetch, buildBelongsTo, createIssueMutation, onCreateIssue, navigate]);
+
+  // Handler for adding an out-of-context issue to the current context (inline '+' button)
+  const handleAddIssueToContext = useCallback(async (issue: Issue) => {
+    const existingBelongsTo = issue.belongs_to || [];
+    const newBelongsTo = [...existingBelongsTo];
+
+    // Add context associations that aren't already present
+    if (effectiveContext.sprintId && !existingBelongsTo.some(b => b.id === effectiveContext.sprintId)) {
+      newBelongsTo.push({ id: effectiveContext.sprintId, type: 'sprint' });
+    }
+    if (effectiveContext.projectId && !existingBelongsTo.some(b => b.id === effectiveContext.projectId)) {
+      newBelongsTo.push({ id: effectiveContext.projectId, type: 'project' });
+    }
+    if (effectiveContext.programId && !existingBelongsTo.some(b => b.id === effectiveContext.programId)) {
+      newBelongsTo.push({ id: effectiveContext.programId, type: 'program' });
+    }
+
+    try {
+      const res = await apiPatch(`/api/documents/${issue.id}`, { belongs_to: newBelongsTo });
+      if (res.ok) {
+        showToast(`Added "${issue.title}" to context`, 'success');
+        // Invalidate queries to refresh
+        queryClient.invalidateQueries({ queryKey: issueKeys.all });
+        if (effectiveContext.sprintId) {
+          queryClient.invalidateQueries({ queryKey: issueKeys.list({ sprintId: effectiveContext.sprintId }) });
+        }
+        if (effectiveContext.projectId) {
+          queryClient.invalidateQueries({ queryKey: issueKeys.list({ projectId: effectiveContext.projectId }) });
+        }
+      } else {
+        showToast('Failed to add issue', 'error');
+      }
+    } catch {
+      showToast('Failed to add issue', 'error');
+    }
+  }, [effectiveContext, queryClient, showToast]);
 
   const handleFilterChange = useCallback((newFilter: string) => {
     setStateFilter(newFilter);
+    // Update URL if URL sync is enabled
+    if (stateUrlParam) {
+      setSearchParams((prev) => {
+        if (newFilter) {
+          prev.set(stateUrlParam, newFilter);
+        } else {
+          prev.delete(stateUrlParam);
+        }
+        return prev;
+      });
+    }
+    // Call external callback if provided
     onStateFilterChange?.(newFilter);
-  }, [onStateFilterChange]);
+  }, [onStateFilterChange, stateUrlParam, setSearchParams]);
 
   const handleUpdateIssue = useCallback(async (id: string, updates: { state: string }) => {
     if (onUpdateIssue) {
@@ -273,9 +661,13 @@ export function IssuesList({
     setContextMenu(null);
   }, []);
 
-  // Clear selection when filter changes
+  // Clear selection when filter changes (but not on initial mount to preserve persisted selection)
+  const prevStateFilterRef = useRef(stateFilter);
   useEffect(() => {
-    clearSelection();
+    if (prevStateFilterRef.current !== stateFilter) {
+      clearSelection();
+      prevStateFilterRef.current = stateFilter;
+    }
   }, [stateFilter, clearSelection]);
 
   // Bulk action handlers
@@ -342,24 +734,78 @@ export function IssuesList({
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
     const count = ids.length;
+    // Check if moving issues out of the current locked sprint context
+    const movingOutOfView = lockedSprintId && sprintId !== lockedSprintId;
+
+    // Save previous values for undo
+    const previousValues = new Map<string, { sprint_id: string | null }>();
+    ids.forEach(id => {
+      const issue = issues.find(i => i.id === id);
+      if (issue) {
+        previousValues.set(id, { sprint_id: getSprintId(issue) ?? null });
+      }
+    });
+
     bulkUpdate.mutate({ ids, action: 'update', updates: { sprint_id: sprintId } }, {
-      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} moved`, 'success'),
+      onSuccess: () => {
+        // Set up undo state
+        setUndoWithTimeout({
+          action: 'sprint',
+          ids,
+          previousValues,
+          timestamp: Date.now(),
+        });
+
+        const sprintName = sprintId
+          ? availableSprints.find(s => s.id === sprintId)?.name || 'week'
+          : 'No Week';
+        const message = movingOutOfView
+          ? `${count} issue${count === 1 ? '' : 's'} moved out of this view`
+          : `${count} issue${count === 1 ? '' : 's'} assigned to ${sprintName}`;
+        showToast(message, movingOutOfView ? 'info' : 'success', 5000, {
+          label: 'Undo',
+          onClick: executeUndo,
+        });
+      },
       onError: () => showToast('Failed to move issues', 'error'),
     });
     clearSelection();
-  }, [selectedIds, bulkUpdate, showToast, clearSelection]);
+  }, [selectedIds, issues, bulkUpdate, showToast, clearSelection, lockedSprintId, setUndoWithTimeout, executeUndo, availableSprints]);
 
   const handleBulkChangeStatus = useCallback((status: string) => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
     const count = ids.length;
     const statusLabel = STATE_LABELS[status] || status;
+
+    // Save previous values for undo
+    const previousValues = new Map<string, { state: string }>();
+    ids.forEach(id => {
+      const issue = issues.find(i => i.id === id);
+      if (issue) {
+        previousValues.set(id, { state: issue.state });
+      }
+    });
+
     bulkUpdate.mutate({ ids, action: 'update', updates: { state: status } }, {
-      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} changed to ${statusLabel}`, 'success'),
+      onSuccess: () => {
+        // Set up undo state
+        setUndoWithTimeout({
+          action: 'status',
+          ids,
+          previousValues,
+          timestamp: Date.now(),
+        });
+
+        showToast(`${count} issue${count === 1 ? '' : 's'} changed to ${statusLabel}`, 'success', 5000, {
+          label: 'Undo',
+          onClick: executeUndo,
+        });
+      },
       onError: () => showToast('Failed to update issues', 'error'),
     });
     clearSelection();
-  }, [selectedIds, bulkUpdate, showToast, clearSelection]);
+  }, [selectedIds, issues, bulkUpdate, showToast, clearSelection, setUndoWithTimeout, executeUndo]);
 
   const handleBulkAssign = useCallback((assigneeId: string | null) => {
     const ids = Array.from(selectedIds);
@@ -368,12 +814,35 @@ export function IssuesList({
     const teamMember = assigneeId ? teamMembers.find(m => m.id === assigneeId) : null;
     const assigneeName = teamMember?.name || 'Unassigned';
     const userId = teamMember?.user_id || null;
+
+    // Save previous values for undo
+    const previousValues = new Map<string, { assignee_id: string | null }>();
+    ids.forEach(id => {
+      const issue = issues.find(i => i.id === id);
+      if (issue) {
+        previousValues.set(id, { assignee_id: issue.assignee_id ?? null });
+      }
+    });
+
     bulkUpdate.mutate({ ids, action: 'update', updates: { assignee_id: userId } }, {
-      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} assigned to ${assigneeName}`, 'success'),
+      onSuccess: () => {
+        // Set up undo state
+        setUndoWithTimeout({
+          action: 'assign',
+          ids,
+          previousValues,
+          timestamp: Date.now(),
+        });
+
+        showToast(`${count} issue${count === 1 ? '' : 's'} assigned to ${assigneeName}`, 'success', 5000, {
+          label: 'Undo',
+          onClick: executeUndo,
+        });
+      },
       onError: () => showToast('Failed to assign issues', 'error'),
     });
     clearSelection();
-  }, [selectedIds, teamMembers, bulkUpdate, showToast, clearSelection]);
+  }, [selectedIds, issues, teamMembers, bulkUpdate, showToast, clearSelection, setUndoWithTimeout, executeUndo]);
 
   const handleBulkAssignProject = useCallback((projectId: string | null) => {
     const ids = Array.from(selectedIds);
@@ -381,12 +850,40 @@ export function IssuesList({
     const count = ids.length;
     const project = projectId ? projects.find(p => p.id === projectId) : null;
     const projectName = project?.title || 'No Project';
+    // Check if moving issues out of the current locked context
+    const movingOutOfView = lockedProjectId && projectId !== lockedProjectId;
+
+    // Save previous values for undo
+    const previousValues = new Map<string, { project_id: string | null }>();
+    ids.forEach(id => {
+      const issue = issues.find(i => i.id === id);
+      if (issue) {
+        previousValues.set(id, { project_id: getProjectId(issue) ?? null });
+      }
+    });
+
     bulkUpdate.mutate({ ids, action: 'update', updates: { project_id: projectId } }, {
-      onSuccess: () => showToast(`${count} issue${count === 1 ? '' : 's'} assigned to ${projectName}`, 'success'),
+      onSuccess: () => {
+        // Set up undo state
+        setUndoWithTimeout({
+          action: 'project',
+          ids,
+          previousValues,
+          timestamp: Date.now(),
+        });
+
+        const message = movingOutOfView
+          ? `${count} issue${count === 1 ? '' : 's'} moved out of this view`
+          : `${count} issue${count === 1 ? '' : 's'} assigned to ${projectName}`;
+        showToast(message, movingOutOfView ? 'info' : 'success', 5000, {
+          label: 'Undo',
+          onClick: executeUndo,
+        });
+      },
       onError: () => showToast('Failed to assign issues to project', 'error'),
     });
     clearSelection();
-  }, [selectedIds, projects, bulkUpdate, showToast, clearSelection]);
+  }, [selectedIds, issues, projects, bulkUpdate, showToast, clearSelection, lockedProjectId, setUndoWithTimeout, executeUndo]);
 
   // Handle promote to project
   const handlePromoteToProject = useCallback((issue: Issue) => {
@@ -407,7 +904,7 @@ export function IssuesList({
           queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
         ]);
         showToast(`Issue promoted to project: ${convertingIssue.title}`, 'success');
-        navigate(`/projects/${data.id}`, { replace: true });
+        navigate(`/documents/${data.id}`, { replace: true });
       } else {
         const error = await res.json();
         showToast(error.error || 'Failed to convert issue to project', 'error');
@@ -435,7 +932,7 @@ export function IssuesList({
     selectionRef: selectionRef,
     enabled: enableKeyboardNavigation && viewMode === 'list',
     onEnter: useCallback((focusedId: string) => {
-      navigate(`/issues/${focusedId}`);
+      navigate(`/documents/${focusedId}`);
     }, [navigate]),
   });
 
@@ -486,18 +983,27 @@ export function IssuesList({
     setContextMenu({ x: e.clientX, y: e.clientY, selection });
   }, []);
 
+  // Determine if create functionality should be enabled
+  // Either external callback is provided OR component is self-fetching with context
+  const canCreateIssue = Boolean(onCreateIssue || shouldSelfFetch);
+
   // Global keyboard shortcuts
   useEffect(() => {
-    if (!onCreateIssue) return;
-
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
       }
 
+      // Cmd/Ctrl+Z to undo last bulk action
+      if (e.key === 'z' && (e.metaKey || e.ctrlKey) && !e.shiftKey && undoStateRef.current) {
+        e.preventDefault();
+        executeUndo();
+        return;
+      }
+
       // "c" to create issue
-      if (e.key === 'c' && !e.metaKey && !e.ctrlKey) {
+      if (e.key === 'c' && !e.metaKey && !e.ctrlKey && canCreateIssue) {
         e.preventDefault();
         handleCreateIssue();
       }
@@ -505,18 +1011,47 @@ export function IssuesList({
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleCreateIssue, onCreateIssue]);
+  }, [handleCreateIssue, canCreateIssue, executeUndo]);
+
+  // Handler for inline sprint assignment changes
+  const handleInlineSprintChange = useCallback((issueId: string, sprintId: string | null) => {
+    updateIssueMutation.mutate(
+      { id: issueId, updates: { sprint_id: sprintId } as Partial<Issue> },
+      {
+        onSuccess: () => {
+          const sprintName = sprintId
+            ? availableSprints.find(s => s.id === sprintId)?.name || 'week'
+            : 'No Week';
+          showToast(`Issue moved to ${sprintName}`, 'success');
+        },
+        onError: () => {
+          showToast('Failed to update week', 'error');
+        },
+      }
+    );
+  }, [updateIssueMutation, availableSprints, showToast]);
 
   // Render function for issue rows
-  const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => (
-    <IssueRowContent issue={issue} isSelected={isSelected} visibleColumns={visibleColumns} />
-  ), [visibleColumns]);
+  const renderIssueRow = useCallback((issue: Issue, { isSelected }: RowRenderProps) => {
+    const isOutOfContext = allowShowAllIssues && showAllIssues && !inContextIds.has(issue.id);
+    return (
+      <IssueRowContent
+        issue={issue}
+        isSelected={isSelected}
+        visibleColumns={visibleColumns}
+        sprints={enableInlineSprintAssignment ? availableSprints : undefined}
+        onSprintChange={enableInlineSprintAssignment ? handleInlineSprintChange : undefined}
+        isOutOfContext={isOutOfContext}
+        onAddToContext={isOutOfContext ? () => handleAddIssueToContext(issue) : undefined}
+      />
+    );
+  }, [visibleColumns, enableInlineSprintAssignment, availableSprints, handleInlineSprintChange, allowShowAllIssues, showAllIssues, inContextIds, handleAddIssueToContext]);
 
   // Default empty state
   const defaultEmptyState = useMemo(() => (
     <div className="text-center">
       <p className="text-muted">No issues found</p>
-      {onCreateIssue && (
+      {canCreateIssue && (
         <button
           onClick={handleCreateIssue}
           className="mt-2 text-sm text-accent hover:underline"
@@ -525,14 +1060,14 @@ export function IssuesList({
         </button>
       )}
     </div>
-  ), [handleCreateIssue, onCreateIssue]);
+  ), [handleCreateIssue, canCreateIssue]);
 
   if (loading) {
     return <IssuesListSkeleton />;
   }
 
-  // Program filter for toolbar
-  const programFilterContent = showProgramFilter && programOptions.length > 0 ? (
+  // Program filter for toolbar (hidden when locked)
+  const programFilterContent = showProgramFilter && !lockedProgramId && programOptions.length > 0 ? (
     <div className="w-40">
       <Combobox
         options={programOptions}
@@ -547,30 +1082,119 @@ export function IssuesList({
     </div>
   ) : null;
 
+  // Project filter for toolbar (hidden when locked)
+  const projectFilterContent = showProjectFilter && !lockedProjectId && projectOptions.length > 0 ? (
+    <div className="w-40">
+      <Combobox
+        options={projectOptions}
+        value={projectFilter}
+        onChange={setProjectFilter}
+        placeholder="All Projects"
+        aria-label="Filter issues by project"
+        id={`${storageKeyPrefix}-project-filter`}
+        allowClear={true}
+        clearLabel="All Projects"
+      />
+    </div>
+  ) : null;
+
+  // Sprint filter for toolbar (hidden when locked)
+  const sprintFilterContent = showSprintFilter && !lockedSprintId && sprintOptions.length > 0 ? (
+    <div className="w-40">
+      <Combobox
+        options={sprintOptions}
+        value={sprintFilter}
+        onChange={setSprintFilter}
+        placeholder="All Weeks"
+        aria-label="Filter issues by week"
+        id={`${storageKeyPrefix}-sprint-filter`}
+        allowClear={true}
+        clearLabel="All Weeks"
+      />
+    </div>
+  ) : null;
+
+  // Combine all filter content
+  const combinedFilterContent = (programFilterContent || projectFilterContent || sprintFilterContent || toolbarContent) ? (
+    <div className="flex items-center gap-2">
+      {programFilterContent}
+      {projectFilterContent}
+      {sprintFilterContent}
+      {toolbarContent}
+    </div>
+  ) : null;
+
   return (
     <div className={cn('flex h-full flex-col', className)}>
       {/* Header */}
       {!hideHeader && (
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          {headerContent || <div />}
-          <DocumentListToolbar
-            sortOptions={SORT_OPTIONS}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            viewModes={viewModes}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            allColumns={ALL_COLUMNS}
-            visibleColumns={visibleColumns}
-            onToggleColumn={toggleColumn}
-            hiddenCount={hiddenCount}
-            showColumnPicker={viewMode === 'list'}
-            filterContent={programFilterContent || toolbarContent}
-            createButton={showCreateButton && onCreateIssue ? {
-              label: createButtonLabel,
-              onClick: handleCreateIssue
-            } : undefined}
-          />
+        <div className="flex items-center justify-between border-b border-border px-6 py-4 gap-4">
+          {headerContent || <div className="flex-shrink-0" />}
+          <div className="flex items-center gap-3">
+            {/* Scrollable toolbar section */}
+            <div className="flex items-center gap-2 overflow-x-auto flex-shrink min-w-0">
+              <DocumentListToolbar
+                sortOptions={SORT_OPTIONS}
+                sortBy={sortBy}
+                onSortChange={setSortBy}
+                viewModes={viewModes}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+                allColumns={ALL_COLUMNS}
+                visibleColumns={visibleColumns}
+                onToggleColumn={toggleColumn}
+                hiddenCount={hiddenCount}
+                showColumnPicker={viewMode === 'list'}
+                filterContent={combinedFilterContent}
+              />
+              {/* Add from Backlog button - text collapses on small screens */}
+              {showBacklogPicker && (effectiveContext.sprintId || effectiveContext.projectId || effectiveContext.programId) && (
+                <button
+                  onClick={() => setIsBacklogPickerOpen(true)}
+                  className="rounded-md border border-border px-2 py-1.5 text-sm text-muted hover:text-foreground hover:bg-border/30 transition-colors flex items-center gap-1.5 flex-shrink-0"
+                  title="Add from Backlog"
+                >
+                  <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  <span className="hidden lg:inline whitespace-nowrap">Add from Backlog</span>
+                </button>
+              )}
+              {/* Show All Issues toggle - text collapses on small screens */}
+              {allowShowAllIssues && shouldSelfFetch && (
+                <button
+                  onClick={() => setShowAllIssues(!showAllIssues)}
+                  className={cn(
+                    "rounded-md border px-2 py-1.5 text-sm transition-colors flex items-center gap-1.5 flex-shrink-0",
+                    showAllIssues
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-border text-muted hover:text-foreground hover:bg-border/30"
+                  )}
+                  aria-pressed={showAllIssues}
+                  title={showAllIssues ? "Showing all issues - click to show only in-context" : "Click to show all issues"}
+                >
+                  <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {showAllIssues ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    )}
+                  </svg>
+                  <span className="hidden lg:inline whitespace-nowrap">{showAllIssues ? "All Issues" : "In Context"}</span>
+                </button>
+              )}
+            </div>
+            {/* Fixed Create button - always visible on the right */}
+            {showCreateButton && canCreateIssue && (
+              <button
+                onClick={handleCreateIssue}
+                className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 transition-colors flex-shrink-0 whitespace-nowrap"
+                data-testid={createButtonTestId}
+              >
+                {createButtonLabel}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -585,6 +1209,7 @@ export function IssuesList({
           onMoveToSprint={handleBulkMoveToSprint}
           onAssign={handleBulkAssign}
           onAssignProject={handleBulkAssignProject}
+          sprints={availableSprints}
           teamMembers={teamMembers}
           projects={projects}
           loading={bulkUpdate.isPending}
@@ -603,22 +1228,23 @@ export function IssuesList({
         <KanbanBoard
           issues={filteredIssues}
           onUpdateIssue={handleUpdateIssue}
-          onIssueClick={(id) => navigate(`/issues/${id}`)}
+          onIssueClick={(id) => navigate(`/documents/${id}`)}
           selectedIds={selectedIds}
           onCheckboxClick={handleKanbanCheckboxClick}
           onContextMenu={handleKanbanContextMenu}
         />
       ) : (
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto pb-20">
           <SelectableList
             items={filteredIssues}
             renderRow={renderIssueRow}
             columns={columns}
             emptyState={emptyState || defaultEmptyState}
-            onItemClick={(issue) => navigate(`/issues/${issue.id}`)}
+            onItemClick={(issue) => navigate(`/documents/${issue.id}`)}
             onSelectionChange={handleSelectionChange}
             onContextMenu={handleContextMenu}
             ariaLabel="Issues list"
+            initialSelectedIds={selectedIds}
           />
         </div>
       )}
@@ -639,8 +1265,8 @@ export function IssuesList({
             <ContextMenuItem onClick={() => handleBulkChangeStatus('in_progress')}>In Progress</ContextMenuItem>
             <ContextMenuItem onClick={() => handleBulkChangeStatus('done')}>Done</ContextMenuItem>
           </ContextMenuSubmenu>
-          <ContextMenuSubmenu label="Move to Sprint">
-            <ContextMenuItem onClick={() => handleBulkMoveToSprint(null)}>No Sprint</ContextMenuItem>
+          <ContextMenuSubmenu label="Move to Week">
+            <ContextMenuItem onClick={() => handleBulkMoveToSprint(null)}>No Week</ContextMenuItem>
           </ContextMenuSubmenu>
           {showPromoteToProject && contextMenu.selection.selectedCount === 1 && (
             <>
@@ -674,94 +1300,29 @@ export function IssuesList({
           isConverting={isConverting}
         />
       )}
-    </div>
-  );
-}
 
-// Conversion dialog for promoting issues to projects
-interface ConversionDialogProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConvert: () => void;
-  sourceType: 'issue' | 'project';
-  title: string;
-  isConverting?: boolean;
-}
-
-function ConversionDialog({ isOpen, onClose, onConvert, sourceType, title, isConverting }: ConversionDialogProps) {
-  useEffect(() => {
-    if (!isOpen || isConverting) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isConverting, onClose]);
-
-  if (!isOpen) return null;
-
-  const targetType = sourceType === 'issue' ? 'project' : 'issue';
-  const actionLabel = sourceType === 'issue' ? 'Promote to Project' : 'Convert to Issue';
-
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget && !isConverting) {
-      onClose();
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" onClick={handleBackdropClick}>
-      <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold text-foreground">{actionLabel}</h2>
-        <p className="mb-4 text-sm text-foreground">
-          Convert <strong>"{title}"</strong> from {sourceType} to {targetType}?
-        </p>
-        <div className="mb-4 rounded bg-amber-500/10 border border-amber-500/30 p-3">
-          <p className="text-sm text-amber-300 font-medium mb-2">What will happen:</p>
-          <ul className="text-xs text-muted space-y-1">
-            <li>• A new {targetType} will be created with the same title and content</li>
-            <li>• The original {sourceType} will be archived</li>
-            <li>• Links to the old {sourceType} will redirect to the new {targetType}</li>
-            {sourceType === 'issue' && (
-              <li>• Issue properties (state, priority, assignee) will be reset</li>
-            )}
-            {sourceType === 'project' && (
-              <>
-                <li>• Project properties (ICE scores, owner) will be reset</li>
-                <li>• Child issues will be orphaned (unlinked from project)</li>
-              </>
-            )}
-          </ul>
-        </div>
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            disabled={isConverting}
-            className="rounded px-3 py-1.5 text-sm text-muted hover:text-foreground transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConvert}
-            disabled={isConverting}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50 transition-colors flex items-center gap-2"
-          >
-            {isConverting ? (
-              <>
-                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Converting...
-              </>
-            ) : (
-              actionLabel
-            )}
-          </button>
-        </div>
-      </div>
+      {/* Backlog picker modal for adding existing issues */}
+      {showBacklogPicker && (
+        <BacklogPickerModal
+          isOpen={isBacklogPickerOpen}
+          onClose={() => setIsBacklogPickerOpen(false)}
+          context={{
+            sprintId: effectiveContext.sprintId,
+            projectId: effectiveContext.projectId,
+            programId: effectiveContext.programId,
+          }}
+          onIssuesAdded={() => {
+            // Invalidate queries to refresh the issues list
+            queryClient.invalidateQueries({ queryKey: issueKeys.all });
+            if (effectiveContext.sprintId) {
+              queryClient.invalidateQueries({ queryKey: issueKeys.list({ sprintId: effectiveContext.sprintId }) });
+            }
+            if (effectiveContext.projectId) {
+              queryClient.invalidateQueries({ queryKey: issueKeys.list({ projectId: effectiveContext.projectId }) });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -773,43 +1334,82 @@ interface IssueRowContentProps {
   issue: Issue;
   isSelected: boolean;
   visibleColumns: Set<string>;
+  sprints?: { id: string; name: string }[];
+  onSprintChange?: (issueId: string, sprintId: string | null) => void;
+  /** Whether this issue is outside the current filter context (for inline add feature) */
+  isOutOfContext?: boolean;
+  /** Handler to add this issue to the current context */
+  onAddToContext?: () => void;
 }
 
-function IssueRowContent({ issue, visibleColumns }: IssueRowContentProps) {
+function IssueRowContent({ issue, visibleColumns, sprints, onSprintChange, isOutOfContext, onAddToContext }: IssueRowContentProps) {
+  // Apply reduced opacity to out-of-context issues
+  const cellClass = isOutOfContext ? 'opacity-50' : '';
+
   return (
     <>
       {visibleColumns.has('id') && (
-        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+        <td className={cn("px-4 py-3 text-sm text-muted", cellClass)} role="gridcell">
           #{issue.ticket_number}
         </td>
       )}
       {visibleColumns.has('title') && (
-        <td className="px-4 py-3 text-sm text-foreground" role="gridcell">
-          {issue.title}
+        <td className={cn("px-4 py-3 text-sm text-foreground", cellClass)} role="gridcell">
+          <div className="flex items-center gap-2">
+            <span className="truncate">{issue.title}</span>
+            {isOutOfContext && onAddToContext && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddToContext();
+                }}
+                className="flex-shrink-0 p-1 rounded hover:bg-accent/20 text-accent opacity-100 transition-colors"
+                title="Add to current context"
+                aria-label={`Add "${issue.title}" to context`}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </button>
+            )}
+          </div>
         </td>
       )}
       {visibleColumns.has('status') && (
-        <td className="px-4 py-3" role="gridcell">
+        <td className={cn("px-4 py-3", cellClass)} role="gridcell">
           <StatusBadge state={issue.state} />
         </td>
       )}
       {visibleColumns.has('source') && (
-        <td className="px-4 py-3" role="gridcell">
+        <td className={cn("px-4 py-3", cellClass)} role="gridcell">
           <SourceBadge source={issue.source} />
         </td>
       )}
       {visibleColumns.has('program') && (
-        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
-          {issue.program_name || '—'}
+        <td className={cn("px-4 py-3 text-sm text-muted", cellClass)} role="gridcell">
+          {getProgramTitle(issue) || '—'}
+        </td>
+      )}
+      {visibleColumns.has('sprint') && (
+        <td className={cn("px-4 py-3 text-sm text-muted", cellClass)} role="gridcell">
+          {sprints && onSprintChange ? (
+            <InlineWeekSelector
+              value={getSprintId(issue)}
+              sprints={sprints}
+              onChange={(sprintId) => onSprintChange(issue.id, sprintId)}
+            />
+          ) : (
+            getSprintTitle(issue) || '—'
+          )}
         </td>
       )}
       {visibleColumns.has('priority') && (
-        <td className="px-4 py-3" role="gridcell">
+        <td className={cn("px-4 py-3", cellClass)} role="gridcell">
           <PriorityBadge priority={issue.priority} />
         </td>
       )}
       {visibleColumns.has('assignee') && (
-        <td className={cn("px-4 py-3 text-sm text-muted", issue.assignee_archived && "opacity-50")} role="gridcell">
+        <td className={cn("px-4 py-3 text-sm text-muted", cellClass, issue.assignee_archived && "opacity-50")} role="gridcell">
           {issue.assignee_name ? (
             <>
               {issue.assignee_name}{issue.assignee_archived && ' (archived)'}
@@ -818,7 +1418,7 @@ function IssueRowContent({ issue, visibleColumns }: IssueRowContentProps) {
         </td>
       )}
       {visibleColumns.has('updated') && (
-        <td className="px-4 py-3 text-sm text-muted" role="gridcell">
+        <td className={cn("px-4 py-3 text-sm text-muted", cellClass)} role="gridcell">
           {issue.updated_at ? formatDate(issue.updated_at) : '-'}
         </td>
       )}

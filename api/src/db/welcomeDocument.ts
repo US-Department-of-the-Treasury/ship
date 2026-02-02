@@ -129,12 +129,22 @@ export const WELCOME_DOCUMENT_CONTENT = {
     {
       type: 'paragraph',
       content: [
-        { type: 'text', text: 'Issues flow through four statuses:' },
+        { type: 'text', text: 'Issues flow through these statuses:' },
       ],
     },
     {
       type: 'bulletList',
       content: [
+        {
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [
+              { type: 'text', marks: [{ type: 'bold' }], text: 'Triage' },
+              { type: 'text', text: ' — External feedback awaiting review' },
+            ],
+          }],
+        },
         {
           type: 'listItem',
           content: [{
@@ -170,8 +180,28 @@ export const WELCOME_DOCUMENT_CONTENT = {
           content: [{
             type: 'paragraph',
             content: [
+              { type: 'text', marks: [{ type: 'bold' }], text: 'In Review' },
+              { type: 'text', text: ' — Work complete, awaiting review or approval' },
+            ],
+          }],
+        },
+        {
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [
               { type: 'text', marks: [{ type: 'bold' }], text: 'Done' },
-              { type: 'text', text: ' — Work is complete' },
+              { type: 'text', text: ' — Work is complete and approved' },
+            ],
+          }],
+        },
+        {
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [
+              { type: 'text', marks: [{ type: 'bold' }], text: 'Cancelled' },
+              { type: 'text', text: ' — Work deprioritized or no longer needed' },
             ],
           }],
         },
@@ -186,16 +216,16 @@ export const WELCOME_DOCUMENT_CONTENT = {
       ],
     },
 
-    // Sprint Board vs List View
+    // Week Board vs List View
     {
       type: 'heading',
       attrs: { level: 3 },
-      content: [{ type: 'text', text: 'Sprint Board vs List View' }],
+      content: [{ type: 'text', text: 'Week Board vs List View' }],
     },
     {
       type: 'paragraph',
       content: [
-        { type: 'text', text: 'Ship offers two ways to view your sprint:' },
+        { type: 'text', text: 'Ship offers two ways to view your week:' },
       ],
     },
     {
@@ -207,7 +237,7 @@ export const WELCOME_DOCUMENT_CONTENT = {
             type: 'paragraph',
             content: [
               { type: 'text', marks: [{ type: 'bold' }], text: 'Board view' },
-              { type: 'text', text: ' — Kanban-style columns (Backlog | Todo | In Progress | Done). Drag issues between columns to change status.' },
+              { type: 'text', text: ' — Kanban-style columns (Backlog | Todo | In Progress | In Review | Done). Drag issues between columns to change status.' },
             ],
           }],
         },
@@ -454,11 +484,11 @@ export const WELCOME_DOCUMENT_CONTENT = {
       ],
     },
 
-    // Sprint Planning
+    // Week Planning
     {
       type: 'heading',
       attrs: { level: 3 },
-      content: [{ type: 'text', text: 'Setting Up a Sprint' }],
+      content: [{ type: 'text', text: 'Setting Up a Week' }],
     },
     {
       type: 'orderedList',
@@ -469,7 +499,7 @@ export const WELCOME_DOCUMENT_CONTENT = {
             type: 'paragraph',
             content: [
               { type: 'text', text: 'Open a program → Click the ' },
-              { type: 'text', marks: [{ type: 'bold' }], text: 'Sprints tab' },
+              { type: 'text', marks: [{ type: 'bold' }], text: 'Weeks tab' },
             ],
           }],
         },
@@ -479,7 +509,7 @@ export const WELCOME_DOCUMENT_CONTENT = {
             type: 'paragraph',
             content: [
               { type: 'text', text: 'Click ' },
-              { type: 'text', marks: [{ type: 'bold' }], text: '+ New Sprint' },
+              { type: 'text', marks: [{ type: 'bold' }], text: '+ New Week' },
               { type: 'text', text: ' and set start/end dates (typically 2 weeks)' },
             ],
           }],
@@ -489,18 +519,18 @@ export const WELCOME_DOCUMENT_CONTENT = {
           content: [{
             type: 'paragraph',
             content: [
-              { type: 'text', text: 'Drag issues from the backlog into the sprint, or set the Sprint property on individual issues' },
+              { type: 'text', text: 'Drag issues from the backlog into the week, or set the Week property on individual issues' },
             ],
           }],
         },
       ],
     },
 
-    // Sprint Documentation
+    // Week Documentation
     {
       type: 'heading',
       attrs: { level: 3 },
-      content: [{ type: 'text', text: 'Sprint Plan and Retro Documents' }],
+      content: [{ type: 'text', text: 'Weekly Plan and Retro Documents' }],
     },
     {
       type: 'paragraph',
@@ -520,8 +550,8 @@ export const WELCOME_DOCUMENT_CONTENT = {
           content: [{
             type: 'paragraph',
             content: [
-              { type: 'text', marks: [{ type: 'bold' }], text: 'Sprint Plan' },
-              { type: 'text', text: ' (write at sprint start): What do you expect to accomplish? What\'s the hypothesis?' },
+              { type: 'text', marks: [{ type: 'bold' }], text: 'Weekly Plan' },
+              { type: 'text', text: ' (write at week start): What do you expect to accomplish? What\'s the hypothesis?' },
             ],
           }],
         },
@@ -530,8 +560,8 @@ export const WELCOME_DOCUMENT_CONTENT = {
           content: [{
             type: 'paragraph',
             content: [
-              { type: 'text', marks: [{ type: 'bold' }], text: 'Sprint Retro' },
-              { type: 'text', text: ' (write at sprint end): What actually happened? What did you learn? What will you do differently?' },
+              { type: 'text', marks: [{ type: 'bold' }], text: 'Weekly Retro' },
+              { type: 'text', text: ' (write at week end): What actually happened? What did you learn? What will you do differently?' },
             ],
           }],
         },
@@ -581,7 +611,7 @@ export const WELCOME_DOCUMENT_CONTENT = {
           content: [{
             type: 'paragraph',
             content: [
-              { type: 'text', marks: [{ type: 'bold' }], text: 'Sprint completion rate' },
+              { type: 'text', marks: [{ type: 'bold' }], text: 'Week completion rate' },
               { type: 'text', text: ' — Are teams finishing what they committed to?' },
             ],
           }],

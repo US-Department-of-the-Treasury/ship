@@ -2,8 +2,9 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
-import { handleVisibilityChange, handleDocumentConversion } from '../collaboration/index.js';
+import { handleVisibilityChange, handleDocumentConversion, invalidateDocumentCache, broadcastToUser } from '../collaboration/index.js';
 import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, extractVisionFromContent, extractGoalsFromContent, checkDocumentCompleteness } from '../utils/extractHypothesis.js';
+import { loadContentFromYjsState } from '../utils/yjsConverter.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -42,13 +43,17 @@ async function canAccessDocument(
 // Validation schemas
 const createDocumentSchema = z.object({
   title: z.string().min(1).max(255).optional().default('Untitled'),
-  document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'sprint_plan', 'sprint_retro']).optional().default('wiki'),
+  document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'weekly_plan', 'weekly_retro']).optional().default('wiki'),
   parent_id: z.string().uuid().optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
   properties: z.record(z.unknown()).optional(),
   visibility: z.enum(['private', 'workspace']).optional(),
   content: z.any().optional(),
+  belongs_to: z.array(z.object({
+    id: z.string().uuid(),
+    type: z.enum(['program', 'project', 'sprint', 'parent']),
+  })).optional(),
 });
 
 const updateDocumentSchema = z.object({
@@ -77,11 +82,18 @@ const updateDocumentSchema = z.object({
   ease: z.number().min(1).max(10).nullable().optional(),
   color: z.string().optional(),
   owner_id: z.string().uuid().nullable().optional(),
+  // RACI fields for projects and programs (stored in properties)
+  accountable_id: z.string().uuid().nullable().optional(), // A - Accountable (approver)
+  consulted_ids: z.array(z.string().uuid()).optional(), // C - Consulted (provide input)
+  informed_ids: z.array(z.string().uuid()).optional(), // I - Informed (kept in loop)
+  // Common association fields (shared across document types)
+  program_id: z.string().uuid().nullable().optional(),
+  sprint_id: z.string().uuid().nullable().optional(),
   // Sprint-specific fields (stored in properties but accepted at top level)
-  start_date: z.string().optional(),
-  end_date: z.string().optional(),
-  sprint_status: z.enum(['planning', 'active', 'completed']).optional(),
-  goal: z.string().optional(),
+  // Note: start_date/end_date are computed from sprint_number + workspace.sprint_start_date
+  status: z.enum(['planning', 'active', 'completed']).optional(),
+  hypothesis: z.string().optional(),
+  plan: z.string().optional(), // Alias for hypothesis (frontend sends 'plan', stored as 'plan' in properties)
 });
 
 // List documents
@@ -96,7 +108,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
     let query = `
       SELECT id, workspace_id, document_type, title, parent_id, position,
-             program_id, project_id, sprint_id, ticket_number, properties,
+             ticket_number, properties,
              created_at, updated_at, created_by, visibility
       FROM documents
       WHERE workspace_id = $1
@@ -230,8 +242,10 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Check if document was converted - redirect to new document
-    if (doc.converted_to_id) {
+    // LEGACY: Handle old-style conversions that created new documents
+    // New conversions (2024+) use in-place updates with snapshots, so converted_to_id won't be set.
+    // This redirect only applies to documents converted before the in-place model was implemented.
+    if (doc.converted_to_id && doc.converted_to_id !== doc.id) {
       // Fetch the new document to determine its type for proper routing
       const newDocResult = await pool.query(
         'SELECT id, document_type FROM documents WHERE id = $1 AND workspace_id = $2',
@@ -241,7 +255,6 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       if (newDocResult.rows.length > 0) {
         const newDoc = newDocResult.rows[0];
         // Return 301 with Location header to the new document's API endpoint
-        // Include X-Converted-Type header so frontend knows the target type for routing
         res.set('X-Converted-Type', newDoc.document_type);
         res.set('X-Converted-To', newDoc.id);
         res.redirect(301, `/api/documents/${newDoc.id}`);
@@ -251,9 +264,53 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const props = doc.properties || {};
 
-    // Get belongs_to associations from junction table (for issues and other document types)
+    // Get owner details for projects (owner_id is a user_id, lookup person document by user_id)
+    // Return user_id as id so PersonCombobox can match correctly
+    let owner: { id: string; name: string; email: string } | null = null;
+    if (doc.document_type === 'project' && props.owner_id) {
+      const ownerResult = await pool.query(
+        `SELECT (d.properties->>'user_id')::text as id, d.title as name, COALESCE(d.properties->>'email', u.email) as email
+         FROM documents d
+         LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
+         WHERE (d.properties->>'user_id')::uuid = $1 AND d.workspace_id = $2 AND d.document_type = 'person'`,
+        [props.owner_id, workspaceId]
+      );
+      if (ownerResult.rows.length > 0) {
+        owner = ownerResult.rows[0];
+      }
+    }
+
+    // Get owner details for sprints (owner stored in assignee_ids[0], consistent with sprints API)
+    // Return user_id as id so Combobox can match correctly
+    if (doc.document_type === 'sprint' && Array.isArray(props.assignee_ids) && props.assignee_ids[0]) {
+      const ownerResult = await pool.query(
+        `SELECT u.id::text as id, d.title as name, COALESCE(d.properties->>'email', u.email) as email
+         FROM users u
+         LEFT JOIN documents d ON (d.properties->>'user_id')::uuid = u.id AND d.document_type = 'person' AND d.workspace_id = $2
+         WHERE u.id = $1`,
+        [props.assignee_ids[0], workspaceId]
+      );
+      if (ownerResult.rows.length > 0) {
+        owner = ownerResult.rows[0];
+      }
+    }
+
+    // Compute title for weekly_plan/weekly_retro documents (includes person name for entity reference)
+    let computedTitle = doc.title;
+    if ((doc.document_type === 'weekly_plan' || doc.document_type === 'weekly_retro') && props.person_id) {
+      const personResult = await pool.query(
+        `SELECT title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'person'`,
+        [props.person_id, workspaceId]
+      );
+      if (personResult.rows.length > 0) {
+        const personName = personResult.rows[0].title;
+        computedTitle = `${doc.title} - ${personName}`;
+      }
+    }
+
+    // Get belongs_to associations from junction table (for issues, wikis, sprints, and projects)
     let belongs_to: Array<{ id: string; type: string; title?: string; color?: string }> = [];
-    if (doc.document_type === 'issue' || doc.document_type === 'wiki') {
+    if (doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint' || doc.document_type === 'project') {
       const assocResult = await pool.query(
         `SELECT da.related_id as id, da.relationship_type as type,
                 d.title, (d.properties->>'color') as color
@@ -273,19 +330,36 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Return with flattened properties for backwards compatibility
     res.json({
       ...doc,
+      // Use computed title for weekly_plan/weekly_retro (includes person name)
+      title: computedTitle,
+      // Issue properties
       state: props.state,
       priority: props.priority,
       estimate: props.estimate,
       assignee_id: props.assignee_id,
       source: props.source,
+      // Project properties
+      impact: props.impact,
+      confidence: props.confidence,
+      ease: props.ease,
+      // For sprints, owner is stored in assignee_ids[0] (consistent with sprints API)
+      owner_id: doc.document_type === 'sprint' && Array.isArray(props.assignee_ids)
+        ? props.assignee_ids[0] || null
+        : props.owner_id,
+      owner,
+      // RACI properties (for projects and programs)
+      accountable_id: props.accountable_id || null,
+      consulted_ids: props.consulted_ids || [],
+      informed_ids: props.informed_ids || [],
+      // Generic properties
       prefix: props.prefix,
       color: props.color,
-      start_date: props.start_date,
-      end_date: props.end_date,
-      sprint_status: props.sprint_status,
-      goal: props.goal,
-      // Include belongs_to for issue documents
-      ...(doc.document_type === 'issue' && { belongs_to }),
+      // Sprint properties (dates computed from sprint_number + workspace.sprint_start_date)
+      status: props.status,
+      plan: props.plan,
+      plan_approval: props.plan_approval,
+      // Include belongs_to for issue, wiki, sprint, and project documents
+      ...((doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint' || doc.document_type === 'project') && { belongs_to }),
     });
   } catch (err) {
     console.error('Get document error:', err);
@@ -293,8 +367,143 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
+// Get document content as TipTap JSON
+// This endpoint converts Yjs state to TipTap JSON if content is null
+// Useful for API-based document editing without using the collaborative editor
+router.get('/:id/content', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+
+    // Verify document exists and user can access it
+    const result = await pool.query(
+      `SELECT d.id, d.content, d.yjs_state, d.title,
+              (d.visibility = 'workspace' OR d.created_by = $2 OR
+               (SELECT role FROM workspace_memberships WHERE workspace_id = $3 AND user_id = $2) = 'admin') as can_access
+       FROM documents d
+       WHERE d.id = $1 AND d.workspace_id = $3 AND d.archived_at IS NULL`,
+      [id, userId, workspaceId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    const doc = result.rows[0];
+
+    if (!doc.can_access) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    let content = doc.content;
+
+    // If content is null but yjs_state exists, convert Yjs to TipTap JSON
+    if (!content && doc.yjs_state) {
+      content = loadContentFromYjsState(doc.yjs_state);
+
+      if (!content) {
+        res.status(500).json({ error: 'Failed to convert document content' });
+        return;
+      }
+    }
+
+    // Return content with document metadata
+    res.json({
+      id: doc.id,
+      title: doc.title,
+      content: content || { type: 'doc', content: [] },
+    });
+  } catch (err) {
+    console.error('Get document content error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update document content with TipTap JSON
+// This endpoint updates content and clears yjs_state (forcing regeneration)
+// Useful for API-based document editing without using the collaborative editor
+router.patch('/:id/content', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    const userId = String(req.userId);
+    const workspaceId = String(req.workspaceId);
+
+    // Validate content structure
+    const { content } = req.body;
+    if (!content || typeof content !== 'object') {
+      res.status(400).json({ error: 'Content is required and must be a valid TipTap JSON object' });
+      return;
+    }
+
+    // Validate TipTap JSON structure
+    if (content.type !== 'doc' || !Array.isArray(content.content)) {
+      res.status(400).json({
+        error: 'Invalid content structure. Content must be a TipTap document with type "doc" and a content array.',
+        expected: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '...' }] }] },
+        received: { type: content.type, hasContentArray: Array.isArray(content.content) },
+      });
+      return;
+    }
+
+    // Verify document exists and user can access it
+    const { canAccess, doc: existing } = await canAccessDocument(id, userId, workspaceId);
+
+    if (!existing) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    if (!canAccess) {
+      res.status(404).json({ error: 'Document not found' });
+      return;
+    }
+
+    // Extract hypothesis, success criteria, vision, and goals from content
+    const extractedHypothesis = extractHypothesisFromContent(content);
+    const extractedCriteria = extractSuccessCriteriaFromContent(content);
+    const extractedVision = extractVisionFromContent(content);
+    const extractedGoals = extractGoalsFromContent(content);
+
+    // Merge with existing properties (extracted values always win)
+    // Note: 'plan' is the canonical field name (renamed from 'hypothesis' in migration 032)
+    const currentProps = existing.properties || {};
+    const newProps = {
+      ...currentProps,
+      plan: extractedHypothesis,
+      success_criteria: extractedCriteria,
+      vision: extractedVision,
+      goals: extractedGoals,
+    };
+
+    // Update content and clear yjs_state (forces regeneration on next collaboration session)
+    const result = await pool.query(
+      `UPDATE documents
+       SET content = $1, yjs_state = NULL, properties = $2, updated_at = now()
+       WHERE id = $3 AND workspace_id = $4
+       RETURNING id, title, content`,
+      [JSON.stringify(content), JSON.stringify(newProps), id, workspaceId]
+    );
+
+    // Invalidate collaboration cache so connected clients get fresh content
+    invalidateDocumentCache(id);
+
+    res.json({
+      id: result.rows[0].id,
+      title: result.rows[0].title,
+      content: result.rows[0].content,
+    });
+  } catch (err) {
+    console.error('Update document content error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Create document
 router.post('/', authMiddleware, async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
     const parsed = createDocumentSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -302,12 +511,12 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    const { title, document_type, parent_id, program_id, sprint_id, properties, content } = parsed.data;
+    const { title, document_type, parent_id, program_id, sprint_id, properties, content, belongs_to } = parsed.data;
     let { visibility } = parsed.data;
 
     // If parent_id is provided and visibility is not specified, inherit from parent
     if (parent_id && !visibility) {
-      const parentResult = await pool.query(
+      const parentResult = await client.query(
         'SELECT visibility FROM documents WHERE id = $1 AND workspace_id = $2',
         [parent_id, req.workspaceId]
       );
@@ -319,17 +528,65 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     // Default to 'workspace' visibility if not specified
     visibility = visibility || 'workspace';
 
-    const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, parent_id, program_id, sprint_id, properties, created_by, visibility, content)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      `INSERT INTO documents (workspace_id, document_type, title, parent_id, properties, created_by, visibility, content)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [req.workspaceId, document_type, title, parent_id || null, program_id || null, sprint_id || null, JSON.stringify(properties || {}), req.userId, visibility, content ? JSON.stringify(content) : null]
+      [req.workspaceId, document_type, title, parent_id || null, JSON.stringify(properties || {}), req.userId, visibility, content ? JSON.stringify(content) : null]
     );
 
-    res.status(201).json(result.rows[0]);
+    const newDoc = result.rows[0];
+
+    // Handle belongs_to associations (creates document_associations records)
+    if (belongs_to && belongs_to.length > 0) {
+      for (const assoc of belongs_to) {
+        await client.query(
+          `INSERT INTO document_associations (document_id, related_id, relationship_type)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+          [newDoc.id, assoc.id, assoc.type]
+        );
+      }
+    }
+
+    // Handle sprint_id via document_associations (backward compatibility)
+    if (sprint_id) {
+      await client.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'sprint')
+         ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+        [newDoc.id, sprint_id]
+      );
+    }
+
+    // Handle program_id via document_associations (mirrors column for junction table queries)
+    if (program_id) {
+      await client.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')
+         ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
+        [newDoc.id, program_id]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // Broadcast accountability update for document types that affect action items
+    // Sprint plans clear the "write sprint plan" action item
+    // Documents with outcome property linked to sprints clear the "write retro" action item
+    if (document_type === 'weekly_plan' || (properties && 'outcome' in properties)) {
+      broadcastToUser(req.userId!, 'accountability:updated', { documentId: newDoc.id, documentType: document_type });
+    }
+
+    res.status(201).json(newDoc);
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Create document error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 
@@ -417,6 +674,8 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       updates.push(`parent_id = $${paramIndex++}`);
       values.push(data.parent_id);
     }
+    // Note: program_id is handled via document_associations table (see below)
+    // Note: sprint_id is handled via document_associations table (see below)
     if (data.position !== undefined) {
       updates.push(`position = $${paramIndex++}`);
       values.push(data.position);
@@ -435,10 +694,25 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     if (data.ease !== undefined) topLevelProps.ease = data.ease;
     if (data.color !== undefined) topLevelProps.color = data.color;
     if (data.owner_id !== undefined) topLevelProps.owner_id = data.owner_id;
-    if (data.start_date !== undefined) topLevelProps.start_date = data.start_date;
-    if (data.end_date !== undefined) topLevelProps.end_date = data.end_date;
-    if (data.sprint_status !== undefined) topLevelProps.sprint_status = data.sprint_status;
-    if (data.goal !== undefined) topLevelProps.goal = data.goal;
+    // RACI fields for projects
+    if (data.accountable_id !== undefined) topLevelProps.accountable_id = data.accountable_id;
+    if (data.consulted_ids !== undefined) topLevelProps.consulted_ids = data.consulted_ids;
+    if (data.informed_ids !== undefined) topLevelProps.informed_ids = data.informed_ids;
+    // For sprints, also store owner in assignee_ids array (sprints API reads from assignee_ids[0])
+    if (data.owner_id !== undefined && existing.document_type === 'sprint') {
+      topLevelProps.assignee_ids = data.owner_id ? [data.owner_id] : [];
+    }
+    // Note: start_date/end_date are computed from sprint_number + workspace.sprint_start_date
+    if (data.status !== undefined) topLevelProps.status = data.status;
+    // Note: hypothesis/plan can be set via API but content extraction always wins when content is updated
+    // Accept both 'hypothesis' (legacy) and 'plan' (current), store as 'plan'
+    if (data.hypothesis !== undefined) topLevelProps.plan = data.hypothesis;
+    // Plan field (frontend sends 'plan' for sprint documents, stored in properties.plan)
+    if (data.plan !== undefined) topLevelProps.plan = data.plan;
+    // RACI fields (for projects and programs)
+    if (data.accountable_id !== undefined) topLevelProps.accountable_id = data.accountable_id;
+    if (data.consulted_ids !== undefined) topLevelProps.consulted_ids = data.consulted_ids;
+    if (data.informed_ids !== undefined) topLevelProps.informed_ids = data.informed_ids;
 
     const hasTopLevelProps = Object.keys(topLevelProps).length > 0;
 
@@ -452,8 +726,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         ...dataProps,
         ...topLevelProps,
         // Extracted values always win (content is source of truth)
+        // Note: 'plan' is the canonical field name (renamed from 'hypothesis' in migration 032)
         ...(contentUpdated ? {
-          hypothesis: extractedHypothesis,
+          plan: extractedHypothesis,
           success_criteria: extractedCriteria,
           vision: extractedVision,
           goals: extractedGoals,
@@ -464,10 +739,12 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       if (existing.document_type === 'project' || existing.document_type === 'sprint') {
         let linkedIssuesCount = 0;
 
-        // For sprints, count linked issues
+        // For sprints, count linked issues via document_associations
         if (existing.document_type === 'sprint') {
           const issueCountResult = await pool.query(
-            'SELECT COUNT(*) as count FROM documents WHERE sprint_id = $1 AND document_type = $2',
+            `SELECT COUNT(*) as count FROM documents d
+             JOIN document_associations da ON da.document_id = d.id
+             WHERE da.related_id = $1 AND da.relationship_type = 'sprint' AND d.document_type = $2`,
             [id, 'issue']
           );
           linkedIssuesCount = parseInt(issueCountResult.rows[0]?.count || '0', 10);
@@ -530,10 +807,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       // (don't clear it - it serves as a historical reference)
     }
 
-    // Track if we have association updates (belongs_to)
+    // Track if we have association updates (belongs_to, program_id, sprint_id)
+    // program_id and sprint_id are handled via document_associations table, not the updates array
     const hasBelongsToUpdate = data.belongs_to !== undefined;
+    const hasProgramIdUpdate = data.program_id !== undefined;
+    const hasSprintIdUpdate = data.sprint_id !== undefined;
 
-    if (updates.length === 0 && !hasBelongsToUpdate) {
+    if (updates.length === 0 && !hasBelongsToUpdate && !hasProgramIdUpdate && !hasSprintIdUpdate) {
       res.status(400).json({ error: 'No fields to update' });
       return;
     }
@@ -573,6 +853,56 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       }
     }
 
+    // Handle sprint_id via document_associations (when passed directly, not via belongs_to)
+    if (data.sprint_id !== undefined && !hasBelongsToUpdate) {
+      // Remove existing sprint association
+      await pool.query(
+        `DELETE FROM document_associations WHERE document_id = $1 AND relationship_type = 'sprint'`,
+        [id]
+      );
+
+      // Add new sprint association if sprint_id is not null
+      if (data.sprint_id !== null) {
+        // Verify the sprint exists
+        const sprintCheck = await pool.query(
+          `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint' AND deleted_at IS NULL`,
+          [data.sprint_id, workspaceId]
+        );
+
+        if (sprintCheck.rows.length > 0) {
+          await pool.query(
+            `INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, 'sprint') ON CONFLICT DO NOTHING`,
+            [id, data.sprint_id]
+          );
+        }
+      }
+    }
+
+    // Handle program_id via document_associations (when passed directly, not via belongs_to)
+    if (data.program_id !== undefined && !hasBelongsToUpdate) {
+      // Remove existing program association
+      await pool.query(
+        `DELETE FROM document_associations WHERE document_id = $1 AND relationship_type = 'program'`,
+        [id]
+      );
+
+      // Add new program association if program_id is not null
+      if (data.program_id !== null) {
+        // Verify the program exists
+        const programCheck = await pool.query(
+          `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program' AND deleted_at IS NULL`,
+          [data.program_id, workspaceId]
+        );
+
+        if (programCheck.rows.length > 0) {
+          await pool.query(
+            `INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, 'program') ON CONFLICT DO NOTHING`,
+            [id, data.program_id]
+          );
+        }
+      }
+    }
+
     // If we only had belongs_to updates, still update the timestamp
     if (updates.length === 0) {
       updates.push(`updated_at = now()`);
@@ -584,6 +914,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       `UPDATE documents SET ${updates.join(', ')} WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} RETURNING *`,
       [...values, id, workspaceId]
     );
+
+    // Invalidate collaboration cache when content is updated via API
+    if (contentUpdated) {
+      invalidateDocumentCache(id);
+    }
 
     // Cascade visibility changes to child documents
     if (data.visibility !== undefined && data.visibility !== existing.visibility) {
@@ -608,19 +943,44 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Flatten properties for backwards compatibility (match GET endpoint format)
     const updatedDoc = result.rows[0];
     const props = updatedDoc.properties || {};
+
+    // Get owner details for projects (owner_id is a user_id, lookup person document by user_id)
+    // Return user_id as id so PersonCombobox can match correctly
+    let owner: { id: string; name: string; email: string } | null = null;
+    if (updatedDoc.document_type === 'project' && props.owner_id) {
+      const ownerResult = await pool.query(
+        `SELECT (d.properties->>'user_id')::text as id, d.title as name, COALESCE(d.properties->>'email', u.email) as email
+         FROM documents d
+         LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
+         WHERE (d.properties->>'user_id')::uuid = $1 AND d.workspace_id = $2 AND d.document_type = 'person'`,
+        [props.owner_id, workspaceId]
+      );
+      if (ownerResult.rows.length > 0) {
+        owner = ownerResult.rows[0];
+      }
+    }
+
     res.json({
       ...updatedDoc,
+      // Issue properties
       state: props.state,
       priority: props.priority,
       estimate: props.estimate,
       assignee_id: props.assignee_id,
       source: props.source,
+      // Project properties
+      impact: props.impact,
+      confidence: props.confidence,
+      ease: props.ease,
+      owner_id: props.owner_id,
+      owner,
+      // Generic properties
       prefix: props.prefix,
       color: props.color,
-      start_date: props.start_date,
-      end_date: props.end_date,
-      sprint_status: props.sprint_status,
-      goal: props.goal,
+      // Sprint properties (dates computed from sprint_number + workspace.sprint_start_date)
+      status: props.status,
+      plan: props.plan,
+      plan_approval: props.plan_approval,
     });
   } catch (err) {
     console.error('Update document error:', err);
@@ -666,7 +1026,7 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
 });
 
 // Convert document type (issue <-> project)
-// Uses create-and-reference pattern: creates new doc, archives original with pointer
+// Uses in-place conversion with snapshots: same ID, state preserved for undo
 const convertDocumentSchema = z.object({
   target_type: z.enum(['issue', 'project']),
 });
@@ -717,100 +1077,79 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
       return;
     }
 
-    // Check if document is already archived/converted
-    if (doc.archived_at || doc.converted_to_id) {
-      res.status(400).json({ error: 'Document has already been archived or converted' });
+    // Check if document is archived
+    if (doc.archived_at) {
+      res.status(400).json({ error: 'Cannot convert an archived document' });
       return;
     }
 
     await client.query('BEGIN');
 
-    let newDocId: string;
-    let newDoc: any;
+    const currentProps = doc.properties || {};
+    const sourceType = doc.document_type;
+
+    // 1. Create snapshot of current state for undo capability
+    await client.query(
+      `INSERT INTO document_snapshots (
+        document_id, document_type, title, properties, ticket_number,
+        snapshot_reason, created_by
+      )
+      VALUES ($1, $2, $3, $4, $5, 'conversion', $6)`,
+      [
+        id,
+        sourceType,
+        doc.title,
+        JSON.stringify(currentProps),
+        doc.ticket_number,
+        userId,
+      ]
+    );
+
+    // 2. Prepare new properties based on target type
+    let newProperties: Record<string, unknown>;
+    let newTicketNumber: number | null = null;
 
     if (target_type === 'project') {
-      // Issue -> Project conversion
-      // Preserve title and content, set default project properties
-      const projectProperties = {
+      // Issue -> Project: set project defaults, preserve program_id
+      newProperties = {
         impact: 3,
         confidence: 3,
         ease: 3,
         color: '#6366f1',
         owner_id: userId,
+        program_id: currentProps.program_id || null,
         // Track original ticket number for reference
         promoted_from_ticket: doc.ticket_number,
       };
-
-      const result = await client.query(
-        `INSERT INTO documents (
-          workspace_id, document_type, title, content, yjs_state, properties,
-          created_by, visibility, converted_from_id
-        )
-        VALUES ($1, 'project', $2, $3, $4, $5, $6, $7, $8)
-        RETURNING *`,
-        [
-          workspaceId,
-          doc.title,
-          JSON.stringify(doc.content || {}),
-          doc.yjs_state, // Copy collaborative content
-          JSON.stringify(projectProperties),
-          userId,
-          doc.visibility,
-          id, // converted_from_id points to original
-        ]
-      );
-      newDoc = result.rows[0];
-      newDocId = newDoc.id;
-
+      // Clear ticket_number for projects
+      newTicketNumber = null;
     } else {
-      // Project -> Issue conversion
-      // Needs fresh ticket number with advisory lock
-
-      // Use advisory lock to serialize ticket number generation per workspace
+      // Project -> Issue: set issue defaults, preserve program_id
+      // Need fresh ticket number with advisory lock
       const workspaceIdHex = workspaceId.replace(/-/g, '').substring(0, 15);
       const lockKey = parseInt(workspaceIdHex, 16);
       await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
 
-      // Get next ticket number
       const ticketResult = await client.query(
         `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
          FROM documents
          WHERE workspace_id = $1 AND document_type = 'issue'`,
         [workspaceId]
       );
-      const ticketNumber = ticketResult.rows[0].next_number;
+      newTicketNumber = ticketResult.rows[0].next_number;
 
-      const issueProperties = {
+      newProperties = {
         state: 'backlog',
         priority: 'medium',
         source: 'internal',
         assignee_id: null,
         rejection_reason: null,
+        program_id: currentProps.program_id || null,
+        // Track conversion from project
+        demoted_from_project: true,
       };
 
-      const result = await client.query(
-        `INSERT INTO documents (
-          workspace_id, document_type, title, content, yjs_state, properties,
-          ticket_number, created_by, visibility, converted_from_id
-        )
-        VALUES ($1, 'issue', $2, $3, $4, $5, $6, $7, $8, $9)
-        RETURNING *`,
-        [
-          workspaceId,
-          doc.title,
-          JSON.stringify(doc.content || {}),
-          doc.yjs_state, // Copy collaborative content
-          JSON.stringify(issueProperties),
-          ticketNumber,
-          userId,
-          doc.visibility,
-          id, // converted_from_id points to original
-        ]
-      );
-      newDoc = result.rows[0];
-      newDocId = newDoc.id;
-
-      // Remove 'project' associations from child issues pointing to this project
+      // Remove 'project' associations from child issues pointing to this document
       // (They become orphaned - their parent project is being converted to an issue)
       await client.query(
         `DELETE FROM document_associations
@@ -819,52 +1158,69 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
       );
     }
 
-    // Copy associations from original to new document (filtered by target type validity)
-    // According to the association validity matrix:
-    // - issue: ["parent", "project", "sprint", "program"]
-    // - project: ["program"]
-    // When converting issue->project, only 'program' associations are valid for projects
-    // When converting project->issue, only 'program' associations are carried over
-    const validTypesForTarget = target_type === 'project' ? ['program'] : ['program'];
-
-    await client.query(
-      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata, created_at)
-       SELECT $1, related_id, relationship_type, metadata, NOW()
-       FROM document_associations
-       WHERE document_id = $2 AND relationship_type = ANY($3)`,
-      [newDocId, id, validTypesForTarget]
-    );
-
-    // Archive original document with converted_to_id pointer
-    await client.query(
+    // 3. Update document in-place with new type and properties
+    const updateResult = await client.query(
       `UPDATE documents
-       SET archived_at = NOW(),
-           converted_to_id = $1,
+       SET document_type = $1,
+           properties = $2,
+           ticket_number = $3,
+           original_type = COALESCE(original_type, $4),
+           conversion_count = COALESCE(conversion_count, 0) + 1,
+           converted_from_id = $5,
            converted_at = NOW(),
-           converted_by = $2,
+           converted_by = $6,
            updated_at = NOW()
-       WHERE id = $3 AND workspace_id = $4`,
-      [newDocId, userId, id, workspaceId]
+       WHERE id = $7 AND workspace_id = $8
+       RETURNING *`,
+      [
+        target_type,
+        JSON.stringify(newProperties),
+        newTicketNumber,
+        sourceType, // Set original_type only if not already set
+        id, // converted_from_id points to self (for tracking conversion happened)
+        userId,
+        id,
+        workspaceId,
+      ]
     );
+
+    const updatedDoc = updateResult.rows[0];
+
+    // 4. Update associations - remove invalid ones for new type
+    // Issues can have: parent, project, sprint, program
+    // Projects can only have: program
+    if (target_type === 'project') {
+      // Remove non-program associations (project can only have program)
+      await client.query(
+        `DELETE FROM document_associations
+         WHERE document_id = $1 AND relationship_type != 'program'`,
+        [id]
+      );
+    }
+    // If converting to issue, keep all associations (issues support more types)
 
     await client.query('COMMIT');
 
-    // Notify collaborators about the conversion
-    handleDocumentConversion(
-      id,
-      newDocId,
-      doc.document_type as 'issue' | 'project',
-      target_type
-    );
-
-    // Return the new document with conversion metadata
-    res.status(201).json({
-      ...newDoc,
-      converted_from: {
-        id: id,
-        document_type: doc.document_type,
-        ticket_number: doc.ticket_number,
-      },
+    // Return the updated document (same ID!)
+    const props = updatedDoc.properties || {};
+    res.status(200).json({
+      ...updatedDoc,
+      // Flatten properties for frontend
+      ...(target_type === 'issue' && {
+        state: props.state,
+        priority: props.priority,
+        assignee_id: props.assignee_id,
+        source: props.source,
+      }),
+      ...(target_type === 'project' && {
+        impact: props.impact,
+        confidence: props.confidence,
+        ease: props.ease,
+        color: props.color,
+        owner_id: props.owner_id,
+      }),
+      program_id: props.program_id,
+      converted_from_type: sourceType,
     });
 
   } catch (err) {
@@ -876,7 +1232,7 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
   }
 });
 
-// POST /documents/:id/undo-conversion - Undo a document conversion
+// POST /documents/:id/undo-conversion - Undo a document conversion using snapshots
 router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Response) => {
   const id = String(req.params.id);
   const userId = String(req.userId);
@@ -895,10 +1251,9 @@ router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Re
     return;
   }
 
-  // Only the creator, the person who converted it, or workspace admin can undo
+  // Only the creator or the person who converted it can undo
   const isCreator = currentDoc.created_by === userId;
   const isConverter = currentDoc.converted_by === userId;
-  // For simplicity, we allow creator or converter (admin check would require additional query)
   if (!isCreator && !isConverter) {
     res.status(403).json({ error: 'Only the document creator or converter can undo conversion' });
     return;
@@ -909,93 +1264,130 @@ router.post('/:id/undo-conversion', authMiddleware, async (req: Request, res: Re
   try {
     await client.query('BEGIN');
 
-    // Check if this document was converted from another (already checked above but need in transaction)
-    if (!currentDoc.converted_from_id) {
-      await client.query('ROLLBACK');
-      res.status(400).json({ error: 'This document was not converted from another document' });
-      return;
-    }
-
-    // Get the original document
-    const originalResult = await client.query(
-      `SELECT * FROM documents WHERE id = $1 AND workspace_id = $2`,
-      [currentDoc.converted_from_id, workspaceId]
+    // Get the most recent snapshot for this document
+    const snapshotResult = await client.query(
+      `SELECT * FROM document_snapshots
+       WHERE document_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [id]
     );
 
-    if (originalResult.rows.length === 0) {
+    if (snapshotResult.rows.length === 0) {
       await client.query('ROLLBACK');
-      res.status(404).json({ error: 'Original document not found' });
+      res.status(400).json({ error: 'No conversion history found for this document' });
       return;
     }
 
-    const originalDoc = originalResult.rows[0];
+    const snapshot = snapshotResult.rows[0];
+    const currentProps = currentDoc.properties || {};
+    const restoredType = snapshot.document_type;
 
-    // Verify the original document points to this one
-    if (originalDoc.converted_to_id !== id) {
-      await client.query('ROLLBACK');
-      res.status(400).json({ error: 'Document conversion chain is inconsistent' });
-      return;
-    }
-
-    // Restore the original document:
-    // - Clear converted_to_id so it's no longer archived
-    // - Clear archived_at so it appears in lists again
-    // - Set converted_from_id to point to the current doc (for history)
+    // 1. Create snapshot of current state (so user can re-convert if needed)
     await client.query(
+      `INSERT INTO document_snapshots (
+        document_id, document_type, title, properties, ticket_number,
+        snapshot_reason, created_by
+      )
+      VALUES ($1, $2, $3, $4, $5, 'undo', $6)`,
+      [
+        id,
+        currentDoc.document_type,
+        currentDoc.title,
+        JSON.stringify(currentProps),
+        currentDoc.ticket_number,
+        userId,
+      ]
+    );
+
+    // 2. Restore document from snapshot
+    const snapshotProps = snapshot.properties || {};
+
+    // Handle ticket number restoration
+    let restoredTicketNumber = snapshot.ticket_number;
+
+    // If restoring to an issue and we don't have a ticket number, generate one
+    if (restoredType === 'issue' && !restoredTicketNumber) {
+      const workspaceIdHex = workspaceId.replace(/-/g, '').substring(0, 15);
+      const lockKey = parseInt(workspaceIdHex, 16);
+      await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
+
+      const ticketResult = await client.query(
+        `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
+         FROM documents
+         WHERE workspace_id = $1 AND document_type = 'issue'`,
+        [workspaceId]
+      );
+      restoredTicketNumber = ticketResult.rows[0].next_number;
+    }
+
+    // If restoring to a project, clear ticket number
+    if (restoredType === 'project') {
+      restoredTicketNumber = null;
+    }
+
+    const updateResult = await client.query(
       `UPDATE documents
-       SET converted_to_id = NULL,
-           converted_from_id = $1,
-           archived_at = NULL,
+       SET document_type = $1,
+           properties = $2,
+           ticket_number = $3,
+           converted_at = NOW(),
+           converted_by = $4,
            updated_at = NOW()
-       WHERE id = $2`,
-      [id, originalDoc.id]
+       WHERE id = $5 AND workspace_id = $6
+       RETURNING *`,
+      [
+        restoredType,
+        JSON.stringify(snapshotProps),
+        restoredTicketNumber,
+        userId,
+        id,
+        workspaceId,
+      ]
     );
 
-    // Archive the current document:
-    // - Set converted_to_id to point back to original (making it the archived one now)
-    // - Set archived_at since this is now the archived conversion
-    // - Clear converted_from_id
+    const restoredDoc = updateResult.rows[0];
+
+    // 3. Delete the snapshot we just restored from (keep the undo snapshot)
     await client.query(
-      `UPDATE documents
-       SET converted_to_id = $1,
-           converted_from_id = NULL,
-           archived_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $2`,
-      [originalDoc.id, id]
+      `DELETE FROM document_snapshots WHERE id = $1`,
+      [snapshot.id]
     );
 
-    // Copy associations from current document back to original document
-    // (restoring the associations as they were before conversion)
-    // First, clear any existing associations on the original (shouldn't be many since it was archived)
-    await client.query(
-      `DELETE FROM document_associations WHERE document_id = $1`,
-      [originalDoc.id]
-    );
-
-    // Copy all associations from the current (being archived) document to the restored original
-    await client.query(
-      `INSERT INTO document_associations (document_id, related_id, relationship_type, metadata, created_at)
-       SELECT $1, related_id, relationship_type, metadata, NOW()
-       FROM document_associations
-       WHERE document_id = $2`,
-      [originalDoc.id, id]
-    );
+    // 4. Update associations based on restored type
+    if (restoredType === 'project') {
+      // Remove non-program associations (project can only have program)
+      await client.query(
+        `DELETE FROM document_associations
+         WHERE document_id = $1 AND relationship_type != 'program'`,
+        [id]
+      );
+    }
+    // If restoring to issue, keep all associations
 
     await client.query('COMMIT');
 
-    // Get the restored original document for response
-    const restoredResult = await client.query(
-      `SELECT * FROM documents WHERE id = $1`,
-      [originalDoc.id]
-    );
-
-    const restoredDoc = restoredResult.rows[0];
-
+    // Return the restored document (same ID!)
+    const props = restoredDoc.properties || {};
     res.status(200).json({
-      restored_document: restoredDoc,
-      archived_document_id: id,
-      message: `Conversion undone. Original ${originalDoc.document_type} has been restored.`,
+      ...restoredDoc,
+      // Flatten properties for frontend
+      ...(restoredType === 'issue' && {
+        state: props.state,
+        priority: props.priority,
+        assignee_id: props.assignee_id,
+        source: props.source,
+      }),
+      ...(restoredType === 'project' && {
+        impact: props.impact,
+        confidence: props.confidence,
+        ease: props.ease,
+        color: props.color,
+        owner_id: props.owner_id,
+      }),
+      program_id: props.program_id,
+      restored_from_type: currentDoc.document_type,
+      message: `Conversion undone. Document restored to ${restoredType}.`,
     });
 
   } catch (err) {

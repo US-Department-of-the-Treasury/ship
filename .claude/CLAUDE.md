@@ -57,6 +57,17 @@ pnpm test             # Runs api unit tests via vitest
 
 **Empty test footgun:** Tests with only TODO comments pass silently. Use `test.fixme()` for unimplemented tests. Pre-commit hook (`scripts/check-empty-tests.sh`) catches these.
 
+**Seed data requirements:** When writing E2E tests that require specific data:
+1. ALWAYS update `e2e/fixtures/isolated-env.ts` to create required data
+2. NEVER use conditional `test.skip()` for missing data - use assertions with clear messages instead:
+   ```typescript
+   // BAD: skips silently
+   if (rowCount < 4) { test.skip(true, 'Not enough rows'); return; }
+   // GOOD: fails with actionable message
+   expect(rowCount, 'Seed data should provide at least 4 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(4);
+   ```
+3. If a test needs N rows, ensure fixtures create at least N+2 rows
+
 ## Architecture
 
 **Monorepo Structure** (pnpm workspaces):
@@ -104,19 +115,35 @@ Local dev uses `.env.local` for DB connection.
 
 ## Deployment
 
-**"Deploy" means deploy BOTH API and frontend.** Never deploy just one - they must stay in sync. See `/workflows:deploy` for full sequence and monitoring steps.
+**Just run the scripts.** They handle everything (terraform lookups, building, Docker tests, upload, deploy).
+
+```bash
+# Production deployment (from master branch)
+./scripts/deploy.sh prod           # Backend → Elastic Beanstalk
+./scripts/deploy-frontend.sh prod  # Frontend → S3/CloudFront
+
+# Dev/Shadow deployment
+./scripts/deploy.sh dev            # or shadow
+./scripts/deploy-frontend.sh dev   # or shadow (no shadow support yet)
+```
+
+**DO NOT:**
+- Run `terraform init` or `terraform plan` manually - scripts handle this
+- Check EB health before deploying - scripts will fail if there's an issue
+- Overcomplicate with pre-flight checks - just run the scripts
+
+**After deploy, verify with browser:**
+1. Navigate to the deployed URL
+2. Check browser console for JavaScript errors (curl can't catch these)
+3. Verify page renders correctly
+
+**Health check URLs:**
+- Prod API: `http://ship-api-prod.eba-xsaqsg9h.us-east-1.elasticbeanstalk.com/health`
+- Prod Web: `https://ship.awsdev.treasury.gov`
 
 ### Shadow Environment (UAT)
 
-**Branch `feat/unified-document-model-v2`**: After completing work on this branch, ALWAYS deploy to shadow for user acceptance testing before merging to master.
-
-```bash
-# Deploy to shadow for UAT
-./scripts/deploy.sh shadow
-./scripts/deploy-web.sh shadow
-```
-
-Shadow environment is for pre-merge validation. Production (`prod`) is only deployed after PR merge to master.
+**Branch `feat/unified-document-model-v2`**: After completing work on this branch, ALWAYS deploy to shadow for user acceptance testing before merging to master. Production (`prod`) is only deployed after PR merge to master.
 
 ## Philosophy Enforcement
 

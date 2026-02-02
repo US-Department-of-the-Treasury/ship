@@ -38,10 +38,10 @@ export type DocumentType =
   | 'project'
   | 'sprint'
   | 'person'
-  | 'sprint_plan'
-  | 'sprint_retro'
+  | 'weekly_plan'
+  | 'weekly_retro'
   | 'standup'
-  | 'sprint_review';
+  | 'weekly_review';
 
 // Issue states
 export type IssueState = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
@@ -50,10 +50,21 @@ export type IssueState = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_rev
 export type IssuePriority = 'low' | 'medium' | 'high' | 'urgent';
 
 // Issue source - provenance, never changes after creation
-export type IssueSource = 'internal' | 'external';
+export type IssueSource = 'internal' | 'external' | 'action_items';
+
+// Accountability types for auto-generated action_items issues
+export type AccountabilityType =
+  | 'standup'
+  | 'weekly_plan'
+  | 'weekly_retro'
+  | 'weekly_review'
+  | 'week_start'
+  | 'week_issues'
+  | 'project_plan'
+  | 'project_retro';
 
 // Sprint status - computed from dates, not stored
-export type SprintStatus = 'active' | 'upcoming' | 'completed';
+export type WeekStatus = 'active' | 'upcoming' | 'completed';
 
 // Properties interfaces for each document type
 // Each includes index signature for JSONB compatibility
@@ -64,12 +75,25 @@ export interface IssueProperties {
   estimate?: number | null;
   source: IssueSource;
   rejection_reason?: string | null;
+  // Due date for issues (ISO date string, e.g., "2025-01-26")
+  due_date?: string | null;
+  // System-generated accountability issues (cannot be deleted)
+  is_system_generated?: boolean;
+  // Links to the document this accountability issue is about
+  accountability_target_id?: string | null;
+  // Type of accountability task
+  accountability_type?: AccountabilityType | null;
   [key: string]: unknown;
 }
 
 export interface ProgramProperties {
   color: string;
   emoji?: string | null;  // Optional emoji for visual identification
+  // RACI accountability fields
+  owner_id?: string | null;        // R - Responsible (does the work)
+  accountable_id?: string | null;  // A - Accountable (approver for hypotheses/reviews)
+  consulted_ids?: string[];        // C - Consulted (provide input, stubbed for now)
+  informed_ids?: string[];         // I - Informed (kept in loop, stubbed for now)
   [key: string]: unknown;
 }
 
@@ -81,36 +105,57 @@ export interface ProjectProperties {
   impact: ICEScore | null;      // How much will this move the needle?
   confidence: ICEScore | null;  // How certain are we this will achieve the impact?
   ease: ICEScore | null;        // How easy is this to implement? (inverse of effort)
-  // Owner for accountability (optional - null = unassigned)
-  owner_id?: string | null;
+  // RACI accountability fields
+  owner_id?: string | null;        // R - Responsible (does the work)
+  accountable_id?: string | null;  // A - Accountable (approver for hypotheses/reviews)
+  consulted_ids?: string[];        // C - Consulted (provide input, stubbed for now)
+  informed_ids?: string[];         // I - Informed (kept in loop, stubbed for now)
   // Visual identification
   color: string;
   emoji?: string | null;
-  // Project retro properties - track hypothesis validation and outcomes
-  hypothesis_validated?: boolean | null;  // null = not yet determined, true = validated, false = invalidated
+  // Project retro properties - track plan validation and outcomes
+  plan_validated?: boolean | null;  // null = not yet determined, true = validated, false = invalidated
   monetary_impact_expected?: string | null;  // Expected monetary value (e.g., "$50K annual savings")
   monetary_impact_actual?: string | null;    // Actual monetary impact after completion
   success_criteria?: string[] | null;        // Array of measurable success criteria
   next_steps?: string | null;                // Recommended follow-up actions
+  // Approval tracking for accountability workflow
+  plan_approval?: ApprovalTracking | null;  // Approval status for project plan
+  retro_approval?: ApprovalTracking | null;       // Approval status for project retro
   [key: string]: unknown;
 }
 
-// Hypothesis history entry for tracking hypothesis changes over time
-export interface HypothesisHistoryEntry {
-  hypothesis: string;
+// Plan history entry for tracking plan changes over time
+export interface PlanHistoryEntry {
+  plan: string;
   timestamp: string;  // ISO 8601 date string
   author_id: string;
   author_name?: string;
 }
 
-export interface SprintProperties {
+// Approval tracking state for accountability workflows
+export type ApprovalState = null | 'approved' | 'changed_since_approved';
+
+// Approval tracking structure for hypotheses, reviews, and retros
+export interface ApprovalTracking {
+  state: ApprovalState;                   // null = pending, 'approved' = current version approved, 'changed_since_approved' = needs re-review
+  approved_by: string | null;             // User ID who approved
+  approved_at: string | null;             // ISO 8601 timestamp of approval
+  approved_version_id: number | null;     // document_history.id that was approved
+}
+
+export interface WeekProperties {
   sprint_number: number;  // References implicit 1-week window, dates computed from this
   owner_id: string;       // REQUIRED - person accountable for this sprint
-  // Hypothesis tracking (for Ship-Claude integration)
-  hypothesis?: string | null;           // Current hypothesis statement
+  status?: 'planning' | 'active' | 'completed';  // Sprint workflow status (default: 'planning')
+  // Plan tracking (for Ship-Claude integration)
+  plan?: string | null;           // Current plan statement
   success_criteria?: string[] | null;   // Array of measurable success criteria
   confidence?: number | null;           // Confidence level 0-100
-  hypothesis_history?: HypothesisHistoryEntry[] | null;  // History of hypothesis changes
+  plan_history?: PlanHistoryEntry[] | null;  // History of plan changes
+  // Approval tracking for accountability workflow
+  plan_approval?: ApprovalTracking | null;  // Approval status for sprint plan
+  review_approval?: ApprovalTracking | null;      // Approval status for sprint review
   [key: string]: unknown;
 }
 
@@ -126,8 +171,23 @@ export interface WikiProperties {
   maintainer_id?: string | null;
   [key: string]: unknown;
 }
-export type SprintPlanProperties = Record<string, unknown>;
-export type SprintRetroProperties = Record<string, unknown>;
+// Weekly plan properties - per-person accountability document
+export interface WeeklyPlanProperties {
+  person_id: string;       // REQUIRED - person document ID who wrote this plan
+  project_id: string;      // REQUIRED - project this plan is for
+  week_number: number;     // REQUIRED - week number (same as sprint_number concept)
+  submitted_at?: string | null;  // ISO timestamp when first saved with content
+  [key: string]: unknown;
+}
+
+// Weekly retro properties - per-person retrospective document
+export interface WeeklyRetroProperties {
+  person_id: string;       // REQUIRED - person document ID who wrote this retro
+  project_id: string;      // REQUIRED - project this retro is for
+  week_number: number;     // REQUIRED - week number (same as sprint_number concept)
+  submitted_at?: string | null;  // ISO timestamp when first saved with content
+  [key: string]: unknown;
+}
 
 // Standup properties - comment-like entries on sprints
 export interface StandupProperties {
@@ -135,11 +195,11 @@ export interface StandupProperties {
   [key: string]: unknown;
 }
 
-// Sprint review properties - one per sprint, tracks hypothesis validation
-export interface SprintReviewProperties {
-  sprint_id: string;          // REQUIRED - which sprint this reviews
+// Weekly review properties - one per week, tracks plan validation
+export interface WeeklyReviewProperties {
+  sprint_id: string;          // REQUIRED - which sprint/week this reviews
   owner_id: string;           // REQUIRED - who is accountable for this review
-  hypothesis_validated: boolean | null;  // null = not yet determined
+  plan_validated: boolean | null;  // null = not yet determined
   [key: string]: unknown;
 }
 
@@ -148,13 +208,13 @@ export type DocumentProperties =
   | IssueProperties
   | ProgramProperties
   | ProjectProperties
-  | SprintProperties
+  | WeekProperties
   | PersonProperties
   | WikiProperties
-  | SprintPlanProperties
-  | SprintRetroProperties
+  | WeeklyPlanProperties
+  | WeeklyRetroProperties
   | StandupProperties
-  | SprintReviewProperties;
+  | WeeklyReviewProperties;
 
 // Base document interface
 export interface Document {
@@ -166,9 +226,8 @@ export interface Document {
   yjs_state?: Uint8Array | null;
   parent_id?: string | null;
   position: number;
-  program_id?: string | null;
-  project_id?: string | null;
-  sprint_id?: string | null;
+  // Note: program_id, project_id, and sprint_id removed - use belongs_to array instead
+  // These columns were dropped by migrations 027 and 029
   properties: Record<string, unknown>;
   ticket_number?: number | null;
   archived_at?: Date | null;
@@ -211,9 +270,9 @@ export interface ProjectDocument extends Document {
   properties: ProjectProperties;
 }
 
-export interface SprintDocument extends Document {
+export interface WeekDocument extends Document {
   document_type: 'sprint';
-  properties: SprintProperties;
+  properties: WeekProperties;
 }
 
 export interface PersonDocument extends Document {
@@ -221,14 +280,14 @@ export interface PersonDocument extends Document {
   properties: PersonProperties;
 }
 
-export interface SprintPlanDocument extends Document {
-  document_type: 'sprint_plan';
-  properties: SprintPlanProperties;
+export interface WeeklyPlanDocument extends Document {
+  document_type: 'weekly_plan';
+  properties: WeeklyPlanProperties;
 }
 
-export interface SprintRetroDocument extends Document {
-  document_type: 'sprint_retro';
-  properties: SprintRetroProperties;
+export interface WeeklyRetroDocument extends Document {
+  document_type: 'weekly_retro';
+  properties: WeeklyRetroProperties;
 }
 
 export interface StandupDocument extends Document {
@@ -236,9 +295,9 @@ export interface StandupDocument extends Document {
   properties: StandupProperties;
 }
 
-export interface SprintReviewDocument extends Document {
-  document_type: 'sprint_review';
-  properties: SprintReviewProperties;
+export interface WeeklyReviewDocument extends Document {
+  document_type: 'weekly_review';
+  properties: WeeklyReviewProperties;
 }
 
 // Input types for creating/updating documents
@@ -248,9 +307,7 @@ export interface CreateDocumentInput {
   content?: Record<string, unknown>;
   parent_id?: string | null;
   position?: number;
-  program_id?: string | null;
-  project_id?: string | null;
-  sprint_id?: string | null;
+  // Note: program_id, project_id, and sprint_id removed - use belongs_to array instead
   properties?: Record<string, unknown>;
   visibility?: DocumentVisibility;
 }
@@ -260,9 +317,7 @@ export interface UpdateDocumentInput {
   content?: Record<string, unknown>;
   parent_id?: string | null;
   position?: number;
-  program_id?: string | null;
-  project_id?: string | null;
-  sprint_id?: string | null;
+  // Note: program_id, project_id, and sprint_id removed - use belongs_to array instead
   properties?: Record<string, unknown>;
   archived_at?: Date | null;
   visibility?: DocumentVisibility;
@@ -288,10 +343,10 @@ export interface CreateProgramInput extends CreateDocumentInput {
   };
 }
 
-// Helper type for sprint creation
-export interface CreateSprintInput extends CreateDocumentInput {
+// Helper type for week/sprint creation
+export interface CreateWeekInput extends CreateDocumentInput {
   document_type: 'sprint';
-  properties?: Partial<SprintProperties>;
+  properties?: Partial<WeekProperties>;
 }
 
 // Helper type for project creation (owner_id is optional - can be unassigned)
@@ -314,6 +369,10 @@ export const DEFAULT_ISSUE_PROPERTIES: IssueProperties = {
   source: 'internal',
   assignee_id: null,
   rejection_reason: null,
+  due_date: null,
+  is_system_generated: false,
+  accountability_target_id: null,
+  accountability_type: null,
 };
 
 export const DEFAULT_PROGRAM_PROPERTIES: Partial<ProgramProperties> = {
@@ -355,7 +414,7 @@ export function computeSprintDates(sprintNumber: number, workspaceStartDate: Dat
  * Compute sprint status from sprint number and workspace start date.
  * Status is derived from whether today falls within, before, or after the sprint window.
  */
-export function computeSprintStatus(sprintNumber: number, workspaceStartDate: Date): SprintStatus {
+export function computeWeekStatus(sprintNumber: number, workspaceStartDate: Date): WeekStatus {
   const { start, end } = computeSprintDates(sprintNumber, workspaceStartDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0); // Start of today for comparison

@@ -278,6 +278,8 @@ We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) for guideline
 - [Unified Document Model](./docs/unified-document-model.md) — Data model and sync architecture
 - [Document Model Conventions](./docs/document-model-conventions.md) — Terminology and patterns
 - [Sprint Documentation Philosophy](./docs/sprint-documentation-philosophy.md) — Why sprints work the way they do
+- [Accountability Philosophy](./docs/accountability-philosophy.md) — How Ship enforces accountability
+- [Accountability Manager Guide](./docs/accountability-manager-guide.md) — Using approval workflows
 - [Contributing Guidelines](./CONTRIBUTING.md) — How to contribute
 - [Security Policy](./SECURITY.md) — Vulnerability reporting
 

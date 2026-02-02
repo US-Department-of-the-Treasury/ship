@@ -11,7 +11,7 @@ import issuesRoutes from './routes/issues.js';
 import feedbackRoutes, { publicFeedbackRouter } from './routes/feedback.js';
 import programsRoutes from './routes/programs.js';
 import projectsRoutes from './routes/projects.js';
-import sprintsRoutes from './routes/sprints.js';
+import weeksRoutes from './routes/weeks.js';
 import standupsRoutes from './routes/standups.js';
 import iterationsRoutes from './routes/iterations.js';
 import teamRoutes from './routes/team.js';
@@ -29,6 +29,8 @@ import claudeRoutes from './routes/claude.js';
 import activityRoutes from './routes/activity.js';
 import dashboardRoutes from './routes/dashboard.js';
 import associationsRoutes from './routes/associations.js';
+import accountabilityRoutes from './routes/accountability.js';
+import weeklyPlansRoutes, { weeklyRetrosRouter } from './routes/weekly-plans.js';
 import { setupSwagger } from './swagger.js';
 import { initializeCAIA } from './services/caia.js';
 
@@ -57,9 +59,10 @@ const conditionalCsrf = (req: Request, res: Response, next: NextFunction) => {
 };
 
 // Rate limiting configurations
-// In test environment, use much higher limits to avoid flaky tests
+// In test/dev environment, use much higher limits to avoid issues
 // Production limits: login=5/15min (failed only), api=100/min
 const isTestEnv = process.env.NODE_ENV === 'test' || process.env.E2E_TEST === '1';
+const isDevEnv = process.env.NODE_ENV !== 'production';
 
 // Strict rate limit for login (5 failed attempts / 15 min) - brute force protection
 // skipSuccessfulRequests: true means only failed attempts count toward the limit
@@ -72,10 +75,10 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true, // Only count failed login attempts
 });
 
-// General API rate limit (100 req/min)
+// General API rate limit (100 req/min in prod, 1000 in dev)
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: isTestEnv ? 10000 : 100, // High limit for tests
+  max: isTestEnv ? 10000 : isDevEnv ? 1000 : 100, // High limit for tests/dev
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please slow down.' },
@@ -134,8 +137,8 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
     origin: corsOrigin,
     credentials: true,
   }));
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true })); // For HTML form submissions
+  app.use(express.json({ limit: '10mb' }));  // Large wiki documents can be several MB
+  app.use(express.urlencoded({ extended: true, limit: '10mb' })); // For HTML form submissions
   app.use(cookieParser(sessionSecret));
 
   // Session middleware for CSRF token storage
@@ -182,8 +185,8 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use('/api/feedback', conditionalCsrf, feedbackRoutes);
   app.use('/api/programs', conditionalCsrf, programsRoutes);
   app.use('/api/projects', conditionalCsrf, projectsRoutes);
-  app.use('/api/sprints', conditionalCsrf, sprintsRoutes);
-  app.use('/api/sprints', conditionalCsrf, iterationsRoutes);
+  app.use('/api/weeks', conditionalCsrf, weeksRoutes);
+  app.use('/api/weeks', conditionalCsrf, iterationsRoutes);
   app.use('/api/standups', conditionalCsrf, standupsRoutes);
   app.use('/api/team', conditionalCsrf, teamRoutes);
   app.use('/api/workspaces', conditionalCsrf, workspacesRoutes);
@@ -202,6 +205,15 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // Dashboard routes are read-only GET endpoints - no CSRF needed
   app.use('/api/dashboard', dashboardRoutes);
+
+  // Accountability routes - inference-based action items (read-only GET)
+  app.use('/api/accountability', accountabilityRoutes);
+
+  // Weekly plans routes - per-person accountability documents (CSRF protected)
+  app.use('/api/weekly-plans', conditionalCsrf, weeklyPlansRoutes);
+
+  // Weekly retros routes - per-person accountability documents (CSRF protected)
+  app.use('/api/weekly-retros', conditionalCsrf, weeklyRetrosRouter);
 
   // CAIA auth routes - no CSRF protection (OAuth flow with external callback)
   // This is the single identity provider for PIV authentication

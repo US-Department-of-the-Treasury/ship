@@ -54,6 +54,10 @@ resource "aws_cloudfront_distribution" "frontend" {
   default_root_object = "index.html"
   price_class         = "PriceClass_100" # US, Canada, Europe only
 
+  # WAF WebACL for CloudFront protection
+  # Uses provided ARN if set, otherwise creates managed WAF (see waf.tf)
+  web_acl_id = var.cloudfront_waf_web_acl_id != "" ? var.cloudfront_waf_web_acl_id : aws_wafv2_web_acl.cloudfront[0].arn
+
   aliases = var.app_domain_name != "" ? [var.app_domain_name] : []
 
   # Origin 1: S3 for static assets
@@ -95,7 +99,7 @@ resource "aws_cloudfront_distribution" "frontend" {
 
       forwarded_values {
         query_string = true
-        headers      = ["*"]  # Forward all headers including CloudFront-Forwarded-Proto for trust proxy
+        headers      = ["*"] # Forward all headers including CloudFront-Forwarded-Proto for trust proxy
         cookies {
           forward = "all"
         }
@@ -150,6 +154,30 @@ resource "aws_cloudfront_distribution" "frontend" {
     }
   }
 
+  # WebSocket events endpoint for real-time updates (only when EB is configured)
+  dynamic "ordered_cache_behavior" {
+    for_each = var.eb_environment_cname != "" ? [1] : []
+    content {
+      path_pattern           = "/events"
+      target_origin_id       = "EB-API"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = false
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+
+      forwarded_values {
+        query_string = true
+        headers      = ["*"]
+        cookies {
+          forward = "all"
+        }
+      }
+    }
+  }
+
   # Well-known endpoints for OAuth/OIDC (JWKS, etc.) - only when EB is configured
   dynamic "ordered_cache_behavior" {
     for_each = var.eb_environment_cname != "" ? [1] : []
@@ -161,7 +189,7 @@ resource "aws_cloudfront_distribution" "frontend" {
       cached_methods         = ["GET", "HEAD"]
       compress               = true
       min_ttl                = 0
-      default_ttl            = 3600  # Cache JWKS for 1 hour
+      default_ttl            = 3600 # Cache JWKS for 1 hour
       max_ttl                = 86400
 
       forwarded_values {
@@ -182,6 +210,9 @@ resource "aws_cloudfront_distribution" "frontend" {
     min_ttl                = 0
     default_ttl            = 3600
     max_ttl                = 86400
+
+    # Real-time logging for security monitoring
+    realtime_log_config_arn = aws_cloudfront_realtime_log_config.main.arn
 
     forwarded_values {
       query_string = false
@@ -300,5 +331,75 @@ resource "aws_route53_record" "app" {
     name                   = aws_cloudfront_distribution.frontend.domain_name
     zone_id                = aws_cloudfront_distribution.frontend.hosted_zone_id
     evaluate_target_health = false
+  }
+}
+
+# =============================================================================
+# S3 Bucket for File Uploads
+# =============================================================================
+
+# S3 Bucket for user file uploads (documents, videos, etc.)
+resource "aws_s3_bucket" "uploads" {
+  bucket = "${var.project_name}-uploads-${var.environment}-${data.aws_caller_identity.current.account_id}"
+
+  tags = {
+    Name = "${var.project_name}-uploads"
+  }
+}
+
+# Block all public access (files served via presigned URLs)
+resource "aws_s3_bucket_public_access_block" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Enable versioning for compliance and recovery
+resource "aws_s3_bucket_versioning" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Server-side encryption (AES256)
+resource "aws_s3_bucket_server_side_encryption_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# CORS configuration for browser uploads
+resource "aws_s3_bucket_cors_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["PUT", "POST"]
+    allowed_origins = var.upload_cors_origins
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3600
+  }
+}
+
+# Lifecycle rule to clean up incomplete multipart uploads
+resource "aws_s3_bucket_lifecycle_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
   }
 }

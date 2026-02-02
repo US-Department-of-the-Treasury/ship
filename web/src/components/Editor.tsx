@@ -21,6 +21,7 @@ import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { ScrollFade } from '@/components/ui/ScrollFade';
 import { apiPost } from '@/lib/api';
 import { createSlashCommands } from './editor/SlashCommands';
 import { DocumentEmbed } from './editor/DocumentEmbed';
@@ -31,6 +32,7 @@ import { FileAttachmentExtension } from './editor/FileAttachment';
 import { DetailsExtension, DetailsSummary, DetailsContent } from './editor/DetailsExtension';
 import { EmojiExtension } from './editor/EmojiExtension';
 import { TableOfContentsExtension } from './editor/TableOfContents';
+import { HypothesisBlockExtension } from './editor/HypothesisBlockExtension';
 import 'tippy.js/dist/tippy.css';
 
 // Create lowlight instance with common languages
@@ -42,6 +44,8 @@ interface EditorProps {
   userColor?: string;
   onTitleChange?: (title: string) => void;
   initialTitle?: string;
+  /** Whether the title is read-only (e.g., for weekly plans/retros with computed titles) */
+  titleReadOnly?: boolean;
   onBack?: () => void;
   /** Label for back button (e.g., parent document title) */
   backLabel?: string;
@@ -67,6 +71,8 @@ interface EditorProps {
   documentType?: string;
   /** Callback when the document is converted to a different type by another user */
   onDocumentConverted?: (newDocId: string, newDocType: 'issue' | 'project') => void;
+  /** Callback when plan block content changes (for sprint documents) */
+  onPlanChange?: (plan: string) => void;
 }
 
 type SyncStatus = 'connecting' | 'cached' | 'synced' | 'disconnected';
@@ -100,12 +106,50 @@ function extractDocumentMentionIds(content: JSONContent): string[] {
   return [...new Set(mentionIds)]; // Deduplicate
 }
 
+// Extract hypothesis text from hypothesisBlock node in TipTap JSON content
+function extractHypothesisText(content: JSONContent): string | null {
+  let hypothesisText: string | null = null;
+
+  function traverse(node: JSONContent) {
+    if (node.type === 'hypothesisBlock') {
+      // Extract plain text from hypothesis block content
+      const textParts: string[] = [];
+      const extractText = (n: JSONContent) => {
+        if (n.type === 'text' && n.text) {
+          textParts.push(n.text);
+        }
+        if (n.content) {
+          for (const child of n.content) {
+            extractText(child);
+          }
+        }
+      };
+      if (node.content) {
+        for (const child of node.content) {
+          extractText(child);
+        }
+      }
+      hypothesisText = textParts.join('');
+      return; // Stop after first hypothesis block
+    }
+    if (node.content) {
+      for (const child of node.content) {
+        traverse(child);
+      }
+    }
+  }
+
+  traverse(content);
+  return hypothesisText;
+}
+
 export function Editor({
   documentId,
   userName,
   userColor,
   onTitleChange,
   initialTitle = 'Untitled',
+  titleReadOnly = false,
   onBack,
   backLabel,
   roomPrefix = 'doc',
@@ -119,6 +163,7 @@ export function Editor({
   secondaryHeader,
   documentType,
   onDocumentConverted,
+  onPlanChange,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -161,6 +206,10 @@ export function Editor({
   });
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 
+  // AbortController for cancelling async uploads (images, files) when navigating away
+  // This prevents uploads from completing into a different document after navigation
+  const imageUploadAbortRef = useRef<AbortController>(new AbortController());
+
   // Find portal target for properties sidebar (for proper landmark order)
   useLayoutEffect(() => {
     const target = document.getElementById('properties-portal');
@@ -187,10 +236,21 @@ export function Editor({
   const color = userColor || stringToColor(userName);
 
   // Auto-focus and select title if "Untitled" (new document)
+  // Uses double requestAnimationFrame to run AFTER useFocusOnNavigate's
+  // requestAnimationFrame (which focuses #main-content for accessibility).
+  // This ensures title gets focus for new docs while preserving a11y flow.
   useEffect(() => {
-    if (titleInputRef.current && (!title || title === 'Untitled')) {
-      titleInputRef.current.focus();
-      titleInputRef.current.select();
+    if (!title || title === 'Untitled') {
+      // First rAF: queued alongside useFocusOnNavigate's rAF
+      // Second rAF: runs after useFocusOnNavigate completes
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (titleInputRef.current) {
+            titleInputRef.current.focus();
+            titleInputRef.current.select();
+          }
+        });
+      });
     }
   }, []);
 
@@ -199,6 +259,8 @@ export function Editor({
     let wsProvider: WebsocketProvider | null = null;
     let hasCachedContent = false;
     let cancelled = false;
+    // Store the updateUsers callback so we can properly remove it on cleanup
+    let updateUsersCallback: (() => void) | null = null;
 
     // Create IndexedDB persistence for content caching
     // This loads cached content BEFORE WebSocket connects for instant navigation
@@ -242,11 +304,58 @@ export function Editor({
       const wsUrl = apiUrl
         ? apiUrl.replace(/^http/, 'ws') + '/collaboration'
         : `${wsProtocol}//${window.location.host}/collaboration`;
+      // Listen for custom "clear cache" message (type 3) from server
+      // This is sent when the server loaded content fresh from JSON (API update/create)
+      // We need to clear IndexedDB to prevent stale cached content from merging
+      const MESSAGE_TYPE_CLEAR_CACHE = 3;
+      const handleRawMessage = (event: MessageEvent) => {
+        if (cancelled) return;
+        try {
+          const data = new Uint8Array(event.data);
+          if (data.length > 0 && data[0] === MESSAGE_TYPE_CLEAR_CACHE) {
+            console.log(`[Editor] Received cache clear signal for ${documentId}, clearing IndexedDB`);
+            // Clear the Y.Doc to remove any cached content before server sync
+            ydoc.transact(() => {
+              const fragment = ydoc.getXmlFragment('default');
+              // Delete all content from the fragment
+              while (fragment.length > 0) {
+                fragment.delete(0, 1);
+              }
+            });
+            // Also clear IndexedDB for future visits
+            indexeddbProvider.clearData().then(() => {
+              console.log(`[Editor] IndexedDB cache cleared for ${documentId} (fresh from JSON)`);
+              hasCachedContent = false;
+            }).catch((err) => {
+              console.error(`[Editor] Failed to clear IndexedDB cache for ${documentId}:`, err);
+            });
+          }
+        } catch {
+          // Ignore errors from processing non-binary messages
+        }
+      };
+
+      // Create WebSocket provider with connect: false so we can add listener first
       wsProvider = new WebsocketProvider(wsUrl, `${roomPrefix}:${documentId}`, ydoc, {
-        connect: true,
+        connect: false,
       });
 
+      // Add raw message listener before connecting
+      // y-websocket creates its own WebSocket, we need to hook into it
+      const originalConnect = wsProvider.connect.bind(wsProvider);
+      wsProvider.connect = () => {
+        originalConnect();
+        // Add listener to the new WebSocket
+        if (wsProvider?.ws) {
+          wsProvider.ws.addEventListener('message', handleRawMessage);
+        }
+      };
+
+      // Now connect
+      wsProvider.connect();
+
       wsProvider.on('status', (event: { status: string }) => {
+        if (cancelled) return; // Don't update state if effect was cleaned up
         console.log(`[Editor] WebSocket status: ${event.status} for ${roomPrefix}:${documentId}`);
         if (event.status === 'connected') {
           setSyncStatus('synced');
@@ -256,8 +365,9 @@ export function Editor({
         }
       });
 
-      // Handle WebSocket close events to detect access revoked or document converted
+      // Handle WebSocket close events to detect access revoked, document converted, or content updated
       wsProvider.on('connection-close', (event: CloseEvent | null) => {
+        if (cancelled) return; // Don't process if effect was cleaned up
         if (event?.code === 4403) {
           console.log(`[Editor] Access revoked for document ${documentId}`);
           // Disable auto-reconnect since access was revoked
@@ -285,10 +395,22 @@ export function Editor({
             alert('This document was converted. Please refresh to view the new document.');
             onBack?.();
           }
+        } else if (event?.code === 4101) {
+          // Content updated via API - clear IndexedDB cache to prevent stale content merge
+          console.log(`[Editor] Content updated via API for ${documentId}, clearing IndexedDB cache`);
+          // Clear the IndexedDB cache so stale content doesn't merge with new content
+          indexeddbProvider.clearData().then(() => {
+            console.log(`[Editor] IndexedDB cache cleared for ${documentId}`);
+            hasCachedContent = false;
+          }).catch((err) => {
+            console.error(`[Editor] Failed to clear IndexedDB cache for ${documentId}:`, err);
+          });
+          // y-websocket will auto-reconnect, now with fresh state from server
         }
       });
 
       wsProvider.on('sync', (isSynced: boolean) => {
+        if (cancelled) return; // Don't update state if effect was cleaned up
         console.log(`[Editor] WebSocket sync: ${isSynced} for ${roomPrefix}:${documentId}`);
         if (isSynced) {
           setSyncStatus('synced');
@@ -301,38 +423,67 @@ export function Editor({
         color: color,
       });
 
-      // Track connected users
-      const updateUsers = () => {
+      // Track connected users - store callback reference for proper cleanup
+      // Deduplicate by user name to handle race conditions where stale awareness
+      // states exist briefly during page refresh (before old connection cleanup)
+      updateUsersCallback = () => {
+        if (cancelled) return; // Don't update state if effect was cleaned up
         const users: { name: string; color: string }[] = [];
+        const seenNames = new Set<string>();
         wsProvider!.awareness.getStates().forEach((state) => {
-          if (state.user) {
+          if (state.user && !seenNames.has(state.user.name)) {
+            seenNames.add(state.user.name);
             users.push(state.user);
           }
         });
         setConnectedUsers(users);
       };
 
-      wsProvider.awareness.on('change', updateUsers);
-      updateUsers();
+      wsProvider.awareness.on('change', updateUsersCallback);
+      updateUsersCallback();
 
-      setProvider(wsProvider);
+      if (!cancelled) {
+        setProvider(wsProvider);
+      }
     });
 
     return () => {
       cancelled = true;
+
+      // Abort any pending image uploads to prevent them from completing into wrong document
+      imageUploadAbortRef.current.abort();
+      // Create a new AbortController for the next document
+      imageUploadAbortRef.current = new AbortController();
+
       if (wsProvider) {
-        wsProvider.awareness.off('change', () => {});
+        // CRITICAL: Clear awareness state before destroying to prevent ghost cursors
+        // This notifies other clients that this user has left the document
+        wsProvider.awareness.setLocalState(null);
+        // Remove the awareness change listener using the stored callback reference
+        if (updateUsersCallback) {
+          wsProvider.awareness.off('change', updateUsersCallback);
+        }
+        // Destroy provider (disconnects WebSocket)
         wsProvider.destroy();
       }
+      // Destroy IndexedDB persistence
       indexeddbProvider.destroy();
+      // Clear provider state
+      setProvider(null);
+      setConnectedUsers([]);
     };
   }, [documentId, userName, color, ydoc, roomPrefix, onBack, onDocumentConverted]);
 
   // Create slash commands extension (memoized to avoid recreation)
+  // documentId is in deps to ensure fresh AbortSignal when switching documents
   const slashCommandsExtension = useMemo(() => {
-    if (!onCreateSubDocument) return null;
-    return createSlashCommands({ onCreateSubDocument, onNavigateToDocument, documentType });
-  }, [onCreateSubDocument, onNavigateToDocument, documentType]);
+    return createSlashCommands({
+      onCreateSubDocument,
+      onNavigateToDocument,
+      documentType,
+      abortSignal: imageUploadAbortRef.current.signal,
+    });
+  }, [onCreateSubDocument, onNavigateToDocument, documentType, documentId]);
 
   // Create mention extension (memoized to avoid recreation)
   const mentionExtension = useMemo(() => {
@@ -398,6 +549,7 @@ export function Editor({
       onUploadStart: (file) => console.log('Upload started:', file.name),
       onUploadComplete: (url) => console.log('Upload complete:', url),
       onUploadError: (error) => console.error('Upload error:', error),
+      abortController: imageUploadAbortRef.current,
     }),
     FileAttachmentExtension,
     DocumentEmbed,
@@ -408,7 +560,8 @@ export function Editor({
     mentionExtension,
     EmojiExtension,
     TableOfContentsExtension,
-    ...(slashCommandsExtension ? [slashCommandsExtension] : []),
+    HypothesisBlockExtension,
+    slashCommandsExtension,
   ];
 
   const extensions = provider
@@ -472,6 +625,41 @@ export function Editor({
       syncLinks();
     };
   }, [editor, documentId]);
+
+  // Sync plan content when HypothesisBlock changes (for sprint documents)
+  const lastSyncedPlanRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editor || !onPlanChange) return;
+
+    const syncPlan = () => {
+      const json = editor.getJSON();
+      const plan = extractHypothesisText(json);
+
+      // Only sync if plan has changed (including when it becomes null/empty)
+      if (plan === lastSyncedPlanRef.current) {
+        return;
+      }
+      lastSyncedPlanRef.current = plan;
+
+      // Call the callback with the new plan text (empty string if null)
+      onPlanChange(plan || '');
+    };
+
+    // Debounce during editing (300ms per PRD spec)
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const debouncedSync = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(syncPlan, 300);
+    };
+
+    editor.on('update', debouncedSync);
+    // Don't sync on initial load - let the parent handle initial state
+
+    return () => {
+      clearTimeout(debounceTimer);
+      editor.off('update', debouncedSync);
+    };
+  }, [editor, onPlanChange]);
 
   // Handle title changes
   const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -582,7 +770,7 @@ export function Editor({
       {/* Content area with optional sidebar */}
       <div className="flex flex-1 overflow-hidden">
         {/* Editor area - clickable to focus at end */}
-        <div className="flex flex-1 flex-col overflow-auto cursor-text">
+        <div className="flex flex-1 flex-col overflow-auto cursor-text pb-32">
           <div className="mx-auto max-w-3xl w-full py-8 pr-8 pl-12">
             {/* Breadcrumbs above title */}
             {breadcrumbs && (
@@ -595,7 +783,7 @@ export function Editor({
               ref={titleInputRef}
               type="text"
               value={title}
-              onChange={handleTitleChange}
+              onChange={titleReadOnly ? undefined : handleTitleChange}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -603,7 +791,11 @@ export function Editor({
                 }
               }}
               placeholder="Untitled"
-              className="mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none pl-8"
+              readOnly={titleReadOnly}
+              className={cn(
+                "mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none pl-8",
+                titleReadOnly && "cursor-default"
+              )}
             />
             <div className="tiptap-wrapper" data-testid="tiptap-editor">
               <EditorContent editor={editor} />
@@ -658,9 +850,11 @@ export function Editor({
               </Tooltip>
             </div>
             {/* Sidebar content */}
-            <div className="flex-1 overflow-auto">
-              {sidebar}
-            </div>
+            <ScrollFade className="flex-1">
+              <div className="pb-20">
+                {sidebar}
+              </div>
+            </ScrollFade>
           </div>
 
           {/* Expand button when right sidebar is collapsed */}

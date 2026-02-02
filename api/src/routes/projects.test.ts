@@ -45,7 +45,6 @@ describe('Projects API', () => {
           id: 'project-1',
           title: 'High Priority Project',
           properties: { impact: 5, confidence: 4, ease: 3, owner_id: 'owner-1', color: '#ff0000' },
-          program_id: null,
           archived_at: null,
           created_at: new Date(),
           updated_at: new Date(),
@@ -59,7 +58,6 @@ describe('Projects API', () => {
           id: 'project-2',
           title: 'Low Priority Project',
           properties: { impact: 2, confidence: 2, ease: 2, owner_id: 'owner-2', color: '#00ff00' },
-          program_id: null,
           archived_at: null,
           created_at: new Date(),
           updated_at: new Date(),
@@ -126,7 +124,6 @@ describe('Projects API', () => {
         id: 'project-new',
         title: 'Test Project',
         properties: { impact: 4, confidence: 3, ease: 5, owner_id: null, color: '#6366f1' },
-        program_id: null,
         archived_at: null,
         created_at: new Date(),
         updated_at: new Date(),
@@ -155,7 +152,6 @@ describe('Projects API', () => {
         id: 'project-new',
         title: 'New Project',
         properties: { impact: 4, confidence: 3, ease: 5, owner_id: ownerId, color: '#6366f1' },
-        program_id: null,
         archived_at: null,
         created_at: new Date(),
         updated_at: new Date(),
@@ -191,7 +187,6 @@ describe('Projects API', () => {
         id: 'project-new',
         title: 'Untitled',
         properties: { impact: null, confidence: null, ease: null, owner_id: null, color: '#6366f1' },
-        program_id: null,
         archived_at: null,
         created_at: new Date(),
         updated_at: new Date(),
@@ -231,7 +226,6 @@ describe('Projects API', () => {
         id: 'project-123',
         title: 'My Project',
         properties: { impact: 5, confidence: 5, ease: 5, owner_id: 'owner-1', color: '#123456' },
-        program_id: 'program-1',
         archived_at: null,
         created_at: new Date(),
         updated_at: new Date(),
@@ -249,7 +243,6 @@ describe('Projects API', () => {
       expect(res.status).toBe(200);
       expect(res.body.id).toBe('project-123');
       expect(res.body.ice_score).toBe(125); // 5 * 5 * 5 = max score
-      expect(res.body.program_id).toBe('program-1');
     });
 
     it('returns 404 for non-existent project', async () => {
@@ -273,7 +266,6 @@ describe('Projects API', () => {
         id: 'project-123',
         title: 'Updated Project',
         properties: { impact: 5, confidence: 4, ease: 3, owner_id: 'owner-1', color: '#6366f1' },
-        program_id: null,
         archived_at: null,
         created_at: new Date(),
         updated_at: new Date(),

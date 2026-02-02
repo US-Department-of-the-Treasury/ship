@@ -208,10 +208,17 @@ describe('Backlinks API', () => {
 
       // Create an issue document that links to the target
       const issueResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, ticket_number, program_id, created_by)
-         VALUES ($1, 'issue', 'Test Issue', 42, $2, $3)
+        `INSERT INTO documents (workspace_id, document_type, title, ticket_number, created_by)
+         VALUES ($1, 'issue', 'Test Issue', 42, $2)
          RETURNING id`,
-        [testWorkspaceId, programId, testUserId]
+        [testWorkspaceId, testUserId]
+      );
+
+      // Associate issue with program
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [issueResult.rows[0].id, programId]
       );
       const issueId = issueResult.rows[0].id;
 

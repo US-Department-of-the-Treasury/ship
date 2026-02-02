@@ -59,8 +59,9 @@ function isH2Heading(node: TipTapNode): boolean {
 /**
  * Extract hypothesis content from TipTap document JSON.
  *
- * Finds the first H2 "Hypothesis" heading and extracts all content
- * until the next H2 heading (or end of document).
+ * Looks for:
+ * 1. hypothesisBlock nodes (preferred - custom block component)
+ * 2. H2 "Hypothesis" heading with content until next H2 (legacy format)
  *
  * @param content - TipTap JSON document
  * @returns Extracted hypothesis text, or null if no hypothesis section found
@@ -72,6 +73,16 @@ export function extractHypothesisFromContent(content: unknown): string | null {
   if (doc.type !== 'doc' || !Array.isArray(doc.content)) return null;
 
   const nodes = doc.content;
+
+  // First, look for hypothesisBlock nodes (preferred)
+  for (const node of nodes) {
+    if (node.type === 'hypothesisBlock' && node.content) {
+      const text = extractText(node.content).trim();
+      if (text) return text;
+    }
+  }
+
+  // Fallback: look for H2 "Hypothesis" heading (legacy format)
   let hypothesisStartIndex = -1;
 
   // Find the Hypothesis H2 heading
@@ -254,8 +265,9 @@ export function extractGoalsFromContent(content: unknown): string | null {
  * Check if a document is complete based on document type requirements.
  *
  * Requirements:
- * - Projects: need hypothesis AND success_criteria
- * - Sprints: need goal, start_date, end_date, AND at least 1 linked issue
+ * - Projects: need plan AND success_criteria
+ * - Sprints: need plan AND at least 1 linked issue
+ *   (dates are computed from sprint_number + workspace.sprint_start_date)
  *
  * @param documentType - The document type (project, sprint, etc.)
  * @param properties - The document's properties object
@@ -271,23 +283,18 @@ export function checkDocumentCompleteness(
   const missingFields: string[] = [];
 
   if (documentType === 'project') {
-    // Projects need hypothesis + success_criteria
-    if (!props.hypothesis || (typeof props.hypothesis === 'string' && !props.hypothesis.trim())) {
-      missingFields.push('Hypothesis');
+    // Projects need plan + success_criteria
+    if (!props.plan || (typeof props.plan === 'string' && !props.plan.trim())) {
+      missingFields.push('Plan');
     }
     if (!props.success_criteria || (typeof props.success_criteria === 'string' && !props.success_criteria.trim())) {
       missingFields.push('Success Criteria');
     }
   } else if (documentType === 'sprint') {
-    // Sprints need goal + date range + at least 1 linked issue
-    if (!props.goal || (typeof props.goal === 'string' && !props.goal.trim())) {
-      missingFields.push('Goal');
-    }
-    if (!props.start_date) {
-      missingFields.push('Start Date');
-    }
-    if (!props.end_date) {
-      missingFields.push('End Date');
+    // Sprints need plan + at least 1 linked issue
+    // Dates are computed from sprint_number + workspace.sprint_start_date
+    if (!props.plan || (typeof props.plan === 'string' && !props.plan.trim())) {
+      missingFields.push('Plan');
     }
     if (linkedIssuesCount === 0) {
       missingFields.push('Linked Issues');

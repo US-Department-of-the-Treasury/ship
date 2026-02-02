@@ -119,7 +119,7 @@ test.describe('Phase 1: Critical Violations', () => {
       await page.waitForLoadState('networkidle')
 
       // Open a document to see sync status
-      const docLink = page.locator('a[href*="/docs/"]').first()
+      const docLink = page.locator('a[href*="/documents/"]').first()
       await expect(docLink).toBeVisible({ timeout: 5000 })
       await docLink.click()
       await page.waitForLoadState('networkidle')
@@ -148,7 +148,7 @@ test.describe('Phase 1: Critical Violations', () => {
       await page.waitForLoadState('networkidle')
 
       // Open an issue to see comboboxes in properties sidebar
-      const issueLink = page.locator('a[href*="/issues/"]').first()
+      const issueLink = page.locator('a[href*="/documents/"]').first()
       await expect(issueLink).toBeVisible({ timeout: 5000 })
       await issueLink.click()
       await page.waitForLoadState('networkidle')
@@ -675,7 +675,7 @@ test.describe('Phase 2: Serious Violations', () => {
       await page.waitForLoadState('networkidle')
 
       // Open a document to see auto-save
-      const docLink = page.locator('a[href*="/docs/"]').first()
+      const docLink = page.locator('a[href*="/documents/"]').first()
       await expect(docLink).toBeVisible({ timeout: 5000 })
       await docLink.click()
       await page.waitForLoadState('networkidle')
@@ -698,7 +698,7 @@ test.describe('Phase 2: Serious Violations', () => {
       await page.waitForLoadState('networkidle')
 
       // Open a document with content
-      const docLink = page.locator('a[href*="/docs/"]').first()
+      const docLink = page.locator('a[href*="/documents/"]').first()
       await expect(docLink).toBeVisible({ timeout: 5000 })
       await docLink.click()
       await page.waitForLoadState('networkidle')
@@ -794,7 +794,7 @@ test.describe('Phase 2: Serious Violations', () => {
       // Properties Sidebar: aside with aria-label="Document properties"
       // Note: Properties sidebar only appears when editing a document (4-panel editor layout)
       // Navigate to a document first to get the full 4-panel layout
-      const docLink = page.locator('a[href*="/docs/"]').first()
+      const docLink = page.locator('a[href*="/documents/"]').first()
       if (await docLink.isVisible({ timeout: 3000 }).catch(() => false)) {
         await docLink.click()
         await page.waitForLoadState('networkidle')
@@ -808,7 +808,7 @@ test.describe('Phase 2: Serious Violations', () => {
       await page.waitForLoadState('networkidle')
 
       // Navigate to a document to get the full 4-panel layout with properties sidebar
-      const docLink = page.locator('a[href*="/docs/"]').first()
+      const docLink = page.locator('a[href*="/documents/"]').first()
       if (await docLink.isVisible({ timeout: 3000 }).catch(() => false)) {
         await docLink.click()
         await page.waitForLoadState('networkidle')
@@ -849,7 +849,7 @@ test.describe('Phase 2: Serious Violations', () => {
       await page.waitForLoadState('networkidle')
 
       // Issue link MUST exist
-      const issueLink = page.locator('a[href*="/issues/"]').first()
+      const issueLink = page.locator('a[href*="/documents/"]').first()
       await expect(issueLink).toBeVisible({ timeout: 5000 })
       await issueLink.click()
       await page.waitForLoadState('networkidle')
@@ -891,7 +891,7 @@ test.describe('Phase 2: Serious Violations', () => {
       await page.goto('/issues')
       await page.waitForLoadState('networkidle')
 
-      const issueLink = page.locator('a[href*="/issues/"]').first()
+      const issueLink = page.locator('a[href*="/documents/"]').first()
       await expect(issueLink).toBeVisible({ timeout: 5000 })
       await issueLink.click()
       await page.waitForLoadState('networkidle')
@@ -932,9 +932,8 @@ test.describe('Phase 2: Serious Violations', () => {
       const expandableItem = page.locator('[aria-expanded]').first()
       const hasExpandable = await expandableItem.count() > 0
 
-      // SKIP this test if no nested documents exist in test data
-      // This is a valid skip because the feature only applies to nested docs
-      test.skip(!hasExpandable, 'No nested documents in test data - feature not applicable')
+      // Seed data must provide nested documents for this test
+      expect(hasExpandable, 'Seed data should provide nested documents. Run: pnpm db:seed').toBe(true)
 
       // Expand to find a nested document
       const isExpanded = await expandableItem.getAttribute('aria-expanded')
@@ -946,7 +945,7 @@ test.describe('Phase 2: Serious Violations', () => {
       }
 
       // Find a child document link (must be in nested ul, not the parent's own link)
-      const childDoc = expandableItem.locator('ul a[href*="/docs/"]').first()
+      const childDoc = expandableItem.locator('ul a[href*="/documents/"]').first()
       await expect(childDoc).toBeVisible({ timeout: 3000 })
 
       const childHref = await childDoc.getAttribute('href')
@@ -977,7 +976,7 @@ test.describe('Phase 2: Serious Violations', () => {
       const sidebar = page.locator('[aria-label="Document list"]')
       await expect(sidebar).toBeVisible({ timeout: 5000 })
 
-      const docLink = sidebar.locator('a[href*="/docs/"]').first()
+      const docLink = sidebar.locator('a[href*="/documents/"]').first()
       await expect(docLink).toBeVisible()
       const href = await docLink.getAttribute('href')
       await docLink.click()
@@ -1080,7 +1079,7 @@ test.describe('Phase 2: Serious Violations', () => {
       await page.waitForLoadState('networkidle')
 
       // Open a document with properties sidebar
-      const docLink = page.locator('a[href*="/issues/"]').first()
+      const docLink = page.locator('a[href*="/documents/"]').first()
       await expect(docLink).toBeVisible({ timeout: 5000 })
       await docLink.click()
       await page.waitForLoadState('networkidle')
@@ -1481,7 +1480,7 @@ test.describe('Phase 4: Minor Violations', () => {
       await page.waitForLoadState('networkidle')
 
       // Open an issue with properties sidebar
-      const issueLink = page.locator('a[href*="/issues/"]').first()
+      const issueLink = page.locator('a[href*="/documents/"]').first()
       await expect(issueLink).toBeVisible({ timeout: 5000 })
       await issueLink.click()
       await page.waitForLoadState('networkidle')

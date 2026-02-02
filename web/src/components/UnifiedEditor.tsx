@@ -1,10 +1,15 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
-import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
-import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
-import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
-import { SprintSidebar } from '@/components/sidebars/SprintSidebar';
+import { PropertiesPanel } from '@/components/sidebars/PropertiesPanel';
+import type {
+  PanelDocument,
+  WikiPanelProps,
+  IssuePanelProps,
+  ProjectPanelProps,
+  SprintPanelProps,
+  ProgramPanelProps,
+} from '@/components/sidebars/PropertiesPanel';
 import { DocumentTypeSelector, getMissingRequiredFields } from '@/components/sidebars/DocumentTypeSelector';
 import type { DocumentType as SelectableDocumentType } from '@/components/sidebars/DocumentTypeSelector';
 import { useAuth } from '@/hooks/useAuth';
@@ -12,7 +17,7 @@ import { useAutoSave } from '@/hooks/useAutoSave';
 import type { Person } from '@/components/PersonCombobox';
 import type { BelongsTo } from '@ship/shared';
 
-export type DocumentType = 'wiki' | 'issue' | 'project' | 'sprint' | 'program' | 'person';
+export type DocumentType = 'wiki' | 'issue' | 'project' | 'sprint' | 'program' | 'person' | 'weekly_plan' | 'weekly_retro';
 
 // Base document interface - common properties across all document types
 interface BaseDocument {
@@ -53,15 +58,19 @@ interface IssueDocument extends BaseDocument {
 // Project document
 interface ProjectDocument extends BaseDocument {
   document_type: 'project';
-  impact: number;
-  confidence: number;
-  ease: number;
-  ice_score?: number;
+  impact: number | null;
+  confidence: number | null;
+  ease: number | null;
+  ice_score?: number | null;
   color: string;
   emoji: string | null;
   program_id: string | null;
-  owner?: { id: string; name: string } | null;
+  owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
+  // RACI fields
+  accountable_id?: string | null;
+  consulted_ids?: string[];
+  informed_ids?: string[];
   sprint_count?: number;
   issue_count?: number;
   converted_from_id?: string | null;
@@ -72,12 +81,12 @@ interface SprintDocument extends BaseDocument {
   document_type: 'sprint';
   start_date: string;
   end_date: string;
-  status: 'planned' | 'active' | 'completed';
+  status: 'planning' | 'active' | 'completed';
   program_id: string | null;
   program_name?: string;
   issue_count?: number;
   completed_count?: number;
-  hypothesis?: string;
+  plan?: string;
 }
 
 // Union type for all document types
@@ -111,10 +120,15 @@ interface ProjectSidebarData {
 }
 
 interface SprintSidebarData {
-  // Sprint sidebar doesn't need extra data currently
+  people?: Array<{ id: string; user_id: string; name: string }>;
+  existingSprints?: Array<{ owner?: { id: string; name: string; email: string } | null }>;
 }
 
-export type SidebarData = WikiSidebarData | IssueSidebarData | ProjectSidebarData | SprintSidebarData;
+interface ProgramSidebarData {
+  people: Array<{ id: string; user_id: string; name: string; email: string }>;
+}
+
+export type SidebarData = WikiSidebarData | IssueSidebarData | ProjectSidebarData | SprintSidebarData | ProgramSidebarData;
 
 interface UnifiedEditorProps {
   /** The document to edit */
@@ -234,9 +248,16 @@ export function UnifiedEditor({
     if (onNavigateToDocument) {
       onNavigateToDocument(docId);
     } else {
-      navigate(`/docs/${docId}`);
+      navigate(`/documents/${docId}`);
     }
   }, [navigate, onNavigateToDocument]);
+
+  // Handle plan change (for sprint and project documents)
+  const handlePlanChange = useCallback(async (plan: string) => {
+    if (document.document_type !== 'sprint' && document.document_type !== 'project') return;
+    // Update the plan property
+    await onUpdate({ plan } as Partial<UnifiedDocument>);
+  }, [document.document_type, onUpdate]);
 
   // Determine room prefix based on document type if not provided
   const effectiveRoomPrefix = roomPrefix || document.document_type;
@@ -247,77 +268,82 @@ export function UnifiedEditor({
   // Check if this document type can have its type changed
   const canChangeType = ['wiki', 'issue', 'project', 'sprint'].includes(document.document_type);
 
-  // Render the type-specific sidebar content
-  const typeSpecificSidebar = useMemo(() => {
+  // Build panel-specific props from sidebarData
+  const panelProps = useMemo(() => {
     switch (document.document_type) {
-      case 'wiki':
-        return (
-          <WikiSidebar
-            document={document as WikiDocument}
-            teamMembers={(sidebarData as WikiSidebarData).teamMembers || []}
-            currentUserId={user?.id}
-            onUpdate={onUpdate as (updates: Partial<WikiDocument>) => Promise<void>}
-          />
-        );
-
+      case 'wiki': {
+        const wikiData = sidebarData as WikiSidebarData;
+        return {
+          teamMembers: wikiData.teamMembers || [],
+          currentUserId: user?.id,
+        } as WikiPanelProps;
+      }
       case 'issue': {
         const issueData = sidebarData as IssueSidebarData;
-        return (
-          <IssueSidebar
-            issue={document as IssueDocument}
-            teamMembers={issueData.teamMembers || []}
-            programs={issueData.programs || []}
-            projects={issueData.projects || []}
-            onUpdate={onUpdate as (updates: Partial<IssueDocument>) => Promise<void>}
-            onConvert={issueData.onConvert}
-            onUndoConversion={issueData.onUndoConversion}
-            onAccept={issueData.onAccept}
-            onReject={issueData.onReject}
-            isConverting={issueData.isConverting}
-            isUndoing={issueData.isUndoing}
-            highlightedFields={missingFields}
-            onAssociationChange={issueData.onAssociationChange}
-          />
-        );
+        return {
+          teamMembers: issueData.teamMembers || [],
+          programs: issueData.programs || [],
+          projects: issueData.projects || [],
+          onConvert: issueData.onConvert,
+          onUndoConversion: issueData.onUndoConversion,
+          onAccept: issueData.onAccept,
+          onReject: issueData.onReject,
+          isConverting: issueData.isConverting,
+          isUndoing: issueData.isUndoing,
+          onAssociationChange: issueData.onAssociationChange,
+        } as IssuePanelProps;
       }
-
       case 'project': {
         const projectData = sidebarData as ProjectSidebarData;
-        return (
-          <ProjectSidebar
-            project={document as ProjectDocument}
-            programs={projectData.programs || []}
-            people={projectData.people || []}
-            onUpdate={onUpdate as (updates: Partial<ProjectDocument>) => Promise<void>}
-            onConvert={projectData.onConvert}
-            onUndoConversion={projectData.onUndoConversion}
-            isConverting={projectData.isConverting}
-            isUndoing={projectData.isUndoing}
-            highlightedFields={missingFields}
-          />
-        );
+        return {
+          programs: projectData.programs || [],
+          people: projectData.people || [],
+          onConvert: projectData.onConvert,
+          onUndoConversion: projectData.onUndoConversion,
+          isConverting: projectData.isConverting,
+          isUndoing: projectData.isUndoing,
+        } as ProjectPanelProps;
       }
-
-      case 'sprint':
-        return (
-          <SprintSidebar
-            sprint={document as SprintDocument}
-            onUpdate={onUpdate as (updates: Partial<SprintDocument>) => Promise<void>}
-            highlightedFields={missingFields}
-          />
-        );
-
-      // Default fallback for types without specific sidebars
+      case 'sprint': {
+        const sprintData = sidebarData as SprintSidebarData;
+        return {
+          people: sprintData.people || [],
+          existingSprints: sprintData.existingSprints || [],
+        } as SprintPanelProps;
+      }
+      case 'program': {
+        const programData = sidebarData as ProgramSidebarData;
+        return {
+          people: programData.people || [],
+        } as ProgramPanelProps;
+      }
       default:
-        return (
-          <div className="p-4">
-            <p className="text-xs text-muted">
-              Document type: {document.document_type}
-            </p>
-          </div>
-        );
+        return {};
     }
-  }, [document, sidebarData, user?.id, onUpdate, missingFields]);
+  }, [document.document_type, sidebarData, user?.id]);
+
+  // Render the type-specific sidebar content via unified PropertiesPanel
+  const typeSpecificSidebar = useMemo(() => {
+    // Check if document type has a properties panel
+    if (!['wiki', 'issue', 'project', 'sprint', 'program', 'weekly_plan', 'weekly_retro'].includes(document.document_type)) {
+      return (
+        <div className="p-4">
+          <p className="text-xs text-muted">
+            Document type: {document.document_type}
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <PropertiesPanel
+        document={document as PanelDocument}
+        panelProps={panelProps}
+        onUpdate={onUpdate as (updates: Partial<PanelDocument>) => Promise<void>}
+        highlightedFields={missingFields}
+      />
+    );
+  }, [document, panelProps, onUpdate, missingFields]);
 
   // Compose full sidebar with type selector
   const sidebar = useMemo(() => {
@@ -343,7 +369,7 @@ export function UnifiedEditor({
           )}
         </div>
         {/* Type-specific sidebar */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto pb-20">
           {typeSpecificSidebar}
         </div>
       </div>
@@ -354,12 +380,16 @@ export function UnifiedEditor({
     return null;
   }
 
+  // Weekly plans and retros have computed titles (includes person name) - make read-only
+  const isTitleReadOnly = document.document_type === 'weekly_plan' || document.document_type === 'weekly_retro';
+
   return (
     <Editor
       documentId={document.id}
       userName={user.name}
       initialTitle={document.title}
-      onTitleChange={throttledTitleSave}
+      onTitleChange={isTitleReadOnly ? undefined : throttledTitleSave}
+      titleReadOnly={isTitleReadOnly}
       onBack={onBack}
       backLabel={backLabel}
       onDelete={onDelete}
@@ -370,6 +400,8 @@ export function UnifiedEditor({
       onDocumentConverted={onDocumentConverted}
       headerBadge={headerBadge}
       sidebar={sidebar}
+      documentType={document.document_type}
+      onPlanChange={document.document_type === 'sprint' || document.document_type === 'project' ? handlePlanChange : undefined}
     />
   );
 }
@@ -386,7 +418,7 @@ function getDefaultPlaceholder(documentType: DocumentType): string {
     case 'project':
       return 'Describe this project...';
     case 'sprint':
-      return 'Add sprint goals, notes, or description...';
+      return 'Add week goals, notes, or description...';
     case 'program':
       return 'Describe this program...';
     case 'person':
@@ -396,8 +428,19 @@ function getDefaultPlaceholder(documentType: DocumentType): string {
   }
 }
 
-// Re-export sidebar components for direct use
+// Re-export PropertiesPanel as the unified entry point for sidebars
+export { PropertiesPanel } from '@/components/sidebars/PropertiesPanel';
+export type {
+  PanelDocument,
+  PanelDocumentType,
+  WikiPanelProps,
+  IssuePanelProps,
+  ProjectPanelProps,
+  SprintPanelProps,
+} from '@/components/sidebars/PropertiesPanel';
+
+// Legacy re-exports for backwards compatibility (deprecated - use PropertiesPanel)
 export { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 export { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 export { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
-export { SprintSidebar } from '@/components/sidebars/SprintSidebar';
+export { WeekSidebar } from '@/components/sidebars/WeekSidebar';

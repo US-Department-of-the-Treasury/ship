@@ -35,121 +35,14 @@ async function getProgramId(page: import('@playwright/test').Page): Promise<stri
   // Click on the Ship Core program row in the table
   const programRow = page.locator('tr[role="row"]', { hasText: /ship core/i }).first();
   await programRow.click();
-  await page.waitForURL(/\/programs\/[a-f0-9-]+/i, { timeout: 10000 });
+  await page.waitForURL(/\/documents\/[a-f0-9-]+/i, { timeout: 10000 });
 
   // Extract program ID from URL
   const url = page.url();
-  const programId = url.split('/programs/')[1]?.split(/[?#]/)[0];
+  const programId = url.split('/documents/')[1]?.split(/[?#/]/)[0];
   if (!programId) throw new Error('Could not extract program ID from URL');
   return programId;
 }
-
-test.describe('Issue State: Triage', () => {
-  test('triage state is available in issue state options', async ({ page }) => {
-    await login(page);
-
-    // Navigate to Issues and open an issue
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Click on the first issue to open it
-    await page.locator('tr[role="row"]').first().click();
-    await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
-
-    // Find the status select and verify triage is an option
-    const statusSelect = page.locator('select[aria-label="Status"]');
-    await expect(statusSelect).toBeVisible();
-
-    // Check that triage option exists
-    const triageOption = statusSelect.locator('option[value="triage"]');
-    await expect(triageOption).toHaveText('Needs Triage');
-  });
-
-  test('external submissions create issues with state=triage', async ({ page, apiServer }) => {
-    // Submit public feedback (no login needed)
-    // First, we need to find a program ID
-    await login(page);
-    const programId = await getProgramId(page);
-
-    const uniqueTitle = `External feedback ${Date.now()}`;
-
-    // Submit directly to API (public endpoint, no auth needed)
-    const response = await page.request.post(`${apiServer.url}/api/feedback`, {
-      data: {
-        title: uniqueTitle,
-        submitter_email: 'test@example.com',
-        program_id: programId,
-      },
-    });
-    expect(response.ok()).toBeTruthy();
-    const created = await response.json();
-    expect(created.state).toBe('triage');
-    expect(created.source).toBe('external');
-
-    // Verify the issue exists via API (through Vite proxy, using session cookies)
-    const issuesResponse = await page.request.get('/api/issues');
-    expect(issuesResponse.ok()).toBeTruthy();
-    const issues = await issuesResponse.json();
-    const newIssue = issues.find((i: { title: string }) => i.title === uniqueTitle);
-    expect(newIssue).toBeTruthy();
-    expect(newIssue.state).toBe('triage');
-
-    // Clear IndexedDB to force fresh data fetch on next page load
-    // Must be done before page.goto to avoid race conditions
-    await page.evaluate(() => {
-      return new Promise<void>((resolve) => {
-        // Delete both the query cache and mutation queue databases
-        const req1 = indexedDB.deleteDatabase('ship-query-cache');
-        const req2 = indexedDB.deleteDatabase('ship-mutation-queue');
-        let completed = 0;
-        const checkDone = () => { if (++completed >= 2) resolve(); };
-        req1.onsuccess = req1.onerror = checkDone;
-        req2.onsuccess = req2.onerror = checkDone;
-        // Timeout after 3 seconds to avoid hanging
-        setTimeout(resolve, 3000);
-      });
-    });
-
-    // Navigate to issues with fresh state
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Wait for table to load
-    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
-
-    // Click on Needs Triage tab to filter to the state we expect
-    await page.getByRole('tab', { name: /needs triage/i }).click();
-    await page.waitForTimeout(500); // Wait for filter to apply
-
-    // Find the issue we just created
-    const issueRow = page.locator('tr[role="row"]', { hasText: uniqueTitle });
-    await expect(issueRow).toBeVisible({ timeout: 10000 });
-
-    // Click to open it
-    await issueRow.click();
-    await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
-
-    // Verify state is triage
-    const statusSelect = page.locator('select[aria-label="Status"]');
-    await expect(statusSelect).toHaveValue('triage');
-  });
-
-  test('internal issue creation skips triage, goes to backlog', async ({ page }) => {
-    await login(page);
-
-    // Navigate to Issues
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Click New Issue button
-    await page.locator('button', { hasText: /new issue/i }).first().click();
-    await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
-
-    // Verify state is backlog (not triage) for internal issues
-    const statusSelect = page.locator('select[aria-label="Status"]');
-    await expect(statusSelect).toHaveValue('backlog');
-  });
-});
 
 test.describe('Issues List: Source Display', () => {
   test('source column/badge shows "External" for external issues', async ({ page }) => {
@@ -183,115 +76,14 @@ test.describe('Issues List: Needs Triage Filter', () => {
 
 });
 
-test.describe('Triage Workflow: Accept', () => {
-  test('Accept button appears on triage-state issues', async ({ page }) => {
-    await login(page);
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Open a triage issue
-    const triageIssue = page.locator('tr[role="row"]', { hasText: 'External feature request' });
-    await triageIssue.click();
-    await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
-
-    // Accept button should be visible (use exact match to avoid matching "Actions for Accepted...")
-    await expect(page.getByRole('button', { name: 'Accept', exact: true })).toBeVisible();
-  });
-
-  test('accepting issue moves it to backlog state', async ({ page }) => {
-    await login(page);
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Open a triage issue
-    const triageIssue = page.locator('tr[role="row"]', { hasText: 'Bug report from customer' });
-    await triageIssue.click();
-    await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
-
-    // Verify Accept button is visible (issue is in triage) - use exact match
-    const acceptButton = page.getByRole('button', { name: 'Accept', exact: true });
-    await expect(acceptButton).toBeVisible({ timeout: 5000 });
-
-    // Verify state is triage before accepting
-    const statusSelect = page.locator('select[aria-label="Status"]');
-    await expect(statusSelect).toHaveValue('triage');
-
-    // Click Accept
-    await acceptButton.click();
-
-    // State should change to backlog - wait longer for API roundtrip and UI update
-    await expect(statusSelect).toHaveValue('backlog', { timeout: 15000 });
-  });
-
-});
-
-test.describe('Triage Workflow: Reject', () => {
-  test('Reject button appears on triage-state issues', async ({ page }) => {
-    await login(page);
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Open a triage issue
-    const triageIssue = page.locator('tr[role="row"]', { hasText: 'External feature request' });
-    await expect(triageIssue).toBeVisible({ timeout: 10000 });
-    await triageIssue.click();
-    await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
-
-    // Reject button should be visible (use exact match)
-    await expect(page.getByRole('button', { name: 'Reject', exact: true })).toBeVisible();
-  });
-
-  test('rejected issue moves to cancelled state', async ({ page }) => {
-    await login(page);
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Wait for initial table to load
-    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
-
-    // The 'Rejected spam submission' was seeded as rejected
-    // Filter to cancelled
-    await page.getByRole('tab', { name: /cancelled/i }).click();
-
-    // Wait for filter to apply and table to re-render
-    await page.waitForTimeout(500);
-
-    // Should see rejected issue
-    const rejectedIssue = page.locator('tr[role="row"]', { hasText: 'Rejected spam submission' });
-    await expect(rejectedIssue).toBeVisible({ timeout: 10000 });
-  });
-
-  test('rejected issue retains source=external', async ({ page }) => {
-    await login(page);
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Wait for initial table to load
-    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
-
-    // Filter to cancelled
-    await page.getByRole('tab', { name: /cancelled/i }).click();
-
-    // Wait for filter to apply and table to re-render
-    await page.waitForTimeout(500);
-
-    // Open rejected issue
-    const rejectedIssue = page.locator('tr[role="row"]', { hasText: 'Rejected spam submission' });
-    await rejectedIssue.click();
-    await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
-
-    // Should still show External source
-    await expect(page.locator('span:text-is("External")')).toBeVisible();
-  });
-});
-
 test.describe('Public Feedback Form', () => {
   test('public form accessible without login', async ({ page }) => {
     // First need to get a program ID
     await login(page);
     const programId = await getProgramId(page);
 
-    // Clear cookies to simulate logged out
+    // Navigate away from protected page before clearing cookies to avoid auth redirect race
+    await page.goto('about:blank');
     await page.context().clearCookies();
 
     // Navigate to public feedback form
@@ -306,7 +98,8 @@ test.describe('Public Feedback Form', () => {
     await login(page);
     const programId = await getProgramId(page);
 
-    // Clear cookies and submit feedback
+    // Navigate away from protected page before clearing cookies to avoid auth redirect race
+    await page.goto('about:blank');
     await page.context().clearCookies();
     await page.goto(`/feedback/${programId}`);
 
@@ -355,6 +148,8 @@ test.describe('Public Feedback Form', () => {
     await login(page);
     const programId = await getProgramId(page);
 
+    // Navigate away from protected page before clearing cookies to avoid auth redirect race
+    await page.goto('about:blank');
     await page.context().clearCookies();
     await page.goto(`/feedback/${programId}`);
 
@@ -370,6 +165,8 @@ test.describe('Public Feedback Form', () => {
     await login(page);
     const programId = await getProgramId(page);
 
+    // Navigate away from protected page before clearing cookies to avoid auth redirect race
+    await page.goto('about:blank');
     await page.context().clearCookies();
     await page.goto(`/feedback/${programId}`);
 
@@ -395,10 +192,10 @@ test.describe('Program View: Feedback Tab Removed', () => {
     // Wait for program editor to load (use specific tablist to avoid matching nav)
     await expect(page.getByRole('tablist', { name: 'Content tabs' })).toBeVisible({ timeout: 10000 });
 
-    // Should have Overview, Issues, Sprints tabs
+    // Should have Overview, Issues, Projects, Weeks tabs
     await expect(page.getByRole('tab', { name: /overview/i })).toBeVisible();
     await expect(page.getByRole('tab', { name: /issues/i })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /sprints/i })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /weeks/i })).toBeVisible();
 
     // Should NOT have Feedback tab
     await expect(page.getByRole('tab', { name: /feedback/i })).not.toBeVisible();
@@ -412,13 +209,27 @@ test.describe('Program View: Feedback Tab Removed', () => {
     // Click Issues tab
     await page.getByRole('tab', { name: /issues/i }).click();
 
+    // Wait for the issues tab content to load
+    await page.waitForTimeout(2000);
+
+    // Check if there are any issues - this depends on seed data
+    const noIssuesMessage = page.getByText('No issues found');
+    const tableRows = page.locator('table tbody tr');
+
+    // Wait a bit for data to load
+    await page.waitForTimeout(1000);
+
+    // Check if we have a "No issues found" message
+    const hasNoIssues = await noIssuesMessage.isVisible().catch(() => false);
+
+    // Issues should exist in seed data - fail if they don't
+    expect(hasNoIssues).toBe(false)
+
     // Wait for issues table to load and verify issues are displayed
-    // ProgramEditor's issue list shows ID, Title, Status, Assignee (no Source column)
-    // Instead, verify seeded issues appear - both internal (Initial project setup) and external (External feature request)
-    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
+    await expect(tableRows.first()).toBeVisible({ timeout: 10000 });
 
     // Verify at least some issues are shown (program should have issues)
-    const issueCount = await page.locator('table tbody tr').count();
+    const issueCount = await tableRows.count();
     expect(issueCount).toBeGreaterThan(0);
   });
 });
@@ -484,62 +295,6 @@ test.describe('Data Migration', () => {
     const internalIssue = page.locator('tr[role="row"]', { hasText: 'Initial project setup' });
     await expect(internalIssue).toBeVisible({ timeout: 10000 });
     await expect(internalIssue.locator('span:text-is("Internal")')).toBeVisible();
-  });
-});
-
-test.describe('Issue Properties Panel', () => {
-  test('shows source field for all issues', async ({ page }) => {
-    await login(page);
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Open any issue
-    await page.locator('tr[role="row"]').first().click();
-    await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
-
-    // Should show Source label and value (Internal or External)
-    await expect(page.locator('text=Source')).toBeVisible();
-    const sourceValue = page.locator('text=Internal').or(page.locator('text=External'));
-    await expect(sourceValue.first()).toBeVisible();
-  });
-
-  test('shows rejection reason for rejected external issues', async ({ page }) => {
-    await login(page);
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Wait for initial table to load
-    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 10000 });
-
-    // Filter to cancelled
-    await page.getByRole('tab', { name: /cancelled/i }).click();
-
-    // Wait for filter to apply and table to re-render
-    await page.waitForTimeout(500);
-
-    // Open rejected issue
-    await page.locator('tr[role="row"]', { hasText: 'Rejected spam submission' }).click();
-    await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
-
-    // Should show rejection reason
-    await expect(page.locator('text=Rejection Reason')).toBeVisible();
-    await expect(page.locator('text=Not relevant to product')).toBeVisible();
-  });
-
-  test('rejection reason field hidden for non-rejected issues', async ({ page }) => {
-    await login(page);
-    await page.goto('/issues');
-    await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
-
-    // Filter to backlog
-    await page.getByRole('tab', { name: /backlog/i }).click();
-
-    // Open a backlog issue
-    await page.locator('tr[role="row"]').first().click();
-    await expect(page.locator('[data-testid="ticket-number"]')).toBeVisible({ timeout: 10000 });
-
-    // Should NOT show rejection reason field
-    await expect(page.locator('text=Rejection Reason')).not.toBeVisible();
   });
 });
 

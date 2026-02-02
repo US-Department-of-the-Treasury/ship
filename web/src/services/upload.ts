@@ -7,6 +7,10 @@
 // In production, use VITE_API_URL or relative URLs
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
+// File size limits
+export const MAX_FILE_SIZE = 1073741824; // 1GB in bytes
+export const MAX_FILE_SIZE_DISPLAY = '1GB';
+
 interface UploadResult {
   fileId: string;
   cdnUrl: string;
@@ -35,12 +39,19 @@ async function getCsrfToken(): Promise<string> {
  * Upload a file to the server
  * @param file - The file to upload
  * @param onProgress - Optional callback for progress updates
+ * @param signal - Optional AbortSignal for cancelling the upload
  * @returns The CDN URL of the uploaded file
  */
 export async function uploadFile(
   file: File,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  signal?: AbortSignal
 ): Promise<UploadResult> {
+  // Check if already aborted
+  if (signal?.aborted) {
+    throw new DOMException('Upload cancelled', 'AbortError');
+  }
+
   const csrfToken = await getCsrfToken();
 
   const progress: UploadProgress = {
@@ -73,6 +84,7 @@ export async function uploadFile(
         mimeType: effectiveMimeType,
         sizeBytes: file.size,
       }),
+      signal,
     });
 
     if (!uploadReqRes.ok) {
@@ -102,6 +114,7 @@ export async function uploadFile(
         },
         credentials: 'include',
         body: fileBuffer,
+        signal,
       });
 
       if (!uploadRes.ok) {
@@ -115,6 +128,7 @@ export async function uploadFile(
       // Just get the file metadata to return the CDN URL
       const fileRes = await fetch(`${API_BASE}/api/files/${fileId}`, {
         credentials: 'include',
+        signal,
       });
 
       if (!fileRes.ok) {
@@ -136,6 +150,7 @@ export async function uploadFile(
           'Content-Type': effectiveMimeType,
         },
         body: fileBuffer,
+        signal,
       });
 
       if (!uploadRes.ok) {
@@ -151,6 +166,7 @@ export async function uploadFile(
           'x-csrf-token': csrfToken,
         },
         credentials: 'include',
+        signal,
       });
 
       if (!confirmRes.ok) {

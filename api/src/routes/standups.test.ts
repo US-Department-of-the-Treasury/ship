@@ -107,12 +107,19 @@ describe('Standups API', () => {
 
     // Create a sprint for standup tests
     const sprintResult = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, created_by, parent_id, program_id, visibility)
-       VALUES ($1, 'sprint', 'Test Sprint', $2, $3, $3, 'workspace')
+      `INSERT INTO documents (workspace_id, document_type, title, created_by, parent_id, visibility)
+       VALUES ($1, 'sprint', 'Test Sprint', $2, $3, 'workspace')
        RETURNING id`,
       [testWorkspaceId, testUserId, testProgramId]
     )
     testSprintId = sprintResult.rows[0].id
+
+    // Associate sprint with program
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type)
+       VALUES ($1, $2, 'program')`,
+      [testSprintId, testProgramId]
+    )
   })
 
   afterAll(async () => {
@@ -131,10 +138,10 @@ describe('Standups API', () => {
     )
   })
 
-  describe('POST /api/sprints/:id/standups', () => {
+  describe('POST /api/weeks/:id/standups', () => {
     it('creates standup with valid sprint_id and returns 201', async () => {
       const response = await request(app)
-        .post(`/api/sprints/${testSprintId}/standups`)
+        .post(`/api/weeks/${testSprintId}/standups`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
@@ -152,18 +159,18 @@ describe('Standups API', () => {
     it('returns 404 for non-existent sprint', async () => {
       const fakeSprintId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
-        .post(`/api/sprints/${fakeSprintId}/standups`)
+        .post(`/api/weeks/${fakeSprintId}/standups`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({ content: { type: 'doc', content: [] } })
 
       expect(response.status).toBe(404)
-      expect(response.body.error).toBe('Sprint not found')
+      expect(response.body.error).toBe('Week not found')
     })
 
     it('returns 403 without auth (CSRF check first)', async () => {
       const response = await request(app)
-        .post(`/api/sprints/${testSprintId}/standups`)
+        .post(`/api/weeks/${testSprintId}/standups`)
         .send({ content: { type: 'doc', content: [] } })
 
       expect(response.status).toBe(403)
@@ -171,7 +178,7 @@ describe('Standups API', () => {
 
     it('uses default title when not provided', async () => {
       const response = await request(app)
-        .post(`/api/sprints/${testSprintId}/standups`)
+        .post(`/api/weeks/${testSprintId}/standups`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({})
@@ -181,7 +188,7 @@ describe('Standups API', () => {
     })
   })
 
-  describe('GET /api/sprints/:id/standups', () => {
+  describe('GET /api/weeks/:id/standups', () => {
     it('returns array sorted newest first', async () => {
       // Create two standups with different timestamps
       await pool.query(
@@ -196,7 +203,7 @@ describe('Standups API', () => {
       )
 
       const response = await request(app)
-        .get(`/api/sprints/${testSprintId}/standups`)
+        .get(`/api/weeks/${testSprintId}/standups`)
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(200)
@@ -208,7 +215,7 @@ describe('Standups API', () => {
 
     it('returns empty array for sprint with no standups', async () => {
       const response = await request(app)
-        .get(`/api/sprints/${testSprintId}/standups`)
+        .get(`/api/weeks/${testSprintId}/standups`)
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(200)
@@ -218,7 +225,7 @@ describe('Standups API', () => {
     it('returns 404 for non-existent sprint', async () => {
       const fakeSprintId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
-        .get(`/api/sprints/${fakeSprintId}/standups`)
+        .get(`/api/weeks/${fakeSprintId}/standups`)
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(404)
@@ -359,14 +366,21 @@ describe('Standups API', () => {
 
       // Create a sprint with the current sprint number
       const activeSprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, created_by, parent_id, program_id, visibility, properties)
-         VALUES ($1, 'sprint', 'Active Sprint', $2, $3, $3, 'workspace', $4)
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, parent_id, visibility, properties)
+         VALUES ($1, 'sprint', 'Active Sprint', $2, $3, 'workspace', $4)
          RETURNING id`,
         [testWorkspaceId, testUserId, testProgramId, JSON.stringify({
           sprint_number: currentSprintNumber
         })]
       )
       const activeSprintId = activeSprintResult.rows[0].id
+
+      // Associate sprint with program
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [activeSprintId, testProgramId]
+      )
 
       // Create an issue assigned to the test user
       const issueResult = await pool.query(
@@ -393,7 +407,7 @@ describe('Standups API', () => {
       expect(response.body.lastPosted).toBeNull()
 
       // Cleanup
-      await pool.query('DELETE FROM document_associations WHERE document_id = $1', [issueId])
+      await pool.query('DELETE FROM document_associations WHERE document_id IN ($1, $2)', [issueId, activeSprintId])
       await pool.query('DELETE FROM documents WHERE id IN ($1, $2)', [activeSprintId, issueId])
     })
 
@@ -419,14 +433,21 @@ describe('Standups API', () => {
 
       // Create a sprint with the current sprint number
       const activeSprintResult = await pool.query(
-        `INSERT INTO documents (workspace_id, document_type, title, created_by, parent_id, program_id, visibility, properties)
-         VALUES ($1, 'sprint', 'Active Sprint 2', $2, $3, $3, 'workspace', $4)
+        `INSERT INTO documents (workspace_id, document_type, title, created_by, parent_id, visibility, properties)
+         VALUES ($1, 'sprint', 'Active Sprint 2', $2, $3, 'workspace', $4)
          RETURNING id`,
         [testWorkspaceId, testUserId, testProgramId, JSON.stringify({
           sprint_number: currentSprintNumber
         })]
       )
       const activeSprintId = activeSprintResult.rows[0].id
+
+      // Associate sprint with program
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [activeSprintId, testProgramId]
+      )
 
       // Create an issue assigned to the test user
       const issueResult = await pool.query(
@@ -461,7 +482,7 @@ describe('Standups API', () => {
 
       // Cleanup
       await pool.query(`DELETE FROM documents WHERE parent_id = $1 AND document_type = 'standup'`, [activeSprintId])
-      await pool.query('DELETE FROM document_associations WHERE document_id = $1', [issueId])
+      await pool.query('DELETE FROM document_associations WHERE document_id IN ($1, $2)', [issueId, activeSprintId])
       await pool.query('DELETE FROM documents WHERE id IN ($1, $2)', [activeSprintId, issueId])
     })
 

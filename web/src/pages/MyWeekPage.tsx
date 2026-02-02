@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn';
 import { priorityColors } from '@/lib/statusColors';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { useToast } from '@/components/ui/Toast';
+import { ActionItems } from '@/components/ActionItems';
 
 interface Issue {
   id: string;
@@ -24,11 +25,11 @@ interface SprintGroup {
     id: string;
     name: string;
     sprint_number: number;
-  };
+  } | null;
   program: {
     id: string;
     name: string;
-  };
+  } | null;
   issues: Issue[];
 }
 
@@ -95,8 +96,8 @@ export function MyWeekPage() {
     queryKey: ['my-week', showMine, stateFilter, selectedSprintNumber],
     queryFn: async () => {
       const url = queryString
-        ? `/api/sprints/my-week?${queryString}`
-        : '/api/sprints/my-week';
+        ? `/api/weeks/my-week?${queryString}`
+        : '/api/weeks/my-week';
       const response = await apiGet(url);
       if (!response.ok) throw new Error('Failed to fetch week data');
       return response.json();
@@ -133,26 +134,39 @@ export function MyWeekPage() {
 
   // Handle issue click from kanban
   const handleIssueClick = useCallback((issueId: string) => {
-    navigate(`/issues/${issueId}`);
+    navigate(`/documents/${issueId}`);
   }, [navigate]);
+
+  // Format "Week of Jan 27" from a date
+  const formatWeekLabel = useCallback((date: Date, isCurrent: boolean) => {
+    const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return isCurrent ? `Week of ${formatted} (Current)` : `Week of ${formatted}`;
+  }, []);
 
   // Generate week options for the picker (current week + past 12 weeks)
   // Must be before early returns to maintain hooks order
   const weekOptions = useMemo(() => {
-    if (!data?.week?.current_sprint_number) return [];
+    if (!data?.week?.current_sprint_number || !data?.week?.start_date) return [];
     const options: { value: number; label: string }[] = [];
     const currentNum = data.week.current_sprint_number;
+    const viewedSprintNum = data.week.sprint_number;
+    const viewedStartDate = new Date(data.week.start_date + 'T00:00:00');
 
     for (let i = 0; i <= 12; i++) {
       const sprintNum = currentNum - i;
       if (sprintNum <= 0) break;
+
+      // Calculate start date for this week based on viewed week's start date
+      const weekStartDate = new Date(viewedStartDate);
+      weekStartDate.setDate(weekStartDate.getDate() + (sprintNum - viewedSprintNum) * 7);
+
       options.push({
         value: sprintNum,
-        label: i === 0 ? `Sprint ${sprintNum} (Current)` : `Sprint ${sprintNum}`,
+        label: formatWeekLabel(weekStartDate, i === 0),
       });
     }
     return options;
-  }, [data?.week?.current_sprint_number]);
+  }, [data?.week?.current_sprint_number, data?.week?.sprint_number, data?.week?.start_date, formatWeekLabel]);
 
   // Format date range for display
   const formatDateRange = useCallback((startDate: string, endDate: string) => {
@@ -192,15 +206,18 @@ export function MyWeekPage() {
   const isEndingSoon = !isHistorical && week && week.days_remaining <= 2;
 
   return (
-    <div className="h-full overflow-auto p-6">
+    <div className="h-full overflow-auto p-6 pb-20">
       <div className="mx-auto max-w-5xl space-y-6">
-        {/* Sprint ending notice */}
+        {/* Action Items - accountability tasks */}
+        <ActionItems />
+
+        {/* Week ending notice */}
         {isEndingSoon && (
           <div className="flex items-center justify-between rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
               <span className="text-sm font-medium text-amber-400">
-                Sprint ending {week.days_remaining === 0 ? 'today' : week.days_remaining === 1 ? 'tomorrow' : `in ${week.days_remaining} days`}
+                Week ending {week.days_remaining === 0 ? 'today' : week.days_remaining === 1 ? 'tomorrow' : `in ${week.days_remaining} days`}
               </span>
               <span className="text-sm text-muted">— Time to wrap up and prepare for review</span>
             </div>
@@ -373,7 +390,7 @@ export function MyWeekPage() {
             <div className="rounded-lg border border-border bg-background p-8 text-center">
               <p className="text-muted">No issues found for this week</p>
               <p className="text-sm text-muted mt-1">
-                {showMine ? 'Try unchecking "Show mine only"' : 'Issues will appear here when assigned to active sprints'}
+                {showMine ? 'Try unchecking "Show mine only"' : 'Issues will appear here when assigned to active weeks'}
               </p>
             </div>
           ) : (
@@ -392,14 +409,18 @@ export function MyWeekPage() {
             <div className="rounded-lg border border-border bg-background p-8 text-center">
               <p className="text-muted">No issues found for this week</p>
               <p className="text-sm text-muted mt-1">
-                {showMine ? 'Try unchecking "Show mine only"' : 'Issues will appear here when assigned to active sprints'}
+                {showMine ? 'Try unchecking "Show mine only"' : 'Issues will appear here when assigned to active weeks'}
               </p>
             </div>
           ) : (
             <div className="space-y-6">
-              {groups.map((group) => (
-                <IssueGroup key={`${group.sprint.id}-${group.program.id}`} group={group} />
-              ))}
+              {groups
+                .filter((group): group is SprintGroup & { sprint: NonNullable<SprintGroup['sprint']>; program: NonNullable<SprintGroup['program']> } =>
+                  group.sprint !== null && group.program !== null
+                )
+                .map((group) => (
+                  <IssueGroup key={`${group.sprint.id}-${group.program.id}`} group={group} />
+                ))}
             </div>
           )
         )}
@@ -427,21 +448,21 @@ function StatCard({
   );
 }
 
-function IssueGroup({ group }: { group: SprintGroup }) {
+function IssueGroup({ group }: { group: SprintGroup & { sprint: NonNullable<SprintGroup['sprint']>; program: NonNullable<SprintGroup['program']> } }) {
   return (
     <div className="rounded-lg border border-border bg-background overflow-hidden">
       {/* Group Header */}
       <div className="flex items-center justify-between border-b border-border bg-background/50 px-4 py-3">
         <div className="flex items-center gap-3">
           <Link
-            to={`/programs/${group.program.id}`}
+            to={`/documents/${group.program.id}`}
             className="text-sm font-medium text-muted hover:text-foreground transition-colors"
           >
             {group.program.name}
           </Link>
           <span className="text-muted">/</span>
           <Link
-            to={`/sprints/${group.sprint.id}`}
+            to={`/documents/${group.sprint.id}`}
             className="font-medium text-foreground hover:text-accent transition-colors"
           >
             {group.sprint.name}
@@ -465,7 +486,7 @@ function IssueGroup({ group }: { group: SprintGroup }) {
 function IssueRow({ issue }: { issue: Issue }) {
   return (
     <Link
-      to={`/issues/${issue.id}`}
+      to={`/documents/${issue.id}`}
       className="flex items-center gap-3 px-4 py-3 hover:bg-background/80 transition-colors"
     >
       {/* State indicator */}

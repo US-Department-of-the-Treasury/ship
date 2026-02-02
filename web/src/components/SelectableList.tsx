@@ -21,6 +21,9 @@ export interface SelectableListProps<T extends { id: string }> {
   /** Enable selection features (checkboxes, multi-select) */
   selectable?: boolean;
 
+  /** Initial selected IDs - for restoring selection after navigation */
+  initialSelectedIds?: Set<string>;
+
   /** Callback when selection changes - receives both selectedIds and selection object */
   onSelectionChange?: (selectedIds: Set<string>, selection: UseSelectionReturn) => void;
 
@@ -60,6 +63,7 @@ export function SelectableList<T extends { id: string }>({
   renderRow,
   getItemId = (item) => item.id,
   selectable = true,
+  initialSelectedIds,
   onSelectionChange,
   onItemClick,
   onContextMenu,
@@ -72,6 +76,7 @@ export function SelectableList<T extends { id: string }>({
     items,
     getItemId,
     hoveredId,
+    initialSelectedIds,
   });
 
   // Notify parent of selection changes with both IDs and selection object
@@ -150,7 +155,15 @@ export function SelectableList<T extends { id: string }>({
                 isFocused={isFocused}
                 isHovered={isHovered}
                 selectable={selectable}
-                onCheckboxClick={(e) => selection.handleClick(itemId, e)}
+                onCheckboxClick={(e) => {
+                  // Checkbox clicks should toggle without clearing selection
+                  // (unlike row clicks which replace selection on plain click)
+                  if (e.shiftKey) {
+                    selection.selectRange(itemId);
+                  } else {
+                    selection.toggleSelection(itemId);
+                  }
+                }}
                 onRowClick={() => onItemClick?.(item)}
                 onFocus={() => selection.setFocusedId(itemId)}
                 onMouseEnter={() => {

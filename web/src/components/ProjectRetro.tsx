@@ -11,13 +11,13 @@ interface ProjectRetroProps {
 
 interface RetroData {
   is_draft: boolean;
-  hypothesis_validated: boolean | null;
+  plan_validated: boolean | null;
   monetary_impact_expected: string | null;
   monetary_impact_actual: string | null;
   success_criteria: string[];
   next_steps: string | null;
   content: JSONContent;
-  sprints: { id: string; title: string; sprint_number: string }[];
+  weeks: { id: string; title: string; sprint_number: string }[];
   issues_summary: {
     total: number;
     completed: number;
@@ -86,7 +86,7 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
   const [retroData, setRetroData] = useState<RetroData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [hypothesisValidated, setHypothesisValidated] = useState<boolean | null>(null);
+  const [planValidated, setPlanValidated] = useState<boolean | null>(null);
   const [monetaryImpactActual, setMonetaryImpactActual] = useState('');
   const [successCriteria, setSuccessCriteria] = useState<string[]>([]);
   const [newCriterion, setNewCriterion] = useState('');
@@ -112,7 +112,7 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
       if (res.ok) {
         const data: RetroData = await res.json();
         setRetroData(data);
-        setHypothesisValidated(data.hypothesis_validated ?? null);
+        setPlanValidated(data.plan_validated ?? null);
         setMonetaryImpactActual(data.monetary_impact_actual || '');
         setSuccessCriteria(data.success_criteria || []);
         if (editor && data.content) {
@@ -146,7 +146,7 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
         // POST to create new retro
         const res = await postWithCsrf(`${API_URL}/api/projects/${projectId}/retro`, {
           content,
-          hypothesis_validated: hypothesisValidated,
+          plan_validated: planValidated,
           monetary_impact_actual: monetaryImpactActual || null,
           success_criteria: successCriteria,
         });
@@ -163,7 +163,7 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
         // PATCH to update existing retro
         const res = await patchWithCsrf(`${API_URL}/api/projects/${projectId}/retro`, {
           content,
-          hypothesis_validated: hypothesisValidated,
+          plan_validated: planValidated,
           monetary_impact_actual: monetaryImpactActual || null,
           success_criteria: successCriteria,
         });
@@ -250,20 +250,20 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
           <div className="w-72 border-l border-border p-4 overflow-y-auto">
             <h3 className="text-sm font-medium text-foreground mb-4">Retrospective Properties</h3>
 
-            {/* Hypothesis Validation */}
+            {/* Plan Validation */}
             <div className="space-y-2 mb-6">
               <label className="text-xs font-medium text-muted uppercase tracking-wide">
-                Hypothesis Validation
+                Plan Validation
               </label>
               <div className="flex flex-col gap-2">
                 <button
                   onClick={() => {
-                    setHypothesisValidated(true);
+                    setPlanValidated(true);
                     setIsDirty(true);
                   }}
                   className={cn(
                     'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                    hypothesisValidated === true
+                    planValidated === true
                       ? 'bg-green-500/20 text-green-600 border border-green-500'
                       : 'bg-border/50 text-muted hover:bg-border'
                   )}
@@ -275,12 +275,12 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
                 </button>
                 <button
                   onClick={() => {
-                    setHypothesisValidated(false);
+                    setPlanValidated(false);
                     setIsDirty(true);
                   }}
                   className={cn(
                     'flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                    hypothesisValidated === false
+                    planValidated === false
                       ? 'bg-red-500/20 text-red-600 border border-red-500'
                       : 'bg-border/50 text-muted hover:bg-border'
                   )}
@@ -290,10 +290,10 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
                   </svg>
                   Invalidated
                 </button>
-                {hypothesisValidated !== null && (
+                {planValidated !== null && (
                   <button
                     onClick={() => {
-                      setHypothesisValidated(null);
+                      setPlanValidated(null);
                       setIsDirty(true);
                     }}
                     className="text-xs text-muted hover:text-foreground transition-colors"
@@ -381,13 +381,13 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
             </div>
 
             {/* Sprints */}
-            {retroData?.sprints && retroData.sprints.length > 0 && (
+            {retroData?.weeks && retroData.weeks.length > 0 && (
               <div className="space-y-2 mb-6">
                 <label className="text-xs font-medium text-muted uppercase tracking-wide">
-                  Sprints ({retroData.sprints.length})
+                  Sprints ({retroData.weeks.length})
                 </label>
                 <div className="space-y-1">
-                  {retroData.sprints.map((sprint) => (
+                  {retroData.weeks.map((sprint) => (
                     <div key={sprint.id} className="text-sm text-foreground">
                       Sprint {sprint.sprint_number}: {sprint.title}
                     </div>

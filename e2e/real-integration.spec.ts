@@ -173,11 +173,21 @@ test.describe('Real Integration - Document Editor', () => {
   test('pressing Enter in title focuses editor body', async ({ page }) => {
     await createNewDocument(page);
 
+    // Wait for editor to be fully initialized (sync status shows "Saved" or "Cached")
+    // This ensures the TipTap editor is ready to receive focus commands
+    await expect(page.locator('[data-testid="sync-status"]')).toContainText(/Saved|Cached/, { timeout: 10000 });
+
+    // Wait a bit more for editor to be fully interactive
+    await page.waitForTimeout(500);
+
     // Click the title input
     const titleInput = page.locator('input[placeholder="Untitled"]');
     await expect(titleInput).toBeVisible({ timeout: 5000 });
     await titleInput.click();
     await titleInput.fill('Test Title'); // Type something to ensure it's focused
+
+    // Wait for title save
+    await page.waitForTimeout(300);
 
     // Press Enter to move focus to editor
     await page.keyboard.press('Enter');

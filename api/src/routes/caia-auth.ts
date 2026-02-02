@@ -18,6 +18,7 @@ import {
   getAuthorizationUrl,
   handleCallback,
 } from '../services/caia.js';
+import { linkUserToWorkspaceViaInvite } from '../services/invite-acceptance.js';
 import {
   generateSecureSessionId,
   storeOAuthState,
@@ -173,13 +174,14 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
       if (!invite) {
         // No invite = no access (CAIA users must be pre-invited)
+        // Use generic message to avoid revealing invite system details (Issue #349)
         console.log(`CAIA login rejected: No invite found for ${email}`);
         await logAuditEvent({
           action: 'auth.caia_login_failed',
           details: { reason: 'no_invite', email },
           req,
         });
-        res.redirect('/login?error=' + encodeURIComponent('No invitation found. Please contact an administrator to request access.'));
+        res.redirect('/login?error=' + encodeURIComponent('You are not an authorized user of Ship'));
         return;
       }
 
@@ -196,6 +198,27 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
         details: { email, role: invite.role },
         req,
       });
+    } else {
+      // Existing user - process any pending invites to other workspaces
+      const pendingInvites = await findAllPendingInvitesByEmail(email);
+
+      for (const invite of pendingInvites) {
+        const { isNewMembership } = await linkUserToWorkspaceViaInvite(user, invite);
+
+        if (isNewMembership) {
+          console.log(`CAIA login: Added existing user ${email} to workspace ${invite.workspace_name} via pending invite`);
+
+          await logAuditEvent({
+            workspaceId: invite.workspace_id,
+            actorUserId: user.id,
+            action: 'invite.accept_caia',
+            resourceType: 'invite',
+            resourceId: invite.id,
+            details: { email, role: invite.role, existingUser: true },
+            req,
+          });
+        }
+      }
     }
 
     // Update last_auth_provider to track which provider was used
@@ -387,7 +410,7 @@ interface PendingInvite {
 }
 
 /**
- * Find a pending invite matching email
+ * Find a pending invite matching email (returns first/most recent)
  */
 async function findPendingInviteByEmail(email: string): Promise<PendingInvite | null> {
   const result = await pool.query(
@@ -402,6 +425,24 @@ async function findPendingInviteByEmail(email: string): Promise<PendingInvite | 
     [email]
   );
   return result.rows[0] || null;
+}
+
+/**
+ * Find ALL pending invites matching email (for existing users with multiple invites)
+ * Issue #349: Existing users may have pending invites to other workspaces
+ */
+async function findAllPendingInvitesByEmail(email: string): Promise<PendingInvite[]> {
+  const result = await pool.query(
+    `SELECT wi.id, wi.workspace_id, w.name as workspace_name, wi.email, wi.role
+     FROM workspace_invites wi
+     JOIN workspaces w ON wi.workspace_id = w.id
+     WHERE wi.used_at IS NULL
+       AND wi.expires_at > NOW()
+       AND LOWER(wi.email) = LOWER($1)
+     ORDER BY wi.created_at DESC`,
+    [email]
+  );
+  return result.rows;
 }
 
 /**
@@ -428,22 +469,8 @@ async function createUserFromInvite(
   );
   const user = userResult.rows[0];
 
-  // Create workspace membership with invited role
-  await pool.query(
-    `INSERT INTO workspace_memberships (workspace_id, user_id, role)
-     VALUES ($1, $2, $3)`,
-    [invite.workspace_id, user.id, invite.role]
-  );
-
-  // Create Person document for this user in this workspace (links via properties.user_id)
-  await pool.query(
-    `INSERT INTO documents (workspace_id, document_type, title, properties)
-     VALUES ($1, 'person', $2, $3)`,
-    [invite.workspace_id, user.name, JSON.stringify({ user_id: user.id, email })]
-  );
-
-  // Mark invite as used
-  await pool.query('UPDATE workspace_invites SET used_at = NOW() WHERE id = $1', [invite.id]);
+  // Use shared service for membership + person doc + invite marking
+  await linkUserToWorkspaceViaInvite(user, invite);
 
   console.log(`Created CAIA user from invite: ${email} -> workspace ${invite.workspace_name}`);
   return user;

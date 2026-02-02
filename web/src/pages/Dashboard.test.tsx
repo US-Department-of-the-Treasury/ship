@@ -11,8 +11,8 @@ import { BrowserRouter } from 'react-router-dom';
  */
 
 // Mock the hooks to avoid needing full context providers
-vi.mock('@/hooks/useSprintsQuery', () => ({
-  useActiveSprintsQuery: () => ({
+vi.mock('@/hooks/useWeeksQuery', () => ({
+  useActiveWeeksQuery: () => ({
     data: { sprints: [], days_remaining: 5 },
     isLoading: false,
   }),
@@ -67,11 +67,11 @@ describe('DashboardPage', () => {
   it('renders stat cards', () => {
     renderWithRouter(<DashboardPage />);
     // Use getAllByText since "Active Sprints" appears in both stat card and section
-    expect(screen.getAllByText('Active Sprints').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Active Weeks').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Active Projects')).toBeInTheDocument();
     // "Recent Standups" appears in both stat card and section
     expect(screen.getAllByText('Recent Standups').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Days in Sprint')).toBeInTheDocument();
+    expect(screen.getByText('Days in Week')).toBeInTheDocument();
   });
 
   it('renders section headers', () => {
@@ -83,7 +83,7 @@ describe('DashboardPage', () => {
 
   it('shows empty states when no data', () => {
     renderWithRouter(<DashboardPage />);
-    expect(screen.getByText('No active sprints')).toBeInTheDocument();
+    expect(screen.getByText('No active weeks')).toBeInTheDocument();
     expect(screen.getByText('No active projects')).toBeInTheDocument();
   });
 });

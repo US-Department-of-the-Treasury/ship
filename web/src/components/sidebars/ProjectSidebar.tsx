@@ -1,8 +1,11 @@
 import { cn, getContrastTextColor } from '@/lib/cn';
 import { EmojiPickerPopover } from '@/components/EmojiPicker';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
-import { Tooltip } from '@/components/ui/Tooltip';
-import { computeICEScore } from '@ship/shared';
+import { MultiPersonCombobox } from '@/components/MultiPersonCombobox';
+import { ProgramCombobox } from '@/components/ProgramCombobox';
+import { PropertyRow } from '@/components/ui/PropertyRow';
+import { ApprovalButton } from '@/components/ApprovalButton';
+import { computeICEScore, type ApprovalTracking } from '@ship/shared';
 
 const PROJECT_COLORS = [
   '#6366f1', // Indigo
@@ -23,23 +26,33 @@ const ICE_VALUES = [1, 2, 3, 4, 5] as const;
 interface Project {
   id: string;
   title: string;
-  impact: number;
-  confidence: number;
-  ease: number;
-  ice_score?: number;
+  impact: number | null;
+  confidence: number | null;
+  ease: number | null;
+  ice_score?: number | null;
   color: string;
   emoji: string | null;
   program_id: string | null;
-  owner?: { id: string; name: string } | null;
+  owner?: { id: string; name: string; email: string } | null;
   owner_id?: string | null;
+  // RACI fields
+  accountable_id?: string | null;
+  consulted_ids?: string[];
+  informed_ids?: string[];
   sprint_count?: number;
   issue_count?: number;
   converted_from_id?: string | null;
+  // Approval tracking
+  plan?: string | null;
+  plan_approval?: ApprovalTracking | null;
+  retro_approval?: ApprovalTracking | null;
+  has_retro?: boolean;
 }
 
 interface Program {
   id: string;
   name: string;
+  color: string;
   emoji?: string | null;
 }
 
@@ -54,6 +67,12 @@ interface ProjectSidebarProps {
   isUndoing?: boolean;
   /** Fields to highlight as missing (e.g., after type conversion) */
   highlightedFields?: string[];
+  /** Whether current user can approve (is accountable or workspace admin) */
+  canApprove?: boolean;
+  /** Map of user ID to name for displaying approver */
+  userNames?: Record<string, string>;
+  /** Callback when approval state changes */
+  onApprovalUpdate?: () => void;
 }
 
 export function ProjectSidebar({
@@ -66,10 +85,13 @@ export function ProjectSidebar({
   isConverting = false,
   isUndoing = false,
   highlightedFields = [],
+  canApprove = false,
+  userNames = {},
+  onApprovalUpdate,
 }: ProjectSidebarProps) {
   // Helper to check if a field should be highlighted
   const isHighlighted = (field: string) => highlightedFields.includes(field);
-  // Compute ICE score from current values
+  // Compute ICE score from current values (null if any value is unset)
   const iceScore = computeICEScore(project.impact, project.confidence, project.ease);
 
   return (
@@ -108,10 +130,10 @@ export function ProjectSidebar({
       <div className="rounded-lg border border-border bg-accent/10 p-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-muted uppercase tracking-wide">ICE Score</span>
-          <span className="text-2xl font-bold text-accent tabular-nums">{iceScore}</span>
+          <span className="text-2xl font-bold text-accent tabular-nums">{iceScore ?? '—'}</span>
         </div>
         <div className="text-xs text-muted">
-          {project.impact} × {project.confidence} × {project.ease} = {iceScore}
+          {project.impact ?? '—'} × {project.confidence ?? '—'} × {project.ease ?? '—'} = {iceScore ?? '—'}
         </div>
       </div>
 
@@ -160,8 +182,8 @@ export function ProjectSidebar({
         />
       </PropertyRow>
 
-      {/* Owner */}
-      <PropertyRow label="Owner">
+      {/* Owner (R - Responsible) */}
+      <PropertyRow label="Owner" tooltip="R - Responsible: Person who does the work">
         <PersonCombobox
           people={people}
           value={project.owner?.id || null}
@@ -169,6 +191,74 @@ export function ProjectSidebar({
           placeholder="Select owner..."
         />
       </PropertyRow>
+
+      {/* Accountable (A - Accountable) */}
+      <PropertyRow label="Accountable" tooltip="A - Accountable: Person who approves hypotheses and reviews">
+        <PersonCombobox
+          people={people}
+          value={project.accountable_id || null}
+          onChange={(accountableId) => onUpdate({ accountable_id: accountableId } as Partial<Project>)}
+          placeholder="Select approver..."
+        />
+      </PropertyRow>
+
+      {/* Consulted (C - Consulted) */}
+      <PropertyRow label="Consulted" tooltip="C - Consulted: People whose opinions are sought (two-way communication)">
+        <MultiPersonCombobox
+          people={people}
+          value={project.consulted_ids || []}
+          onChange={(consultedIds) => onUpdate({ consulted_ids: consultedIds } as Partial<Project>)}
+          placeholder="Select people..."
+        />
+      </PropertyRow>
+
+      {/* Informed (I - Informed) */}
+      <PropertyRow label="Informed" tooltip="I - Informed: People kept up-to-date on progress (one-way communication)">
+        <MultiPersonCombobox
+          people={people}
+          value={project.informed_ids || []}
+          onChange={(informedIds) => onUpdate({ informed_ids: informedIds } as Partial<Project>)}
+          placeholder="Select people..."
+        />
+      </PropertyRow>
+
+      {/* Approvals Section - only show if user can approve AND there's content to approve */}
+      {canApprove && (!!project.plan?.trim() || project.has_retro) && (
+        <div className="pt-4 border-t border-border space-y-4">
+          <h4 className="text-xs font-medium text-muted uppercase tracking-wide">Approvals</h4>
+
+          {/* Plan Approval - only show when plan exists */}
+          {!!project.plan?.trim() && (
+            <PropertyRow label="Plan">
+              <ApprovalButton
+                type="plan"
+                approval={project.plan_approval}
+                hasContent={!!project.plan?.trim()}
+                canApprove={canApprove}
+                approveEndpoint={`/api/projects/${project.id}/approve-plan`}
+                approverName={project.plan_approval?.approved_by ? userNames[project.plan_approval.approved_by] : undefined}
+                currentContent={project.plan || ''}
+                onApproved={onApprovalUpdate}
+              />
+            </PropertyRow>
+          )}
+
+          {/* Retro Approval - only show when retro exists */}
+          {project.has_retro && (
+            <PropertyRow label="Retrospective">
+              <ApprovalButton
+                type="retro"
+                approval={project.retro_approval}
+                hasContent={project.has_retro ?? false}
+                canApprove={canApprove}
+                approveEndpoint={`/api/projects/${project.id}/approve-retro`}
+                approverName={project.retro_approval?.approved_by ? userNames[project.retro_approval.approved_by] : undefined}
+                onApproved={onApprovalUpdate}
+              />
+            </PropertyRow>
+          )}
+        </div>
+      )}
 
       {/* Icon (Emoji) */}
       <PropertyRow label="Icon">
@@ -207,24 +297,18 @@ export function ProjectSidebar({
 
       {/* Program (Optional) */}
       <PropertyRow label="Program">
-        <select
-          value={project.program_id || ''}
-          onChange={(e) => onUpdate({ program_id: e.target.value || null })}
-          className="w-full h-9 text-sm bg-transparent border border-border rounded-md px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-        >
-          <option value="">No program</option>
-          {programs.map((program) => (
-            <option key={program.id} value={program.id}>
-              {program.emoji ? `${program.emoji} ` : ''}{program.name}
-            </option>
-          ))}
-        </select>
+        <ProgramCombobox
+          programs={programs}
+          value={project.program_id}
+          onChange={(programId) => onUpdate({ program_id: programId })}
+          placeholder="No program"
+        />
       </PropertyRow>
 
       {/* Stats */}
       <div className="pt-4 border-t border-border space-y-2">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-muted">Sprints</span>
+          <span className="text-muted">Weeks</span>
           <span className="text-foreground">{project.sprint_count ?? 0}</span>
         </div>
         <div className="flex items-center justify-between text-xs">
@@ -265,32 +349,6 @@ export function ProjectSidebar({
   );
 }
 
-function PropertyRow({ label, tooltip, highlighted, children }: { label: string; tooltip?: string; highlighted?: boolean; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="mb-1 flex items-center gap-1">
-        <label className={`text-xs font-medium ${highlighted ? 'text-amber-500' : 'text-muted'}`}>
-          {label}
-          {highlighted && <span className="ml-1 text-amber-500">*</span>}
-        </label>
-        {tooltip && (
-          <Tooltip content={tooltip} side="right" delayDuration={200}>
-            <button
-              type="button"
-              className="text-muted/60 hover:text-muted transition-colors"
-              aria-label={`More info about ${label}`}
-            >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </Tooltip>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-}
 
 // ICE Slider component (1-5 segmented buttons)
 function ICESlider({

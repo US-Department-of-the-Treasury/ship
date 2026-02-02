@@ -95,13 +95,22 @@ publicFeedbackRouter.post('/', async (req: Request, res: Response) => {
 
     // Create the feedback issue (no created_by for public submissions)
     const result = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, properties, program_id, ticket_number, content)
-       VALUES ($1, 'issue', $2, $3, $4, $5, $6)
+      `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number, content)
+       VALUES ($1, 'issue', $2, $3, $4, $5)
        RETURNING *`,
-      [workspaceId, title, JSON.stringify(properties), program_id, ticketNumber, content ? JSON.stringify(content) : null]
+      [workspaceId, title, JSON.stringify(properties), ticketNumber, content ? JSON.stringify(content) : null]
     );
 
-    res.status(201).json(extractFeedbackFromRow(result.rows[0], programPrefix));
+    const feedbackId = result.rows[0].id;
+
+    // Create program association via document_associations
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type)
+       VALUES ($1, $2, 'program') ON CONFLICT DO NOTHING`,
+      [feedbackId, program_id]
+    );
+
+    res.status(201).json({ ...extractFeedbackFromRow(result.rows[0], programPrefix), program_id });
   } catch (err) {
     console.error('Create feedback error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -151,14 +160,16 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
     }
 
     const result = await pool.query(
-      `SELECT d.id, d.title, d.properties, d.ticket_number, d.program_id,
+      `SELECT d.id, d.title, d.properties, d.ticket_number,
+              prog_da.related_id as program_id,
               d.content, d.created_at, d.updated_at, d.created_by,
               p.title as program_name,
               p.properties->>'prefix' as program_prefix,
               p.properties->>'color' as program_color,
               creator.name as created_by_name
        FROM documents d
-       LEFT JOIN documents p ON d.program_id = p.id AND p.document_type = 'program'
+       LEFT JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id AND p.document_type = 'program'
        LEFT JOIN users creator ON d.created_by = creator.id
        WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'issue' AND d.properties->>'source' = 'external'`,
       [id, req.workspaceId]

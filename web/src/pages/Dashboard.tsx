@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useActiveSprintsQuery, ActiveSprint } from '@/hooks/useSprintsQuery';
+import { useActiveWeeksQuery, ActiveWeek } from '@/hooks/useWeeksQuery';
 import { useProjects, Project } from '@/contexts/ProjectsContext';
 import { useDashboardActionItems, ActionItem } from '@/hooks/useDashboardActionItems';
 import { useDashboardMyWork, WorkItem } from '@/hooks/useDashboardMyWork';
@@ -63,21 +63,21 @@ export function DashboardPage() {
   const [searchParams] = useSearchParams();
   const currentView: DashboardView = (searchParams.get('view') as DashboardView) || 'my-work';
 
-  const { data: sprintsData, isLoading: sprintsLoading } = useActiveSprintsQuery();
+  const { data: weeksData, isLoading: weeksLoading } = useActiveWeeksQuery();
   const { projects, loading: projectsLoading } = useProjects();
   const { data: actionItemsData, isLoading: actionItemsLoading } = useDashboardActionItems();
   const { data: myWorkData, isLoading: myWorkLoading } = useDashboardMyWork();
   const [recentStandups, setRecentStandups] = useState<Standup[]>([]);
   const [standupsLoading, setStandupsLoading] = useState(true);
 
-  const activeSprints = sprintsData?.sprints || [];
+  const activeWeeks = weeksData?.weeks || [];
   const actionItems = actionItemsData?.action_items || [];
   const myWorkGrouped = myWorkData?.grouped || { overdue: [], this_sprint: [], later: [] };
 
   // Fetch recent standups from all active sprints
   useEffect(() => {
     async function fetchStandups() {
-      if (activeSprints.length === 0) {
+      if (activeWeeks.length === 0) {
         setStandupsLoading(false);
         return;
       }
@@ -87,8 +87,8 @@ export function DashboardPage() {
 
         // Fetch standups from each active sprint (in parallel)
         const responses = await Promise.all(
-          activeSprints.map(async (sprint) => {
-            const res = await fetch(`${API_URL}/api/sprints/${sprint.id}/standups`, {
+          activeWeeks.map(async (sprint) => {
+            const res = await fetch(`${API_URL}/api/weeks/${sprint.id}/standups`, {
               credentials: 'include',
             });
             if (res.ok) {
@@ -119,10 +119,10 @@ export function DashboardPage() {
       }
     }
 
-    if (!sprintsLoading) {
+    if (!weeksLoading) {
       fetchStandups();
     }
-  }, [activeSprints, sprintsLoading]);
+  }, [activeWeeks, weeksLoading]);
 
   // Calculate project status summary
   const projectSummary = {
@@ -137,7 +137,7 @@ export function DashboardPage() {
     .sort((a, b) => (b.ice_score || 0) - (a.ice_score || 0))
     .slice(0, 5);
 
-  const loading = sprintsLoading || projectsLoading;
+  const loading = weeksLoading || projectsLoading;
 
   if (loading) {
     return (
@@ -151,34 +151,34 @@ export function DashboardPage() {
   const overdueItems = actionItems.filter(item => item.urgency === 'overdue');
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="h-full overflow-auto pb-20">
       {/* Blocking Banner for Overdue Items */}
       {overdueItems.length > 0 && (
         <div className="bg-red-600 text-white px-6 py-3">
           <div className="mx-auto max-w-6xl">
             {overdueItems.length === 1 ? (
               <Link
-                to={`/programs/${overdueItems[0].program_id}/sprints/${overdueItems[0].sprint_id}`}
+                to={`/documents/${overdueItems[0].sprint_id}`}
                 className="flex items-center gap-2 hover:underline"
               >
                 <span className="font-medium">
-                  {overdueItems[0].program_name} Sprint {overdueItems[0].sprint_number} is missing a {overdueItems[0].type}
+                  {overdueItems[0].program_name} Week {overdueItems[0].sprint_number} is missing a {overdueItems[0].type}
                 </span>
                 <span className="text-red-200">→ Write now</span>
               </Link>
             ) : (
               <div className="space-y-1">
                 <div className="font-medium">
-                  {overdueItems.length} overdue sprint documents need your attention:
+                  {overdueItems.length} overdue weekly documents need your attention:
                 </div>
                 <div className="flex flex-wrap gap-3">
                   {overdueItems.map(item => (
                     <Link
                       key={item.id}
-                      to={`/programs/${item.program_id}/sprints/${item.sprint_id}`}
+                      to={`/documents/${item.sprint_id}`}
                       className="text-sm hover:underline text-red-100"
                     >
-                      {item.program_name} Sprint {item.sprint_number} ({item.type}) →
+                      {item.program_name} Week {item.sprint_number} ({item.type}) →
                     </Link>
                   ))}
                 </div>
@@ -197,7 +197,7 @@ export function DashboardPage() {
             </h1>
             <p className="mt-1 text-sm text-muted">
               {currentView === 'my-work'
-                ? 'Your sprint documentation and assigned work'
+                ? 'Your weekly documentation and assigned work'
                 : 'Cross-program overview of work transparency'}
             </p>
           </div>
@@ -244,11 +244,11 @@ export function DashboardPage() {
                     </div>
                   )}
 
-                  {/* This Sprint Section */}
+                  {/* This Week Section */}
                   {myWorkGrouped.this_sprint.length > 0 && (
                     <div className="rounded-lg border border-border bg-background p-4">
                       <h2 className="text-lg font-semibold text-foreground mb-4">
-                        This Sprint ({myWorkGrouped.this_sprint.length})
+                        This Week ({myWorkGrouped.this_sprint.length})
                       </h2>
                       <div className="space-y-2">
                         {myWorkGrouped.this_sprint.map((item) => (
@@ -280,7 +280,7 @@ export function DashboardPage() {
                     All caught up!
                   </h2>
                   <p className="text-sm text-muted mb-6">
-                    You have no overdue sprint docs, assigned issues, or active projects right now.
+                    You have no overdue weekly docs, assigned issues, or active projects right now.
                   </p>
                   <div className="flex justify-center gap-4">
                     <Link
@@ -290,7 +290,7 @@ export function DashboardPage() {
                       View team overview
                     </Link>
                     <Link
-                      to="/issues/new"
+                      to="/documents/new?type=issue"
                       className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent/90 transition-colors"
                     >
                       Create a new issue
@@ -305,8 +305,8 @@ export function DashboardPage() {
               {/* Stats Grid */}
               <div className="grid grid-cols-4 gap-4">
                 <StatCard
-                  label="Active Sprints"
-                  value={activeSprints.length}
+                  label="Active Weeks"
+                  value={activeWeeks.length}
                   color="text-blue-600"
                 />
                 <StatCard
@@ -320,26 +320,26 @@ export function DashboardPage() {
                   color="text-purple-600"
                 />
                 <StatCard
-                  label="Days in Sprint"
-                  value={sprintsData?.days_remaining ? `${14 - sprintsData.days_remaining}` : '-'}
-                  subtitle={sprintsData?.days_remaining ? `${sprintsData.days_remaining} remaining` : undefined}
+                  label="Days in Week"
+                  value={weeksData?.days_remaining ? `${7 - weeksData.days_remaining}` : '-'}
+                  subtitle={weeksData?.days_remaining ? `${weeksData.days_remaining} remaining` : undefined}
                   color="text-orange-600"
                 />
               </div>
 
               {/* Main Content Grid */}
               <div className="grid grid-cols-2 gap-6">
-                {/* Active Sprints */}
+                {/* Active Weeks */}
                 <div className="rounded-lg border border-border bg-background p-4">
                   <h2 className="text-lg font-semibold text-foreground mb-4">
-                    Active Sprints
+                    Active Weeks
                   </h2>
-                  {activeSprints.length === 0 ? (
-                    <p className="text-sm text-muted">No active sprints</p>
+                  {activeWeeks.length === 0 ? (
+                    <p className="text-sm text-muted">No active weeks</p>
                   ) : (
                     <div className="space-y-3">
-                      {activeSprints.map((sprint) => (
-                        <SprintCard key={sprint.id} sprint={sprint} />
+                      {activeWeeks.map((sprint) => (
+                        <WeekCard key={sprint.id} sprint={sprint} />
                       ))}
                     </div>
                   )}
@@ -411,14 +411,14 @@ function StatCard({
   );
 }
 
-function SprintCard({ sprint }: { sprint: ActiveSprint }) {
+function WeekCard({ sprint }: { sprint: ActiveWeek }) {
   const progress = sprint.issue_count > 0
     ? Math.round((sprint.completed_count / sprint.issue_count) * 100)
     : 0;
 
   return (
     <Link
-      to={`/programs/${sprint.program_id}/sprints/${sprint.id}`}
+      to={`/documents/${sprint.id}`}
       className="block rounded-md border border-border bg-background p-3 hover:border-accent/50 transition-colors"
     >
       <div className="flex items-center justify-between mb-2">
@@ -462,7 +462,7 @@ function SprintCard({ sprint }: { sprint: ActiveSprint }) {
 function ProjectCard({ project }: { project: Project }) {
   return (
     <Link
-      to={`/projects/${project.id}`}
+      to={`/documents/${project.id}`}
       className="flex items-center justify-between rounded-md border border-border bg-background p-3 hover:border-accent/50 transition-colors"
     >
       <div className="flex items-center gap-3">
@@ -550,7 +550,7 @@ function ActionItemCard({ item }: { item: ActionItem }) {
 
   return (
     <Link
-      to={`/programs/${item.program_id}/sprints/${item.sprint_id}`}
+      to={`/documents/${item.sprint_id}`}
       className={cn(
         'block rounded-md border p-3 hover:border-accent/50 transition-colors',
         urgencyStyles[item.urgency]
@@ -573,7 +573,7 @@ function ActionItemCard({ item }: { item: ActionItem }) {
         </span>
       </div>
       <div className="mt-1 text-xs text-muted">
-        {item.program_name} · Sprint {item.sprint_number}
+        {item.program_name} · Week {item.sprint_number}
       </div>
     </Link>
   );

@@ -1559,6 +1559,180 @@ router.get('/debug/users', async (req: Request, res: Response): Promise<void> =>
   }
 });
 
+// GET /api/admin/debug/orphans - Diagnose orphaned entities (documents with missing associations)
+router.get('/debug/orphans', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // 1. Dangling associations - pointing to deleted documents
+    const danglingResult = await pool.query(`
+      SELECT
+        da.id AS association_id,
+        da.document_id,
+        da.related_id,
+        da.relationship_type,
+        d.title AS document_title,
+        d.document_type,
+        w.name AS workspace_name
+      FROM document_associations da
+      JOIN documents d ON da.document_id = d.id
+      JOIN workspaces w ON d.workspace_id = w.id
+      LEFT JOIN documents d2 ON da.related_id = d2.id
+      WHERE d2.id IS NULL
+    `);
+
+    // Note: program_id column was dropped by migration 029.
+    // This check is now a no-op but we keep the structure for API compatibility.
+    const missingProgramAssocResult = { rows: [] };
+
+    // 3. Projects without program association (in junction table)
+    const projectsWithoutProgramResult = await pool.query(`
+      SELECT
+        d.id,
+        d.title,
+        w.name AS workspace_name,
+        d.created_at
+      FROM documents d
+      JOIN workspaces w ON d.workspace_id = w.id
+      WHERE d.document_type = 'project'
+        AND d.deleted_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM document_associations da
+          WHERE da.document_id = d.id AND da.relationship_type = 'program'
+        )
+      ORDER BY d.created_at DESC
+    `);
+
+    // 4. Sprints without project association
+    const sprintsWithoutProjectResult = await pool.query(`
+      SELECT
+        d.id,
+        d.title,
+        w.name AS workspace_name,
+        d.created_at,
+        d.properties->>'sprint_status' AS sprint_status
+      FROM documents d
+      JOIN workspaces w ON d.workspace_id = w.id
+      WHERE d.document_type = 'sprint'
+        AND d.deleted_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM document_associations da
+          WHERE da.document_id = d.id AND da.relationship_type = 'project'
+        )
+      ORDER BY d.created_at DESC
+    `);
+
+    // 5. Issues without project association
+    const issuesWithoutProjectResult = await pool.query(`
+      SELECT
+        d.id,
+        d.title,
+        w.name AS workspace_name,
+        d.created_at,
+        d.properties->>'state' AS state
+      FROM documents d
+      JOIN workspaces w ON d.workspace_id = w.id
+      WHERE d.document_type = 'issue'
+        AND d.deleted_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM document_associations da
+          WHERE da.document_id = d.id AND da.relationship_type = 'project'
+        )
+      ORDER BY d.created_at DESC
+      LIMIT 100
+    `);
+
+    res.json({
+      success: true,
+      data: {
+        summary: {
+          danglingAssociations: danglingResult.rows.length,
+          missingProgramAssociations: missingProgramAssocResult.rows.length,
+          projectsWithoutProgram: projectsWithoutProgramResult.rows.length,
+          sprintsWithoutProject: sprintsWithoutProjectResult.rows.length,
+          issuesWithoutProject: issuesWithoutProjectResult.rows.length,
+        },
+        danglingAssociations: danglingResult.rows,
+        missingProgramAssociations: missingProgramAssocResult.rows,
+        projectsWithoutProgram: projectsWithoutProgramResult.rows,
+        sprintsWithoutProject: sprintsWithoutProjectResult.rows,
+        issuesWithoutProject: issuesWithoutProjectResult.rows.slice(0, 50), // Limit for readability
+      },
+    });
+  } catch (error) {
+    console.error('Debug orphans error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to diagnose orphans',
+      },
+    });
+  }
+});
+
+// POST /api/admin/debug/orphans/fix - Fix orphaned entities by backfilling associations
+router.post('/debug/orphans/fix', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // 1. Delete dangling associations
+      const deleteDanglingResult = await client.query(`
+        DELETE FROM document_associations
+        WHERE id IN (
+          SELECT da.id
+          FROM document_associations da
+          LEFT JOIN documents d ON da.related_id = d.id
+          WHERE d.id IS NULL
+        )
+        RETURNING id
+      `);
+
+      // Note: program_id column was dropped by migration 029.
+      // Backfill from column is no longer possible, but we keep the response structure.
+      const backfillProgramResult = { rowCount: 0 };
+
+      await client.query('COMMIT');
+
+      // Log the fix action
+      await logAuditEvent({
+        actorUserId: req.userId!,
+        action: 'admin.fix_orphans',
+        details: {
+          danglingDeleted: deleteDanglingResult.rowCount,
+          programAssociationsBackfilled: backfillProgramResult.rowCount,
+        },
+        req,
+      });
+
+      res.json({
+        success: true,
+        data: {
+          fixed: {
+            danglingAssociationsDeleted: deleteDanglingResult.rowCount,
+            programAssociationsBackfilled: backfillProgramResult.rowCount,
+          },
+        },
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Fix orphans error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: {
+        code: ERROR_CODES.INTERNAL_ERROR,
+        message: 'Failed to fix orphans',
+      },
+    });
+  }
+});
+
 // DELETE /api/admin/debug/users/:id - Delete a specific user (for cleanup)
 router.delete('/debug/users/:id', async (req: Request, res: Response): Promise<void> => {
   const id = req.params.id as string;

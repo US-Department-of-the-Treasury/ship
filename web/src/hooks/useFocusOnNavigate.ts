@@ -31,9 +31,10 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/issues/')) return 'Issue';
   if (pathname === '/programs') return 'Programs';
   if (pathname.startsWith('/programs/')) return 'Program';
-  if (pathname.startsWith('/sprints/')) return 'Sprint';
+  if (pathname.startsWith('/sprints/')) return 'Week';
   if (pathname === '/team' || pathname === '/team/allocation') return 'Team Allocation';
   if (pathname === '/team/directory') return 'Team Directory';
+  if (pathname === '/team/status') return 'Status Overview';
   if (pathname === '/settings') return 'Settings';
   return 'Ship';
 }

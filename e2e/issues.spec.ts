@@ -36,8 +36,8 @@ test.describe('Issues (Phase 5)', () => {
     // Click New Issue button (exact match to avoid sidebar icon button)
     await page.getByRole('button', { name: 'New Issue', exact: true }).click()
 
-    // Should navigate to issue editor (full-page editor)
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    // Should navigate to issue editor (full-page editor) - unified document routing
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Editor should be visible
     await expect(page.locator('.ProseMirror, .tiptap, [data-testid="editor"]')).toBeVisible({ timeout: 5000 })
@@ -48,7 +48,7 @@ test.describe('Issues (Phase 5)', () => {
 
     // Create new issue (exact match to avoid sidebar icon button)
     await page.getByRole('button', { name: 'New Issue', exact: true }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Navigate back to list
     await page.goto('/issues')
@@ -87,13 +87,13 @@ test.describe('Issues (Phase 5)', () => {
 
     // Create new issue (exact match to avoid sidebar icon button)
     await page.getByRole('button', { name: 'New Issue', exact: true }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Should see full editor with title area
     await expect(page.locator('.ProseMirror, .tiptap')).toBeVisible({ timeout: 5000 })
 
     // Should see properties sidebar (status, priority, etc.)
-    await expect(page.getByText(/status|state/i)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('Status', { exact: true })).toBeVisible({ timeout: 5000 })
   })
 
   test('can edit issue title', async ({ page }) => {
@@ -101,7 +101,7 @@ test.describe('Issues (Phase 5)', () => {
 
     // Create new issue (exact match to avoid sidebar icon button)
     await page.getByRole('button', { name: 'New Issue', exact: true }).click()
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Find title input (contenteditable or input)
     const titleElement = page.locator('[contenteditable="true"]').first()
@@ -109,12 +109,13 @@ test.describe('Issues (Phase 5)', () => {
     if (await titleElement.isVisible({ timeout: 2000 })) {
       await titleElement.click()
       await page.keyboard.press('Meta+a')
-      await page.keyboard.type('My Test Issue Title')
+      await page.waitForTimeout(100)  // Wait for selection
+      await titleElement.fill('My Test Issue Title')
 
-      // Wait for save
-      await page.waitForTimeout(500)
+      // Wait for save with longer timeout
+      await page.waitForTimeout(1000)
 
-      await expect(titleElement).toContainText('My Test Issue Title')
+      await expect(titleElement).toContainText('My Test Issue Title', { timeout: 5000 })
     }
   })
 
@@ -144,13 +145,16 @@ test.describe('Issues (Phase 5)', () => {
     // Switch to list view (default is Kanban)
     await page.getByRole('button', { name: 'List view' }).click()
 
+    // Wait for table to have data
+    await page.waitForSelector('tbody tr', { timeout: 10000 })
+
     // Click on an issue row (seed data has issues)
     const issueRow = page.locator('tbody tr').first()
     await expect(issueRow).toBeVisible({ timeout: 5000 })
     await issueRow.click()
 
-    // Should navigate to issue editor
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    // Should navigate to issue editor - unified document routing
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
     await expect(page.locator('.ProseMirror, .tiptap')).toBeVisible({ timeout: 5000 })
   })
 
@@ -173,7 +177,7 @@ test.describe('Issues (Phase 5)', () => {
     // Press C to create new issue
     await page.keyboard.press('c')
 
-    // Should navigate to new issue editor
-    await expect(page).toHaveURL(/\/issues\/[a-f0-9-]+/, { timeout: 5000 })
+    // Should navigate to new issue editor - unified document routing
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
   })
 })

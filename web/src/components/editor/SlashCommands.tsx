@@ -54,6 +54,8 @@ export interface SlashCommandItem {
   command: (props: { editor: any; range: any }) => void;
   /** If set, command only shows for these document types (e.g., ['program']) */
   documentTypes?: string[];
+  /** If true, command requires onCreateSubDocument callback to function */
+  requiresSubDocumentCallback?: boolean;
 }
 
 interface CommandListProps {
@@ -137,10 +139,12 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
 CommandList.displayName = 'CommandList';
 
 interface CreateSlashCommandsOptions {
-  onCreateSubDocument: () => Promise<{ id: string; title: string } | null>;
+  onCreateSubDocument?: () => Promise<{ id: string; title: string } | null>;
   onNavigateToDocument?: (id: string) => void;
   /** Document type for filtering document-specific commands */
   documentType?: string;
+  /** AbortSignal for cancelling async operations on navigation/cleanup */
+  abortSignal?: AbortSignal;
 }
 
 // Icons for slash commands
@@ -221,7 +225,7 @@ const icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h12M4 14h12M4 18h8" />
     </svg>
   ),
-  hypothesis: (
+  plan: (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
     </svg>
@@ -251,7 +255,7 @@ const icons = {
   ),
 };
 
-export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument, documentType }: CreateSlashCommandsOptions) {
+export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument, documentType, abortSignal }: CreateSlashCommandsOptions) {
   const slashCommands: SlashCommandItem[] = [
     // Sub-document (requires async callback)
     {
@@ -259,9 +263,10 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
       description: 'Create a nested document',
       aliases: ['doc', 'document', 'sub-document', 'page', 'sub-page', 'subpage', 'subdoc'],
       icon: icons.document,
+      requiresSubDocumentCallback: true,
       command: async ({ editor, range }) => {
         editor.chain().focus().deleteRange(range).run();
-        const doc = await onCreateSubDocument();
+        const doc = await onCreateSubDocument?.();
         if (doc) {
           // Navigate to the new document immediately
           onNavigateToDocument?.(doc.id);
@@ -374,6 +379,9 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
           // Create data URL for immediate preview
           const reader = new FileReader();
           reader.onload = async () => {
+            // Check if aborted before processing
+            if (abortSignal?.aborted) return;
+
             const dataUrl = reader.result as string;
 
             // Insert image with data URL preview
@@ -381,7 +389,13 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
 
             try {
               // Upload and replace with CDN URL
-              const result = await uploadFile(file);
+              const result = await uploadFile(file, undefined, abortSignal);
+
+              // Check if aborted before updating editor
+              if (abortSignal?.aborted) {
+                console.log('Slash command image upload completed but was cancelled - not updating editor');
+                return;
+              }
 
               // Find and update the image node
               const { state, view } = editor;
@@ -406,6 +420,11 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
                 view.dispatch(transaction);
               }
             } catch (error) {
+              // Don't report cancellation as an error - it's intentional
+              if (error instanceof DOMException && error.name === 'AbortError') {
+                console.log('Slash command image upload cancelled');
+                return;
+              }
               console.error('Image upload failed:', error);
             }
           };
@@ -424,7 +443,7 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
         editor.chain().focus().deleteRange(range).run();
         // Import and trigger file upload
         const { triggerFileUpload } = await import('./FileAttachment');
-        triggerFileUpload(editor);
+        triggerFileUpload(editor, abortSignal);
       },
     },
     // Toggle/Details
@@ -462,30 +481,23 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
           .run();
       },
     },
-    // Hypothesis section (for Project and Sprint documents)
+    // Plan block (for Sprint and Project documents - syncs with properties.plan)
     {
-      title: 'Hypothesis',
-      description: 'Add a hypothesis section',
-      aliases: ['hypothesis', 'hypo', 'theory'],
-      icon: icons.hypothesis,
+      title: 'Plan',
+      description: 'Add a plan block',
+      aliases: ['plan', 'hypothesis', 'hypo', 'theory'],
+      icon: icons.plan,
+      documentTypes: ['sprint', 'project'],
       command: ({ editor, range }) => {
         editor
           .chain()
           .focus()
           .deleteRange(range)
-          .insertContent([
-            {
-              type: 'heading',
-              attrs: { level: 2 },
-              content: [{ type: 'text', text: 'Hypothesis' }],
-            },
-            {
-              type: 'paragraph',
-            },
-          ])
+          .insertContent({
+            type: 'hypothesisBlock',
+            attrs: { placeholder: 'What do you expect to accomplish?' },
+          })
           .run();
-        // Move cursor to the empty paragraph
-        editor.commands.focus('end');
       },
     },
     // Success Criteria section (for Project and Sprint documents)
@@ -593,6 +605,10 @@ export function createSlashCommands({ onCreateSubDocument, onNavigateToDocument,
             const search = query.toLowerCase();
             const filteredCommands = slashCommands.filter(
               (item) => {
+                // Filter out commands that require callback when callback is not provided
+                if (item.requiresSubDocumentCallback && !onCreateSubDocument) {
+                  return false;
+                }
                 // Filter by document type if command has restrictions
                 if (item.documentTypes && item.documentTypes.length > 0) {
                   if (!documentType || !item.documentTypes.includes(documentType)) {

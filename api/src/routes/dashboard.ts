@@ -87,13 +87,15 @@ router.get('/my-work', authMiddleware, async (req: Request, res: Response) => {
     // 1. Get issues assigned to current user (not done/cancelled)
     const issuesResult = await pool.query(
       `SELECT d.id, d.title, d.properties, d.ticket_number,
-              d.sprint_id,
+              sprint_assoc.related_id as sprint_id,
               sprint.title as sprint_name,
               (sprint.properties->>'sprint_number')::int as sprint_number,
               p.title as program_name
        FROM documents d
-       LEFT JOIN documents sprint ON sprint.id = d.sprint_id AND sprint.document_type = 'sprint'
-       LEFT JOIN documents p ON d.program_id = p.id
+       LEFT JOIN document_associations sprint_assoc ON sprint_assoc.document_id = d.id AND sprint_assoc.relationship_type = 'sprint'
+       LEFT JOIN documents sprint ON sprint.id = sprint_assoc.related_id AND sprint.document_type = 'sprint'
+       LEFT JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id AND p.document_type = 'program'
        WHERE d.workspace_id = $1
          AND d.document_type = 'issue'
          AND (d.properties->>'assignee_id')::uuid = $2
@@ -167,17 +169,19 @@ router.get('/my-work', authMiddleware, async (req: Request, res: Response) => {
                       ELSE NULL
                       END
                     FROM documents issue
-                    JOIN documents sprint ON sprint.id = issue.sprint_id AND sprint.document_type = 'sprint'
+                    JOIN document_associations sprint_assoc ON sprint_assoc.document_id = issue.id AND sprint_assoc.relationship_type = 'sprint'
+                    JOIN documents sprint ON sprint.id = sprint_assoc.related_id AND sprint.document_type = 'sprint'
+                    JOIN document_associations proj_assoc ON proj_assoc.document_id = issue.id AND proj_assoc.relationship_type = 'project'
                     JOIN workspaces w ON w.id = d.workspace_id
-                    WHERE issue.project_id = d.id
+                    WHERE proj_assoc.related_id = d.id
                       AND issue.document_type = 'issue'
-                      AND issue.sprint_id IS NOT NULL
                   ),
                   'backlog'
                 )
               END as inferred_status
        FROM documents d
-       LEFT JOIN documents p ON d.program_id = p.id
+       LEFT JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents p ON prog_da.related_id = p.id AND p.document_type = 'program'
        WHERE d.workspace_id = $1
          AND d.document_type = 'project'
          AND (d.properties->>'owner_id')::uuid = $2
@@ -218,7 +222,8 @@ router.get('/my-work', authMiddleware, async (req: Request, res: Response) => {
               p.title as program_name,
               (d.properties->>'sprint_number')::int as sprint_number
        FROM documents d
-       JOIN documents p ON d.program_id = p.id
+       JOIN document_associations prog_da ON d.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       JOIN documents p ON prog_da.related_id = p.id AND p.document_type = 'program'
        WHERE d.workspace_id = $1
          AND d.document_type = 'sprint'
          AND (d.properties->>'owner_id')::uuid = $2
@@ -231,7 +236,7 @@ router.get('/my-work', authMiddleware, async (req: Request, res: Response) => {
     for (const row of sprintsResult.rows) {
       workItems.push({
         id: row.id,
-        title: row.title || `Sprint ${row.sprint_number}`,
+        title: row.title || `Week ${row.sprint_number}`,
         type: 'sprint',
         urgency: 'this_sprint',
         sprint_number: row.sprint_number,

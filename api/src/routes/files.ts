@@ -7,12 +7,33 @@ import { mkdir, writeFile, unlink } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { authMiddleware } from '../middleware/auth.js';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Local uploads directory (for development)
 const UPLOADS_DIR = join(__dirname, '../../uploads');
+
+// S3 configuration
+const S3_BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || '';
+const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+
+// Max file size: 1GB (1073741824 bytes)
+const MAX_FILE_SIZE = 1073741824;
+
+// Presigned URL expiration: 15 minutes
+const PRESIGNED_URL_EXPIRES_IN = 15 * 60;
+
+// Initialize S3 client (only when bucket is configured)
+let s3Client: S3Client | null = null;
+function getS3Client(): S3Client {
+  if (!s3Client) {
+    s3Client = new S3Client({ region: AWS_REGION });
+  }
+  return s3Client;
+}
 
 // UUID validation regex - prevents path traversal by ensuring ID is valid UUID
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -29,7 +50,9 @@ export const filesRouter: RouterType = Router();
 const uploadRequestSchema = z.object({
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(100),
-  sizeBytes: z.number().int().positive(),
+  sizeBytes: z.number().int().positive().max(MAX_FILE_SIZE, {
+    message: `File size exceeds maximum allowed (${MAX_FILE_SIZE / (1024 * 1024 * 1024)}GB)`,
+  }),
 });
 
 /**
@@ -95,10 +118,10 @@ filesRouter.post('/upload', authMiddleware, async (req: Request, res: Response) 
     );
 
     // For local development: use a local upload endpoint
-    // For production: would generate S3 presigned URL
+    // For production: generate S3 presigned URL for direct browser upload
     const isProduction = process.env.NODE_ENV === 'production';
     const uploadUrl = isProduction
-      ? await generateS3PresignedUrl(s3Key, mimeType)
+      ? await generateS3PresignedUrl(s3Key, mimeType, sizeBytes)
       : `/api/files/${fileId}/local-upload`;
 
     res.json({
@@ -112,10 +135,10 @@ filesRouter.post('/upload', authMiddleware, async (req: Request, res: Response) 
   }
 });
 
-// Raw body parser for file uploads (100MB limit)
+// Raw body parser for file uploads (1GB limit for local development)
 const rawBodyParser = express.raw({
   type: '*/*',
-  limit: '100mb',
+  limit: '1gb',
 });
 
 // POST /api/files/:id/local-upload - Local development upload endpoint
@@ -353,8 +376,13 @@ filesRouter.delete('/:id', authMiddleware, async (req: Request, res: Response) =
 
     // Delete from storage (local or S3)
     const isProduction = process.env.NODE_ENV === 'production';
-    if (isProduction) {
-      // TODO: Delete from S3
+    if (isProduction && S3_BUCKET_NAME) {
+      const client = getS3Client();
+      const command = new DeleteObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: file.s3_key,
+      });
+      await client.send(command);
     } else {
       try {
         const filePath = join(UPLOADS_DIR, file.s3_key);
@@ -374,13 +402,29 @@ filesRouter.delete('/:id', authMiddleware, async (req: Request, res: Response) =
   }
 });
 
-// Placeholder for S3 presigned URL generation (production)
-async function generateS3PresignedUrl(s3Key: string, contentType: string): Promise<string> {
-  // In production, this would use AWS SDK to generate presigned URL
-  // For now, return a placeholder
-  const bucketName = process.env.S3_BUCKET_NAME || 'ship-uploads';
-  const region = process.env.AWS_REGION || 'us-east-1';
+/**
+ * Generate a presigned URL for S3 PUT upload
+ * @param s3Key - The S3 object key (path within bucket)
+ * @param contentType - The MIME type of the file being uploaded
+ * @param sizeBytes - The expected file size in bytes
+ * @returns Presigned URL valid for 15 minutes
+ */
+async function generateS3PresignedUrl(s3Key: string, contentType: string, sizeBytes: number): Promise<string> {
+  if (!S3_BUCKET_NAME) {
+    throw new Error('S3_UPLOADS_BUCKET environment variable is not configured');
+  }
 
-  // This is a placeholder - real implementation would use @aws-sdk/s3-request-presigner
-  return `https://${bucketName}.s3.${region}.amazonaws.com/${s3Key}?presigned=true`;
+  const client = getS3Client();
+  const command = new PutObjectCommand({
+    Bucket: S3_BUCKET_NAME,
+    Key: s3Key,
+    ContentType: contentType,
+    ContentLength: sizeBytes,
+  });
+
+  const presignedUrl = await getSignedUrl(client, command, {
+    expiresIn: PRESIGNED_URL_EXPIRES_IN,
+  });
+
+  return presignedUrl;
 }

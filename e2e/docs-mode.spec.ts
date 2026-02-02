@@ -49,7 +49,7 @@ test.describe('Docs Mode (Phase 3)', () => {
     }
 
     // Should navigate to editor
-    await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Editor should be visible
     await expect(page.locator('.ProseMirror, .tiptap, [data-testid="editor"]')).toBeVisible({ timeout: 5000 })
@@ -72,7 +72,7 @@ test.describe('Docs Mode (Phase 3)', () => {
     }
 
     // Wait for navigation to new doc
-    await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Wait for sidebar to update and verify count increased
     await page.waitForTimeout(1000)
@@ -92,7 +92,7 @@ test.describe('Docs Mode (Phase 3)', () => {
       await page.getByRole('button', { name: 'New Document', exact: true }).click()
     }
 
-    await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Find title input (contenteditable or input)
     const titleInput = page.locator('[contenteditable="true"]').first()
@@ -125,13 +125,13 @@ test.describe('Docs Mode (Phase 3)', () => {
       await sidebarLinks.first().click()
 
       // Should navigate to a document URL
-      await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
       // If there are multiple items, click a different one to verify navigation
       if (itemCount >= 2) {
         const firstUrl = page.url()
         await sidebarLinks.nth(1).click()
-        await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
+        await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
         // The URL should have changed to a different document
         expect(page.url()).not.toBe(firstUrl)
@@ -139,7 +139,7 @@ test.describe('Docs Mode (Phase 3)', () => {
     } else {
       // Create a document if none exist
       await page.getByRole('button', { name: 'New Document', exact: true }).click()
-      await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
     }
   })
 
@@ -154,7 +154,7 @@ test.describe('Docs Mode (Phase 3)', () => {
       await page.getByRole('button', { name: 'New Document', exact: true }).click()
     }
 
-    await expect(page).toHaveURL(/\/docs\/[a-f0-9-]+/, { timeout: 5000 })
+    await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+/, { timeout: 5000 })
 
     // Type in the editor
     const editor = page.locator('.ProseMirror, .tiptap')
@@ -162,8 +162,8 @@ test.describe('Docs Mode (Phase 3)', () => {
     await editor.click()
     await page.keyboard.type('Hello world')
 
-    // Should see save status indicator (Saved, Syncing..., or Offline)
+    // Should see save status indicator (Saved, Cached, Saving, or Offline)
     // The status is shown in the editor header (use .first() to avoid matching sr-only element)
-    await expect(page.getByText(/saved|syncing|offline/i).first()).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(/saved|cached|saving|offline/i).first()).toBeVisible({ timeout: 10000 })
   })
 })

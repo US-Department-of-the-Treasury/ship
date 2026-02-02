@@ -1,3 +1,14 @@
+/**
+ * @deprecated Use useUnifiedDocuments from '@/hooks/useUnifiedDocuments' instead.
+ *
+ * This context is maintained for backward compatibility but should not be used
+ * for new code. The unified document model treats all document types consistently
+ * through a single hook.
+ *
+ * Migration:
+ *   Before: const { projects } = useProjects()
+ *   After:  const { byType: { project: projects } } = useUnifiedDocuments({ type: 'project' })
+ */
 import { createContext, useContext, ReactNode } from 'react';
 import { useProjects as useProjectsQuery, Project, CreateProjectOptions } from '@/hooks/useProjectsQuery';
 

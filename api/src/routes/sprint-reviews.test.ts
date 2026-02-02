@@ -114,25 +114,35 @@ describe('Sprint Reviews API', () => {
   })
 
   beforeEach(async () => {
-    // Clean up sprints and reviews before each test
+    // Clean up associations first, then documents
     await pool.query(
-      `DELETE FROM documents WHERE workspace_id = $1 AND document_type IN ('sprint', 'sprint_review', 'issue')`,
+      `DELETE FROM document_associations WHERE document_id IN (SELECT id FROM documents WHERE workspace_id = $1 AND document_type IN ('sprint', 'weekly_review', 'issue'))`,
+      [testWorkspaceId]
+    )
+    await pool.query(
+      `DELETE FROM documents WHERE workspace_id = $1 AND document_type IN ('sprint', 'weekly_review', 'issue')`,
       [testWorkspaceId]
     )
     // Create fresh sprint
     const sprintResult = await pool.query(
-      `INSERT INTO documents (workspace_id, document_type, title, created_by, parent_id, program_id, visibility, properties)
-       VALUES ($1, 'sprint', 'Test Sprint', $2, $3, $3, 'workspace', $4)
+      `INSERT INTO documents (workspace_id, document_type, title, created_by, visibility, properties)
+       VALUES ($1, 'sprint', 'Test Sprint', $2, 'workspace', $3)
        RETURNING id`,
-      [testWorkspaceId, testUserId, testProgramId, JSON.stringify({ hypothesis: 'Test hypothesis for sprint' })]
+      [testWorkspaceId, testUserId, JSON.stringify({ plan: 'Test plan for sprint' })]
     )
     testSprintId = sprintResult.rows[0].id
+    // Create program association for sprint
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type)
+       VALUES ($1, $2, 'program')`,
+      [testSprintId, testProgramId]
+    )
   })
 
-  describe('GET /api/sprints/:id/review', () => {
+  describe('GET /api/weeks/:id/review', () => {
     it('returns pre-filled draft with is_draft: true for new sprint', async () => {
       const response = await request(app)
-        .get(`/api/sprints/${testSprintId}/review`)
+        .get(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(200)
@@ -144,22 +154,22 @@ describe('Sprint Reviews API', () => {
     it('returns existing review with is_draft: false after POST', async () => {
       // First create a review
       await request(app)
-        .post(`/api/sprints/${testSprintId}/review`)
+        .post(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
           content: { type: 'doc', content: [{ type: 'paragraph' }] },
-          hypothesis_validated: true
+          plan_validated: true
         })
 
       // Then GET should return existing review
       const response = await request(app)
-        .get(`/api/sprints/${testSprintId}/review`)
+        .get(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(200)
       expect(response.body.is_draft).toBe(false)
-      expect(response.body.hypothesis_validated).toBe(true)
+      expect(response.body.plan_validated).toBe(true)
     })
 
     it('pre-fill content includes issues information', async () => {
@@ -185,7 +195,7 @@ describe('Sprint Reviews API', () => {
       )
 
       const response = await request(app)
-        .get(`/api/sprints/${testSprintId}/review`)
+        .get(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(200)
@@ -199,33 +209,33 @@ describe('Sprint Reviews API', () => {
     it('returns 404 for non-existent sprint', async () => {
       const fakeSprintId = '00000000-0000-0000-0000-000000000000'
       const response = await request(app)
-        .get(`/api/sprints/${fakeSprintId}/review`)
+        .get(`/api/weeks/${fakeSprintId}/review`)
         .set('Cookie', sessionCookie)
 
       expect(response.status).toBe(404)
     })
   })
 
-  describe('POST /api/sprints/:id/review', () => {
-    it('creates sprint_review document with owner_id', async () => {
+  describe('POST /api/weeks/:id/review', () => {
+    it('creates weekly_review document with owner_id', async () => {
       const response = await request(app)
-        .post(`/api/sprints/${testSprintId}/review`)
+        .post(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
           content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Review content' }] }] },
-          hypothesis_validated: true
+          plan_validated: true
         })
 
       expect(response.status).toBe(201)
       expect(response.body.owner_id).toBe(testUserId)
       expect(response.body.sprint_id).toBe(testSprintId)
-      expect(response.body.hypothesis_validated).toBe(true)
+      expect(response.body.plan_validated).toBe(true)
     })
 
     it('returns 403 without auth (CSRF check first)', async () => {
       const response = await request(app)
-        .post(`/api/sprints/${testSprintId}/review`)
+        .post(`/api/weeks/${testSprintId}/review`)
         .send({ content: { type: 'doc', content: [] } })
 
       expect(response.status).toBe(403)
@@ -234,14 +244,14 @@ describe('Sprint Reviews API', () => {
     it('returns 409 if review already exists', async () => {
       // Create first review
       await request(app)
-        .post(`/api/sprints/${testSprintId}/review`)
+        .post(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({ content: { type: 'doc', content: [] } })
 
       // Try to create second review
       const response = await request(app)
-        .post(`/api/sprints/${testSprintId}/review`)
+        .post(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({ content: { type: 'doc', content: [] } })
@@ -250,41 +260,41 @@ describe('Sprint Reviews API', () => {
     })
   })
 
-  describe('PATCH /api/sprints/:id/review', () => {
+  describe('PATCH /api/weeks/:id/review', () => {
     beforeEach(async () => {
       // Create a review to update
       await request(app)
-        .post(`/api/sprints/${testSprintId}/review`)
+        .post(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
           content: { type: 'doc', content: [] },
-          hypothesis_validated: null
+          plan_validated: null
         })
     })
 
-    it('updates hypothesis_validated and content', async () => {
+    it('updates plan_validated and content', async () => {
       const newContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated' }] }] }
       const response = await request(app)
-        .patch(`/api/sprints/${testSprintId}/review`)
+        .patch(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
         .send({
           content: newContent,
-          hypothesis_validated: false
+          plan_validated: false
         })
 
       expect(response.status).toBe(200)
-      expect(response.body.hypothesis_validated).toBe(false)
+      expect(response.body.plan_validated).toBe(false)
       expect(response.body.content).toEqual(newContent)
     })
 
     it('returns 403 for non-owner', async () => {
       const response = await request(app)
-        .patch(`/api/sprints/${testSprintId}/review`)
+        .patch(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', otherSessionCookie)
         .set('x-csrf-token', otherCsrfToken)
-        .send({ hypothesis_validated: true })
+        .send({ plan_validated: true })
 
       expect(response.status).toBe(403)
     })
@@ -292,15 +302,15 @@ describe('Sprint Reviews API', () => {
     it('returns 404 when no review exists', async () => {
       // Delete the review first
       await pool.query(
-        `DELETE FROM documents WHERE document_type = 'sprint_review' AND properties->>'sprint_id' = $1`,
+        `DELETE FROM documents WHERE document_type = 'weekly_review' AND properties->>'sprint_id' = $1`,
         [testSprintId]
       )
 
       const response = await request(app)
-        .patch(`/api/sprints/${testSprintId}/review`)
+        .patch(`/api/weeks/${testSprintId}/review`)
         .set('Cookie', sessionCookie)
         .set('x-csrf-token', csrfToken)
-        .send({ hypothesis_validated: true })
+        .send({ plan_validated: true })
 
       expect(response.status).toBe(404)
     })

@@ -17,6 +17,7 @@ import { apiPost } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { projectKeys } from '@/hooks/useProjectsQuery';
+import { ConversionDialog } from '@/components/dialogs/ConversionDialog';
 
 // All available columns with metadata
 const ALL_COLUMNS: ColumnDefinition[] = [
@@ -177,7 +178,7 @@ export function ProjectsPage() {
     // Create project without owner (unassigned) - owner can be set later
     const project = await createProject({});
     if (project) {
-      navigate(`/projects/${project.id}`);
+      navigate(`/documents/${project.id}`);
     }
   }, [createProject, navigate, user, showToast]);
 
@@ -274,7 +275,7 @@ export function ProjectsPage() {
           queryClient.invalidateQueries({ queryKey: projectKeys.lists() }),
         ]);
         showToast(`Project converted to issue: ${convertingProject.title}`, 'success');
-        navigate(`/issues/${data.id}`, { replace: true });
+        navigate(`/documents/${data.id}`, { replace: true });
       } else {
         const error = await res.json();
         showToast(error.error || 'Failed to convert project to issue', 'error');
@@ -404,13 +405,13 @@ export function ProjectsPage() {
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto pb-20">
         <SelectableList
           items={projects}
           renderRow={renderProjectRow}
           columns={columns}
           emptyState={emptyState}
-          onItemClick={(project) => navigate(`/projects/${project.id}`)}
+          onItemClick={(project) => navigate(`/documents/${project.id}`)}
           onSelectionChange={handleSelectionChange}
           onContextMenu={handleContextMenu}
           ariaLabel="Projects list"
@@ -459,96 +460,6 @@ export function ProjectsPage() {
           isConverting={isConverting}
         />
       )}
-    </div>
-  );
-}
-
-// Conversion dialog for converting projects to issues
-interface ConversionDialogProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConvert: () => void;
-  sourceType: 'issue' | 'project';
-  title: string;
-  isConverting?: boolean;
-}
-
-function ConversionDialog({ isOpen, onClose, onConvert, sourceType, title, isConverting }: ConversionDialogProps) {
-  // Handle Escape key
-  useEffect(() => {
-    if (!isOpen || isConverting) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isConverting, onClose]);
-
-  if (!isOpen) return null;
-
-  const targetType = sourceType === 'issue' ? 'project' : 'issue';
-  const actionLabel = sourceType === 'issue' ? 'Promote to Project' : 'Convert to Issue';
-
-  // Handle click outside dialog
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget && !isConverting) {
-      onClose();
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" onClick={handleBackdropClick}>
-      <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold text-foreground">{actionLabel}</h2>
-        <p className="mb-4 text-sm text-foreground">
-          Convert <strong>"{title}"</strong> from {sourceType} to {targetType}?
-        </p>
-        <div className="mb-4 rounded bg-amber-500/10 border border-amber-500/30 p-3">
-          <p className="text-sm text-amber-300 font-medium mb-2">What will happen:</p>
-          <ul className="text-xs text-muted space-y-1">
-            <li>• A new {targetType} will be created with the same title and content</li>
-            <li>• The original {sourceType} will be archived</li>
-            <li>• Links to the old {sourceType} will redirect to the new {targetType}</li>
-            {sourceType === 'issue' && (
-              <li>• Issue properties (state, priority, assignee) will be reset</li>
-            )}
-            {sourceType === 'project' && (
-              <>
-                <li>• Project properties (ICE scores, owner) will be reset</li>
-                <li>• Child issues will be orphaned (unlinked from project)</li>
-              </>
-            )}
-          </ul>
-        </div>
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            disabled={isConverting}
-            className="rounded px-3 py-1.5 text-sm text-muted hover:text-foreground transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConvert}
-            disabled={isConverting}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50 transition-colors flex items-center gap-2"
-          >
-            {isConverting ? (
-              <>
-                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Converting...
-              </>
-            ) : (
-              actionLabel
-            )}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -640,11 +551,11 @@ function ICEBadge({ value }: { value: number | null }) {
     return <span className="font-medium text-muted">&mdash;</span>;
   }
   const colors = {
-    1: 'text-red-400',
-    2: 'text-orange-400',
-    3: 'text-yellow-400',
-    4: 'text-lime-400',
-    5: 'text-green-400',
+    1: 'text-red-500',
+    2: 'text-orange-500',
+    3: 'text-yellow-500',
+    4: 'text-lime-500',
+    5: 'text-green-500',
   };
   return (
     <span className={cn('font-medium', colors[value as keyof typeof colors] || 'text-muted')}>

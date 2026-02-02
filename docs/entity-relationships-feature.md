@@ -4,18 +4,18 @@ This document describes the entity relationship improvements and documentation q
 
 ## Overview
 
-Ship's entity model follows a hierarchy: **Program → Project → Sprint → Issue**. This feature set improves visibility into these relationships, adds activity visualization, and enforces documentation quality.
+Ship's entity model follows a hierarchy: **Program → Project → Week → Issue**. This feature set improves visibility into these relationships, adds activity visualization, and enforces documentation quality.
 
 ## Entity Hierarchy
 
 ```
 Program (Vision + Goals)
 ├── Projects (Hypothesis + Success Criteria)
-│   ├── Sprints (Goal + Date Range + Linked Issues)
+│   ├── Weeks (Goal + Date Range + Linked Issues)
 │   │   ├── Issues (flexible, can be unassigned initially)
 │   │   └── Standups (daily updates, reference issues)
 │   └── Issues (can belong directly to project)
-└── Sprints (can belong directly to program)
+└── Weeks (can belong directly to program)
 ```
 
 ### Key Decisions
@@ -24,7 +24,7 @@ Program (Vision + Goals)
 |--------|------------------------------|
 | Program | Vision, Goals |
 | Project | Hypothesis, Success Criteria |
-| Sprint | Goal, Date Range, At least 1 linked issue |
+| Week | Goal, Date Range, At least 1 linked issue |
 | Issue | Nothing required (inbox → triage model) |
 | Wiki | Standalone (linked via @mentions, not hierarchy) |
 
@@ -49,7 +49,7 @@ GitHub-style activity visualization showing 30 days of activity.
 - Issue state changes
 - Standup posts
 
-**Component:** `ActivityChart` - Reusable across Program, Project, Sprint views.
+**Component:** `ActivityChart` - Reusable across Program, Project, Week views.
 
 **API Endpoint:** `GET /api/activity/:entityType/:entityId`
 
@@ -65,7 +65,7 @@ GitHub-style activity visualization showing 30 days of activity.
 
 ### 3. Hypothesis & Success Criteria Blocks
 
-Special structured sections in Project and Sprint documents.
+Special structured sections in Project and Week documents.
 
 **Slash Commands:**
 - `/hypothesis` - Insert Hypothesis section
@@ -103,7 +103,7 @@ Documents missing critical fields are flagged but not blocked from saving.
 // Project is complete if:
 properties.hypothesis && properties.success_criteria
 
-// Sprint is complete if:
+// Week is complete if:
 properties.goal && properties.start_date && properties.end_date && linked_issues.length > 0
 ```
 
@@ -163,4 +163,4 @@ No schema migrations required. All new data stored in existing `properties` JSON
 
 - [Unified Document Model](./unified-document-model.md) - Core data model
 - [Document Model Conventions](./document-model-conventions.md) - Terminology and patterns
-- [Sprint Documentation Philosophy](./sprint-documentation-philosophy.md) - Sprint workflow
+- [Week Documentation Philosophy](./week-documentation-philosophy.md) - Week workflow

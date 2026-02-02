@@ -121,12 +121,23 @@ export async function apiGet(endpoint: string): Promise<Response> {
   });
 
   // Handle session expiration - redirect to login
-  // Check for non-JSON response (CloudFront HTML interception) or 401 status
-  if (!isJsonResponse(res) && res.status !== 200) {
-    handleSessionExpired(); // never returns
-  }
   if (res.status === 401) {
     handleSessionExpired(); // never returns
+  }
+
+  // Check for non-JSON response (CloudFront HTML interception)
+  // This can happen when:
+  // 1. CDN serves HTML error page for non-existent routes
+  // 2. Session expired and CloudFront returns login page
+  // 3. Route misconfiguration serving index.html for API routes
+  if (!isJsonResponse(res)) {
+    // Non-200 + non-JSON = likely session issue (CloudFront 403 interception)
+    if (res.status !== 200) {
+      handleSessionExpired(); // never returns
+    }
+    // 200 + non-JSON = likely routing/CDN misconfiguration
+    // Don't redirect to login (not a session issue), throw error for React Query to handle
+    throw new Error(`API returned HTML instead of JSON for ${endpoint}. This may indicate a routing or CDN configuration issue.`);
   }
 
   return res;
@@ -291,10 +302,21 @@ export interface UserInfo {
   isSuperAdmin: boolean;
 }
 
+// Accountability item returned by auth endpoints
+export interface AccountabilityItem {
+  id: string;
+  title: string;
+  accountability_type: 'standup' | 'weekly_plan' | 'weekly_review' | 'week_start' | 'week_issues' | 'project_plan' | 'project_retro';
+  accountability_target_id: string;
+  due_date: string | null;
+  is_system_generated: boolean;
+}
+
 export interface LoginResponse {
   user: UserInfo;
   currentWorkspace: Workspace;
   workspaces: Array<Workspace & { role: 'admin' | 'member' }>;
+  pendingAccountabilityItems?: AccountabilityItem[];
 }
 
 export interface MeResponse {
@@ -305,6 +327,7 @@ export interface MeResponse {
     userId: string;
     userName: string;
   };
+  pendingAccountabilityItems?: AccountabilityItem[];
 }
 
 export const api = {

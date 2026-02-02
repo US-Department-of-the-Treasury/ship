@@ -12,6 +12,8 @@ import cookie from 'cookie';
 
 const messageSync = 0;
 const messageAwareness = 1;
+const messageCustomEvent = 2;
+const messageClearCache = 3; // Tells browser to clear IndexedDB cache before sync
 
 // Rate limiting configuration
 const RATE_LIMIT = {
@@ -28,6 +30,10 @@ const connectionAttempts = new Map<string, number[]>();
 
 // Track message timestamps per WebSocket connection
 const messageTimestamps = new Map<WebSocket, number[]>();
+
+// DDoS protection: Track rate limit violations per connection for progressive penalties
+const rateLimitViolations = new Map<WebSocket, number>();
+const RATE_LIMIT_VIOLATION_THRESHOLD = 50; // Close connection after 50 violations
 
 // Clean up old connection attempts periodically
 setInterval(() => {
@@ -83,6 +89,10 @@ const docs = new Map<string, Y.Doc>();
 const awareness = new Map<string, awarenessProtocol.Awareness>();
 const conns = new Map<WebSocket, { docName: string; awarenessClientId: number; userId: string; workspaceId: string }>();
 
+// Global events connections (separate from document collaboration)
+// These persist across navigation and are used for real-time notifications
+const eventConns = new Map<WebSocket, { userId: string; workspaceId: string }>();
+
 // Debounce persistence (save every 2 seconds after changes)
 const pendingSaves = new Map<string, NodeJS.Timeout>();
 
@@ -93,12 +103,16 @@ function parseDocId(docName: string): string {
   return parts.length > 1 ? parts[1]! : parts[0]!;
 }
 
+// Track last content history log time per document to avoid excessive logging
+const contentHistoryLastLogged = new Map<string, number>();
+const CONTENT_HISTORY_MIN_INTERVAL_MS = 60_000; // Log at most once per minute per document
+
 async function persistDocument(docName: string, doc: Y.Doc) {
   const state = Y.encodeStateAsUpdate(doc);
   const docId = parseDocId(docName);
 
   try {
-    // Convert Yjs to TipTap JSON to extract hypothesis/criteria
+    // Convert Yjs to TipTap JSON to extract hypothesis/criteria and keep content in sync
     const fragment = doc.getXmlFragment('default');
     const content = yjsToJson(fragment);
 
@@ -108,26 +122,55 @@ async function persistDocument(docName: string, doc: Y.Doc) {
     const vision = extractVisionFromContent(content);
     const goals = extractGoalsFromContent(content);
 
-    // Get existing properties to merge
+    // Get existing properties, document_type, and content to check for changes
     const existingResult = await pool.query(
-      'SELECT properties FROM documents WHERE id = $1',
+      'SELECT properties, document_type, content, created_by FROM documents WHERE id = $1',
       [docId]
     );
     const existingProps = existingResult.rows[0]?.properties || {};
+    const documentType = existingResult.rows[0]?.document_type;
+    const existingContent = existingResult.rows[0]?.content;
+    const createdBy = existingResult.rows[0]?.created_by;
+
+    // For weekly_plan and weekly_retro documents, log content history when content changes
+    // This provides full version history for accountability audit trails
+    if ((documentType === 'weekly_plan' || documentType === 'weekly_retro') && createdBy) {
+      const newContentStr = JSON.stringify(content);
+      const oldContentStr = existingContent ? JSON.stringify(existingContent) : null;
+
+      // Only log if content actually changed and enough time has passed since last log
+      if (newContentStr !== oldContentStr) {
+        const now = Date.now();
+        const lastLogged = contentHistoryLastLogged.get(docId) || 0;
+
+        if (now - lastLogged >= CONTENT_HISTORY_MIN_INTERVAL_MS) {
+          // Log content change to document_history
+          await pool.query(
+            `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by)
+             VALUES ($1, 'content', $2, $3, $4)`,
+            [docId, oldContentStr, newContentStr, createdBy]
+          );
+          contentHistoryLastLogged.set(docId, now);
+        }
+      }
+    }
 
     // Update properties with extracted values (null clears the property)
+    // Note: 'plan' is the canonical field name (renamed from 'hypothesis' in migration 032)
     const updatedProps = {
       ...existingProps,
-      hypothesis: hypothesis,
+      plan: hypothesis,
       success_criteria: successCriteria,
       vision: vision,
       goals: goals,
     };
 
-    // Persist yjs_state and updated properties
+    // Persist yjs_state, content (JSON backup), and updated properties
+    // The content column is kept in sync with yjs_state to serve as a fallback
+    // and to support API reads that don't go through the collaboration server
     await pool.query(
-      `UPDATE documents SET yjs_state = $1, properties = $2, updated_at = now() WHERE id = $3`,
-      [Buffer.from(state), JSON.stringify(updatedProps), docId]
+      `UPDATE documents SET yjs_state = $1, content = $2, properties = $3, updated_at = now() WHERE id = $4`,
+      [Buffer.from(state), JSON.stringify(content), JSON.stringify(updatedProps), docId]
     );
   } catch (err) {
     console.error('Failed to persist document:', err);
@@ -299,6 +342,10 @@ function schedulePersist(docName: string, doc: Y.Doc) {
   }, 2000));
 }
 
+// Track which docs were loaded fresh from JSON (not from yjs_state)
+// Browser should clear its IndexedDB cache when connecting to these docs
+const freshFromJsonDocs = new Set<string>();
+
 async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
   let doc = docs.get(docName);
   if (doc) return doc;
@@ -316,18 +363,21 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
     );
 
     if (result.rows[0]?.yjs_state) {
-      // Load from binary Yjs state
+      // Load from binary Yjs state (preferred path - content was previously synced)
+      console.log(`[Collaboration] Loading ${docName} from yjs_state`);
       Y.applyUpdate(doc, result.rows[0].yjs_state);
     } else if (result.rows[0]?.content) {
-      // Fallback: convert JSON content to Yjs (for seeded documents)
+      // Fallback: convert JSON content to Yjs (for API-created documents)
+      console.log(`[Collaboration] Converting JSON content to Yjs for ${docName}`);
       try {
         let jsonContent = result.rows[0].content;
+        const originalContent = jsonContent;
 
         // Parse if it's a string (might be JSON string or XML-like from old toJSON)
         if (typeof jsonContent === 'string') {
           // Skip if it looks like XML from XmlFragment.toJSON() (starts with <)
           if (jsonContent.trim().startsWith('<')) {
-            console.log('Skipping XML-like content, starting with empty document');
+            console.log(`[Collaboration] Skipping XML-like content for ${docName}, starting with empty document`);
             jsonContent = null;
           } else {
             jsonContent = JSON.parse(jsonContent);
@@ -337,16 +387,29 @@ async function getOrCreateDoc(docName: string): Promise<Y.Doc> {
         if (jsonContent && jsonContent.type === 'doc' && Array.isArray(jsonContent.content)) {
           const fragment = doc.getXmlFragment('default');
           jsonToYjs(doc, fragment, jsonContent);
+          console.log(`[Collaboration] Successfully converted content for ${docName}: ${jsonContent.content.length} top-level nodes`);
+          // Mark this doc as freshly loaded from JSON - clients should clear their cache
+          freshFromJsonDocs.add(docName);
           // Persist the converted state so this only happens once
           schedulePersist(docName, doc);
+        } else {
+          // Log why conversion was skipped to help diagnose issues
+          console.warn(`[Collaboration] Content conversion skipped for ${docName}:`, {
+            hasContent: !!jsonContent,
+            type: jsonContent?.type,
+            isContentArray: Array.isArray(jsonContent?.content),
+            contentSample: typeof originalContent === 'string' ? originalContent.substring(0, 100) : JSON.stringify(originalContent).substring(0, 100),
+          });
         }
       } catch (parseErr) {
-        console.error('Failed to parse JSON content:', parseErr);
+        console.error(`[Collaboration] Failed to parse JSON content for ${docName}:`, parseErr);
         // Start with empty document if content is corrupted
       }
+    } else {
+      console.log(`[Collaboration] No content found for ${docName}, starting with empty document`);
     }
   } catch (err) {
-    console.error('Failed to load document:', err);
+    console.error(`[Collaboration] Failed to load document ${docName}:`, err);
   }
 
   // Set up persistence and broadcast on changes
@@ -411,7 +474,24 @@ function handleMessage(ws: WebSocket, message: Uint8Array, docName: string, doc:
       break;
     }
     case messageAwareness: {
-      awarenessProtocol.applyAwarenessUpdate(aw, decoding.readVarUint8Array(decoder), ws);
+      const awarenessData = decoding.readVarUint8Array(decoder);
+
+      // Extract the actual client's awarenessClientId from the update
+      // This is critical for proper cleanup on disconnect - the server was
+      // previously storing doc.clientID (server's ID) instead of the client's
+      // actual awareness clientID, causing stale states on page refresh.
+      // Format: [numStates, ...for each: clientId, clock, stateJson]
+      const conn = conns.get(ws);
+      if (conn) {
+        const updateDecoder = decoding.createDecoder(awarenessData);
+        const numStates = decoding.readVarUint(updateDecoder);
+        if (numStates > 0) {
+          const clientId = decoding.readVarUint(updateDecoder);
+          conn.awarenessClientId = clientId;
+        }
+      }
+
+      awarenessProtocol.applyAwarenessUpdate(aw, awarenessData, ws);
       break;
     }
   }
@@ -512,6 +592,59 @@ async function canAccessDocumentForCollab(
  * @param oldDocType - The original document type ('issue' or 'project')
  * @param newDocType - The new document type ('issue' or 'project')
  */
+/**
+ * Invalidate the in-memory cache for a document.
+ * Call this when document content is updated via REST API to ensure
+ * the collaboration server reloads from database on next connection.
+ *
+ * @param docId - The document ID to invalidate
+ */
+export function invalidateDocumentCache(docId: string): void {
+  // Find all doc names that match this docId (could be "wiki:uuid", "issue:uuid", etc.)
+  const docNamesToInvalidate: string[] = [];
+  docs.forEach((_, docName) => {
+    if (parseDocId(docName) === docId) {
+      docNamesToInvalidate.push(docName);
+    }
+  });
+
+  if (docNamesToInvalidate.length === 0) {
+    console.log(`[Collaboration] No cached doc found for ${docId}`);
+    return;
+  }
+
+  for (const docName of docNamesToInvalidate) {
+    // Close any active connections with "content updated" code
+    const connectionsToClose: WebSocket[] = [];
+    conns.forEach((conn, ws) => {
+      if (conn.docName === docName) {
+        connectionsToClose.push(ws);
+      }
+    });
+
+    for (const ws of connectionsToClose) {
+      if (ws.readyState === WebSocket.OPEN) {
+        // Close with custom code 4101 (content updated via API)
+        // Frontend should handle this by reconnecting to get fresh content
+        ws.close(4101, 'Content updated');
+      }
+    }
+
+    // Clear any pending saves
+    const pendingSave = pendingSaves.get(docName);
+    if (pendingSave) {
+      clearTimeout(pendingSave);
+      pendingSaves.delete(docName);
+    }
+
+    // Remove from cache - next connection will reload from database
+    docs.delete(docName);
+    awareness.delete(docName);
+
+    console.log(`[Collaboration] Invalidated cache for ${docName}`);
+  }
+}
+
 export function handleDocumentConversion(
   oldDocId: string,
   newDocId: string,
@@ -595,11 +728,69 @@ export async function handleVisibilityChange(
   }
 }
 
+/**
+ * Broadcast a custom event to all WebSocket connections for a specific user.
+ * Used for real-time notifications like accountability updates.
+ * Sends to both document collaboration connections and global event connections.
+ *
+ * @param userId - The user ID to broadcast to
+ * @param eventType - The event type (e.g., 'accountability:updated')
+ * @param data - Optional event data payload
+ */
+export function broadcastToUser(userId: string, eventType: string, data?: Record<string, unknown>): void {
+  const payload = JSON.stringify({ type: eventType, data: data || {} });
+
+  // For events connections, send as plain JSON (they're dedicated for events)
+  let sentCount = 0;
+  eventConns.forEach((conn, ws) => {
+    if (conn.userId === userId && ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+      sentCount++;
+    }
+  });
+
+  if (sentCount > 0) {
+    console.log(`[Events] Broadcast '${eventType}' to user ${userId} (${sentCount} connections)`);
+  }
+}
+
+// DDoS protection: Max WebSocket message size (10MB, matches REST API limit)
+const MAX_WS_MESSAGE_SIZE = 10 * 1024 * 1024;
+
 export function setupCollaboration(server: Server) {
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_MESSAGE_SIZE });
+  const eventsWss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_MESSAGE_SIZE });
 
   server.on('upgrade', async (request, socket, head) => {
     const url = new URL(request.url || '', `http://${request.headers.host}`);
+
+    // Handle /events WebSocket for real-time notifications
+    if (url.pathname === '/events') {
+      // Rate limit check
+      const clientIp = (request.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+                       request.socket.remoteAddress ||
+                       'unknown';
+
+      if (isConnectionRateLimited(clientIp)) {
+        socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      recordConnectionAttempt(clientIp);
+
+      // Validate session
+      const sessionData = await validateWebSocketSession(request);
+      if (!sessionData) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      eventsWss.handleUpgrade(request, socket, head, (ws) => {
+        eventsWss.emit('connection', ws, sessionData);
+      });
+      return;
+    }
 
     // Only handle /collaboration/* paths
     if (!url.pathname.startsWith('/collaboration/')) {
@@ -651,6 +842,18 @@ export function setupCollaboration(server: Server) {
     const clientId = doc.clientID;
     conns.set(ws, { docName, awarenessClientId: clientId, userId: sessionData.userId, workspaceId: sessionData.workspaceId });
 
+    // If this doc was loaded fresh from JSON (API-created or API-updated content),
+    // tell the browser to clear its IndexedDB cache before sync to prevent stale content merge
+    if (freshFromJsonDocs.has(docName)) {
+      console.log(`[Collaboration] Sending cache clear signal for ${docName} (loaded fresh from JSON)`);
+      const clearCacheEncoder = encoding.createEncoder();
+      encoding.writeVarUint(clearCacheEncoder, messageClearCache);
+      ws.send(encoding.toUint8Array(clearCacheEncoder));
+      // Clear the flag after first client connects - subsequent connections to same doc don't need this
+      // (they'll sync with the already-converted yjs state once persisted)
+      freshFromJsonDocs.delete(docName);
+    }
+
     // Send sync step 1
     const encoder = encoding.createEncoder();
     encoding.writeVarUint(encoder, messageSync);
@@ -667,11 +870,30 @@ export function setupCollaboration(server: Server) {
     }
 
     ws.on('message', (data: Buffer) => {
+      // DDoS protection: Defense-in-depth size check (WS server also enforces maxPayload)
+      if (data.length > MAX_WS_MESSAGE_SIZE) {
+        ws.close(1009, 'Message too large');
+        return;
+      }
+
       // Rate limit messages to prevent message floods
       if (isMessageRateLimited(ws)) {
+        // DDoS protection: Track violations and apply progressive penalties
+        const violations = (rateLimitViolations.get(ws) || 0) + 1;
+        rateLimitViolations.set(ws, violations);
+
+        // After repeated violations, terminate the connection
+        if (violations >= RATE_LIMIT_VIOLATION_THRESHOLD) {
+          ws.close(1008, 'Rate limit exceeded');
+          return;
+        }
+
         // Drop message silently - client will retry via Yjs sync protocol
         return;
       }
+
+      // Reset violation count on successful (non-rate-limited) messages
+      rateLimitViolations.delete(ws);
       recordMessage(ws);
 
       handleMessage(ws, new Uint8Array(data), docName, doc, aw);
@@ -685,6 +907,7 @@ export function setupCollaboration(server: Server) {
       }
       // Clean up rate limiting data for this connection
       messageTimestamps.delete(ws);
+      rateLimitViolations.delete(ws);
 
       // Clean up if no more connections to this doc
       let hasConnections = false;
@@ -716,5 +939,50 @@ export function setupCollaboration(server: Server) {
     });
   });
 
+  // Handle events WebSocket connections (for real-time notifications)
+  eventsWss.on('connection', (ws: WebSocket, sessionData: { userId: string; workspaceId: string }) => {
+    eventConns.set(ws, { userId: sessionData.userId, workspaceId: sessionData.workspaceId });
+    console.log(`[Events] User ${sessionData.userId} connected (${eventConns.size} total connections)`);
+
+    // Send initial connected message
+    ws.send(JSON.stringify({ type: 'connected', data: {} }));
+
+    // Handle ping/pong for keepalive with rate limiting
+    ws.on('message', (data: Buffer) => {
+      // DDoS protection: Rate limit events WebSocket messages
+      if (isMessageRateLimited(ws)) {
+        const violations = (rateLimitViolations.get(ws) || 0) + 1;
+        rateLimitViolations.set(ws, violations);
+
+        if (violations >= RATE_LIMIT_VIOLATION_THRESHOLD) {
+          console.log(`[Events] Rate limit violations exceeded for user ${sessionData.userId}, closing connection`);
+          ws.close(1008, 'Rate limit exceeded');
+        }
+        return;
+      }
+
+      // Reset violations on successful message
+      rateLimitViolations.delete(ws);
+      recordMessage(ws);
+
+      try {
+        const message = JSON.parse(data.toString());
+        if (message.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong' }));
+        }
+      } catch {
+        // Ignore invalid messages
+      }
+    });
+
+    ws.on('close', () => {
+      eventConns.delete(ws);
+      rateLimitViolations.delete(ws);
+      messageTimestamps.delete(ws);
+      console.log(`[Events] User ${sessionData.userId} disconnected (${eventConns.size} total connections)`);
+    });
+  });
+
   console.log('Yjs collaboration server attached');
+  console.log('Events WebSocket server attached');
 }
