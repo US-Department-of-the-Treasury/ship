@@ -1,0 +1,39 @@
+# Development Dockerfile - builds and runs Ship API from source
+FROM node:20-slim
+
+WORKDIR /app
+
+# Disable SSL strict mode for government VPN environments
+RUN npm config set strict-ssl false
+
+# Install pnpm and disable SSL for it too
+RUN npm install -g pnpm@10 && pnpm config set strict-ssl false
+
+# Copy all package.json files and workspace config
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
+COPY api/package.json ./api/
+COPY shared/package.json ./shared/
+
+# Create minimal web package.json - needed for workspace but won't be installed
+RUN mkdir -p web && echo '{"name":"@ship/web","version":"0.0.0","private":true}' > web/package.json
+
+# Install only api and shared dependencies (skip web entirely)
+RUN pnpm install --filter @ship/api --filter @ship/shared --ignore-scripts
+
+# Copy source code (only api and shared - web is excluded by .dockerignore)
+COPY shared/ ./shared/
+COPY api/ ./api/
+
+# Build shared types first, then API
+RUN pnpm build:shared && pnpm --filter @ship/api build
+
+# Expose API port
+EXPOSE 3000
+
+# Set environment
+ENV NODE_ENV=development
+ENV PORT=3000
+
+# Run migrations and start API
+WORKDIR /app/api
+CMD ["sh", "-c", "node dist/db/migrate.js && node dist/db/seed.js && node dist/index.js"]

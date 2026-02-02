@@ -1,138 +1,38 @@
-import swaggerJsdoc from 'swagger-jsdoc';
+/**
+ * Swagger/OpenAPI Setup
+ *
+ * This module configures Swagger UI and serves the OpenAPI specification.
+ * Schemas are auto-generated from Zod validators via @asteasolutions/zod-to-openapi.
+ */
+
 import swaggerUi from 'swagger-ui-express';
 import { Express } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import type { OpenAPIObject } from 'openapi3-ts/oas30';
+
+// Import the OpenAPI module to register all schemas
+import { generateOpenAPIDocument } from './openapi/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const options: swaggerJsdoc.Options = {
-  definition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'Ship API',
-      version: '1.0.0',
-      description: 'API for Ship - Project and Sprint Management Platform',
-    },
-    servers: [
-      {
-        url: '/api',
-        description: 'API base path',
-      },
-    ],
-    components: {
-      securitySchemes: {
-        bearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-        },
-        cookieAuth: {
-          type: 'apiKey',
-          in: 'cookie',
-          name: 'session',
-        },
-      },
-      schemas: {
-        Document: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-            title: { type: 'string' },
-            document_type: {
-              type: 'string',
-              enum: ['wiki', 'issue', 'program', 'project', 'sprint', 'person', 'standup', 'weekly_review', 'weekly_plan', 'weekly_retro'],
-            },
-            content: { type: 'object' },
-            properties: { type: 'object' },
-            parent_id: { type: 'string', format: 'uuid', nullable: true },
-            project_id: { type: 'string', format: 'uuid', nullable: true },
-            sprint_id: { type: 'string', format: 'uuid', nullable: true },
-            created_at: { type: 'string', format: 'date-time' },
-            updated_at: { type: 'string', format: 'date-time' },
-          },
-        },
-        Issue: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-            title: { type: 'string' },
-            content: { type: 'object' },
-            state: {
-              type: 'string',
-              enum: ['backlog', 'planned', 'in_progress', 'in_review', 'done', 'cancelled'],
-            },
-            priority: { type: 'string', enum: ['low', 'medium', 'high'] },
-            estimate: { type: 'number', nullable: true },
-            project_id: { type: 'string', format: 'uuid', nullable: true },
-            sprint_id: { type: 'string', format: 'uuid', nullable: true },
-            assignee_ids: { type: 'array', items: { type: 'string', format: 'uuid' } },
-          },
-        },
-        Sprint: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-            title: { type: 'string' },
-            sprint_number: { type: 'integer', description: 'Sprint sequence number (dates computed from workspace.sprint_start_date)' },
-            plan: { type: 'string', nullable: true, description: 'What will we learn or validate?' },
-            workspace_sprint_start_date: { type: 'string', format: 'date', description: 'Workspace anchor date for computing sprint dates' },
-          },
-        },
-        Project: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-            title: { type: 'string' },
-            content: { type: 'object' },
-            plan: { type: 'string', nullable: true },
-            ice_impact: { type: 'number', nullable: true },
-            ice_confidence: { type: 'number', nullable: true },
-            ice_ease: { type: 'number', nullable: true },
-            status: { type: 'string', enum: ['active', 'completed', 'on_hold', 'cancelled'] },
-          },
-        },
-        Standup: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-            content: { type: 'object' },
-            author_id: { type: 'string', format: 'uuid' },
-            created_at: { type: 'string', format: 'date-time' },
-          },
-        },
-        SprintReview: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-            content: { type: 'object' },
-            hypothesis_validated: { type: 'boolean', nullable: true },
-            sprint_id: { type: 'string', format: 'uuid' },
-            owner_id: { type: 'string', format: 'uuid' },
-          },
-        },
-        Error: {
-          type: 'object',
-          properties: {
-            error: { type: 'string' },
-            message: { type: 'string' },
-          },
-        },
-      },
-    },
-    security: [{ bearerAuth: [] }, { cookieAuth: [] }],
-  },
-  apis: ['./src/routes/*.ts', './src/app.ts'],
-};
-
-export const swaggerSpec = swaggerJsdoc(options);
+// Generate the OpenAPI spec from registered schemas
+export const swaggerSpec: OpenAPIObject = generateOpenAPIDocument();
 
 export function setupSwagger(app: Express): void {
   // Serve swagger UI at /api/docs
   app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     customCss: '.swagger-ui .topbar { display: none }',
     customSiteTitle: 'Ship API Documentation',
+    swaggerOptions: {
+      persistAuthorization: true,
+      docExpansion: 'list',
+      filter: true,
+      tagsSorter: 'alpha',
+      operationsSorter: 'method',
+    },
   }));
 
   // Serve the raw OpenAPI spec
@@ -196,4 +96,9 @@ export function generateOpenApiFile(): void {
   const outputPath = path.join(__dirname, '..', 'openapi.yaml');
   fs.writeFileSync(outputPath, yaml, 'utf-8');
   console.log(`OpenAPI spec written to ${outputPath}`);
+
+  // Also generate JSON version
+  const jsonPath = path.join(__dirname, '..', 'openapi.json');
+  fs.writeFileSync(jsonPath, JSON.stringify(swaggerSpec, null, 2), 'utf-8');
+  console.log(`OpenAPI spec written to ${jsonPath}`);
 }

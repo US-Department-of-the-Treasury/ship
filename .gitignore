@@ -104,3 +104,4 @@ vendor/
 /SSDF-Helper/
 .pr-checklist.json
 .dev-ports
+.claude/settings.local.json
