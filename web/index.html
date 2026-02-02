@@ -65,6 +65,26 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+
+    <!-- FOUC Prevention: Apply theme before React loads -->
+    <script>
+      (function() {
+        try {
+          var theme = localStorage.getItem('ship:theme');
+          var darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+          var shouldBeDark = theme === 'dark' || (theme === 'system' && darkQuery.matches) || (!theme && darkQuery.matches);
+          if (shouldBeDark) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          // localStorage may be unavailable in private browsing
+          // Default to system preference
+          if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+          }
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
