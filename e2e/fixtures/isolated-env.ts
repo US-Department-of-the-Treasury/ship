@@ -366,11 +366,13 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
   );
 
   // Create person document for user
-  await pool.query(
+  const personResult = await pool.query(
     `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
-     VALUES ($1, 'person', 'Dev User', $2, $3)`,
+     VALUES ($1, 'person', 'Dev User', $2, $3)
+     RETURNING id`,
     [workspaceId, JSON.stringify({ user_id: userId, email: 'dev@ship.local' }), userId]
   );
+  const personId = personResult.rows[0].id;
 
   // Create a member user (non-admin) for authorization tests
   const memberResult = await pool.query(
@@ -424,11 +426,17 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
   // Create sprints for each program (current-2 to current+2)
   // IMPORTANT: Must create document_associations for sprints to programs
   // The API queries via junction table, not legacy program_id column
+  // IMPORTANT: Must include start_date for allocation queries to work
   const sprintIds: Record<string, Record<number, string>> = {};
   for (const prog of programs) {
     sprintIds[prog.key] = {};
     for (let sprintNum = currentSprintNumber - 2; sprintNum <= currentSprintNumber + 2; sprintNum++) {
       if (sprintNum > 0) {
+        // Calculate sprint start date (1-week sprints starting from threeMonthsAgo)
+        const sprintStartDate = new Date(threeMonthsAgo);
+        sprintStartDate.setDate(sprintStartDate.getDate() + (sprintNum - 1) * 7);
+        const startDateStr = sprintStartDate.toISOString().split('T')[0];
+
         const result = await pool.query(
           `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
            VALUES ($1, 'sprint', $2, $3, $4)
@@ -436,7 +444,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
           [
             workspaceId,
             `Week ${sprintNum}`,
-            JSON.stringify({ sprint_number: sprintNum, owner_id: userId }),
+            JSON.stringify({ sprint_number: sprintNum, owner_id: userId, start_date: startDateStr }),
             userId,
           ]
         );
@@ -634,6 +642,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     { name: 'Component Library', color: '#F59E0B', programKey: 'UI' },
   ];
 
+  const projectIds: Record<string, string> = {};
   for (const project of projects) {
     const projectResult = await pool.query(
       `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
@@ -646,12 +655,62 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
         userId,
       ]
     );
+    projectIds[project.programKey] = projectResult.rows[0].id;
 
     // Create association to program via junction table
     await pool.query(
       `INSERT INTO document_associations (document_id, related_id, relationship_type)
        VALUES ($1, $2, 'program')`,
       [projectResult.rows[0].id, programIds[project.programKey]]
+    );
+  }
+
+  // Create issues with project associations for Status Overview heatmap tests
+  // These issues create "allocations" (person assigned to project in sprint)
+  const allocationIssues = [
+    { title: 'Status Overview test issue 1', programKey: 'SHIP', sprintOffset: 0 },
+    { title: 'Status Overview test issue 2', programKey: 'SHIP', sprintOffset: 0 },
+    { title: 'API work for current week', programKey: 'API', sprintOffset: 0 },
+  ];
+
+  for (const issue of allocationIssues) {
+    ticketNumber++;
+    const sprintId = sprintIds[issue.programKey][currentSprintNumber];
+    const projId = projectIds[issue.programKey];
+
+    if (!sprintId || !projId) continue;
+
+    const issueResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, properties, ticket_number, created_by)
+       VALUES ($1, 'issue', $2, $3, $4, $5)
+       RETURNING id`,
+      [
+        workspaceId,
+        issue.title,
+        JSON.stringify({
+          state: 'todo',
+          priority: 'medium',
+          source: 'internal',
+          assignee_id: personId, // Person document ID, not user ID
+        }),
+        ticketNumber,
+        userId,
+      ]
+    );
+    const issueId = issueResult.rows[0].id;
+
+    // Create associations for sprint, project, and program
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, 'sprint')`,
+      [issueId, sprintId]
+    );
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, 'project')`,
+      [issueId, projId]
+    );
+    await pool.query(
+      `INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, 'program')`,
+      [issueId, programIds[issue.programKey]]
     );
   }
 

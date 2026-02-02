@@ -16,10 +16,13 @@ interface Week {
 }
 
 interface PersonWeekData {
+  projectId: string | null;
+  projectName: string | null;
+  projectColor: string | null;
   planId: string | null;
-  planStatus: Status;
+  planStatus: Status | null;
   retroId: string | null;
-  retroStatus: Status;
+  retroStatus: Status | null;
 }
 
 interface Person {
@@ -28,22 +31,14 @@ interface Person {
   weeks: Record<number, PersonWeekData>;
 }
 
-interface Project {
-  id: string;
-  title: string;
-  color: string;
-  isArchived: boolean;
-  people: Person[];
-}
-
 interface Program {
   id: string;
   name: string;
   color: string;
-  projects: Project[];
+  people: Person[];
 }
 
-interface AccountabilityGridV2Data {
+interface AccountabilityGridV3Data {
   programs: Program[];
   weeks: Week[];
   currentSprintNumber: number;
@@ -67,20 +62,30 @@ const STATUS_TEXT: Record<Status, string> = {
 
 /**
  * StatusCell - Shows Plan/Retro status as two colored squares
+ * For person-centric view: shows status based on allocated project
  */
 function StatusCell({
-  planStatus,
-  retroStatus,
+  weekData,
   onPlanClick,
   onRetroClick,
   isNavigating,
 }: {
-  planStatus: Status;
-  retroStatus: Status;
+  weekData: PersonWeekData;
   onPlanClick?: () => void;
   onRetroClick?: () => void;
   isNavigating?: 'plan' | 'retro' | null;
 }) {
+  // If no allocation for this week, show empty state
+  if (!weekData.projectId || !weekData.planStatus || !weekData.retroStatus) {
+    return (
+      <div className="flex w-full h-full items-center justify-center">
+        <span className="text-xs text-muted">-</span>
+      </div>
+    );
+  }
+
+  const projectTooltip = weekData.projectName ? ` (${weekData.projectName})` : '';
+
   return (
     <div className="flex w-full h-full">
       {/* Plan status (left half) */}
@@ -91,8 +96,9 @@ function StatusCell({
           'flex-1 h-full cursor-pointer transition-all hover:brightness-110',
           isNavigating === 'plan' && 'animate-pulse'
         )}
-        style={{ backgroundColor: STATUS_COLORS[planStatus] }}
-        title={`Weekly Plan (${STATUS_TEXT[planStatus]})`}
+        style={{ backgroundColor: STATUS_COLORS[weekData.planStatus] }}
+        title={`Weekly Plan (${STATUS_TEXT[weekData.planStatus]})${projectTooltip}`}
+        aria-label={`Weekly Plan (${STATUS_TEXT[weekData.planStatus]})${projectTooltip}`}
       />
       {/* Retro status (right half) */}
       <button
@@ -102,8 +108,9 @@ function StatusCell({
           'flex-1 h-full cursor-pointer transition-all hover:brightness-110',
           isNavigating === 'retro' && 'animate-pulse'
         )}
-        style={{ backgroundColor: STATUS_COLORS[retroStatus] }}
-        title={`Weekly Retro (${STATUS_TEXT[retroStatus]})`}
+        style={{ backgroundColor: STATUS_COLORS[weekData.retroStatus] }}
+        title={`Weekly Retro (${STATUS_TEXT[weekData.retroStatus]})${projectTooltip}`}
+        aria-label={`Weekly Retro (${STATUS_TEXT[weekData.retroStatus]})${projectTooltip}`}
       />
     </div>
   );
@@ -115,13 +122,11 @@ interface StatusOverviewHeatmapProps {
 
 export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHeatmapProps) {
   const navigate = useNavigate();
-  const [data, setData] = useState<AccountabilityGridV2Data | null>(null);
+  const [data, setData] = useState<AccountabilityGridV3Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedPrograms, setExpandedPrograms] = useState<Set<string>>(new Set());
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [navigatingCell, setNavigatingCell] = useState<{
-    projectId: string;
     personId: string;
     weekNumber: number;
     type: 'plan' | 'retro';
@@ -136,7 +141,7 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
         setLoading(true);
         const params = new URLSearchParams();
         if (showArchived) params.set('showArchived', 'true');
-        const url = `${API_URL}/api/team/accountability-grid-v2${params.toString() ? `?${params}` : ''}`;
+        const url = `${API_URL}/api/team/accountability-grid-v3${params.toString() ? `?${params}` : ''}`;
         const res = await fetch(url, { credentials: 'include' });
 
         if (!res.ok) {
@@ -148,7 +153,7 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
           return;
         }
 
-        const json: AccountabilityGridV2Data = await res.json();
+        const json: AccountabilityGridV3Data = await res.json();
         setData(json);
 
         // Auto-expand all programs by default
@@ -182,18 +187,24 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
 
   // Navigate to weekly plan or retro
   async function handleNavigate(
-    projectId: string,
     personId: string,
     weekNumber: number,
     type: 'plan' | 'retro',
-    existingDocId: string | null
+    existingDocId: string | null,
+    projectId: string | null
   ) {
     if (existingDocId) {
       navigate(`/documents/${existingDocId}`);
       return;
     }
 
-    setNavigatingCell({ projectId, personId, weekNumber, type });
+    // Can't create without a project allocation
+    if (!projectId) {
+      console.warn('No project allocation for this person/week');
+      return;
+    }
+
+    setNavigatingCell({ personId, weekNumber, type });
     try {
       const endpoint = type === 'plan' ? '/api/weekly-plans' : '/api/weekly-retros';
       const response = await apiPost(endpoint, {
@@ -227,30 +238,17 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
     });
   }
 
-  function toggleProject(projectId: string) {
-    setExpandedProjects(prev => {
-      const next = new Set(prev);
-      if (next.has(projectId)) {
-        next.delete(projectId);
-      } else {
-        next.add(projectId);
-      }
-      return next;
-    });
-  }
-
-  // Count rows for building the left column structure
+  // Build row structure: Program → Person (no project level)
   const rowStructure = useMemo(() => {
     if (!data) return [];
 
     const rows: Array<{
-      type: 'program' | 'project' | 'person';
+      type: 'program' | 'person';
       id: string;
       name: string;
       color?: string;
-      projectId?: string;
-      isArchived?: boolean;
       depth: number;
+      personData?: Person;
     }> = [];
 
     for (const program of data.programs) {
@@ -263,33 +261,20 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
       });
 
       if (expandedPrograms.has(program.id)) {
-        for (const project of program.projects) {
+        for (const person of program.people) {
           rows.push({
-            type: 'project',
-            id: project.id,
-            name: project.title,
-            color: project.color,
-            isArchived: project.isArchived,
+            type: 'person',
+            id: person.id,
+            name: person.name,
             depth: 1,
+            personData: person,
           });
-
-          if (expandedProjects.has(project.id)) {
-            for (const person of project.people) {
-              rows.push({
-                type: 'person',
-                id: person.id,
-                name: person.name,
-                projectId: project.id,
-                depth: 2,
-              });
-            }
-          }
         }
       }
     }
 
     return rows;
-  }, [data, expandedPrograms, expandedProjects]);
+  }, [data, expandedPrograms]);
 
   if (loading) {
     return (
@@ -317,11 +302,11 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
     return (
       <div className="flex flex-1 flex-col items-center justify-center text-muted p-8">
         <svg className="w-16 h-16 mb-4 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
         </svg>
-        <p className="text-lg font-medium mb-2">No projects yet</p>
+        <p className="text-lg font-medium mb-2">No team members with allocations</p>
         <p className="text-sm text-center max-w-md">
-          Create projects in Programs to see them here.
+          Assign team members to projects in the Allocation view to see their plan/retro status here.
         </p>
       </div>
     );
@@ -359,7 +344,7 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
           <div className="flex flex-col sticky left-0 z-20 bg-background border-r border-border">
             {/* Header cell */}
             <div className="flex h-10 w-[240px] items-center border-b border-border px-3 sticky top-0 z-30 bg-background">
-              <span className="text-xs font-medium text-muted">Program / Project / Person</span>
+              <span className="text-xs font-medium text-muted">Program / Person</span>
             </div>
 
             {/* Hierarchy rows */}
@@ -388,41 +373,7 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
                     </span>
                     <span className="truncate text-xs font-medium">{row.name}</span>
                     <span className="ml-auto text-[10px] text-muted">
-                      {data.programs.find(p => p.id === row.id)?.projects.length || 0}
-                    </span>
-                  </button>
-                );
-              }
-
-              if (row.type === 'project') {
-                const project = data.programs.flatMap(p => p.projects).find(proj => proj.id === row.id);
-                return (
-                  <button
-                    key={`project-${row.id}`}
-                    onClick={() => toggleProject(row.id)}
-                    className={cn(
-                      'flex h-10 w-[240px] items-center gap-2 border-b border-border pl-6 pr-3 hover:bg-border/20 text-left',
-                      row.isArchived && 'opacity-60'
-                    )}
-                  >
-                    <svg
-                      className={cn('w-3 h-3 transition-transform', expandedProjects.has(row.id) && 'rotate-90')}
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M9 18l6-6-6-6" />
-                    </svg>
-                    <span
-                      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-white"
-                      style={{ backgroundColor: row.color || '#6b7280' }}
-                    >
-                      {row.name.charAt(0).toUpperCase()}
-                    </span>
-                    <span className="truncate text-xs">{row.name}</span>
-                    <span className="ml-auto text-[10px] text-muted">
-                      {project?.people.length || 0}
+                      {data.programs.find(p => p.id === row.id)?.people.length || 0}
                     </span>
                   </button>
                 );
@@ -431,8 +382,8 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
               // Person row
               return (
                 <div
-                  key={`person-${row.projectId}-${row.id}-${index}`}
-                  className="flex h-10 w-[240px] items-center gap-2 border-b border-border pl-12 pr-3 bg-background"
+                  key={`person-${row.id}-${index}`}
+                  className="flex h-10 w-[240px] items-center gap-2 border-b border-border pl-6 pr-3 bg-background"
                 >
                   <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white bg-accent/80">
                     {row.name.charAt(0).toUpperCase()}
@@ -477,29 +428,14 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
                     );
                   }
 
-                  if (row.type === 'project') {
-                    // Empty cell for project header row
-                    return (
-                      <div
-                        key={`project-${row.id}-week-${week.number}`}
-                        className={cn(
-                          'h-10 w-[100px] border-b border-r border-border',
-                          week.isCurrent && 'bg-accent/5'
-                        )}
-                      />
-                    );
-                  }
-
-                  // Person cell - find the data
-                  const projectId = row.projectId!;
-                  const project = data.programs.flatMap(p => p.projects).find(proj => proj.id === projectId);
-                  const person = project?.people.find(p => p.id === row.id);
+                  // Person cell - get their allocation data for this week
+                  const person = row.personData;
                   const weekData = person?.weeks[week.number];
 
                   if (!weekData) {
                     return (
                       <div
-                        key={`person-${projectId}-${row.id}-week-${week.number}-${index}`}
+                        key={`person-${row.id}-week-${week.number}-${index}`}
                         className={cn(
                           'flex h-10 w-[100px] items-center justify-center border-b border-r border-border',
                           week.isCurrent && 'bg-accent/5'
@@ -512,23 +448,21 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
 
                   return (
                     <div
-                      key={`person-${projectId}-${row.id}-week-${week.number}-${index}`}
+                      key={`person-${row.id}-week-${week.number}-${index}`}
                       className={cn(
                         'flex h-10 w-[100px] border-b border-r border-border overflow-hidden',
                         week.isCurrent && 'ring-1 ring-inset ring-accent/20'
                       )}
                     >
                       <StatusCell
-                        planStatus={weekData.planStatus}
-                        retroStatus={weekData.retroStatus}
+                        weekData={weekData}
                         onPlanClick={() =>
-                          handleNavigate(projectId, row.id, week.number, 'plan', weekData.planId)
+                          handleNavigate(row.id, week.number, 'plan', weekData.planId, weekData.projectId)
                         }
                         onRetroClick={() =>
-                          handleNavigate(projectId, row.id, week.number, 'retro', weekData.retroId)
+                          handleNavigate(row.id, week.number, 'retro', weekData.retroId, weekData.projectId)
                         }
                         isNavigating={
-                          navigatingCell?.projectId === projectId &&
                           navigatingCell?.personId === row.id &&
                           navigatingCell?.weekNumber === week.number
                             ? navigatingCell.type
