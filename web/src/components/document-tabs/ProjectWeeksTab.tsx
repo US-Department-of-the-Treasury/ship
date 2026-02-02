@@ -77,7 +77,7 @@ function StatusCell({
         onClick={onPlanClick}
         disabled={isNavigating !== null}
         className={cn(
-          'flex-1 h-full cursor-pointer transition-all hover:brightness-110',
+          'flex-1 h-full cursor-pointer transition-all hover:brightness-110 border-r border-white/20',
           isNavigating === 'plan' && 'animate-pulse'
         )}
         style={{ backgroundColor: STATUS_COLORS[planStatus] }}
