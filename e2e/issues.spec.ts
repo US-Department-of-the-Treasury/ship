@@ -93,7 +93,7 @@ test.describe('Issues (Phase 5)', () => {
     await expect(page.locator('.ProseMirror, .tiptap')).toBeVisible({ timeout: 5000 })
 
     // Should see properties sidebar (status, priority, etc.)
-    await expect(page.getByText(/status|state/i)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('Status', { exact: true })).toBeVisible({ timeout: 5000 })
   })
 
   test('can edit issue title', async ({ page }) => {

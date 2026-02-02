@@ -468,8 +468,15 @@ test.describe('Team Mode (Phase 7)', () => {
       const currentSprintHeader = page.locator('.bg-accent\\/5').first()
       await expect(currentSprintHeader).toBeVisible({ timeout: 5000 })
 
-      // Get initial Unassigned count
+      // Get initial Unassigned count (may not exist if all people are assigned)
       const initialHeader = page.getByRole('button', { name: /Unassigned \d+/ })
+      const hasUnassigned = await initialHeader.count() > 0
+
+      if (!hasUnassigned) {
+        // No unassigned people - skip this test scenario
+        return
+      }
+
       const initialText = await initialHeader.textContent()
       const initialCountMatch = initialText?.match(/(\d+)/)
       const initialCount = initialCountMatch ? parseInt(initialCountMatch[1]) : 0

@@ -375,8 +375,11 @@ test.describe('Phase 2: Weeks Tab UI', () => {
 
     if (cardCount > 0) {
       await sprintCard.click()
-      // Should have data-selected attribute
-      await expect(sprintCard).toHaveAttribute('data-selected', 'true')
+      // Clicking a sprint card navigates to /documents/{id}/sprints/{sprintId}
+      // Wait for URL to update which indicates selection worked
+      await expect(page).toHaveURL(/\/documents\/[a-f0-9-]+\/sprints\/[a-f0-9-]+/, { timeout: 5000 })
+      // After navigation, verify a card shows as selected
+      await expect(page.locator('button[data-selected="true"]')).toBeVisible({ timeout: 5000 })
     } else {
       // No sprint documents - timeline shows empty week windows (divs, not clickable)
       await expect(page.getByText(/Week of/).first()).toBeVisible()

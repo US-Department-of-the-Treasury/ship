@@ -164,11 +164,14 @@ test.describe('Project Weeks Tab', () => {
     await expect(page.locator('text=Weekly Plan')).toBeVisible();
 
     // Verify Properties sidebar shows person name (not UUID)
-    await expect(page.locator('text=Person:')).toBeVisible();
-    await expect(page.locator('text=Dev User')).toBeVisible();
+    // The label is just "Person" (without colon), rendered by WeeklyDocumentSidebar
+    await expect(page.getByText('Person', { exact: true })).toBeVisible();
+    // Use exact match to avoid matching title which includes "- Dev User"
+    await expect(page.getByText('Dev User', { exact: true })).toBeVisible();
 
     // Verify Properties sidebar shows project name as a link
-    await expect(page.locator('text=Project:')).toBeVisible();
+    // Label is "Project" (without colon)
+    await expect(page.getByText('Project', { exact: true })).toBeVisible();
     await expect(page.locator('a:has-text("Click Test Project")')).toBeVisible();
   });
 

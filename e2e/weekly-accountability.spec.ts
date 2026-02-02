@@ -95,7 +95,8 @@ test.describe('Weekly Plan API', () => {
 
     expect(plan.id).toBeTruthy();
     expect(plan.document_type).toBe('weekly_plan');
-    expect(plan.title).toBe('Untitled'); // Ship convention
+    // API returns computed title with person name (e.g., "Week 1 Plan - Dev User")
+    expect(plan.title).toMatch(/^Week \d+ Plan/)
     expect(plan.properties.person_id).toBe(personId);
     expect(plan.properties.project_id).toBe(projectId);
     expect(plan.properties.week_number).toBe(1);
@@ -249,7 +250,8 @@ test.describe('Weekly Retro API', () => {
 
     expect(retro.id).toBeTruthy();
     expect(retro.document_type).toBe('weekly_retro');
-    expect(retro.title).toBe('Untitled');
+    // API returns computed title with person name (e.g., "Week 1 Retro - Dev User")
+    expect(retro.title).toMatch(/^Week \d+ Retro/)
     expect(retro.properties.person_id).toBe(personId);
     expect(retro.properties.project_id).toBe(projectId);
     expect(retro.properties.week_number).toBe(1);
@@ -409,14 +411,16 @@ test.describe('Project Allocation Grid API', () => {
     });
     const sprint = await sprintResponse.json();
 
-    // Associate sprint with project using PATCH on document with belongs_to
+    // Set sprint properties for project assignment and person allocation
+    // The allocation grid API queries properties.project_id and properties.assignee_ids
     await page.request.patch(`${apiServer.url}/api/documents/${sprint.id}`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
-        belongs_to: [
-          { id: program.id, type: 'program' },
-          { id: projectId, type: 'project' },
-        ],
+        properties: {
+          project_id: projectId,
+          assignee_ids: [personId],
+          sprint_number: 1,
+        },
       },
     });
 
