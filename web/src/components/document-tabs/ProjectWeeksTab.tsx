@@ -71,7 +71,7 @@ function StatusCell({
   isNavigating?: 'plan' | 'retro' | null;
 }) {
   return (
-    <div className="flex w-full h-full">
+    <div className="flex w-full h-full gap-px">
       {/* Plan status (left half) */}
       <button
         onClick={onPlanClick}

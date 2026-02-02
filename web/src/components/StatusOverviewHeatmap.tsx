@@ -87,7 +87,7 @@ function StatusCell({
   const projectTooltip = weekData.projectName ? ` (${weekData.projectName})` : '';
 
   return (
-    <div className="flex w-full h-full">
+    <div className="flex w-full h-full gap-px">
       {/* Plan status (left half) */}
       <button
         onClick={onPlanClick}
