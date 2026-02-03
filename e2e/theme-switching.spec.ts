@@ -56,15 +56,24 @@ test.describe('Theme Switching', () => {
     await userAvatar.click();
     await page.locator('[role="menuitem"]').filter({ hasText: 'Light' }).click();
 
-    // Wait for menu to close and reopen
-    await page.waitForTimeout(300);
+    // Wait for menu to close
+    await page.waitForTimeout(500);
+
+    // Verify light theme is applied
+    let isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+    expect(isDark).toBe(false);
+
+    // Reopen menu
     await userAvatar.click();
 
     // Now switch to dark
     await page.locator('[role="menuitem"]').filter({ hasText: 'Dark' }).click();
 
+    // Wait for theme transition to complete
+    await page.waitForTimeout(500);
+
     // Verify dark class is present on html element
-    const isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
+    isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
     expect(isDark).toBe(true);
 
     // Verify dark theme colors are applied
@@ -96,14 +105,17 @@ test.describe('Theme Switching', () => {
     expect(isDark).toBe(false);
   });
 
-  test('system theme respects OS preference', async ({ page, context }) => {
+  test('system theme respects OS preference', async ({ page }) => {
     // Set color scheme preference to light
-    await context.emulateMedia({ colorScheme: 'light' });
+    await page.emulateMedia({ colorScheme: 'light' });
 
     // Open user menu and select system theme
     const userAvatar = page.locator('nav button[aria-label="User menu"]').first();
     await userAvatar.click();
     await page.locator('[role="menuitem"]').filter({ hasText: 'Use system theme' }).click();
+
+    // Wait for theme change
+    await page.waitForTimeout(500);
 
     // Verify localStorage shows system
     const storedTheme = await page.evaluate(() => localStorage.getItem('ship:theme'));
@@ -114,7 +126,7 @@ test.describe('Theme Switching', () => {
     expect(isDark).toBe(false);
 
     // Change OS preference to dark
-    await context.emulateMedia({ colorScheme: 'dark' });
+    await page.emulateMedia({ colorScheme: 'dark' });
     await page.waitForTimeout(500); // Wait for media query listener to fire
 
     // Verify dark theme is now applied
