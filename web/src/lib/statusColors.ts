@@ -5,7 +5,7 @@
  */
 
 // Dark theme colors (original)
-export const issueStatusColorsDark: Record<string, string> = {
+const issueStatusColorsDark: Record<string, string> = {
   triage: 'bg-purple-500/20 text-purple-300',
   backlog: 'bg-gray-500/20 text-gray-300',
   todo: 'bg-blue-500/20 text-blue-300',
@@ -16,7 +16,7 @@ export const issueStatusColorsDark: Record<string, string> = {
 };
 
 // Light theme colors (darker variants for readability)
-export const issueStatusColorsLight: Record<string, string> = {
+const issueStatusColorsLight: Record<string, string> = {
   triage: 'bg-purple-100 text-purple-800',      // WCAG AA: 7.8:1 contrast
   backlog: 'bg-gray-100 text-gray-800',         // WCAG AA: 11.6:1 contrast
   todo: 'bg-blue-100 text-blue-800',            // WCAG AA: 8.6:1 contrast
@@ -26,66 +26,81 @@ export const issueStatusColorsLight: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-800',         // WCAG AA: 8.2:1 contrast
 };
 
-export const sprintStatusColorsDark: Record<string, string> = {
+const sprintStatusColorsDark: Record<string, string> = {
   planned: 'bg-gray-500/20 text-gray-300',
   upcoming: 'bg-blue-500/20 text-blue-300', // alias for timeline view
   active: 'bg-green-500/20 text-green-300',
   completed: 'bg-gray-500/20 text-gray-300',
 };
 
-export const sprintStatusColorsLight: Record<string, string> = {
+const sprintStatusColorsLight: Record<string, string> = {
   planned: 'bg-gray-100 text-gray-800',
   upcoming: 'bg-blue-100 text-blue-800',
   active: 'bg-green-100 text-green-800',
   completed: 'bg-gray-100 text-gray-800',
 };
 
-export const priorityColorsDark: Record<string, string> = {
+const priorityColorsDark: Record<string, string> = {
   urgent: 'text-red-300',
   high: 'text-orange-300',
   medium: 'text-yellow-300',
   low: 'text-blue-300',
 };
 
-export const priorityColorsLight: Record<string, string> = {
+const priorityColorsLight: Record<string, string> = {
   urgent: 'text-red-700',    // WCAG AA: 5.2:1 contrast on light bg
   high: 'text-orange-700',   // WCAG AA: 4.9:1 contrast
   medium: 'text-yellow-700', // WCAG AA: 4.6:1 contrast
   low: 'text-blue-700',      // WCAG AA: 5.8:1 contrast
 };
 
-// Helper to detect current theme
-function isDarkTheme(): boolean {
-  return document.documentElement.classList.contains('dark');
-}
-
-// Dynamic exports that check theme
-export const issueStatusColors = new Proxy({} as Record<string, string>, {
-  get(_target, status: string) {
-    const colors = isDarkTheme() ? issueStatusColorsDark : issueStatusColorsLight;
-    return colors[status] || colors.backlog;
-  }
-});
-
-export const sprintStatusColors = new Proxy({} as Record<string, string>, {
-  get(_target, status: string) {
-    const colors = isDarkTheme() ? sprintStatusColorsDark : sprintStatusColorsLight;
-    return colors[status] || colors.planned;
-  }
-});
-
-export const priorityColors = new Proxy({} as Record<string, string>, {
-  get(_target, priority: string) {
-    const colors = isDarkTheme() ? priorityColorsDark : priorityColorsLight;
-    return colors[priority] || colors.low;
-  }
-});
-
-// Helper to get status color with fallback
-export function getStatusColor(
-  colors: Record<string, string>,
-  status: string,
-  fallback = 'bg-gray-500/20 text-gray-300'
-): string {
+/**
+ * Get color classes for an issue status badge.
+ * Returns theme-appropriate colors that meet WCAG AA contrast requirements.
+ *
+ * @param status - Issue status (triage, backlog, todo, etc.)
+ * @param theme - Current theme (light or dark)
+ * @returns Tailwind class string for background and text colors
+ */
+export function getIssueStatusColor(status: string, theme: 'light' | 'dark'): string {
+  const colors = theme === 'dark' ? issueStatusColorsDark : issueStatusColorsLight;
+  const fallback = theme === 'dark'
+    ? 'bg-gray-500/20 text-gray-300'
+    : 'bg-gray-100 text-gray-800';
   return colors[status] || fallback;
 }
+
+/**
+ * Get color classes for a sprint status badge.
+ * Returns theme-appropriate colors that meet WCAG AA contrast requirements.
+ *
+ * @param status - Sprint status (planned, active, completed)
+ * @param theme - Current theme (light or dark)
+ * @returns Tailwind class string for background and text colors
+ */
+export function getSprintStatusColor(status: string, theme: 'light' | 'dark'): string {
+  const colors = theme === 'dark' ? sprintStatusColorsDark : sprintStatusColorsLight;
+  const fallback = theme === 'dark'
+    ? 'bg-gray-500/20 text-gray-300'
+    : 'bg-gray-100 text-gray-800';
+  return colors[status] || fallback;
+}
+
+/**
+ * Get color class for a priority indicator.
+ * Returns theme-appropriate text color that meets WCAG AA contrast requirements.
+ *
+ * @param priority - Priority level (urgent, high, medium, low)
+ * @param theme - Current theme (light or dark)
+ * @returns Tailwind text color class
+ */
+export function getPriorityColor(priority: string, theme: 'light' | 'dark'): string {
+  const colors = theme === 'dark' ? priorityColorsDark : priorityColorsLight;
+  const fallback = theme === 'dark' ? 'text-blue-300' : 'text-blue-700';
+  return colors[priority] || fallback;
+}
+
+// Legacy exports for backwards compatibility - will be removed after migration
+export const issueStatusColors = issueStatusColorsDark;
+export const sprintStatusColors = sprintStatusColorsDark;
+export const priorityColors = priorityColorsDark;
