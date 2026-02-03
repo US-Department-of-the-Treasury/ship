@@ -53,6 +53,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@testcontainers/postgresql": "^11.11.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/cookie-parser": "^1.4.8",
     "@types/cookiejar": "^2.1.5",
