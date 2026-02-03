@@ -91,6 +91,48 @@ pnpm test             # Runs api unit tests via vitest
 
 **API routes**: REST endpoints at `/api/{resource}` (documents, issues, projects, sprints). Auth uses session cookies with 15-minute timeout.
 
+## Adding API Endpoints
+
+**All API routes must be registered with OpenAPI.** This ensures Swagger docs and MCP tools stay in sync automatically.
+
+When adding a new endpoint:
+
+1. **Define schemas** in `api/src/openapi/schemas/{resource}.ts`:
+   ```typescript
+   import { registry, z } from '../registry.js';
+
+   const MyResponseSchema = registry.register('MyResponse', z.object({
+     success: z.literal(true),
+     data: z.object({ /* fields */ }),
+   }));
+   ```
+
+2. **Register the path** with `registry.registerPath()`:
+   ```typescript
+   registry.registerPath({
+     method: 'get',
+     path: '/resource/{id}',
+     operationId: 'get_resource',  // Becomes MCP tool: ship_get_resource
+     summary: 'Get a resource',
+     tags: ['Resources'],
+     request: {
+       params: z.object({ id: z.string().uuid() }),
+     },
+     responses: {
+       200: {
+         description: 'Success',
+         content: { 'application/json': { schema: MyResponseSchema } },
+       },
+     },
+   });
+   ```
+
+3. **Implement the route** as usual in `api/src/routes/{resource}.ts`
+
+**Result:** Swagger UI at `/api/docs/` shows the endpoint, and MCP server auto-generates a `ship_{operationId}` tool.
+
+See `api/src/openapi/schemas/issues.ts` for a complete example.
+
 ## Database
 
 PostgreSQL with direct SQL queries via `pg` (no ORM). Schema defined in `api/src/db/schema.sql`.

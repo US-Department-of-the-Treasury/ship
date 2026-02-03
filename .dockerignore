@@ -24,8 +24,9 @@ docs
 __tests__
 coverage
 
-# Frontend (web) - not needed for API Docker image
-web
+# Frontend build artifacts - source needed for local dev, but not prod API image
+web/node_modules
+web/dist
 
 # Logs
 *.log

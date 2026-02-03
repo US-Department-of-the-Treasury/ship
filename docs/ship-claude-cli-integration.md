@@ -247,3 +247,66 @@ The integration is designed to be invisible when working well. If you don't see 
 - Token validity (`~/.claude/.env`)
 - Network connectivity
 - Queue file for pending operations
+
+## MCP Server Integration
+
+Ship includes an MCP (Model Context Protocol) server that **auto-generates tools from the OpenAPI specification**. The server fetches the spec from any running Ship instance, so tools automatically stay in sync as the API evolves.
+
+### Configuration
+
+Add Ship's MCP server to your `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "ship": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/ship/api/src/mcp/server.ts"],
+      "env": {
+        "SHIP_API_TOKEN": "${SHIP_API_TOKEN}",
+        "SHIP_URL": "https://ship.example.com"
+      }
+    }
+  }
+}
+```
+
+**Environment variables:**
+- `SHIP_URL` - The Ship instance URL (e.g., `https://ship.example.com` or `http://localhost:3000`)
+- `SHIP_API_TOKEN` - Your API token from Settings > API Tokens
+
+### How It Works
+
+At startup, the MCP server:
+
+1. **Fetches** the OpenAPI spec from `{SHIP_URL}/api/openapi.json`
+2. **Generates** MCP tools from each operation (tool name = `ship_` + operationId)
+3. **Builds** input schemas from path parameters, query parameters, and request bodies
+4. **Executes** tool calls by making authenticated HTTP requests to the Ship API
+
+### Available Tools
+
+Tools are generated for all documented API endpoints:
+
+```bash
+SHIP_API_TOKEN=xxx SHIP_URL=https://ship.example.com npx tsx /path/to/ship/api/src/mcp/server.ts
+# Output: Generated 64 tools from OpenAPI spec
+# Output: Ship MCP server running on https://ship.example.com
+```
+
+Tool categories include:
+- **Authentication**: Login, logout, session management
+- **Issues**: CRUD, state transitions, history, iterations
+- **Sprints**: Planning, reviews, carryover
+- **Projects & Programs**: Organization hierarchy
+- **Documents**: Wiki pages, search, backlinks
+- **Standups**: Daily updates and status
+- **Activity**: Change tracking and audit logs
+
+### Benefits
+
+1. **Zero Drift**: Tools generated from live OpenAPI spec
+2. **Works with any Ship instance**: Point `SHIP_URL` at local dev or production
+3. **Full Coverage**: Every documented endpoint becomes a tool
+4. **Type Safety**: Input schemas validate arguments before API calls
+5. **No Maintenance**: Add an endpoint to the API, MCP tool appears automatically
