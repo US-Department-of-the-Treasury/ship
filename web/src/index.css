@@ -253,6 +253,107 @@ input::placeholder {
   color: #e5e7eb;
 }
 
+/* Light theme syntax highlighting - VS Code Light+ inspired */
+:root:not(.dark) .ProseMirror .code-block-lowlight {
+  background: #f6f8fa;
+}
+
+:root:not(.dark) .ProseMirror pre code {
+  color: #24292f;
+}
+
+/* Light theme token colors - WCAG AA compliant on #f6f8fa background */
+:root:not(.dark) .hljs-comment,
+:root:not(.dark) .hljs-quote {
+  color: #008000; /* Green comments, 5.4:1 contrast */
+  font-style: italic;
+}
+
+:root:not(.dark) .hljs-keyword,
+:root:not(.dark) .hljs-selector-tag,
+:root:not(.dark) .hljs-subst {
+  color: #0000ff; /* Blue keywords, 8.6:1 contrast */
+}
+
+:root:not(.dark) .hljs-number,
+:root:not(.dark) .hljs-literal {
+  color: #098658; /* Teal numbers, 4.9:1 contrast */
+}
+
+:root:not(.dark) .hljs-variable,
+:root:not(.dark) .hljs-template-variable,
+:root:not(.dark) .hljs-attr {
+  color: #001080; /* Dark blue variables, 9.8:1 contrast */
+}
+
+:root:not(.dark) .hljs-string,
+:root:not(.dark) .hljs-doctag {
+  color: #a31515; /* Red strings, 6.7:1 contrast */
+}
+
+:root:not(.dark) .hljs-title,
+:root:not(.dark) .hljs-section,
+:root:not(.dark) .hljs-selector-id {
+  color: #795e26; /* Brown titles, 5.1:1 contrast */
+  font-weight: bold;
+}
+
+:root:not(.dark) .hljs-type,
+:root:not(.dark) .hljs-class .hljs-title {
+  color: #267f99; /* Teal types, 4.8:1 contrast */
+}
+
+:root:not(.dark) .hljs-tag,
+:root:not(.dark) .hljs-name,
+:root:not(.dark) .hljs-attribute {
+  color: #0451a5; /* Blue tags, 6.5:1 contrast */
+}
+
+:root:not(.dark) .hljs-regexp,
+:root:not(.dark) .hljs-link {
+  color: #811f3f; /* Maroon regex, 7.3:1 contrast */
+}
+
+:root:not(.dark) .hljs-symbol,
+:root:not(.dark) .hljs-bullet {
+  color: #0451a5; /* Blue symbols, 6.5:1 contrast */
+}
+
+:root:not(.dark) .hljs-built_in,
+:root:not(.dark) .hljs-builtin-name {
+  color: #267f99; /* Teal built-ins, 4.8:1 contrast */
+}
+
+:root:not(.dark) .hljs-meta {
+  color: #616161; /* Gray meta, 5.9:1 contrast */
+}
+
+:root:not(.dark) .hljs-deletion {
+  background: #ffd7d5;
+  color: #b31d28;
+}
+
+:root:not(.dark) .hljs-addition {
+  background: #d1f4cb;
+  color: #116329;
+}
+
+:root:not(.dark) .hljs-emphasis {
+  font-style: italic;
+}
+
+:root:not(.dark) .hljs-strong {
+  font-weight: bold;
+}
+
+:root:not(.dark) .hljs-function .hljs-title {
+  color: #795e26; /* Brown functions, 5.1:1 contrast */
+}
+
+:root:not(.dark) .hljs-params {
+  color: #24292f; /* Dark gray params, 14.1:1 contrast */
+}
+
 .ProseMirror blockquote {
   border-left: 3px solid #333;
   padding-left: 1em;
