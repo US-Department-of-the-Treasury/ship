@@ -88,16 +88,26 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mediaQuery.removeEventListener('change', handleChange);
   }, [theme]);
 
-  // Apply theme class to document
+  // Apply theme class to document with smooth transition
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const root = document.documentElement;
+
+    // Temporarily disable all transitions to prevent staggered animations
+    root.classList.add('disable-transitions');
+
+    // Update theme class
     if (resolvedTheme === 'dark') {
       root.classList.add('dark');
     } else {
       root.classList.remove('dark');
     }
+
+    // Re-enable transitions after next frame (allows CSS transition on color change)
+    setTimeout(() => {
+      root.classList.remove('disable-transitions');
+    }, 0);
   }, [resolvedTheme]);
 
   const setTheme = useCallback((newTheme: Theme) => {

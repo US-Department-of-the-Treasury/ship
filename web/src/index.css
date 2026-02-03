@@ -19,6 +19,21 @@
   --color-border: #262626; /* Dark border */
 }
 
+/* Smooth theme transition - 200ms fade on color changes */
+html {
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+html * {
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+/* Disable all transitions during theme switch to prevent staggered animations */
+html.disable-transitions,
+html.disable-transitions * {
+  transition: none !important;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
