@@ -1,8 +1,19 @@
 import { beforeAll, afterAll } from 'vitest'
-import { pool } from '../db/client.js'
+import { existsSync, readFileSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
 
 // Test setup for API integration tests
 // This runs before all tests in each test file
+
+// Read DATABASE_URL from temp file created by globalSetup (testcontainers)
+const TEST_DB_URI_FILE = join(tmpdir(), 'ship-test-db-uri')
+if (existsSync(TEST_DB_URI_FILE)) {
+  process.env.DATABASE_URL = readFileSync(TEST_DB_URI_FILE, 'utf-8').trim()
+}
+
+// Import pool AFTER setting DATABASE_URL
+const { pool } = await import('../db/client.js')
 
 beforeAll(async () => {
   // Ensure test environment
