@@ -254,26 +254,27 @@ Ship includes an MCP (Model Context Protocol) server that **auto-generates tools
 
 ### Configuration
 
-Add Ship's MCP server to your `~/.claude.json`:
+1. Add your Ship credentials to `~/.claude/.env`:
+
+```bash
+SHIP_API_TOKEN=ship_your_token_here
+SHIP_URL=https://ship.example.com
+```
+
+2. Add Ship's MCP server to your `~/.claude.json`:
 
 ```json
 {
   "mcpServers": {
     "ship": {
       "command": "npx",
-      "args": ["tsx", "/path/to/ship/api/src/mcp/server.ts"],
-      "env": {
-        "SHIP_API_TOKEN": "${SHIP_API_TOKEN}",
-        "SHIP_URL": "https://ship.example.com"
-      }
+      "args": ["tsx", "/path/to/ship/api/src/mcp/server.ts"]
     }
   }
 }
 ```
 
-**Environment variables:**
-- `SHIP_URL` - The Ship instance URL (e.g., `https://ship.example.com` or `http://localhost:3000`)
-- `SHIP_API_TOKEN` - Your API token from Settings > API Tokens
+The server reads `SHIP_API_TOKEN` and `SHIP_URL` from `~/.claude/.env` at startup, avoiding hardcoded credentials in your JSON config.
 
 ### How It Works
 
@@ -286,16 +287,7 @@ At startup, the MCP server:
 
 ### Available Tools
 
-Tools are generated for all documented API endpoints (~92 tools):
-
-```bash
-SHIP_API_TOKEN=xxx SHIP_URL=https://ship.example.com npx tsx /path/to/ship/api/src/mcp/server.ts
-# Output: Fetching OpenAPI spec from https://ship.example.com/api/openapi.json...
-# Output: Generated 92 tools from OpenAPI spec
-# Output: Ship MCP server running on https://ship.example.com
-```
-
-Tool categories include:
+Tools are generated for all documented API endpoints (~92 tools). Tool categories include:
 - **Authentication**: Login, logout, session management
 - **Issues**: CRUD, state transitions, history, iterations
 - **Sprints**: Planning, reviews, carryover
