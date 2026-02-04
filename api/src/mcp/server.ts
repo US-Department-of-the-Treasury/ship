@@ -5,19 +5,16 @@
  * This server dynamically generates MCP tools by fetching the OpenAPI specification
  * from a running Ship instance. As the API changes, tools automatically stay in sync.
  *
- * Usage:
- *   SHIP_API_TOKEN=xxx SHIP_URL=https://ship.example.com npx @ship/mcp-server
+ * Configuration is loaded from ~/.claude/.env:
+ *   SHIP_API_TOKEN=ship_xxx
+ *   SHIP_URL=https://ship.example.com
  *
- * Or configure in ~/.claude.json:
+ * Claude Code config (~/.claude.json):
  *   {
  *     "mcpServers": {
  *       "ship": {
  *         "command": "npx",
- *         "args": ["tsx", "/path/to/ship/api/src/mcp/server.ts"],
- *         "env": {
- *           "SHIP_API_TOKEN": "${SHIP_API_TOKEN}",
- *           "SHIP_URL": "https://ship.example.com"
- *         }
+ *         "args": ["tsx", "/path/to/ship/api/src/mcp/server.ts"]
  *       }
  *     }
  *   }
@@ -31,22 +28,95 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
-import type { OpenAPIObject, OperationObject, ParameterObject, SchemaObject, ReferenceObject } from 'openapi3-ts/oas30';
+import { readFileSync, existsSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 
-const SHIP_URL = process.env.SHIP_URL || 'http://localhost:3000';
-const SHIP_API_TOKEN = process.env.SHIP_API_TOKEN;
-
-if (!SHIP_API_TOKEN) {
-  console.error('Error: SHIP_API_TOKEN environment variable is required');
-  console.error('Set it in your environment or ~/.claude/.env');
-  process.exit(1);
+// OpenAPI types (inline to avoid external dependency)
+interface OpenAPIObject {
+  paths?: Record<string, PathItemObject>;
+  components?: { schemas?: Record<string, SchemaObject> };
 }
+interface PathItemObject {
+  get?: OperationObject;
+  post?: OperationObject;
+  put?: OperationObject;
+  patch?: OperationObject;
+  delete?: OperationObject;
+}
+interface OperationObject {
+  operationId?: string;
+  summary?: string;
+  description?: string;
+  parameters?: ParameterObject[];
+  requestBody?: { content?: { 'application/json'?: { schema?: SchemaObject | ReferenceObject } } };
+}
+interface ParameterObject {
+  name: string;
+  in: 'path' | 'query' | 'header' | 'cookie';
+  required?: boolean;
+  description?: string;
+  schema?: SchemaObject | ReferenceObject;
+}
+interface SchemaObject {
+  type?: string;
+  description?: string;
+  properties?: Record<string, SchemaObject | ReferenceObject>;
+  required?: string[];
+  items?: SchemaObject | ReferenceObject;
+  enum?: unknown[];
+}
+interface ReferenceObject {
+  $ref: string;
+}
+
+interface Config {
+  token: string;
+  url: string;
+}
+
+/**
+ * Load configuration from ~/.claude/.env
+ */
+function loadConfig(): Config {
+  const envPath = join(homedir(), '.claude', '.env');
+
+  if (!existsSync(envPath)) {
+    console.error('Error: ~/.claude/.env not found');
+    console.error('Create it with SHIP_API_TOKEN and SHIP_URL');
+    process.exit(1);
+  }
+
+  const content = readFileSync(envPath, 'utf-8');
+  const lines = content.split('\n');
+
+  let token = '';
+  let url = 'http://localhost:3000';
+
+  for (const line of lines) {
+    if (line.startsWith('SHIP_API_TOKEN=')) {
+      token = line.substring('SHIP_API_TOKEN='.length).trim();
+    } else if (line.startsWith('SHIP_URL=')) {
+      url = line.substring('SHIP_URL='.length).trim();
+    }
+  }
+
+  if (!token) {
+    console.error('Error: SHIP_API_TOKEN not found in ~/.claude/.env');
+    process.exit(1);
+  }
+
+  return { token, url };
+}
+
+// Load config at startup
+const CONFIG = loadConfig();
 
 /**
  * Fetch OpenAPI spec from the Ship instance
  */
 async function fetchOpenAPISpec(): Promise<OpenAPIObject> {
-  const url = `${SHIP_URL}/api/openapi.json`;
+  const url = `${CONFIG.url}/api/openapi.json`;
   console.error(`Fetching OpenAPI spec from ${url}...`);
 
   const response = await fetch(url);
@@ -278,7 +348,7 @@ async function executeToolCall(
   const { method, path, operation } = toolOp;
 
   // Build URL with path parameters replaced
-  let url = `${SHIP_URL}/api${path}`;
+  let url = `${CONFIG.url}/api${path}`;
   const queryParams: Record<string, string> = {};
   const bodyParams: Record<string, unknown> = {};
 
@@ -317,7 +387,7 @@ async function executeToolCall(
   const fetchOptions: RequestInit = {
     method: method.toUpperCase(),
     headers: {
-      'Authorization': `Bearer ${SHIP_API_TOKEN}`,
+      'Authorization': `Bearer ${CONFIG.token}`,
       'Content-Type': 'application/json',
     },
   };
@@ -397,7 +467,7 @@ async function main() {
   // Connect transport and start
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`Ship MCP server running on ${SHIP_URL}`);
+  console.error(`Ship MCP server running on ${CONFIG.url}`);
 }
 
 main().catch((error) => {
