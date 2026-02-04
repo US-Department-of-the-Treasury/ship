@@ -58,7 +58,7 @@ Add your Ship API token to `~/.claude/.env`:
 ```bash
 # Ship API Configuration
 SHIP_API_TOKEN=ship_your_token_here
-SHIP_API_URL=https://your-ship-instance.example.com/api
+SHIP_URL=https://your-ship-instance.example.com
 SHIP_PROGRAM_ID=your-program-uuid  # Optional: default program for weeks
 ```
 
@@ -280,17 +280,18 @@ Add Ship's MCP server to your `~/.claude.json`:
 At startup, the MCP server:
 
 1. **Fetches** the OpenAPI spec from `{SHIP_URL}/api/openapi.json`
-2. **Generates** MCP tools from each operation (tool name = `ship_` + operationId)
+2. **Generates** MCP tools from each HTTP operation (tool name = `ship_` + method + path)
 3. **Builds** input schemas from path parameters, query parameters, and request bodies
 4. **Executes** tool calls by making authenticated HTTP requests to the Ship API
 
 ### Available Tools
 
-Tools are generated for all documented API endpoints:
+Tools are generated for all documented API endpoints (~92 tools):
 
 ```bash
 SHIP_API_TOKEN=xxx SHIP_URL=https://ship.example.com npx tsx /path/to/ship/api/src/mcp/server.ts
-# Output: Generated 64 tools from OpenAPI spec
+# Output: Fetching OpenAPI spec from https://ship.example.com/api/openapi.json...
+# Output: Generated 92 tools from OpenAPI spec
 # Output: Ship MCP server running on https://ship.example.com
 ```
 
@@ -302,6 +303,7 @@ Tool categories include:
 - **Documents**: Wiki pages, search, backlinks
 - **Standups**: Daily updates and status
 - **Activity**: Change tracking and audit logs
+- **Accountability**: Action items and weekly planning
 
 ### Benefits
 
