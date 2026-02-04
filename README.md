@@ -127,6 +127,8 @@ Log in with the demo account:
 |---------|-----|-------------|
 | Web app | http://localhost:5173 | The Ship interface |
 | API server | http://localhost:3000 | Backend services |
+| Swagger UI | http://localhost:3000/api/docs | Interactive API documentation |
+| OpenAPI spec | http://localhost:3000/api/openapi.json | OpenAPI 3.0 specification |
 | PostgreSQL | localhost:5432 | Database (via Docker) |
 
 ### Common Commands
