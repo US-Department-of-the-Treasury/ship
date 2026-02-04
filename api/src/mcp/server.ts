@@ -67,6 +67,22 @@ interface ToolOperation {
 const toolOperations = new Map<string, ToolOperation>();
 
 /**
+ * Convert path to operationId-style string
+ * e.g., "/accountability/action-items" -> "accountability_action_items"
+ */
+function pathToOperationId(method: string, path: string): string {
+  // Remove path parameters and convert to snake_case
+  const cleanPath = path
+    .replace(/\{[^}]+\}/g, '') // Remove {param}
+    .replace(/\//g, '_')       // / -> _
+    .replace(/-/g, '_')        // - -> _
+    .replace(/_+/g, '_')       // Collapse multiple _
+    .replace(/^_|_$/g, '');    // Trim leading/trailing _
+
+  return `${method}_${cleanPath}`;
+}
+
+/**
  * Convert OpenAPI operationId to MCP tool name
  * e.g., "get_issues" stays as "get_issues", "postAuthLogin" -> "post_auth_login"
  */
@@ -220,9 +236,11 @@ function generateTools(openApiSpec: OpenAPIObject): Tool[] {
 
     for (const method of methods) {
       const operation = pathItem[method] as OperationObject | undefined;
-      if (!operation?.operationId) continue;
+      if (!operation) continue;
 
-      const toolName = toToolName(operation.operationId);
+      // Use operationId if available, otherwise generate from method+path
+      const operationId = operation.operationId || pathToOperationId(method, path);
+      const toolName = toToolName(operationId);
       const description = [
         operation.summary,
         operation.description,
