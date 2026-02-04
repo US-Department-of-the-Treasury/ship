@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiGet, apiPatch } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { priorityColors } from '@/lib/statusColors';
+import { getPriorityColor } from '@/lib/statusColors';
+import { useTheme } from '@/contexts/ThemeContext';
 import { KanbanBoard } from '@/components/KanbanBoard';
 import { useToast } from '@/components/ui/Toast';
 import { ActionItems } from '@/components/ActionItems';
@@ -84,6 +85,7 @@ export function MyWeekPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { resolvedTheme } = useTheme();
 
   // Build query params
   const queryParams = new URLSearchParams();
@@ -484,6 +486,8 @@ function IssueGroup({ group }: { group: SprintGroup & { sprint: NonNullable<Spri
 }
 
 function IssueRow({ issue }: { issue: Issue }) {
+  const { resolvedTheme } = useTheme();
+
   return (
     <Link
       to={`/documents/${issue.id}`}
@@ -496,7 +500,7 @@ function IssueRow({ issue }: { issue: Issue }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono text-muted">{issue.display_id}</span>
-          <span className={cn('text-xs', priorityColors[issue.priority])}>
+          <span className={cn('text-xs', getPriorityColor(issue.priority, resolvedTheme))}>
             {issue.priority !== 'none' && issue.priority.charAt(0).toUpperCase()}
           </span>
           {issue.estimate && (

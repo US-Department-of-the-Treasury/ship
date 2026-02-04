@@ -557,6 +557,42 @@ import { cn } from "@/lib/utils";
 <Button className={cn("w-full", isLoading && "opacity-50")} />;
 ```
 
+### Theme System
+
+Ship supports light and dark themes with automatic OS preference detection:
+
+```typescript
+// web/src/contexts/ThemeContext.tsx
+export type Theme = 'light' | 'dark' | 'system';
+
+// Components consume theme via hook
+import { useTheme } from '@/contexts/ThemeContext';
+
+function MyComponent() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  // theme: user's choice ('light' | 'dark' | 'system')
+  // resolvedTheme: what's actually displayed ('light' | 'dark')
+}
+```
+
+**Implementation:**
+- Theme state managed via React Context with localStorage persistence
+- FOUC prevention via blocking inline script in index.html
+- Tailwind dark mode with `selector` strategy (`dark:` variants)
+- Smooth 200ms fade transition when switching themes
+- Automatic sync with OS preference changes when `theme='system'`
+
+**Color tokens:**
+- Light theme: warm off-white background (#fafafa), near-black text (#0a0a0a)
+- Dark theme: near-black background (#0d0d0d), light gray text (#f5f5f5)
+- Both themes use same accent blue (#005ea2) for brand consistency
+- All color combinations meet WCAG AA standards (4.5:1+ contrast)
+
+**Status badges and syntax highlighting:**
+- Status badges adapt to theme (e.g., `bg-purple-100 text-purple-800` in light)
+- VS Code Light+ theme for code syntax highlighting in light mode
+- GitHub Dark inspired syntax colors in dark mode
+
 ## Accessibility
 
 **Section 508 strict compliance** required for government deployment.
@@ -568,6 +604,7 @@ import { cn } from "@/lib/utils";
 - Screen reader support (NVDA, JAWS, VoiceOver)
 - Focus management for modals/dialogs
 - Color contrast ratios (4.5:1 text, 3:1 UI)
+- Both light and dark themes meet WCAG AA standards
 
 ### Implementation
 

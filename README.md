@@ -259,10 +259,11 @@ docker-compose -f docker-compose.prod.yml up
 
 Ship is Section 508 compliant and meets WCAG 2.1 AA standards:
 
-- All color contrasts meet 4.5:1 minimum
+- All color contrasts meet 4.5:1 minimum (both light and dark themes)
 - Full keyboard navigation
 - Screen reader support
 - Visible focus indicators
+- Theme customization (light, dark, or system preference)
 
 ---
 
