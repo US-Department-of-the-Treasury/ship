@@ -117,9 +117,9 @@ export async function checkMissingAccountability(
     items.push(...reviewItems);
   }
 
-  // 6. Check for projects without plan
-  const projectPlanItems = await checkProjectPlan(userId, workspaceId);
-  items.push(...projectPlanItems);
+  // 6. Project-level plan check REMOVED - replaced by weekly_plan documents per person/project/week
+  // The old system checked properties.plan on project docs, but that field isn't exposed in the UI
+  // and has been superseded by the checkWeeklyPersonAccountability() checks above.
 
   // 7. Check for completed projects without retro
   const projectRetroItems = await checkProjectRetros(userId, workspaceId);
@@ -513,41 +513,9 @@ async function checkMissingSprintReviews(
   return items;
 }
 
-/**
- * Check for projects where user is owner without plan.
- */
-async function checkProjectPlan(
-  userId: string,
-  workspaceId: string
-): Promise<MissingAccountabilityItem[]> {
-  const items: MissingAccountabilityItem[] = [];
-
-  // Find projects where user is owner without plan
-  const projectsResult = await pool.query(
-    `SELECT p.id, p.title, p.properties
-     FROM documents p
-     WHERE p.workspace_id = $1
-       AND p.document_type = 'project'
-       AND (p.properties->>'owner_id')::uuid = $2
-       AND p.deleted_at IS NULL
-       AND p.archived_at IS NULL
-       AND (p.properties->>'plan' IS NULL OR p.properties->>'plan' = '')`,
-    [workspaceId, userId]
-  );
-
-  for (const project of projectsResult.rows) {
-    items.push({
-      type: 'project_plan',
-      targetId: project.id,
-      targetTitle: project.title || 'Untitled Project',
-      targetType: 'project',
-      dueDate: null, // No specific due date for project plan
-      message: `Write plan for ${project.title || 'project'}`,
-    });
-  }
-
-  return items;
-}
+// checkProjectPlan REMOVED - replaced by weekly_plan documents per person/project/week.
+// The old system checked properties.plan on project docs, but that field was never
+// exposed in the UI and has been superseded by checkWeeklyPersonAccountability().
 
 /**
  * Check for completed projects without retro.
