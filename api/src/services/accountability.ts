@@ -15,6 +15,8 @@
 
 import { pool } from '../db/client.js';
 import { addBusinessDays, isBusinessDay } from '../utils/business-days.js';
+import { hasContent } from '../utils/document-content.js';
+import { getAllocations } from '../utils/allocation.js';
 import type { AccountabilityType } from '@ship/shared';
 
 // Accountability item returned from check
@@ -362,34 +364,20 @@ async function checkWeeklyPersonAccountability(
   retroDueDate.setUTCDate(retroDueDate.getUTCDate() + 4); // Friday EOD
   const retroDueStr = retroDueDate.toISOString().split('T')[0] || '';
 
-  // Find projects where user has assigned issues in the current sprint
-  // This determines their "allocations" for the week
-  const allocationsResult = await pool.query(
-    `SELECT DISTINCT proj_da.related_id as project_id, proj.title as project_name
-     FROM documents i
-     JOIN document_associations sprint_da ON sprint_da.document_id = i.id AND sprint_da.relationship_type = 'sprint'
-     JOIN documents s ON s.id = sprint_da.related_id AND s.document_type = 'sprint'
-     JOIN document_associations proj_da ON proj_da.document_id = s.id AND proj_da.relationship_type = 'project'
-     JOIN documents proj ON proj.id = proj_da.related_id AND proj.document_type = 'project'
-     WHERE i.workspace_id = $1
-       AND i.document_type = 'issue'
-       AND (i.properties->>'assignee_id')::uuid = $2
-       AND (s.properties->>'sprint_number')::int = $3
-       AND i.deleted_at IS NULL
-       AND s.deleted_at IS NULL
-       AND proj.deleted_at IS NULL`,
-    [workspaceId, userId, currentSprintNumber]
-  );
+  // Get ALL allocations for this person/sprint (explicit assignee_ids + issue-based).
+  // Note: The heatmap only displays one allocation per person per week (display limit),
+  // but action items must check all allocations so nothing gets missed.
+  const allocations = await getAllocations(workspaceId, personId, userId, currentSprintNumber);
 
-  // For each allocation, check if weekly_plan and weekly_retro exist
-  for (const allocation of allocationsResult.rows) {
-    const projectId = allocation.project_id;
-    const projectName = allocation.project_name || 'Untitled Project';
+  for (const allocation of allocations) {
+    const projectId = allocation.projectId;
+    const projectName = allocation.projectName;
 
     // Check for missing weekly_plan (due Monday EOD)
+    // A plan counts as "done" only if it has meaningful content (not just template headings)
     if (todayStr >= planDueStr) {
       const planResult = await pool.query(
-        `SELECT id FROM documents
+        `SELECT id, content FROM documents
          WHERE workspace_id = $1
            AND document_type = 'weekly_plan'
            AND (properties->>'person_id') = $2
@@ -399,10 +387,11 @@ async function checkWeeklyPersonAccountability(
         [workspaceId, personId, projectId, currentSprintNumber]
       );
 
-      if (planResult.rows.length === 0) {
+      const planDoc = planResult.rows[0];
+      if (!planDoc || !hasContent(planDoc.content)) {
         items.push({
           type: 'weekly_plan',
-          targetId: projectId, // Use project as target for context
+          targetId: projectId,
           targetTitle: `Week ${currentSprintNumber} Plan - ${projectName}`,
           targetType: 'project',
           dueDate: planDueStr,
@@ -415,9 +404,10 @@ async function checkWeeklyPersonAccountability(
     }
 
     // Check for missing weekly_retro (due Friday EOD)
+    // A retro counts as "done" only if it has meaningful content (not just template headings)
     if (todayStr >= retroDueStr) {
       const retroResult = await pool.query(
-        `SELECT id FROM documents
+        `SELECT id, content FROM documents
          WHERE workspace_id = $1
            AND document_type = 'weekly_retro'
            AND (properties->>'person_id') = $2
@@ -427,7 +417,8 @@ async function checkWeeklyPersonAccountability(
         [workspaceId, personId, projectId, currentSprintNumber]
       );
 
-      if (retroResult.rows.length === 0) {
+      const retroDoc = retroResult.rows[0];
+      if (!retroDoc || !hasContent(retroDoc.content)) {
         items.push({
           type: 'weekly_retro',
           targetId: projectId,

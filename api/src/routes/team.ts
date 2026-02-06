@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { TEMPLATE_HEADINGS, extractText, hasContent } from '../utils/document-content.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -1042,12 +1043,6 @@ router.get('/people/:personId/sprint-metrics', authMiddleware, async (req: Reque
   }
 });
 
-// Templates for weekly plan and retro - used to check if document has content
-const TEMPLATE_HEADINGS = [
-  'What I plan to accomplish this week',
-  'What I delivered this week',
-];
-
 // GET /api/team/accountability-grid-v2 - Get per-person plan/retro status for all projects
 // Returns: { programs: [{ projects: [{ people: [{ weeks }] }] }], weeks, currentSprintNumber }
 // Query params:
@@ -1196,31 +1191,6 @@ router.get('/accountability-grid-v2', authMiddleware, async (req: Request, res: 
          AND (properties->>'week_number')::int BETWEEN $2 AND $3`,
       [workspaceId, fromSprint, toSprint]
     );
-
-    // Helper to extract all text from a TipTap document
-    const extractText = (node: unknown): string => {
-      if (!node || typeof node !== 'object') return '';
-      const n = node as { type?: string; text?: string; content?: unknown[] };
-      if (n.type === 'text' && n.text) return n.text;
-      if (Array.isArray(n.content)) {
-        return n.content.map(extractText).join('');
-      }
-      return '';
-    };
-
-    // Helper to check if document has content beyond the template
-    const hasContent = (content: unknown): boolean => {
-      if (!content || typeof content !== 'object') return false;
-      const doc = content as { content?: unknown[] };
-      if (!Array.isArray(doc.content) || doc.content.length === 0) return false;
-
-      const allText = extractText(content).trim();
-      let textWithoutTemplate = allText;
-      for (const heading of TEMPLATE_HEADINGS) {
-        textWithoutTemplate = textWithoutTemplate.replace(heading, '');
-      }
-      return textWithoutTemplate.trim().length > 0;
-    };
 
     // Helper to calculate plan/retro status based on timing
     const calculateStatus = (
@@ -1618,27 +1588,6 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
          AND (properties->>'week_number')::int BETWEEN $2 AND $3`,
       [workspaceId, fromSprint, toSprint]
     );
-
-    // Helper functions (same as v2)
-    const extractText = (node: unknown): string => {
-      if (!node || typeof node !== 'object') return '';
-      const n = node as { type?: string; text?: string; content?: unknown[] };
-      if (n.type === 'text' && n.text) return n.text;
-      if (Array.isArray(n.content)) return n.content.map(extractText).join('');
-      return '';
-    };
-
-    const hasContent = (content: unknown): boolean => {
-      if (!content || typeof content !== 'object') return false;
-      const doc = content as { content?: unknown[] };
-      if (!Array.isArray(doc.content) || doc.content.length === 0) return false;
-      const allText = extractText(content).trim();
-      let textWithoutTemplate = allText;
-      for (const heading of TEMPLATE_HEADINGS) {
-        textWithoutTemplate = textWithoutTemplate.replace(heading, '');
-      }
-      return textWithoutTemplate.trim().length > 0;
-    };
 
     const calculateStatus = (
       docId: string | null,
