@@ -1,0 +1,13 @@
+# Progress Log
+PRD: plans/action-items-due-today.prd.json
+Started: 2026-02-06T09:05:56-05:00
+
+---
+
+
+## Iteration 1 - Include due-today items in accountability checks
+- Completed: Changed date comparison from > to >= in checkWeeklyPersonAccountability for both weekly_plan (line 390) and weekly_retro (line 418). Added has_overdue and has_due_today boolean flags to the /api/accountability/action-items response. Updated ActionItemsResponse type in frontend hook.
+- Files changed: api/src/services/accountability.ts, api/src/routes/accountability.ts, web/src/hooks/useActionItemsQuery.ts
+- Learnings: Pre-existing test failures due to audit_log deletion constraint in test setup - not related to our changes.
+- Next: banner-urgency-colors (high priority, depends on this story)
+

@@ -23,6 +23,8 @@ export interface ActionItem {
 interface ActionItemsResponse {
   items: ActionItem[];
   total: number;
+  has_overdue: boolean;
+  has_due_today: boolean;
 }
 
 export const actionItemsKeys = {

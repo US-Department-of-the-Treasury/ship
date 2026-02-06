@@ -387,7 +387,7 @@ async function checkWeeklyPersonAccountability(
     const projectName = allocation.project_name || 'Untitled Project';
 
     // Check for missing weekly_plan (due Monday EOD)
-    if (todayStr > planDueStr) {
+    if (todayStr >= planDueStr) {
       const planResult = await pool.query(
         `SELECT id FROM documents
          WHERE workspace_id = $1
@@ -415,7 +415,7 @@ async function checkWeeklyPersonAccountability(
     }
 
     // Check for missing weekly_retro (due Friday EOD)
-    if (todayStr > retroDueStr) {
+    if (todayStr >= retroDueStr) {
       const retroResult = await pool.query(
         `SELECT id FROM documents
          WHERE workspace_id = $1
