@@ -84,13 +84,13 @@
     }
   ],
   "postCompletion": {
-    "securityReview": false,
-    "codeQualityReview": false,
-    "testsAdded": false,
-    "seedDataChecked": false,
-    "fixturesUpdated": false,
-    "docsChecked": false,
-    "learningsExtracted": false,
+    "securityReview": true,
+    "codeQualityReview": true,
+    "testsAdded": true,
+    "seedDataChecked": true,
+    "fixturesUpdated": true,
+    "docsChecked": true,
+    "learningsExtracted": true,
     "criticalFindings": []
   }
 }

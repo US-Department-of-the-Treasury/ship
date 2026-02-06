@@ -58,6 +58,12 @@ registry.register('InferredActionItem', InferredActionItemSchema);
 export const AccountabilityActionItemsResponseSchema = z.object({
   items: z.array(InferredActionItemSchema),
   total: z.number().int(),
+  has_overdue: z.boolean().openapi({
+    description: 'True if any item has days_overdue > 0',
+  }),
+  has_due_today: z.boolean().openapi({
+    description: 'True if any item has days_overdue === 0',
+  }),
 }).openapi('AccountabilityActionItemsResponse');
 
 registry.register('AccountabilityActionItemsResponse', AccountabilityActionItemsResponseSchema);
