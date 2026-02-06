@@ -42,9 +42,10 @@ interface AccountabilityBannerProps {
   itemCount: number;
   onBannerClick: () => void;
   isCelebrating?: boolean;
+  urgency?: 'overdue' | 'due_today';
 }
 
-export function AccountabilityBanner({ itemCount, onBannerClick, isCelebrating = false }: AccountabilityBannerProps) {
+export function AccountabilityBanner({ itemCount, onBannerClick, isCelebrating = false, urgency = 'overdue' }: AccountabilityBannerProps) {
   const [messageIndex, setMessageIndex] = useState(() => Math.floor(Math.random() * MESSAGES.length));
   const [celebrationMessageIndex] = useState(() => Math.floor(Math.random() * CELEBRATION_MESSAGES.length));
   const [isAnimating, setIsAnimating] = useState(false);
@@ -107,10 +108,14 @@ export function AccountabilityBanner({ itemCount, onBannerClick, isCelebrating =
     );
   }
 
+  const bgColor = urgency === 'due_today' ? 'bg-amber-600' : 'bg-red-600';
+  const hoverColor = urgency === 'due_today' ? 'hover:bg-amber-700' : 'hover:bg-red-700';
+  const badgeColor = urgency === 'due_today' ? 'bg-amber-800' : 'bg-red-800';
+
   return (
     <button
       onClick={onBannerClick}
-      className="flex w-full items-center justify-center gap-3 bg-red-600 px-4 py-2 text-white hover:bg-red-700 transition-colors cursor-pointer"
+      className={`flex w-full items-center justify-center gap-3 ${bgColor} px-4 py-2 text-white ${hoverColor} transition-colors cursor-pointer`}
       aria-live="polite"
     >
       {/* Alert icon */}
@@ -129,7 +134,7 @@ export function AccountabilityBanner({ itemCount, onBannerClick, isCelebrating =
       </span>
 
       {/* Badge count */}
-      <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-red-800 px-2 text-xs font-bold">
+      <span className={`flex h-6 min-w-6 items-center justify-center rounded-full ${badgeColor} px-2 text-xs font-bold`}>
         {itemCount}
       </span>
 

@@ -287,6 +287,7 @@ export function AppLayout() {
         itemCount={actionItemsData?.items?.length ?? 0}
         onBannerClick={() => setActionItemsModalOpen(true)}
         isCelebrating={isCelebrating}
+        urgency={actionItemsData?.has_overdue ? 'overdue' : 'due_today'}
       />
 
       <div className="flex flex-1 overflow-hidden">

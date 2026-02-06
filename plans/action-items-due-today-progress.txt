@@ -11,3 +11,10 @@ Started: 2026-02-06T09:05:56-05:00
 - Learnings: Pre-existing test failures due to audit_log deletion constraint in test setup - not related to our changes.
 - Next: banner-urgency-colors (high priority, depends on this story)
 
+
+## Iteration 2 - Banner shows yellow for due-today, red for overdue
+- Completed: Added urgency prop to AccountabilityBanner ('overdue' | 'due_today'). Banner uses bg-amber-600/bg-amber-800 for due-today, bg-red-600/bg-red-800 for overdue. Updated App.tsx to compute urgency from actionItemsData.has_overdue flag. Celebration banner (green) unaffected.
+- Files changed: web/src/components/AccountabilityBanner.tsx, web/src/pages/App.tsx
+- Learnings: None - straightforward prop threading.
+- Next: e2e-tests (medium priority, depends on this story)
+

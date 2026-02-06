@@ -46,7 +46,7 @@
       ],
       "dependencies": ["include-due-today"],
       "priority": "high",
-      "passes": false
+      "passes": true
     },
     {
       "id": "e2e-tests",
