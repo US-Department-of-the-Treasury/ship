@@ -81,9 +81,9 @@ function InlineCommentThread({
 
   if (isResolved) {
     container.innerHTML = `
-      <div class="comment-thread-resolved" data-comment-id="${root.comment_id}">
+      <div class="comment-thread-resolved" data-comment-id="${escapeHtml(root.comment_id)}">
         <span class="comment-resolved-icon">✓</span>
-        <span class="comment-resolved-text">Resolved by ${root.author.name}</span>
+        <span class="comment-resolved-text">Resolved by ${escapeHtml(root.author.name)}</span>
         <span class="comment-resolved-toggle">Show thread</span>
       </div>
     `;

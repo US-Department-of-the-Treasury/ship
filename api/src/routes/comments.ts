@@ -140,6 +140,7 @@ const updateCommentSchema = z.object({
 commentsRouter.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id: commentId } = req.params;
+    const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
     const parsed = updateCommentSchema.safeParse(req.body);
@@ -148,11 +149,17 @@ commentsRouter.patch('/:id', authMiddleware, async (req: Request, res: Response)
       return;
     }
 
-    // Check comment exists
+    // Check comment exists in workspace
     const existing = await pool.query(
       'SELECT * FROM comments WHERE id = $1 AND workspace_id = $2',
       [commentId, workspaceId]
     );
+
+    // Content edits require author ownership; resolving is allowed by any workspace member
+    if (parsed.data.content !== undefined && existing.rows[0]?.author_id !== userId) {
+      res.status(403).json({ error: 'Only the comment author can edit content' });
+      return;
+    }
     if (existing.rows.length === 0) {
       res.status(404).json({ error: 'Comment not found' });
       return;
@@ -220,11 +227,12 @@ commentsRouter.patch('/:id', authMiddleware, async (req: Request, res: Response)
 commentsRouter.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id: commentId } = req.params;
+    const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
     const result = await pool.query(
-      'DELETE FROM comments WHERE id = $1 AND workspace_id = $2 RETURNING id',
-      [commentId, workspaceId]
+      'DELETE FROM comments WHERE id = $1 AND workspace_id = $2 AND author_id = $3 RETURNING id',
+      [commentId, workspaceId, userId]
     );
 
     if (result.rows.length === 0) {
