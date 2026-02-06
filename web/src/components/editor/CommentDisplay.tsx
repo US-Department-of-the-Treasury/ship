@@ -188,6 +188,26 @@ export const CommentDisplayExtension = Extension.create<Record<string, never>, C
               (a, b) => a[1] - b[1]
             );
 
+            // Add inline decorations to dim resolved comment highlights
+            for (const [commentId, thread] of threads.entries()) {
+              const isResolved = thread[0].resolved_at !== null;
+              if (isResolved) {
+                doc.descendants((node: any, pos: number) => {
+                  if (node.isText) {
+                    for (const mark of node.marks) {
+                      if (mark.type.name === 'commentMark' && mark.attrs.commentId === commentId) {
+                        decorations.push(
+                          Decoration.inline(pos, pos + node.nodeSize, {
+                            class: 'comment-highlight-resolved',
+                          })
+                        );
+                      }
+                    }
+                  }
+                });
+              }
+            }
+
             for (const [commentId, blockEndPos] of sortedEntries) {
               const thread = threads.get(commentId);
               if (!thread || thread.length === 0) continue;
@@ -216,7 +236,7 @@ export const CommentDisplayExtension = Extension.create<Record<string, never>, C
                 });
               }, {
                 side: 1, // Render after the position
-                key: `comment-${commentId}`,
+                key: `comment-${commentId}-${thread.length}-${thread[0].resolved_at || 'open'}`,
               });
 
               decorations.push(widget);

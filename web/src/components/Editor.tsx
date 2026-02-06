@@ -630,9 +630,8 @@ export function Editor({
           commentId: rootComment.id,
           resolved_at: resolved ? new Date().toISOString() : null,
         });
-        if (resolved) {
-          editor.commands.unsetComment(commentId);
-        }
+        // Don't remove the mark -- keep it so the collapsed indicator knows where to render.
+        // The CommentDisplay plugin handles showing resolved vs unresolved states.
       }
     };
 
