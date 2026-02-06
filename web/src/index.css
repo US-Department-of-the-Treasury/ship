@@ -762,7 +762,7 @@ span[data-emoji] {
   background-color: rgba(245, 158, 11, 0.35);
 }
 
-.ProseMirror .comment-highlight-resolved {
+.ProseMirror .comment-highlight:has(.comment-highlight-resolved) {
   background-color: transparent !important;
   border-bottom-color: transparent !important;
 }
