@@ -33,6 +33,10 @@ import { DetailsExtension, DetailsSummary, DetailsContent } from './editor/Detai
 import { EmojiExtension } from './editor/EmojiExtension';
 import { TableOfContentsExtension } from './editor/TableOfContents';
 import { HypothesisBlockExtension } from './editor/HypothesisBlockExtension';
+import { CommentMark } from './editor/CommentMark';
+import { CommentDisplayExtension } from './editor/CommentDisplay';
+import { useCommentsQuery, useCreateComment, useUpdateComment } from '@/hooks/useCommentsQuery';
+import { BubbleMenu } from '@tiptap/react';
 import 'tippy.js/dist/tippy.css';
 
 // Create lowlight instance with common languages
@@ -499,6 +503,17 @@ export function Editor({
     });
   }, [onNavigateToDocument]);
 
+  // Comments - fetch and manage inline comments
+  const { data: comments = [] } = useCommentsQuery(documentId);
+  const createComment = useCreateComment(documentId);
+  const updateComment = useUpdateComment(documentId);
+  const [pendingCommentId, setPendingCommentId] = useState<string | null>(null);
+
+  // Handle adding a new comment (called from keyboard shortcut, bubble menu, context menu)
+  const handleAddComment = useCallback((commentId: string) => {
+    setPendingCommentId(commentId);
+  }, []);
+
   // Build extensions - only include CollaborationCursor when provider is ready
   const baseExtensions = [
     StarterKit.configure({
@@ -561,6 +576,8 @@ export function Editor({
     EmojiExtension,
     TableOfContentsExtension,
     HypothesisBlockExtension,
+    CommentMark.configure({ onAddComment: handleAddComment }),
+    CommentDisplayExtension,
     slashCommandsExtension,
   ];
 
@@ -582,6 +599,56 @@ export function Editor({
       },
     },
   }, [provider, documentType]);
+
+  // Refs for stable comment callbacks (avoid re-render loops)
+  const commentsRef = useRef(comments);
+  commentsRef.current = comments;
+  const createCommentRef = useRef(createComment);
+  createCommentRef.current = createComment;
+  const updateCommentRef = useRef(updateComment);
+  updateCommentRef.current = updateComment;
+
+  // Sync comment data into the CommentDisplay extension storage
+  useEffect(() => {
+    if (!editor) return;
+    const ext = editor.extensionManager.extensions.find(e => e.name === 'commentDisplay');
+    if (!ext) return;
+
+    ext.storage.comments = comments;
+    ext.storage.onReply = (commentId: string, content: string) => {
+      const rootComment = commentsRef.current.find(c => c.comment_id === commentId && !c.parent_id);
+      createCommentRef.current.mutate({
+        comment_id: commentId,
+        content,
+        parent_id: rootComment?.id,
+      });
+    };
+    ext.storage.onResolve = (commentId: string, resolved: boolean) => {
+      const rootComment = commentsRef.current.find(c => c.comment_id === commentId && !c.parent_id);
+      if (rootComment) {
+        updateCommentRef.current.mutate({
+          commentId: rootComment.id,
+          resolved_at: resolved ? new Date().toISOString() : null,
+        });
+        if (resolved) {
+          editor.commands.unsetComment(commentId);
+        }
+      }
+    };
+
+    // Force ProseMirror to re-evaluate decorations
+    // Delay to ensure DOM is ready and avoid init-time errors
+    const timer = setTimeout(() => {
+      if (!editor.isDestroyed && editor.view) {
+        try {
+          editor.view.updateState(editor.view.state);
+        } catch {
+          // Ignore DOM errors during initialization
+        }
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [editor, comments]);
 
   // Sync document links when editor content changes (for backlinks feature)
   const lastSyncedLinksRef = useRef<string>('');
@@ -797,9 +864,89 @@ export function Editor({
                 titleReadOnly && "cursor-default"
               )}
             />
-            <div className="tiptap-wrapper" data-testid="tiptap-editor">
+            <div
+              className="tiptap-wrapper"
+              data-testid="tiptap-editor"
+              onContextMenu={(e) => {
+                if (!editor || editor.state.selection.empty) return;
+                e.preventDefault();
+                const menu = document.createElement('div');
+                menu.className = 'comment-context-menu';
+                menu.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;z-index:9999;background:rgb(39,39,42);border:1px solid rgb(63,63,70);border-radius:6px;padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.4);`;
+                const btn = document.createElement('button');
+                btn.textContent = 'Add Comment';
+                btn.style.cssText = 'display:block;width:100%;padding:6px 12px;background:none;border:none;color:rgb(228,228,231);font-size:13px;cursor:pointer;text-align:left;';
+                btn.onmouseenter = () => { btn.style.background = 'rgb(63,63,70)'; };
+                btn.onmouseleave = () => { btn.style.background = 'none'; };
+                btn.onclick = () => {
+                  editor.commands.addComment();
+                  menu.remove();
+                };
+                menu.appendChild(btn);
+                document.body.appendChild(menu);
+                const dismiss = (ev: MouseEvent) => {
+                  if (!menu.contains(ev.target as Node)) {
+                    menu.remove();
+                    document.removeEventListener('mousedown', dismiss);
+                  }
+                };
+                setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
+              }}
+            >
               <EditorContent editor={editor} />
             </div>
+            {editor && !editor.isDestroyed && (
+              <BubbleMenu
+                editor={editor}
+                pluginKey="commentBubbleMenu"
+                shouldShow={({ state }) => {
+                  if (state.selection.empty) return false;
+                  const { $from } = state.selection;
+                  if ($from.parent.type.name === 'codeBlock') return false;
+                  return true;
+                }}
+                tippyOptions={{ placement: 'top', duration: 150 }}
+              >
+                <button
+                  onClick={() => editor.commands.addComment()}
+                  className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-800 border border-zinc-600 rounded-md text-xs text-zinc-200 hover:bg-zinc-700 transition-colors shadow-lg"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  Comment
+                </button>
+              </BubbleMenu>
+            )}
+            {/* Pending comment input */}
+            {pendingCommentId && (
+              <div className="mx-8 my-2 border border-zinc-700 rounded-md bg-zinc-900/60 p-3">
+                <div className="text-xs text-zinc-400 mb-2">Add your comment:</div>
+                <input
+                  autoFocus
+                  type="text"
+                  className="w-full bg-zinc-800/60 border border-zinc-600 rounded px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-indigo-500"
+                  placeholder="Write a comment..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      const value = (e.target as HTMLInputElement).value.trim();
+                      if (value) {
+                        createComment.mutate({ comment_id: pendingCommentId, content: value });
+                        setPendingCommentId(null);
+                      }
+                    }
+                    if (e.key === 'Escape') {
+                      // Cancel: remove the mark
+                      if (editor) {
+                        editor.commands.unsetComment(pendingCommentId);
+                      }
+                      setPendingCommentId(null);
+                    }
+                  }}
+                />
+                <div className="text-xs text-zinc-500 mt-1">Press Enter to submit, Escape to cancel</div>
+              </div>
+            )}
           </div>
           {/* Spacer to fill remaining height - clickable to focus editor at end */}
           <div

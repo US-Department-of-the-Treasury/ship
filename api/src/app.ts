@@ -31,6 +31,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import associationsRoutes from './routes/associations.js';
 import accountabilityRoutes from './routes/accountability.js';
 import weeklyPlansRoutes, { weeklyRetrosRouter } from './routes/weekly-plans.js';
+import { documentCommentsRouter, commentsRouter } from './routes/comments.js';
 import { setupSwagger } from './swagger.js';
 import { initializeCAIA } from './services/caia.js';
 
@@ -226,6 +227,10 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // File upload routes (CSRF protected for POST endpoints)
   app.use('/api/files', conditionalCsrf, filesRouter);
+
+  // Comments routes
+  app.use('/api/documents', conditionalCsrf, documentCommentsRouter);
+  app.use('/api/comments', conditionalCsrf, commentsRouter);
 
   // Initialize CAIA OAuth client at startup
   initializeCAIA().catch((err) => {
