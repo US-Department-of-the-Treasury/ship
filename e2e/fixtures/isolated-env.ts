@@ -111,12 +111,24 @@ export const test = base.extend<
       const debug = process.env.DEBUG === '1';
       if (debug) console.log(`${workerTag} Starting PostgreSQL container...`);
 
-      const container = await new PostgreSqlContainer('postgres:15')
-        .withDatabase('ship_test')
-        .withUsername('test')
-        .withPassword('test')
-        .withStartupTimeout(30000)  // 30s timeout for CI/parallel workers
-        .start();
+      // Retry container startup to handle intermittent Docker port binding failures
+      // Under parallel load, Docker's port allocation can get congested
+      let container!: StartedPostgreSqlContainer;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          container = await new PostgreSqlContainer('postgres:15')
+            .withDatabase('ship_test')
+            .withUsername('test')
+            .withPassword('test')
+            .withStartupTimeout(120000)
+            .start();
+          break;
+        } catch (err) {
+          if (debug) console.log(`${workerTag} Container start attempt ${attempt} failed: ${(err as Error).message}`);
+          if (attempt === 3) throw err;
+          await new Promise(r => setTimeout(r, 2000 * attempt));
+        }
+      }
 
       try {
         const dbUrl = container.getConnectionUri();

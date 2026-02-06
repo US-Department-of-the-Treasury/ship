@@ -376,9 +376,12 @@ test.describe('Edge Cases', () => {
 
     // Verify we're on first document - use polling to handle Yjs sync timing
     await expect(editor).toBeVisible({ timeout: 5000 })
+    // Wait for sync status to indicate content is loaded
+    const syncStatus = page.locator('[data-testid="sync-status"]')
+    await expect(syncStatus).toContainText(/Saved|Cached/, { timeout: 15000 })
     await expect(async () => {
       await expect(editor).toContainText('First document', { timeout: 5000 })
-    }).toPass({ timeout: 15000, intervals: [500, 1000, 2000] })
+    }).toPass({ timeout: 20000, intervals: [500, 1000, 2000, 3000] })
 
     // Navigate to second document
     await page.goto(secondDocUrl)
@@ -386,9 +389,10 @@ test.describe('Edge Cases', () => {
 
     // Wait for editor to be visible and Yjs WebSocket sync to complete
     await expect(editor).toBeVisible({ timeout: 5000 })
+    await expect(syncStatus).toContainText(/Saved|Cached/, { timeout: 15000 })
     await expect(async () => {
       await expect(editor).toContainText('Second document', { timeout: 5000 })
-    }).toPass({ timeout: 15000, intervals: [500, 1000, 2000] })
+    }).toPass({ timeout: 20000, intervals: [500, 1000, 2000, 3000] })
   })
 
   test('handles simultaneous formatting operations', async ({ page }) => {

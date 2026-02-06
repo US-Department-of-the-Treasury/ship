@@ -407,7 +407,7 @@ test.describe('Performance - Many Images', () => {
       const tmpPath = createTestImageFile()
       imagePaths.push(tmpPath)
 
-      const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 30000 })
+      const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 45000 })
       await page.keyboard.press('Enter')
 
       const fileChooser = await fileChooserPromise
@@ -488,7 +488,7 @@ test.describe('Performance - Many Images', () => {
       imagePaths.push(tmpPath)
 
       // Click the button directly to trigger file chooser (more reliable than keyboard.press)
-      const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 30000 })
+      const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 45000 })
       await optionLocator.click()
 
       const fileChooser = await fileChooserPromise

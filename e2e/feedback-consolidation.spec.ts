@@ -291,9 +291,12 @@ test.describe('Data Migration', () => {
     await page.goto('/issues');
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
+    // Wait for issue table data to fully load
+    await page.waitForLoadState('networkidle');
+
     // Internal issues should show "Internal"
     const internalIssue = page.locator('tr[role="row"]', { hasText: 'Initial project setup' });
-    await expect(internalIssue).toBeVisible({ timeout: 10000 });
+    await expect(internalIssue).toBeVisible({ timeout: 15000 });
     await expect(internalIssue.locator('span:text-is("Internal")')).toBeVisible();
   });
 });

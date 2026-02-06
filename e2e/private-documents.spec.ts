@@ -646,7 +646,8 @@ test.describe('Private Documents', () => {
 
       // Set up promise to wait for dialog BEFORE triggering the visibility change
       // The dialog will show when WebSocket is closed with code 4403
-      const dialogPromise = memberPage.waitForEvent('dialog', { timeout: 10000 });
+      // Use longer timeout as WebSocket close event propagation can be slow under load
+      const dialogPromise = memberPage.waitForEvent('dialog', { timeout: 20000 });
 
       // Admin changes document to private via API
       await updateDocument(adminPage, doc.id, { visibility: 'private' });

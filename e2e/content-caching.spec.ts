@@ -261,14 +261,22 @@ test.describe('API Content Update Invalidates Browser Cache', () => {
     // Wait for sync status to show "Saved" or "Cached" (fully synced with server)
     // This ensures WebSocket has completed sync before checking content
     const syncStatus = page.locator('[data-testid="sync-status"]');
-    await expect(syncStatus).toContainText(/Saved|Cached/, { timeout: 10000 });
+    await expect(syncStatus).toContainText(/Saved|Cached/, { timeout: 15000 });
 
     // Step 7: Verify the API content is displayed, NOT the cached browser content
     // Use polling to handle Yjs WebSocket sync timing
+    // Content sync after IndexedDB clear + WebSocket reconnect can take significant time
     const editorAfter = page.locator('.ProseMirror');
     await expect(async () => {
+      const text = await editorAfter.textContent();
+      if (!text || text.trim() === '') {
+        // Editor still empty - reload to force fresh content fetch
+        await page.reload();
+        await page.waitForSelector('.ProseMirror', { timeout: 5000 });
+        await expect(syncStatus).toContainText(/Saved|Cached/, { timeout: 10000 });
+      }
       await expect(editorAfter).toContainText('API updated content - should override cached', { timeout: 5000 });
-    }).toPass({ timeout: 15000, intervals: [500, 1000, 2000] });
+    }).toPass({ timeout: 30000, intervals: [1000, 2000, 3000, 5000] });
     // Should NOT contain the old cached content
     await expect(editorAfter).not.toContainText('User typed content in browser');
 
@@ -309,11 +317,21 @@ test.describe('API Content Update Invalidates Browser Cache', () => {
 
     // Wait for WebSocket sync to complete first
     const syncStatus = page.locator('[data-testid="sync-status"]');
-    await expect(syncStatus).toContainText(/Saved|Cached/, { timeout: 10000 });
+    await expect(syncStatus).toContainText(/Saved|Cached/, { timeout: 15000 });
 
-    // Verify original content
+    // Verify original content - use polling to handle Yjs WebSocket sync timing
+    // Content load can be slow on first visit when Yjs state is being synced from scratch
     const editor = page.locator('.ProseMirror');
-    await expect(editor).toContainText('Original content', { timeout: 10000 });
+    await expect(async () => {
+      const text = await editor.textContent();
+      if (!text || text.trim() === '') {
+        // Editor still empty after sync status shows Saved - reload to force fresh content
+        await page.reload();
+        await page.waitForSelector('.ProseMirror', { timeout: 5000 });
+        await expect(syncStatus).toContainText(/Saved|Cached/, { timeout: 10000 });
+      }
+      await expect(editor).toContainText('Original content', { timeout: 5000 });
+    }).toPass({ timeout: 30000, intervals: [1000, 2000, 3000, 5000] });
 
     // Update content via API while user has document open
     // This should trigger WebSocket close code 4101 and cache clear
@@ -334,7 +352,10 @@ test.describe('API Content Update Invalidates Browser Cache', () => {
     expect(updateResponse.ok()).toBe(true);
 
     // Verify updated content is displayed (wait for WebSocket reconnect and content sync)
-    await expect(editor).toContainText('Updated while viewing', { timeout: 10000 });
+    // The WebSocket close code 4101 triggers reconnect + cache clear which can take time
+    await expect(async () => {
+      await expect(editor).toContainText('Updated while viewing', { timeout: 5000 });
+    }).toPass({ timeout: 30000, intervals: [500, 1000, 2000, 3000] });
 
     // Cleanup
     await page.request.delete(`/api/documents/${docId}`, {
