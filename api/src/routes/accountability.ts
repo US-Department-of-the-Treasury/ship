@@ -84,9 +84,14 @@ router.get('/action-items', authMiddleware, async (req: Request, res: Response) 
       return 0;
     });
 
+    const has_overdue = items.some(item => item.days_overdue > 0);
+    const has_due_today = items.some(item => item.days_overdue === 0);
+
     res.json({
       items,
       total: items.length,
+      has_overdue,
+      has_due_today,
     });
   } catch (err) {
     console.error('Get accountability action items error:', err);
