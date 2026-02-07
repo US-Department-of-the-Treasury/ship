@@ -744,4 +744,237 @@ describe('Sprints API', () => {
       expect(res.status).toBe(404)
     })
   })
+
+  describe('POST /api/weeks/:id/approve-review (with rating)', () => {
+    let adminCookie: string
+    let adminCsrfToken: string
+    let adminUserId: string
+    let approvalSprintId: string
+
+    beforeAll(async () => {
+      // Create admin user for approval tests
+      const adminEmail = `admin-${testRunId}@ship.local`
+      const adminResult = await pool.query(
+        `INSERT INTO users (email, password_hash, name)
+         VALUES ($1, 'test-hash', 'Admin User')
+         RETURNING id`,
+        [adminEmail]
+      )
+      adminUserId = adminResult.rows[0].id
+
+      // Create admin workspace membership
+      await pool.query(
+        `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+         VALUES ($1, $2, 'admin')`,
+        [testWorkspaceId, adminUserId]
+      )
+
+      // Create admin session
+      const adminSessionId = crypto.randomBytes(32).toString('hex')
+      await pool.query(
+        `INSERT INTO sessions (id, user_id, workspace_id, expires_at)
+         VALUES ($1, $2, $3, now() + interval '1 hour')`,
+        [adminSessionId, adminUserId, testWorkspaceId]
+      )
+      adminCookie = `session_id=${adminSessionId}`
+
+      // Get CSRF token for admin
+      const csrfRes = await request(app)
+        .get('/api/csrf-token')
+        .set('Cookie', adminCookie)
+      adminCsrfToken = csrfRes.body.token
+      const connectSidCookie = csrfRes.headers['set-cookie']?.[0]?.split(';')[0] || ''
+      if (connectSidCookie) {
+        adminCookie = `${adminCookie}; ${connectSidCookie}`
+      }
+
+      // Create sprint for approval tests
+      const sprintResult = await pool.query(
+        `INSERT INTO documents (workspace_id, document_type, title, visibility, created_by, properties)
+         VALUES ($1, 'sprint', 'Sprint for Approval', 'workspace', $2, $3)
+         RETURNING id`,
+        [testWorkspaceId, testUserId, JSON.stringify({ sprint_number: 50 })]
+      )
+      approvalSprintId = sprintResult.rows[0].id
+
+      // Create program association for sprint
+      await pool.query(
+        `INSERT INTO document_associations (document_id, related_id, relationship_type)
+         VALUES ($1, $2, 'program')`,
+        [approvalSprintId, testProgramId]
+      )
+    })
+
+    it('should approve review without rating (backward compatible)', async () => {
+      const res = await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-review`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+      expect(res.body.approval.state).toBe('approved')
+      expect(res.body.review_rating).toBeNull()
+    })
+
+    it('should approve review with rating', async () => {
+      const res = await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-review`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ rating: 3 })
+
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+      expect(res.body.approval.state).toBe('approved')
+      expect(res.body.review_rating).toBeDefined()
+      expect(res.body.review_rating.value).toBe(3)
+      expect(res.body.review_rating.rated_by).toBe(adminUserId)
+      expect(res.body.review_rating.rated_at).toBeDefined()
+    })
+
+    it('should accept all valid ratings (1-5)', async () => {
+      for (const rating of [1, 2, 3, 4, 5]) {
+        const res = await request(app)
+          .post(`/api/weeks/${approvalSprintId}/approve-review`)
+          .set('Cookie', adminCookie)
+          .set('x-csrf-token', adminCsrfToken)
+          .send({ rating })
+
+        expect(res.status).toBe(200)
+        expect(res.body.review_rating.value).toBe(rating)
+      }
+    })
+
+    it('should reject rating of 0', async () => {
+      const res = await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-review`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ rating: 0 })
+
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('Rating must be an integer between 1 and 5')
+    })
+
+    it('should reject rating of 6', async () => {
+      const res = await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-review`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ rating: 6 })
+
+      expect(res.status).toBe(400)
+    })
+
+    it('should reject non-integer rating', async () => {
+      const res = await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-review`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ rating: 3.5 })
+
+      expect(res.status).toBe(400)
+    })
+
+    it('should persist rating in sprint properties', async () => {
+      // Set a rating
+      await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-review`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ rating: 4 })
+
+      // Verify via direct DB query
+      const dbResult = await pool.query(
+        `SELECT properties->'review_rating' as review_rating FROM documents WHERE id = $1`,
+        [approvalSprintId]
+      )
+      expect(dbResult.rows[0].review_rating.value).toBe(4)
+    })
+
+    it('should reject non-admin non-accountable user', async () => {
+      const res = await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-review`)
+        .set('Cookie', sessionCookie)
+        .set('x-csrf-token', csrfToken)
+        .send({ rating: 3 })
+
+      expect(res.status).toBe(403)
+    })
+  })
+
+  describe('GET /api/team/reviews', () => {
+    let adminCookie2: string
+
+    beforeAll(async () => {
+      // Reuse admin from previous test or create one
+      const adminEmail2 = `admin2-${testRunId}@ship.local`
+      const adminResult = await pool.query(
+        `INSERT INTO users (email, password_hash, name)
+         VALUES ($1, 'test-hash', 'Admin User 2')
+         RETURNING id`,
+        [adminEmail2]
+      )
+      const adminUserId2 = adminResult.rows[0].id
+
+      await pool.query(
+        `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+         VALUES ($1, $2, 'admin')`,
+        [testWorkspaceId, adminUserId2]
+      )
+
+      const adminSessionId = crypto.randomBytes(32).toString('hex')
+      await pool.query(
+        `INSERT INTO sessions (id, user_id, workspace_id, expires_at)
+         VALUES ($1, $2, $3, now() + interval '1 hour')`,
+        [adminSessionId, adminUserId2, testWorkspaceId]
+      )
+      adminCookie2 = `session_id=${adminSessionId}`
+
+      const csrfRes = await request(app)
+        .get('/api/csrf-token')
+        .set('Cookie', adminCookie2)
+      const connectSidCookie = csrfRes.headers['set-cookie']?.[0]?.split(';')[0] || ''
+      if (connectSidCookie) {
+        adminCookie2 = `${adminCookie2}; ${connectSidCookie}`
+      }
+    })
+
+    it('should return reviews data for admin', async () => {
+      const res = await request(app)
+        .get('/api/team/reviews')
+        .set('Cookie', adminCookie2)
+
+      expect(res.status).toBe(200)
+      expect(res.body.people).toBeInstanceOf(Array)
+      expect(res.body.weeks).toBeInstanceOf(Array)
+      expect(res.body.reviews).toBeDefined()
+      expect(res.body.currentSprintNumber).toBeGreaterThan(0)
+    })
+
+    it('should support sprint_count parameter', async () => {
+      const res = await request(app)
+        .get('/api/team/reviews?sprint_count=3')
+        .set('Cookie', adminCookie2)
+
+      expect(res.status).toBe(200)
+      expect(res.body.weeks.length).toBeLessThanOrEqual(3)
+    })
+
+    it('should reject non-admin user', async () => {
+      const res = await request(app)
+        .get('/api/team/reviews')
+        .set('Cookie', sessionCookie)
+
+      expect(res.status).toBe(403)
+    })
+
+    it('should reject unauthenticated request', async () => {
+      const res = await request(app)
+        .get('/api/team/reviews')
+
+      expect(res.status).toBe(401)
+    })
+  })
 })
