@@ -1066,9 +1066,12 @@ async function seed() {
         const contentIdx = (i + p) % planContentPools.length;
 
         // Deterministic skip patterns for realistic gaps in past data
-        const skipPlanForPast = (i + p) % 7 === 3;     // ~14% of past plans missing
-        const skipRetroForPast = (i + p) % 6 === 2;    // ~17% of past retros missing
-        const skipPlanForCurrent = (i + p) % 3 === 0;  // ~33% of current plans not yet done
+        // Dev User (the login user) always gets complete data so action items
+        // don't conflict with the heatmap. Other users get realistic gaps.
+        const isDevUser = assignee.userId === allUsers.find((u: { name: string }) => u.name === 'Dev User')?.id;
+        const skipPlanForPast = !isDevUser && (i + p) % 7 === 3;     // ~14% of past plans missing
+        const skipRetroForPast = !isDevUser && (i + p) % 6 === 2;    // ~17% of past retros missing
+        const skipPlanForCurrent = !isDevUser && (i + p) % 3 === 0;  // ~33% of current plans not yet done
 
         // Past sprints: create plan + retro with content (some deliberately skipped)
         if (sprintOffset < 0) {
