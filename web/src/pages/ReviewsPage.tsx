@@ -116,11 +116,33 @@ function getRetroStatus(cell: ReviewCell | undefined, weekIsPast: boolean): Revi
   return 'empty';
 }
 
+// Shape of a fetched weekly plan/retro document
+interface WeeklyDoc {
+  id: string;
+  title: string;
+  content: unknown;
+  properties: Record<string, unknown>;
+  person_name?: string;
+  project_name?: string;
+}
+
+// Selected cell for the review panel
+interface SelectedCell {
+  personId: string;
+  personName: string;
+  weekNumber: number;
+  weekName: string;
+  type: 'plan' | 'retro';
+  sprintId: string;
+  cell: ReviewCell;
+}
+
 export function ReviewsPage() {
   const [data, setData] = useState<ReviewsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [collapsedPrograms, setCollapsedPrograms] = useState<Set<string>>(new Set());
+  const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
 
@@ -296,6 +318,17 @@ export function ReviewsPage() {
     }
   }, [data]);
 
+  // Handle Escape to close panel (must be before ALL early returns)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && selectedCell) {
+        setSelectedCell(null);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedCell]);
+
   function toggleProgram(programId: string | null) {
     const key = programId || '__unassigned__';
     setCollapsedPrograms(prev => {
@@ -334,7 +367,9 @@ export function ReviewsPage() {
   if (!data) return null;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full">
+      {/* Main grid area */}
+      <div className={cn('flex flex-col', selectedCell ? 'flex-1 min-w-0' : 'flex-1')}>
       {/* Legend */}
       <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs">
         <span className="text-muted">Review Status:</span>
@@ -485,11 +520,22 @@ export function ReviewsPage() {
                         {/* Plan status (left half) */}
                         <button
                           onClick={() => {
-                            if (planStatus === 'needs_review' || planStatus === 'changed') {
-                              approvePlan(row.personId!, week.number, cell.sprintId!);
+                            if (cell.hasPlan) {
+                              setSelectedCell({
+                                personId: row.personId!,
+                                personName: row.name,
+                                weekNumber: week.number,
+                                weekName: week.name,
+                                type: 'plan',
+                                sprintId: cell.sprintId!,
+                                cell,
+                              });
                             }
                           }}
-                          className="flex-1 h-full cursor-pointer transition-all hover:brightness-110 border-r border-white/20"
+                          className={cn(
+                            'flex-1 h-full cursor-pointer transition-all hover:brightness-110 border-r border-white/20',
+                            selectedCell?.personId === row.personId && selectedCell?.weekNumber === week.number && selectedCell?.type === 'plan' && 'ring-2 ring-inset ring-white/60'
+                          )}
                           style={{ backgroundColor: REVIEW_COLORS[planStatus] }}
                           title={`Plan: ${REVIEW_STATUS_TEXT[planStatus]}`}
                           aria-label={`Plan: ${REVIEW_STATUS_TEXT[planStatus]} - ${row.name}`}
@@ -497,10 +543,22 @@ export function ReviewsPage() {
                         {/* Retro status (right half) */}
                         <button
                           onClick={() => {
-                            // For now, clicking retro cells will be handled by the review panel (story 2/3)
-                            // No inline action needed for color-block cells
+                            if (cell.hasRetro) {
+                              setSelectedCell({
+                                personId: row.personId!,
+                                personName: row.name,
+                                weekNumber: week.number,
+                                weekName: week.name,
+                                type: 'retro',
+                                sprintId: cell.sprintId!,
+                                cell,
+                              });
+                            }
                           }}
-                          className="flex-1 h-full cursor-pointer transition-all hover:brightness-110"
+                          className={cn(
+                            'flex-1 h-full cursor-pointer transition-all hover:brightness-110',
+                            selectedCell?.personId === row.personId && selectedCell?.weekNumber === week.number && selectedCell?.type === 'retro' && 'ring-2 ring-inset ring-white/60'
+                          )}
                           style={{ backgroundColor: REVIEW_COLORS[retroStatus] }}
                           title={`Retro: ${REVIEW_STATUS_TEXT[retroStatus]}`}
                           aria-label={`Retro: ${REVIEW_STATUS_TEXT[retroStatus]} - ${row.name}`}
@@ -514,8 +572,285 @@ export function ReviewsPage() {
           </div>
         </div>
       </div>
+      </div>
+
+      {/* Review Panel - right side */}
+      {selectedCell && (
+        <ReviewPanel
+          selectedCell={selectedCell}
+          onClose={() => setSelectedCell(null)}
+          onApprovePlan={(personId, weekNumber, sprintId) => {
+            approvePlan(personId, weekNumber, sprintId);
+            // Update the selected cell's approval state locally
+            setSelectedCell(prev => prev ? {
+              ...prev,
+              cell: {
+                ...prev.cell,
+                planApproval: { state: 'approved', approved_by: null, approved_at: new Date().toISOString() },
+              },
+            } : null);
+          }}
+          onRateRetro={(personId, weekNumber, sprintId, rating) => {
+            rateRetro(personId, weekNumber, sprintId, rating);
+            setSelectedCell(prev => prev ? {
+              ...prev,
+              cell: {
+                ...prev.cell,
+                reviewApproval: { state: 'approved', approved_by: null, approved_at: new Date().toISOString() },
+                reviewRating: { value: rating, rated_by: '', rated_at: new Date().toISOString() },
+              },
+            } : null);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+/** Panel for reviewing plan/retro content */
+function ReviewPanel({
+  selectedCell,
+  onClose,
+  onApprovePlan,
+  onRateRetro,
+}: {
+  selectedCell: SelectedCell;
+  onClose: () => void;
+  onApprovePlan: (personId: string, weekNumber: number, sprintId: string) => void;
+  onRateRetro: (personId: string, weekNumber: number, sprintId: string, rating: number) => void;
+}) {
+  const [planDoc, setPlanDoc] = useState<WeeklyDoc | null>(null);
+  const [retroDoc, setRetroDoc] = useState<WeeklyDoc | null>(null);
+  const [loadingDocs, setLoadingDocs] = useState(true);
+  const [selectedRating, setSelectedRating] = useState<number | null>(null);
+
+  // Fetch plan/retro content when selection changes
+  useEffect(() => {
+    setLoadingDocs(true);
+    setPlanDoc(null);
+    setRetroDoc(null);
+    setSelectedRating(selectedCell.cell.reviewRating?.value ?? null);
+
+    const fetchDocs = async () => {
+      try {
+        const params = new URLSearchParams({
+          person_id: selectedCell.personId,
+          week_number: String(selectedCell.weekNumber),
+        });
+
+        // Fetch plan and retro in parallel
+        const [planRes, retroRes] = await Promise.all([
+          fetch(`${API_URL}/api/weekly-plans?${params}`, { credentials: 'include' }),
+          fetch(`${API_URL}/api/weekly-retros?${params}`, { credentials: 'include' }),
+        ]);
+
+        if (planRes.ok) {
+          const plans = await planRes.json();
+          if (plans.length > 0) setPlanDoc(plans[0]);
+        }
+        if (retroRes.ok) {
+          const retros = await retroRes.json();
+          if (retros.length > 0) setRetroDoc(retros[0]);
+        }
+      } catch (err) {
+        console.error('Failed to fetch plan/retro:', err);
+      } finally {
+        setLoadingDocs(false);
+      }
+    };
+
+    fetchDocs();
+  }, [selectedCell.personId, selectedCell.weekNumber]);
+
+  const isRetroMode = selectedCell.type === 'retro';
+  const planApprovalState = selectedCell.cell.planApproval?.state;
+  const canApprove = selectedCell.cell.hasPlan && planApprovalState !== 'approved';
+
+  return (
+    <div className="w-[400px] flex-shrink-0 border-l border-border bg-background flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div>
+          <div className="text-sm font-medium text-foreground">{selectedCell.personName}</div>
+          <div className="text-xs text-muted">{selectedCell.weekName} &middot; {isRetroMode ? 'Retro' : 'Plan'}</div>
+        </div>
+        <button
+          onClick={onClose}
+          className="rounded p-1 text-muted hover:text-foreground hover:bg-border/50"
+          aria-label="Close panel"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        {loadingDocs ? (
+          <div className="flex items-center justify-center py-12 text-muted text-sm">Loading...</div>
+        ) : isRetroMode ? (
+          /* Retro mode: side-by-side plan vs retro */
+          <div className="flex flex-col h-full">
+            {/* Plan context (dimmed) */}
+            <div className="border-b border-border">
+              <div className="px-4 py-2 text-[10px] uppercase tracking-wider text-muted bg-border/20">Plan (context)</div>
+              <div className="px-4 py-3 opacity-60">
+                {planDoc ? (
+                  <TipTapContent content={planDoc.content} />
+                ) : (
+                  <p className="text-sm text-muted italic">No plan submitted for this week</p>
+                )}
+              </div>
+            </div>
+            {/* Retro (primary) */}
+            <div className="flex-1">
+              <div className="px-4 py-2 text-[10px] uppercase tracking-wider text-muted bg-border/20">Retro</div>
+              <div className="px-4 py-3">
+                {retroDoc ? (
+                  <TipTapContent content={retroDoc.content} />
+                ) : (
+                  <p className="text-sm text-muted italic">No retro submitted for this week</p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Plan mode: show plan content */
+          <div className="px-4 py-3">
+            {planDoc ? (
+              <TipTapContent content={planDoc.content} />
+            ) : (
+              <p className="text-sm text-muted italic">No plan submitted for this week</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Action bar */}
+      <div className="border-t border-border px-4 py-3">
+        {isRetroMode ? (
+          /* Rating controls for retro */
+          <div>
+            <div className="text-xs text-muted mb-2">Performance Rating</div>
+            <div className="flex gap-1 mb-3">
+              {OPM_RATINGS.map(r => (
+                <button
+                  key={r.value}
+                  onClick={() => setSelectedRating(r.value)}
+                  className={cn(
+                    'flex-1 flex flex-col items-center gap-0.5 rounded py-1.5 text-xs transition-all',
+                    selectedRating === r.value
+                      ? 'bg-accent/20 ring-1 ring-accent'
+                      : 'bg-border/30 hover:bg-border/50'
+                  )}
+                  title={r.label}
+                >
+                  <span className={cn('font-bold', r.color)}>{r.value}</span>
+                  <span className="text-[9px] text-muted leading-tight">{r.label.split(' ')[0]}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                if (selectedRating) {
+                  onRateRetro(selectedCell.personId, selectedCell.weekNumber, selectedCell.sprintId, selectedRating);
+                }
+              }}
+              disabled={!selectedRating || !retroDoc}
+              className={cn(
+                'w-full rounded py-2 text-sm font-medium transition-colors',
+                selectedRating && retroDoc
+                  ? 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+                  : 'bg-border/30 text-muted cursor-not-allowed'
+              )}
+            >
+              {selectedCell.cell.reviewRating ? 'Update Rating' : 'Rate & Approve'}
+            </button>
+          </div>
+        ) : (
+          /* Approve button for plan */
+          <button
+            onClick={() => onApprovePlan(selectedCell.personId, selectedCell.weekNumber, selectedCell.sprintId)}
+            disabled={!canApprove}
+            className={cn(
+              'w-full rounded py-2 text-sm font-medium transition-colors',
+              planApprovalState === 'approved'
+                ? 'bg-green-600/20 text-green-400 cursor-default'
+                : canApprove
+                  ? planApprovalState === 'changed_since_approved'
+                    ? 'bg-orange-600 text-white hover:bg-orange-500 cursor-pointer'
+                    : 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+                  : 'bg-border/30 text-muted cursor-not-allowed'
+            )}
+          >
+            {planApprovalState === 'approved'
+              ? 'Approved'
+              : planApprovalState === 'changed_since_approved'
+                ? 'Re-approve Plan'
+                : 'Approve Plan'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Renders TipTap JSON content as simple HTML */
+function TipTapContent({ content }: { content: unknown }) {
+  if (!content || typeof content !== 'object') {
+    return <p className="text-sm text-muted italic">Empty</p>;
+  }
+
+  const doc = content as { type?: string; content?: unknown[] };
+  if (!doc.content || !Array.isArray(doc.content)) {
+    return <p className="text-sm text-muted italic">Empty</p>;
+  }
+
+  return (
+    <div className="text-sm text-foreground space-y-2">
+      {doc.content.map((node, i) => (
+        <TipTapNode key={i} node={node} />
+      ))}
+    </div>
+  );
+}
+
+function TipTapNode({ node }: { node: unknown }) {
+  if (!node || typeof node !== 'object') return null;
+  const n = node as { type?: string; content?: unknown[]; text?: string; attrs?: Record<string, unknown>; marks?: Array<{ type: string }> };
+
+  if (n.type === 'text') {
+    let text = <>{n.text}</>;
+    if (n.marks) {
+      for (const mark of n.marks) {
+        if (mark.type === 'bold') text = <strong>{text}</strong>;
+        if (mark.type === 'italic') text = <em>{text}</em>;
+      }
+    }
+    return text;
+  }
+
+  const children = n.content?.map((child, i) => <TipTapNode key={i} node={child} />) ?? null;
+
+  switch (n.type) {
+    case 'heading': {
+      const level = (n.attrs?.level as number) || 2;
+      if (level === 1) return <h3 className="text-base font-semibold text-foreground">{children}</h3>;
+      if (level === 2) return <h4 className="text-sm font-semibold text-foreground">{children}</h4>;
+      return <h5 className="text-sm font-medium text-foreground">{children}</h5>;
+    }
+    case 'paragraph':
+      return <p className="text-sm leading-relaxed">{children || '\u00A0'}</p>;
+    case 'bulletList':
+      return <ul className="list-disc pl-5 space-y-1">{children}</ul>;
+    case 'listItem':
+      return <li className="text-sm">{children}</li>;
+    case 'blockquote':
+      return <blockquote className="border-l-2 border-accent/50 pl-3 text-sm italic text-muted">{children}</blockquote>;
+    default:
+      return <div>{children}</div>;
+  }
 }
 
 function formatDateRange(startDate: string, endDate: string): string {
