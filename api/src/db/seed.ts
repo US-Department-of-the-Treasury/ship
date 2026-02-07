@@ -460,7 +460,12 @@ async function seed() {
         const team = programTeams[sprint.programId]!;
         const otherIdx = team.find(idx => idx !== sprint.ownerIdx) ?? team[0]!;
         const otherUser = allUsers[otherIdx]!;
-        const sprintProperties = {
+        // Set sprint status based on timing so action items don't fire for past sprints
+        let sprintStatus: string | undefined;
+        if (sprintOffset < 0) sprintStatus = 'completed';
+        else if (sprintOffset === 0) sprintStatus = 'active';
+
+        const sprintProperties: Record<string, unknown> = {
           sprint_number: sprint.number,
           owner_id: owner.id,
           project_id: sprint.projectId, // Required for team allocation
@@ -468,6 +473,7 @@ async function seed() {
           plan: sprintPlans[sprint.number % sprintPlans.length],
           success_criteria: sprintSuccessCriteria[sprint.number % sprintSuccessCriteria.length],
           confidence: baseConfidence + (Math.random() * 10 - 5), // Add some variance
+          ...(sprintStatus && { status: sprintStatus }),
         };
         // Create sprint document without legacy project_id and program_id columns
         const sprintResult = await pool.query(
@@ -911,12 +917,13 @@ async function seed() {
       console.log('ℹ️  All standups already exist');
     }
 
-    // Create sample sprint reviews for completed sprints
+    // Create sprint reviews for ALL completed sprints (not just recent ones)
+    // This prevents "Complete review" action items for past sprints
     let sprintReviewsCreated = 0;
 
-    for (const sprint of shipCoreSprints) {
-      // Only add reviews to completed sprints (before current)
-      if (sprint.number < currentSprintNumber && sprint.number >= currentSprintNumber - 2) {
+    const allPastSprints = sprints.filter(s => s.number < currentSprintNumber);
+    for (const sprint of allPastSprints) {
+      {
         // Check if review exists (via junction table)
         const existingReview = await pool.query(
           `SELECT d.id FROM documents d
