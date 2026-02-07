@@ -439,8 +439,3 @@ export type {
   SprintPanelProps,
 } from '@/components/sidebars/PropertiesPanel';
 
-// Legacy re-exports for backwards compatibility (deprecated - use PropertiesPanel)
-export { WikiSidebar } from '@/components/sidebars/WikiSidebar';
-export { IssueSidebar } from '@/components/sidebars/IssueSidebar';
-export { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
-export { WeekSidebar } from '@/components/sidebars/WeekSidebar';

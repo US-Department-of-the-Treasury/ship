@@ -105,3 +105,6 @@ vendor/
 .pr-checklist.json
 .dev-ports
 .claude/settings.local.json
+
+# Vite PWA dev artifacts
+web/dev-dist/
