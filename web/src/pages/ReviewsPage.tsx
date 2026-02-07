@@ -1,7 +1,19 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { cn } from '@/lib/cn';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+// CSRF token cache
+let csrfToken: string | null = null;
+
+async function getCsrfToken(): Promise<string> {
+  if (!csrfToken) {
+    const res = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
+    const data = await res.json();
+    csrfToken = data.token;
+  }
+  return csrfToken!;
+}
 
 // OPM 5-level performance rating scale
 const OPM_RATINGS = [
@@ -32,10 +44,23 @@ interface ReviewPerson {
   programColor: string | null;
 }
 
+interface ApprovalInfo {
+  state: string;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  approved_version_id?: number | null;
+}
+
+interface RatingInfo {
+  value: number;
+  rated_by?: string;
+  rated_at?: string;
+}
+
 interface ReviewCell {
-  planApproval: { state: string; approved_by: string | null; approved_at: string | null } | null;
-  reviewApproval: { state: string } | null;
-  reviewRating: { value: number; rated_by: string; rated_at: string } | null;
+  planApproval: ApprovalInfo | null;
+  reviewApproval: ApprovalInfo | null;
+  reviewRating: RatingInfo | null;
   hasPlan: boolean;
   hasRetro: boolean;
   sprintId: string | null;
@@ -66,6 +91,68 @@ export function ReviewsPage() {
   useEffect(() => {
     fetchReviews();
   }, []);
+
+  // Approve a plan optimistically
+  const approvePlan = useCallback(async (personId: string, weekNumber: number, sprintId: string) => {
+    if (!data) return;
+
+    // Optimistic update
+    setData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, reviews: { ...prev.reviews } };
+      updated.reviews[personId] = { ...updated.reviews[personId] };
+      updated.reviews[personId][weekNumber] = {
+        ...updated.reviews[personId][weekNumber],
+        planApproval: { state: 'approved', approved_by: null, approved_at: new Date().toISOString() },
+      };
+      return updated;
+    });
+
+    try {
+      const token = await getCsrfToken();
+      const res = await fetch(`${API_URL}/api/weeks/${sprintId}/approve-plan`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+      });
+      if (!res.ok) throw new Error('Failed to approve plan');
+    } catch {
+      // Revert on error
+      fetchReviews();
+    }
+  }, [data]);
+
+  // Rate a retro (also approves it)
+  const rateRetro = useCallback(async (personId: string, weekNumber: number, sprintId: string, rating: number) => {
+    if (!data) return;
+
+    // Optimistic update
+    setData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, reviews: { ...prev.reviews } };
+      updated.reviews[personId] = { ...updated.reviews[personId] };
+      updated.reviews[personId][weekNumber] = {
+        ...updated.reviews[personId][weekNumber],
+        reviewApproval: { state: 'approved', approved_by: null, approved_at: new Date().toISOString() },
+        reviewRating: { value: rating, rated_by: '', rated_at: new Date().toISOString() },
+      };
+      return updated;
+    });
+
+    try {
+      const token = await getCsrfToken();
+      const res = await fetch(`${API_URL}/api/weeks/${sprintId}/approve-review`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+        body: JSON.stringify({ rating }),
+      });
+      if (!res.ok) throw new Error('Failed to rate retro');
+    } catch {
+      // Revert on error
+      fetchReviews();
+    }
+  }, [data]);
 
   async function fetchReviews() {
     try {
@@ -267,6 +354,8 @@ export function ReviewsPage() {
                                 key={week.number}
                                 cell={cell}
                                 isCurrent={week.isCurrent}
+                                onApprovePlan={cell?.sprintId ? () => approvePlan(person.personId, week.number, cell.sprintId!) : undefined}
+                                onRateRetro={cell?.sprintId ? (rating: number) => rateRetro(person.personId, week.number, cell.sprintId!, rating) : undefined}
                               />
                             );
                           })}
@@ -284,7 +373,19 @@ export function ReviewsPage() {
   );
 }
 
-function ReviewCellView({ cell, isCurrent }: { cell?: ReviewCell; isCurrent: boolean }) {
+function ReviewCellView({
+  cell,
+  isCurrent,
+  onApprovePlan,
+  onRateRetro,
+}: {
+  cell?: ReviewCell;
+  isCurrent: boolean;
+  onApprovePlan?: () => void;
+  onRateRetro?: (rating: number) => void;
+}) {
+  const [showRatingDropdown, setShowRatingDropdown] = useState(false);
+
   if (!cell) {
     return (
       <div className={cn('flex h-10 w-28 flex-shrink-0 items-center justify-center gap-1.5 border-r border-border/50 px-1', isCurrent && 'bg-accent/5')}>
@@ -297,15 +398,36 @@ function ReviewCellView({ cell, isCurrent }: { cell?: ReviewCell; isCurrent: boo
   const ratingValue = cell.reviewRating?.value;
   const ratingInfo = ratingValue ? getRatingInfo(ratingValue) : null;
 
+  // Plan is approvable if it has content and is not yet approved (or was changed since approved)
+  const canApprovePlan = cell.hasPlan && planState !== 'approved' && onApprovePlan;
+  const canReApprovePlan = planState === 'changed_since_approved' && onApprovePlan;
+
+  // Retro is ratable if it has content and has a sprint ID
+  const canRateRetro = cell.hasRetro && onRateRetro;
+
   return (
-    <div className={cn('flex h-10 w-28 flex-shrink-0 items-center justify-center gap-1.5 border-r border-border/50 px-1', isCurrent && 'bg-accent/5')}>
+    <div className={cn('relative flex h-10 w-28 flex-shrink-0 items-center justify-center gap-1.5 border-r border-border/50 px-1', isCurrent && 'bg-accent/5')}>
       {/* Plan approval indicator */}
       <div className="flex flex-col items-center" title={getPlanTooltip(cell)}>
         <span className="text-[8px] uppercase text-muted/60 leading-none mb-0.5">Plan</span>
         {planState === 'approved' ? (
           <span className="text-green-500 text-xs">✓</span>
-        ) : planState === 'changed_since_approved' ? (
-          <span className="text-orange-500 text-xs">!</span>
+        ) : canReApprovePlan ? (
+          <button
+            onClick={onApprovePlan}
+            className="text-orange-500 text-xs hover:text-orange-400 cursor-pointer"
+            title="Re-approve plan"
+          >
+            !
+          </button>
+        ) : canApprovePlan ? (
+          <button
+            onClick={onApprovePlan}
+            className="text-accent text-xs hover:text-accent/80 cursor-pointer"
+            title="Approve plan"
+          >
+            ○
+          </button>
         ) : cell.hasPlan ? (
           <span className="text-muted/40 text-xs">○</span>
         ) : (
@@ -320,13 +442,53 @@ function ReviewCellView({ cell, isCurrent }: { cell?: ReviewCell; isCurrent: boo
       <div className="flex flex-col items-center" title={getRetroTooltip(cell)}>
         <span className="text-[8px] uppercase text-muted/60 leading-none mb-0.5">Retro</span>
         {ratingInfo ? (
-          <span className={cn('text-xs font-medium', ratingInfo.color)}>{ratingValue}</span>
+          <button
+            onClick={() => canRateRetro && setShowRatingDropdown(!showRatingDropdown)}
+            className={cn('text-xs font-medium cursor-pointer hover:opacity-80', ratingInfo.color)}
+            title={`${ratingValue} - ${ratingInfo.label} (click to change)`}
+          >
+            {ratingValue}
+          </button>
+        ) : canRateRetro ? (
+          <button
+            onClick={() => setShowRatingDropdown(!showRatingDropdown)}
+            className="text-accent text-xs hover:text-accent/80 cursor-pointer"
+            title="Rate retro"
+          >
+            ○
+          </button>
         ) : cell.hasRetro ? (
           <span className="text-muted/40 text-xs">○</span>
         ) : (
           <span className="text-muted/20 text-xs">·</span>
         )}
       </div>
+
+      {/* Rating dropdown */}
+      {showRatingDropdown && onRateRetro && (
+        <>
+          {/* Backdrop to close dropdown */}
+          <div className="fixed inset-0 z-40" onClick={() => setShowRatingDropdown(false)} />
+          <div className="absolute top-full left-1/2 z-50 mt-1 -translate-x-1/2 rounded-md border border-border bg-background shadow-lg">
+            {OPM_RATINGS.map(r => (
+              <button
+                key={r.value}
+                onClick={() => {
+                  onRateRetro(r.value);
+                  setShowRatingDropdown(false);
+                }}
+                className={cn(
+                  'flex w-48 items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-border/30 first:rounded-t-md last:rounded-b-md',
+                  ratingValue === r.value && 'bg-border/20'
+                )}
+              >
+                <span className={cn('font-medium', r.color)}>{r.value}</span>
+                <span className="text-foreground">{r.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
