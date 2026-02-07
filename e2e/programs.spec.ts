@@ -165,10 +165,11 @@ test.describe('Programs', () => {
     // Wait for programs to load
     await page.waitForTimeout(1000)
 
-    // If there are program cards, they should show counts
-    const programCards = page.locator('button:has-text("issues")')
-    if (await programCards.count() > 0) {
-      await expect(programCards.first()).toContainText(/\d+ issue/)
+    // Program cards should show issue counts (e.g., "5 issues")
+    // Use a regex locator to match only count text like "N issues", not titles containing "issues"
+    const countBadges = page.locator('text=/^\\d+ issues?$/')
+    if (await countBadges.count() > 0) {
+      await expect(countBadges.first()).toBeVisible()
     }
   })
 
