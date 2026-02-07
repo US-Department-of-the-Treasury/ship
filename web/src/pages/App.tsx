@@ -1618,7 +1618,8 @@ function TeamSidebar() {
   const isViewingPerson = location.pathname.startsWith('/team/') &&
     location.pathname !== '/team/allocation' &&
     location.pathname !== '/team/directory' &&
-    location.pathname !== '/team/status';
+    location.pathname !== '/team/status' &&
+    location.pathname !== '/team/reviews';
 
   const isAllocation = location.pathname === '/team/allocation' || location.pathname === '/team';
   // Directory is active when on /team/directory OR viewing a person document
@@ -1626,6 +1627,7 @@ function TeamSidebar() {
     isViewingPerson ||
     (location.pathname.startsWith('/documents/') && currentDocumentType === 'person');
   const isStatusOverview = location.pathname === '/team/status';
+  const isReviews = location.pathname === '/team/reviews';
 
   // Fetch people for the sidebar list when viewing a person
   const { data: people = [] } = useTeamMembersQuery();
@@ -1677,6 +1679,20 @@ function TeamSidebar() {
           >
             <ActivityIcon />
             <span>Status Overview</span>
+          </button>
+        </li>
+        <li>
+          <button
+            onClick={() => navigate('/team/reviews')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              isReviews
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <ReviewsIcon />
+            <span>Reviews</span>
           </button>
         </li>
       </ul>
@@ -1736,6 +1752,14 @@ function ActivityIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  );
+}
+
+function ReviewsIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
     </svg>
   );
 }

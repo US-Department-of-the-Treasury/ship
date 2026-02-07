@@ -36,6 +36,7 @@ import { ConvertedDocumentsPage } from '@/pages/ConvertedDocuments';
 import { UnifiedDocumentPage } from '@/pages/UnifiedDocumentPage';
 import { MyWeekPage } from '@/pages/MyWeekPage';
 import { StatusOverviewPage } from '@/pages/StatusOverviewPage';
+import { ReviewsPage } from '@/pages/ReviewsPage';
 
 import { InviteAcceptPage } from '@/pages/InviteAccept';
 import { SetupPage } from '@/pages/Setup';
@@ -234,6 +235,7 @@ function AppRoutes() {
         <Route path="team/allocation" element={<TeamModePage />} />
         <Route path="team/directory" element={<TeamDirectoryPage />} />
         <Route path="team/status" element={<StatusOverviewPage />} />
+        <Route path="team/reviews" element={<ReviewsPage />} />
         {/* Person profile stays in Teams context - no redirect to /documents */}
         <Route path="team/:id" element={<PersonEditorPage />} />
         <Route path="feedback/:id" element={<FeedbackEditorPage />} />
