@@ -633,11 +633,20 @@ registry.registerPath({
   path: '/weeks/{id}/approve-review',
   tags: ['Weeks'],
   summary: 'Approve sprint review',
-  description: 'Mark the sprint review as approved by the accountable person.',
+  description: 'Mark the sprint review as approved by the accountable person. Optionally include a performance rating (1-5 OPM scale).',
   request: {
     params: z.object({
       id: UuidSchema,
     }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            rating: z.number().int().min(1).max(5).optional().describe('Performance rating (1=Unacceptable, 2=Minimally Satisfactory, 3=Fully Successful, 4=Exceeds Expectations, 5=Outstanding)'),
+          }),
+        },
+      },
+    },
   },
   responses: {
     200: {

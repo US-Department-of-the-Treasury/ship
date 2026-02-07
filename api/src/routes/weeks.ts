@@ -2582,12 +2582,22 @@ router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Respo
   }
 });
 
-// POST /api/weeks/:id/approve-review - Approve sprint review
+// POST /api/weeks/:id/approve-review - Approve sprint review (with optional performance rating)
 router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const { rating } = req.body || {};
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
+
+    // Validate rating if provided (OPM 5-level scale: 1-5)
+    if (rating !== undefined && rating !== null) {
+      const ratingNum = Number(rating);
+      if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+        res.status(400).json({ error: 'Rating must be an integer between 1 and 5' });
+        return;
+      }
+    }
 
     // Get visibility context for admin check
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -2632,9 +2642,9 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
       versionId = historyEntry?.id || null;
     }
 
-    // Update sprint properties with review approval
+    // Update sprint properties with review approval and optional rating
     const currentProps = sprint.properties || {};
-    const newProps = {
+    const newProps: Record<string, unknown> = {
       ...currentProps,
       review_approval: {
         state: 'approved',
@@ -2643,6 +2653,15 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
         approved_version_id: versionId,
       },
     };
+
+    // Add performance rating if provided
+    if (rating !== undefined && rating !== null) {
+      newProps.review_rating = {
+        value: Number(rating),
+        rated_by: userId,
+        rated_at: new Date().toISOString(),
+      };
+    }
 
     await pool.query(
       `UPDATE documents SET properties = $1, updated_at = now()
@@ -2653,6 +2672,7 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
     res.json({
       success: true,
       approval: newProps.review_approval,
+      review_rating: newProps.review_rating || null,
     });
   } catch (err) {
     console.error('Approve sprint review error:', err);
