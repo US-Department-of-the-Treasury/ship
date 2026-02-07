@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
+import { useReviewQueue } from '@/contexts/ReviewQueueContext';
+import type { QueueItem } from '@/contexts/ReviewQueueContext';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -149,6 +151,7 @@ interface BatchMode {
 
 export function ReviewsPage() {
   const navigate = useNavigate();
+  const reviewQueue = useReviewQueue();
   const [data, setData] = useState<ReviewsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -396,12 +399,31 @@ export function ReviewsPage() {
     return queue;
   }, [data, programGroups]);
 
-  // Start batch mode
-  function startBatchMode(type: 'plans' | 'retros') {
-    const queue = buildBatchQueue(type);
-    if (queue.length === 0) return;
-    setBatchMode({ type, queue, currentIndex: 0 });
-    setSelectedCell(queue[0]!);
+  // Start batch review via queue context (navigates to documents)
+  function startBatchReview(type: 'plans' | 'retros') {
+    if (!reviewQueue || !data) return;
+    const selectedCells = buildBatchQueue(type);
+    if (selectedCells.length === 0) return;
+
+    const queueItems: QueueItem[] = selectedCells
+      .map(sc => {
+        const docId = sc.type === 'plan' ? sc.cell.planDocId : sc.cell.retroDocId;
+        if (!docId) return null;
+        return {
+          personId: sc.personId,
+          personName: sc.personName,
+          weekNumber: sc.weekNumber,
+          weekName: sc.weekName,
+          type: sc.type,
+          sprintId: sc.sprintId,
+          docId,
+        };
+      })
+      .filter((item): item is QueueItem => item !== null);
+
+    if (queueItems.length > 0) {
+      reviewQueue.start(queueItems);
+    }
   }
 
   // Advance to next item in batch mode
@@ -506,7 +528,7 @@ export function ReviewsPage() {
         {/* Batch review buttons */}
         {pendingCounts.plans > 0 && (
           <button
-            onClick={() => startBatchMode('plans')}
+            onClick={() => startBatchReview('plans')}
             className="rounded bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-500 transition-colors"
           >
             Review Plans ({pendingCounts.plans})
@@ -514,7 +536,7 @@ export function ReviewsPage() {
         )}
         {pendingCounts.retros > 0 && (
           <button
-            onClick={() => startBatchMode('retros')}
+            onClick={() => startBatchReview('retros')}
             className="rounded bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-500 transition-colors"
           >
             Rate Retros ({pendingCounts.retros})

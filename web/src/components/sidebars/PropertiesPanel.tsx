@@ -17,6 +17,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
 import { apiGet, apiPost } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { useReviewQueue } from '@/contexts/ReviewQueueContext';
 import type { Person } from '@/components/PersonCombobox';
 import type { BelongsTo, ApprovalTracking } from '@ship/shared';
 
@@ -236,6 +237,8 @@ function WeeklyDocumentSidebar({
   const projectId = docProperties.project_id as string | undefined;
 
   const isRetro = document.document_type === 'weekly_retro';
+  const reviewQueue = useReviewQueue();
+  const queueActive = reviewQueue?.state.active ?? false;
 
   // Review mode state
   const [approvalState, setApprovalState] = useState<string | null>(null);
@@ -300,6 +303,7 @@ function WeeklyDocumentSidebar({
       const res = await apiPost(`/api/weeks/${sprintId}/approve-plan`);
       if (res.ok) {
         setApprovalState('approved');
+        if (queueActive) reviewQueue?.advance();
       }
     } finally {
       setApproving(false);
@@ -314,6 +318,7 @@ function WeeklyDocumentSidebar({
       if (res.ok) {
         setApprovalState('approved');
         setCurrentRating(selectedRating);
+        if (queueActive) reviewQueue?.advance();
       }
     } finally {
       setApproving(false);
@@ -331,6 +336,31 @@ function WeeklyDocumentSidebar({
           <p className="text-sm text-muted mt-1">Week {weekNumber}</p>
         )}
       </div>
+
+      {/* Queue progress + navigation */}
+      {isReviewMode && queueActive && reviewQueue && (
+        <div className="border-b border-border pb-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="rounded bg-accent/20 px-2 py-0.5 text-xs font-medium text-accent">
+              {reviewQueue.state.currentIndex + 1} of {reviewQueue.state.queue.length}
+            </span>
+            <button
+              onClick={reviewQueue.exit}
+              className="text-xs text-muted hover:text-foreground transition-colors"
+            >
+              Exit Review
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={reviewQueue.skip}
+              className="flex-1 rounded border border-border py-1.5 text-xs text-muted hover:text-foreground hover:bg-border/50 transition-colors"
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Review mode controls */}
       {isReviewMode && sprintId && (
