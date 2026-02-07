@@ -4,8 +4,7 @@ import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments } from '@/contexts/DocumentsContext';
 import { useAutoSave } from '@/hooks/useAutoSave';
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
+import { apiGet, apiPatch, apiDelete } from '@/lib/api';
 
 interface PersonDocument {
   id: string;
@@ -61,9 +60,7 @@ export function PersonEditorPage() {
     async function fetchPerson() {
       if (!id) return;
       try {
-        const response = await fetch(`${API_URL}/api/documents/${id}`, {
-          credentials: 'include',
-        });
+        const response = await apiGet(`/api/documents/${id}`);
         if (response.ok) {
           const data = await response.json();
           if (data.document_type === 'person') {
@@ -90,9 +87,7 @@ export function PersonEditorPage() {
     async function fetchSprintMetrics() {
       if (!id) return;
       try {
-        const response = await fetch(`${API_URL}/api/team/people/${id}/sprint-metrics`, {
-          credentials: 'include',
-        });
+        const response = await apiGet(`/api/team/people/${id}/sprint-metrics`);
         if (response.ok) {
           const data = await response.json();
           setSprintMetrics(data);
@@ -113,12 +108,7 @@ export function PersonEditorPage() {
     onSave: async (newTitle: string) => {
       if (!id) return;
       const title = newTitle || 'Untitled';
-      await fetch(`${API_URL}/api/documents/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title }),
-      });
+      await apiPatch(`/api/documents/${id}`, { title });
     },
   });
 
@@ -126,10 +116,7 @@ export function PersonEditorPage() {
     if (!id || !confirm('Delete this person? This cannot be undone.')) return;
 
     try {
-      const response = await fetch(`${API_URL}/api/documents/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
+      const response = await apiDelete(`/api/documents/${id}`);
       if (response.ok) {
         navigate('/team/directory');
       }
