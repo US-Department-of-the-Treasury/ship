@@ -17,6 +17,12 @@ interface SprintOwner {
   email: string;
 }
 
+interface ReviewRating {
+  value: number;
+  rated_by: string;
+  rated_at: string;
+}
+
 interface Sprint {
   id: string;
   title?: string;  // Used in unified document model
@@ -32,11 +38,22 @@ interface Sprint {
   // Approval tracking
   plan_approval?: ApprovalTracking | null;
   review_approval?: ApprovalTracking | null;
+  // Performance rating (OPM 5-level scale)
+  review_rating?: ReviewRating | null;
   // For RACI - who can approve
   accountable_id?: string | null;
   // Whether a review exists
   has_review?: boolean;
 }
+
+// OPM 5-level performance rating labels
+const OPM_RATING_LABELS: Record<number, { label: string; color: string }> = {
+  5: { label: 'Outstanding', color: 'text-green-500' },
+  4: { label: 'Exceeds Expectations', color: 'text-blue-500' },
+  3: { label: 'Fully Successful', color: 'text-foreground' },
+  2: { label: 'Minimally Satisfactory', color: 'text-orange-500' },
+  1: { label: 'Unacceptable', color: 'text-red-500' },
+};
 
 interface Person {
   id: string;
@@ -185,6 +202,20 @@ export function WeekSidebar({
             approverName={sprint.review_approval?.approved_by ? userNames[sprint.review_approval.approved_by] : undefined}
             onApproved={onApprovalUpdate}
           />
+        </PropertyRow>
+      )}
+
+      {/* Performance Rating - show when a rating has been given */}
+      {sprint.review_rating && sprint.review_rating.value && (
+        <PropertyRow label="Performance Rating">
+          <div className="flex items-center gap-2 rounded bg-border/30 px-2 py-1.5">
+            <span className={`text-sm font-medium ${OPM_RATING_LABELS[sprint.review_rating.value]?.color || 'text-foreground'}`}>
+              {sprint.review_rating.value}
+            </span>
+            <span className="text-sm text-muted">
+              – {OPM_RATING_LABELS[sprint.review_rating.value]?.label || 'Unknown'}
+            </span>
+          </div>
         </PropertyRow>
       )}
 
