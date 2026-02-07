@@ -4,8 +4,9 @@
  * This component consolidates the 4 type-specific sidebars into a single entry point.
  * It adapts based on document_type while maintaining the same rendering patterns.
  */
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
@@ -14,7 +15,8 @@ import { ProgramSidebar } from '@/components/sidebars/ProgramSidebar';
 import { ContentHistoryPanel } from '@/components/ContentHistoryPanel';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
-import { apiGet } from '@/lib/api';
+import { apiGet, apiPost } from '@/lib/api';
+import { cn } from '@/lib/cn';
 import type { Person } from '@/components/PersonCombobox';
 import type { BelongsTo, ApprovalTracking } from '@ship/shared';
 
@@ -205,19 +207,41 @@ interface PropertiesPanelProps {
   highlightedFields?: string[];
 }
 
+// OPM 5-level performance rating scale
+const OPM_RATINGS = [
+  { value: 5, label: 'Outstanding', color: 'text-green-500' },
+  { value: 4, label: 'Exceeds Expectations', color: 'text-blue-500' },
+  { value: 3, label: 'Fully Successful', color: 'text-muted' },
+  { value: 2, label: 'Minimally Satisfactory', color: 'text-orange-500' },
+  { value: 1, label: 'Unacceptable', color: 'text-red-500' },
+] as const;
+
 /**
  * WeeklyDocumentSidebar - Renders sidebar for weekly_plan/weekly_retro documents
- * with human-readable names instead of UUIDs
+ * with human-readable names instead of UUIDs.
+ * In review mode (?review=true&sprintId=X), shows approve/rate controls.
  */
 function WeeklyDocumentSidebar({
   document,
 }: {
   document: WeeklyPlanDocument | WeeklyRetroDocument;
 }) {
+  const [searchParams] = useSearchParams();
+  const isReviewMode = searchParams.get('review') === 'true';
+  const sprintId = searchParams.get('sprintId');
+
   const docProperties = document.properties || {};
   const weekNumber = docProperties.week_number as number | undefined;
   const personId = docProperties.person_id as string | undefined;
   const projectId = docProperties.project_id as string | undefined;
+
+  const isRetro = document.document_type === 'weekly_retro';
+
+  // Review mode state
+  const [approvalState, setApprovalState] = useState<string | null>(null);
+  const [selectedRating, setSelectedRating] = useState<number | null>(null);
+  const [currentRating, setCurrentRating] = useState<number | null>(null);
+  const [approving, setApproving] = useState(false);
 
   // Fetch person name
   const { data: personDoc } = useQuery<{ title: string }>({
@@ -241,20 +265,136 @@ function WeeklyDocumentSidebar({
     enabled: !!projectId,
   });
 
+  // Fetch sprint approval state when in review mode
+  useQuery<{ properties?: Record<string, unknown> }>({
+    queryKey: ['document', sprintId, 'review-state'],
+    queryFn: async () => {
+      const res = await apiGet(`/api/documents/${sprintId}`);
+      if (!res.ok) throw new Error('Failed to fetch sprint');
+      const data = await res.json();
+      const props = data.properties || {};
+      if (isRetro) {
+        const reviewApproval = props.review_approval as { state?: string } | null;
+        const reviewRating = props.review_rating as { value?: number } | null;
+        setApprovalState(reviewApproval?.state || null);
+        if (reviewRating?.value) {
+          setCurrentRating(reviewRating.value);
+          setSelectedRating(reviewRating.value);
+        }
+      } else {
+        const planApproval = props.plan_approval as { state?: string } | null;
+        setApprovalState(planApproval?.state || null);
+      }
+      return data;
+    },
+    enabled: isReviewMode && !!sprintId,
+  });
+
   const personName = personDoc?.title || (personId ? `${personId.substring(0, 8)}...` : null);
   const projectName = projectDoc?.title || (projectId ? `${projectId.substring(0, 8)}...` : null);
+
+  async function handleApprovePlan() {
+    if (!sprintId || approving) return;
+    setApproving(true);
+    try {
+      const res = await apiPost(`/api/weeks/${sprintId}/approve-plan`);
+      if (res.ok) {
+        setApprovalState('approved');
+      }
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleRateRetro() {
+    if (!sprintId || !selectedRating || approving) return;
+    setApproving(true);
+    try {
+      const res = await apiPost(`/api/weeks/${sprintId}/approve-review`, { rating: selectedRating });
+      if (res.ok) {
+        setApprovalState('approved');
+        setCurrentRating(selectedRating);
+      }
+    } finally {
+      setApproving(false);
+    }
+  }
 
   return (
     <div className="space-y-4 p-4">
       {/* Header */}
       <div className="border-b border-border pb-3">
         <h3 className="text-sm font-medium text-foreground">
-          {document.document_type === 'weekly_plan' ? 'Weekly Plan' : 'Weekly Retro'}
+          {isRetro ? 'Weekly Retro' : 'Weekly Plan'}
         </h3>
         {weekNumber && (
           <p className="text-sm text-muted mt-1">Week {weekNumber}</p>
         )}
       </div>
+
+      {/* Review mode controls */}
+      {isReviewMode && sprintId && (
+        <div className="border-b border-border pb-4">
+          {isRetro ? (
+            /* Rating controls for retro */
+            <div>
+              <label className="text-xs font-medium text-muted mb-2 block">Performance Rating</label>
+              <div className="flex gap-1 mb-3">
+                {OPM_RATINGS.map(r => (
+                  <button
+                    key={r.value}
+                    onClick={() => setSelectedRating(r.value)}
+                    className={cn(
+                      'flex-1 flex flex-col items-center gap-0.5 rounded py-1.5 text-xs transition-all',
+                      selectedRating === r.value
+                        ? 'bg-accent/20 ring-1 ring-accent'
+                        : 'bg-border/30 hover:bg-border/50'
+                    )}
+                    title={r.label}
+                  >
+                    <span className={cn('font-bold', r.color)}>{r.value}</span>
+                    <span className="text-[9px] text-muted leading-tight">{r.label.split(' ')[0]}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={handleRateRetro}
+                disabled={!selectedRating || approving}
+                className={cn(
+                  'w-full rounded py-2 text-sm font-medium transition-colors',
+                  approvalState === 'approved' && currentRating
+                    ? 'bg-green-600/20 text-green-400'
+                    : selectedRating
+                      ? 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+                      : 'bg-border/30 text-muted cursor-not-allowed'
+                )}
+              >
+                {approvalState === 'approved' && currentRating ? 'Rated & Approved' : currentRating ? 'Update Rating' : 'Rate & Approve'}
+              </button>
+            </div>
+          ) : (
+            /* Approve button for plan */
+            <button
+              onClick={handleApprovePlan}
+              disabled={approvalState === 'approved' || approving}
+              className={cn(
+                'w-full rounded py-2 text-sm font-medium transition-colors',
+                approvalState === 'approved'
+                  ? 'bg-green-600/20 text-green-400'
+                  : approvalState === 'changed_since_approved'
+                    ? 'bg-orange-600 text-white hover:bg-orange-500 cursor-pointer'
+                    : 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+              )}
+            >
+              {approvalState === 'approved'
+                ? 'Approved'
+                : approvalState === 'changed_since_approved'
+                  ? 'Re-approve Plan'
+                  : 'Approve Plan'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Person */}
       {personId && (
