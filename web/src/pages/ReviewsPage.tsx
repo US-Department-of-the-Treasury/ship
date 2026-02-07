@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -147,6 +148,7 @@ interface BatchMode {
 }
 
 export function ReviewsPage() {
+  const navigate = useNavigate();
   const [data, setData] = useState<ReviewsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -713,16 +715,8 @@ export function ReviewsPage() {
                         {/* Plan status (left half) */}
                         <button
                           onClick={() => {
-                            if (cell.hasPlan) {
-                              setSelectedCell({
-                                personId: row.personId!,
-                                personName: row.name,
-                                weekNumber: week.number,
-                                weekName: week.name,
-                                type: 'plan',
-                                sprintId: cell.sprintId!,
-                                cell,
-                              });
+                            if (cell.hasPlan && cell.planDocId) {
+                              navigate(`/documents/${cell.planDocId}?review=true&sprintId=${cell.sprintId}`);
                             }
                           }}
                           className={cn(
@@ -736,16 +730,8 @@ export function ReviewsPage() {
                         {/* Retro status (right half) */}
                         <button
                           onClick={() => {
-                            if (cell.hasRetro) {
-                              setSelectedCell({
-                                personId: row.personId!,
-                                personName: row.name,
-                                weekNumber: week.number,
-                                weekName: week.name,
-                                type: 'retro',
-                                sprintId: cell.sprintId!,
-                                cell,
-                              });
+                            if (cell.hasRetro && cell.retroDocId) {
+                              navigate(`/documents/${cell.retroDocId}?review=true&sprintId=${cell.sprintId}`);
                             }
                           }}
                           className={cn(
