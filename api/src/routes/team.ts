@@ -553,6 +553,26 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
+    // Enforce one allocation per person per week: remove from any OTHER project's sprint
+    // for the same sprint_number before assigning to the new one.
+    const conflictingSprints = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE workspace_id = $1 AND document_type = 'sprint'
+         AND (properties->>'sprint_number')::int = $2
+         AND properties->'assignee_ids' @> to_jsonb($3::text)
+         AND (properties->>'project_id' IS DISTINCT FROM $4)`,
+      [workspaceId, sprintNumber, personDocId, resolvedProjectId]
+    );
+
+    for (const conflicting of conflictingSprints.rows) {
+      const props = conflicting.properties || {};
+      const assignees: string[] = (props.assignee_ids || []).filter((id: string) => id !== personDocId);
+      await pool.query(
+        `UPDATE documents SET properties = jsonb_set(properties, '{assignee_ids}', $1::jsonb), updated_at = now() WHERE id = $2`,
+        [JSON.stringify(assignees), conflicting.id]
+      );
+    }
+
     // Find existing sprint for this program, project, and sprint number
     // Use IS NOT DISTINCT FROM for program_id to handle NULL values correctly
     let sprintResult = await pool.query(
