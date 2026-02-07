@@ -309,20 +309,49 @@ export function ReviewsPage() {
     return rows;
   }, [programGroups, collapsedPrograms]);
 
-  // Compute pending counts for current week
-  const pendingCounts = useMemo(() => {
-    if (!data) return { plans: 0, retros: 0 };
-    let plans = 0;
-    let retros = 0;
+  // Compute stats for current week (pending counts, totals, avg rating)
+  const weekStats = useMemo(() => {
+    if (!data) return { plansApproved: 0, plansTotal: 0, retrosRated: 0, retrosTotal: 0, avgRating: 0, pendingPlans: 0, pendingRetros: 0 };
+    let plansApproved = 0;
+    let plansTotal = 0;
+    let retrosRated = 0;
+    let retrosTotal = 0;
+    let ratingSum = 0;
+    let ratingCount = 0;
+    let pendingPlans = 0;
+    let pendingRetros = 0;
     const currentWeek = data.currentSprintNumber;
     for (const person of data.people) {
       const cell = data.reviews[person.personId]?.[currentWeek];
       if (!cell?.sprintId) continue;
-      if (cell.hasPlan && cell.planApproval?.state !== 'approved') plans++;
-      if (cell.hasRetro && !cell.reviewRating) retros++;
+      if (cell.hasPlan) {
+        plansTotal++;
+        if (cell.planApproval?.state === 'approved') plansApproved++;
+        else pendingPlans++;
+      }
+      if (cell.hasRetro) {
+        retrosTotal++;
+        if (cell.reviewRating) {
+          retrosRated++;
+          ratingSum += cell.reviewRating.value;
+          ratingCount++;
+        } else {
+          pendingRetros++;
+        }
+      }
     }
-    return { plans, retros };
+    return {
+      plansApproved, plansTotal, retrosRated, retrosTotal,
+      avgRating: ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 10) / 10 : 0,
+      pendingPlans, pendingRetros,
+    };
   }, [data]);
+
+  // Alias for batch mode button counts
+  const pendingCounts = useMemo(() => ({
+    plans: weekStats.pendingPlans,
+    retros: weekStats.pendingRetros,
+  }), [weekStats]);
 
   // Build batch review queue from current week data
   const buildBatchQueue = useCallback((type: 'plans' | 'retros'): SelectedCell[] => {
@@ -514,6 +543,50 @@ export function ReviewsPage() {
         <span className="text-muted ml-4">|</span>
         <span className="text-muted">Left = Plan, Right = Retro</span>
       </div>
+
+      {/* Summary Stats */}
+      {(weekStats.plansTotal > 0 || weekStats.retrosTotal > 0) && (
+        <div className="flex items-center gap-6 px-4 py-1.5 border-b border-border text-xs bg-border/10">
+          <span className="text-muted font-medium">This Week:</span>
+          {weekStats.plansTotal > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-foreground">Plans:</span>
+              <span className={cn('font-medium', weekStats.plansApproved === weekStats.plansTotal ? 'text-green-500' : 'text-foreground')}>
+                {weekStats.plansApproved}/{weekStats.plansTotal}
+              </span>
+              <div className="w-16 h-1.5 rounded-full bg-border overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-green-500 transition-all"
+                  style={{ width: `${weekStats.plansTotal > 0 ? (weekStats.plansApproved / weekStats.plansTotal) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {weekStats.retrosTotal > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-foreground">Retros:</span>
+              <span className={cn('font-medium', weekStats.retrosRated === weekStats.retrosTotal ? 'text-green-500' : 'text-foreground')}>
+                {weekStats.retrosRated}/{weekStats.retrosTotal}
+              </span>
+              <div className="w-16 h-1.5 rounded-full bg-border overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-green-500 transition-all"
+                  style={{ width: `${weekStats.retrosTotal > 0 ? (weekStats.retrosRated / weekStats.retrosTotal) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {weekStats.avgRating > 0 && (
+            <div className="flex items-center gap-1">
+              <span className="text-foreground">Avg Rating:</span>
+              <span className="font-medium text-foreground">{weekStats.avgRating}</span>
+            </div>
+          )}
+          {weekStats.plansApproved === weekStats.plansTotal && weekStats.retrosRated === weekStats.retrosTotal && weekStats.plansTotal > 0 && (
+            <span className="text-green-500 font-medium">All reviewed</span>
+          )}
+        </div>
+      )}
 
       {/* Grid container */}
       <div ref={scrollContainerRef} className="flex-1 overflow-auto pb-20">
