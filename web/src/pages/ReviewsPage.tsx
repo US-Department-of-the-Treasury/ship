@@ -24,9 +24,24 @@ const OPM_RATINGS = [
   { value: 1, label: 'Unacceptable', color: 'text-red-500', bg: 'bg-red-500/10' },
 ] as const;
 
-function getRatingInfo(value: number) {
-  return OPM_RATINGS.find(r => r.value === value) || OPM_RATINGS[2]; // default to Fully Successful
-}
+// Review status colors — matches StatusOverviewHeatmap's bold style
+type ReviewStatus = 'approved' | 'needs_review' | 'late' | 'changed' | 'empty';
+
+const REVIEW_COLORS: Record<ReviewStatus, string> = {
+  approved: '#22c55e',     // green — approved or rated
+  needs_review: '#eab308', // yellow — submitted, needs manager action
+  late: '#ef4444',         // red — past due, nothing submitted
+  changed: '#f97316',      // orange — changed since approved
+  empty: '#6b7280',        // gray — no allocation or future
+};
+
+const REVIEW_STATUS_TEXT: Record<ReviewStatus, string> = {
+  approved: 'approved',
+  needs_review: 'needs review',
+  late: 'late',
+  changed: 'changed since approved',
+  empty: 'no submission',
+};
 
 interface Week {
   number: number;
@@ -78,6 +93,27 @@ interface ProgramGroup {
   programName: string;
   programColor: string | null;
   people: ReviewPerson[];
+}
+
+/** Determine the review status color for a plan cell */
+function getPlanStatus(cell: ReviewCell | undefined, weekIsPast: boolean): ReviewStatus {
+  if (!cell || !cell.sprintId) return 'empty';
+  if (cell.planApproval?.state === 'approved') return 'approved';
+  if (cell.planApproval?.state === 'changed_since_approved') return 'changed';
+  if (cell.hasPlan) return 'needs_review';
+  if (weekIsPast) return 'late';
+  return 'empty';
+}
+
+/** Determine the review status color for a retro cell */
+function getRetroStatus(cell: ReviewCell | undefined, weekIsPast: boolean): ReviewStatus {
+  if (!cell || !cell.sprintId) return 'empty';
+  if (cell.reviewRating) return 'approved';
+  if (cell.reviewApproval?.state === 'approved') return 'approved';
+  if (cell.reviewApproval?.state === 'changed_since_approved') return 'changed';
+  if (cell.hasRetro) return 'needs_review';
+  if (weekIsPast) return 'late';
+  return 'empty';
 }
 
 export function ReviewsPage() {
@@ -205,13 +241,57 @@ export function ReviewsPage() {
     return sorted;
   }, [data]);
 
+  // Build row structure for synchronized scrolling
+  const rowStructure = useMemo(() => {
+    const rows: Array<{
+      type: 'program' | 'person';
+      id: string;
+      name: string;
+      color?: string | null;
+      personId?: string;
+      peopleCount?: number;
+    }> = [];
+
+    for (const group of programGroups) {
+      const groupKey = group.programId || '__unassigned__';
+      const isCollapsed = collapsedPrograms.has(groupKey);
+
+      rows.push({
+        type: 'program',
+        id: groupKey,
+        name: group.programName,
+        color: group.programColor,
+        peopleCount: group.people.length,
+      });
+
+      if (!isCollapsed) {
+        for (const person of group.people) {
+          rows.push({
+            type: 'person',
+            id: `${person.personId}`,
+            name: person.name,
+            personId: person.personId,
+          });
+        }
+      }
+    }
+
+    return rows;
+  }, [programGroups, collapsedPrograms]);
+
   // Scroll to current week on first render
   useEffect(() => {
     if (data && scrollContainerRef.current && !hasScrolledToCurrentRef.current) {
-      const currentCol = scrollContainerRef.current.querySelector('[data-current-week="true"]');
-      if (currentCol) {
-        currentCol.scrollIntoView({ inline: 'center', behavior: 'instant' });
-        hasScrolledToCurrentRef.current = true;
+      const currentWeekIndex = data.weeks.findIndex(w => w.isCurrent);
+      if (currentWeekIndex >= 0) {
+        requestAnimationFrame(() => {
+          if (scrollContainerRef.current) {
+            const columnWidth = 100;
+            const scrollPosition = Math.max(0, (currentWeekIndex - 2) * columnWidth);
+            scrollContainerRef.current.scrollLeft = scrollPosition;
+            hasScrolledToCurrentRef.current = true;
+          }
+        });
       }
     }
   }, [data]);
@@ -231,16 +311,22 @@ export function ReviewsPage() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-sm text-muted">Loading reviews...</div>
+      <div className="flex flex-1 items-center justify-center">
+        <div className="flex items-center gap-2 text-muted">
+          <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          Loading...
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-sm text-red-500">{error}</div>
+      <div className="flex flex-1 items-center justify-center">
+        <span className="text-sm text-red-500">{error}</span>
       </div>
     );
   }
@@ -249,123 +335,182 @@ export function ReviewsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <header className="flex h-10 items-center justify-between border-b border-border px-4">
-        <h1 className="text-sm font-medium text-foreground">Reviews</h1>
-      </header>
+      {/* Legend */}
+      <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs">
+        <span className="text-muted">Review Status:</span>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: REVIEW_COLORS.approved }} />
+          <span>Approved</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: REVIEW_COLORS.needs_review }} />
+          <span>Needs Review</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: REVIEW_COLORS.late }} />
+          <span>Late</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: REVIEW_COLORS.changed }} />
+          <span>Changed</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: REVIEW_COLORS.empty }} />
+          <span>No Submission</span>
+        </div>
+        <span className="text-muted ml-4">|</span>
+        <span className="text-muted">Left = Plan, Right = Retro</span>
+      </div>
 
-      {/* Grid */}
-      <div className="flex-1 overflow-hidden">
-        <div className="flex h-full">
-          {/* Frozen person names column */}
-          <div className="flex-shrink-0 border-r border-border">
-            {/* Header spacer */}
-            <div className="flex h-8 items-center border-b border-border px-3">
-              <span className="text-xs font-medium text-muted">Person</span>
+      {/* Grid container */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto pb-20">
+        <div className="inline-flex min-w-full">
+          {/* Sticky left column - Names */}
+          <div className="flex flex-col sticky left-0 z-20 bg-background border-r border-border">
+            {/* Header cell */}
+            <div className="flex h-10 w-[240px] items-center border-b border-border px-3 sticky top-0 z-30 bg-background">
+              <span className="text-xs font-medium text-muted">Program / Person</span>
             </div>
 
-            {/* Person rows */}
-            <div className="overflow-y-auto" style={{ maxHeight: 'calc(100% - 2rem)' }}>
-              {programGroups.map(group => {
-                const groupKey = group.programId || '__unassigned__';
-                const isCollapsed = collapsedPrograms.has(groupKey);
-
+            {/* Rows */}
+            {rowStructure.map((row, index) => {
+              if (row.type === 'program') {
                 return (
-                  <div key={groupKey}>
-                    {/* Program header */}
-                    <button
-                      onClick={() => toggleProgram(group.programId)}
-                      className="flex w-full items-center gap-1.5 border-b border-border/50 bg-background-secondary px-3 py-1 text-left hover:bg-border/30"
+                  <button
+                    key={`program-${row.id}`}
+                    onClick={() => toggleProgram(row.id === '__unassigned__' ? null : row.id)}
+                    className="flex h-10 w-[240px] items-center gap-2 border-b border-border bg-border/30 px-3 hover:bg-border/50 text-left"
+                  >
+                    <svg
+                      className={cn('w-3 h-3 transition-transform', !collapsedPrograms.has(row.id) && 'rotate-90')}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
                     >
-                      <span className="text-[10px] text-muted">{isCollapsed ? '▸' : '▾'}</span>
-                      {group.programColor && (
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ backgroundColor: group.programColor }}
-                        />
-                      )}
-                      <span className="text-xs font-medium text-muted">{group.programName}</span>
-                      <span className="text-[10px] text-muted/60">({group.people.length})</span>
-                    </button>
-
-                    {/* Person rows */}
-                    {!isCollapsed && group.people.map(person => (
-                      <div
-                        key={person.personId}
-                        className="flex h-10 items-center border-b border-border/50 px-3"
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
+                    {row.color && (
+                      <span
+                        className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-white"
+                        style={{ backgroundColor: row.color }}
                       >
-                        <span className="truncate text-xs text-foreground" style={{ width: 140 }}>
-                          {person.name}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                        {row.name.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                    <span className="truncate text-xs font-medium">{row.name}</span>
+                    <span className="ml-auto text-[10px] text-muted">{row.peopleCount}</span>
+                  </button>
                 );
-              })}
-            </div>
+              }
+
+              // Person row
+              return (
+                <div
+                  key={`person-${row.id}-${index}`}
+                  className="flex h-10 w-[240px] items-center gap-2 border-b border-border pl-6 pr-3 bg-background"
+                >
+                  <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium text-white bg-accent/80">
+                    {row.name.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="truncate text-xs text-foreground">{row.name}</span>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Scrollable weeks columns */}
-          <div className="flex-1 overflow-x-auto" ref={scrollContainerRef}>
-            <div className="inline-flex min-w-full flex-col">
-              {/* Week headers */}
-              <div className="flex border-b border-border">
-                {data.weeks.map(week => (
+          {/* Week columns */}
+          <div className="flex">
+            {data.weeks.map(week => {
+              const weekIsPast = week.number < data.currentSprintNumber;
+
+              return (
+                <div key={week.number} className="flex flex-col">
+                  {/* Week header */}
                   <div
-                    key={week.number}
-                    data-current-week={week.isCurrent || undefined}
                     className={cn(
-                      'flex h-8 w-28 flex-shrink-0 flex-col items-center justify-center border-r border-border/50 px-1',
-                      week.isCurrent && 'bg-accent/5'
+                      'flex h-10 w-[100px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background',
+                      week.isCurrent && 'ring-1 ring-inset ring-accent/30'
                     )}
                   >
-                    <span className={cn('text-[10px] font-medium', week.isCurrent ? 'text-accent' : 'text-muted')}>
+                    <span className={cn('text-xs font-medium', week.isCurrent ? 'text-accent' : 'text-foreground')}>
                       {week.name}
                     </span>
-                    <span className="text-[9px] text-muted/60">
-                      {new Date(week.startDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    <span className="text-[10px] text-muted">
+                      {formatDateRange(week.startDate, week.endDate)}
                     </span>
                   </div>
-                ))}
-              </div>
 
-              {/* Data rows */}
-              <div className="overflow-y-auto" style={{ maxHeight: 'calc(100% - 2rem)' }}>
-                {programGroups.map(group => {
-                  const groupKey = group.programId || '__unassigned__';
-                  const isCollapsed = collapsedPrograms.has(groupKey);
+                  {/* Cells for each row */}
+                  {rowStructure.map((row, index) => {
+                    if (row.type === 'program') {
+                      return (
+                        <div
+                          key={`program-${row.id}-week-${week.number}`}
+                          className={cn(
+                            'h-10 w-[100px] border-b border-r border-border bg-border/30',
+                            week.isCurrent && 'bg-accent/5'
+                          )}
+                        />
+                      );
+                    }
 
-                  return (
-                    <div key={groupKey}>
-                      {/* Program header spacer */}
-                      <div className="flex border-b border-border/50 bg-background-secondary">
-                        {data.weeks.map(week => (
-                          <div key={week.number} className="h-[26px] w-28 flex-shrink-0 border-r border-border/50" />
-                        ))}
-                      </div>
+                    const cell = row.personId ? data.reviews[row.personId]?.[week.number] : undefined;
+                    const planStatus = getPlanStatus(cell, weekIsPast);
+                    const retroStatus = getRetroStatus(cell, weekIsPast);
 
-                      {/* Person cells */}
-                      {!isCollapsed && group.people.map(person => (
-                        <div key={person.personId} className="flex border-b border-border/50">
-                          {data.weeks.map(week => {
-                            const cell = data.reviews[person.personId]?.[week.number];
-                            return (
-                              <ReviewCellView
-                                key={week.number}
-                                cell={cell}
-                                isCurrent={week.isCurrent}
-                                onApprovePlan={cell?.sprintId ? () => approvePlan(person.personId, week.number, cell.sprintId!) : undefined}
-                                onRateRetro={cell?.sprintId ? (rating: number) => rateRetro(person.personId, week.number, cell.sprintId!, rating) : undefined}
-                              />
-                            );
-                          })}
+                    // Empty state - no sprint allocation
+                    if (!cell || !cell.sprintId) {
+                      return (
+                        <div
+                          key={`person-${row.id}-week-${week.number}-${index}`}
+                          className={cn(
+                            'flex h-10 w-[100px] items-center justify-center border-b border-r border-border',
+                            week.isCurrent && 'bg-accent/5'
+                          )}
+                        >
+                          <span className="text-xs text-muted">-</span>
                         </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={`person-${row.id}-week-${week.number}-${index}`}
+                        className={cn(
+                          'flex h-10 w-[100px] border-b border-r border-border overflow-hidden',
+                          week.isCurrent && 'ring-1 ring-inset ring-accent/20'
+                        )}
+                      >
+                        {/* Plan status (left half) */}
+                        <button
+                          onClick={() => {
+                            if (planStatus === 'needs_review' || planStatus === 'changed') {
+                              approvePlan(row.personId!, week.number, cell.sprintId!);
+                            }
+                          }}
+                          className="flex-1 h-full cursor-pointer transition-all hover:brightness-110 border-r border-white/20"
+                          style={{ backgroundColor: REVIEW_COLORS[planStatus] }}
+                          title={`Plan: ${REVIEW_STATUS_TEXT[planStatus]}`}
+                          aria-label={`Plan: ${REVIEW_STATUS_TEXT[planStatus]} - ${row.name}`}
+                        />
+                        {/* Retro status (right half) */}
+                        <button
+                          onClick={() => {
+                            // For now, clicking retro cells will be handled by the review panel (story 2/3)
+                            // No inline action needed for color-block cells
+                          }}
+                          className="flex-1 h-full cursor-pointer transition-all hover:brightness-110"
+                          style={{ backgroundColor: REVIEW_COLORS[retroStatus] }}
+                          title={`Retro: ${REVIEW_STATUS_TEXT[retroStatus]}`}
+                          aria-label={`Retro: ${REVIEW_STATUS_TEXT[retroStatus]} - ${row.name}`}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -373,141 +518,19 @@ export function ReviewsPage() {
   );
 }
 
-function ReviewCellView({
-  cell,
-  isCurrent,
-  onApprovePlan,
-  onRateRetro,
-}: {
-  cell?: ReviewCell;
-  isCurrent: boolean;
-  onApprovePlan?: () => void;
-  onRateRetro?: (rating: number) => void;
-}) {
-  const [showRatingDropdown, setShowRatingDropdown] = useState(false);
+function formatDateRange(startDate: string, endDate: string): string {
+  const start = new Date(startDate + 'T00:00:00Z');
+  const end = new Date(endDate + 'T00:00:00Z');
 
-  if (!cell) {
-    return (
-      <div className={cn('flex h-10 w-28 flex-shrink-0 items-center justify-center gap-1.5 border-r border-border/50 px-1', isCurrent && 'bg-accent/5')}>
-        <span className="text-[10px] text-muted/30">—</span>
-      </div>
-    );
+  const startMonth = start.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  const startDay = start.getUTCDate();
+  const endMonth = end.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  const endDay = end.getUTCDate();
+
+  if (startMonth === endMonth) {
+    return `${startMonth} ${startDay}-${endDay}`;
   }
-
-  const planState = cell.planApproval?.state;
-  const ratingValue = cell.reviewRating?.value;
-  const ratingInfo = ratingValue ? getRatingInfo(ratingValue) : null;
-
-  // Plan is approvable if it has content and is not yet approved (or was changed since approved)
-  const canApprovePlan = cell.hasPlan && planState !== 'approved' && onApprovePlan;
-  const canReApprovePlan = planState === 'changed_since_approved' && onApprovePlan;
-
-  // Retro is ratable if it has content and has a sprint ID
-  const canRateRetro = cell.hasRetro && onRateRetro;
-
-  return (
-    <div className={cn('relative flex h-10 w-28 flex-shrink-0 items-center justify-center gap-1.5 border-r border-border/50 px-1', isCurrent && 'bg-accent/5')}>
-      {/* Plan approval indicator */}
-      <div className="flex flex-col items-center" title={getPlanTooltip(cell)}>
-        <span className="text-[8px] uppercase text-muted/60 leading-none mb-0.5">Plan</span>
-        {planState === 'approved' ? (
-          <span className="text-green-500 text-xs">✓</span>
-        ) : canReApprovePlan ? (
-          <button
-            onClick={onApprovePlan}
-            className="text-orange-500 text-xs hover:text-orange-400 cursor-pointer"
-            title="Re-approve plan"
-          >
-            !
-          </button>
-        ) : canApprovePlan ? (
-          <button
-            onClick={onApprovePlan}
-            className="text-accent text-xs hover:text-accent/80 cursor-pointer"
-            title="Approve plan"
-          >
-            ○
-          </button>
-        ) : cell.hasPlan ? (
-          <span className="text-muted/40 text-xs">○</span>
-        ) : (
-          <span className="text-muted/20 text-xs">·</span>
-        )}
-      </div>
-
-      {/* Divider */}
-      <div className="h-5 w-px bg-border/30" />
-
-      {/* Retro rating indicator */}
-      <div className="flex flex-col items-center" title={getRetroTooltip(cell)}>
-        <span className="text-[8px] uppercase text-muted/60 leading-none mb-0.5">Retro</span>
-        {ratingInfo ? (
-          <button
-            onClick={() => canRateRetro && setShowRatingDropdown(!showRatingDropdown)}
-            className={cn('text-xs font-medium cursor-pointer hover:opacity-80', ratingInfo.color)}
-            title={`${ratingValue} - ${ratingInfo.label} (click to change)`}
-          >
-            {ratingValue}
-          </button>
-        ) : canRateRetro ? (
-          <button
-            onClick={() => setShowRatingDropdown(!showRatingDropdown)}
-            className="text-accent text-xs hover:text-accent/80 cursor-pointer"
-            title="Rate retro"
-          >
-            ○
-          </button>
-        ) : cell.hasRetro ? (
-          <span className="text-muted/40 text-xs">○</span>
-        ) : (
-          <span className="text-muted/20 text-xs">·</span>
-        )}
-      </div>
-
-      {/* Rating dropdown */}
-      {showRatingDropdown && onRateRetro && (
-        <>
-          {/* Backdrop to close dropdown */}
-          <div className="fixed inset-0 z-40" onClick={() => setShowRatingDropdown(false)} />
-          <div className="absolute top-full left-1/2 z-50 mt-1 -translate-x-1/2 rounded-md border border-border bg-background shadow-lg">
-            {OPM_RATINGS.map(r => (
-              <button
-                key={r.value}
-                onClick={() => {
-                  onRateRetro(r.value);
-                  setShowRatingDropdown(false);
-                }}
-                className={cn(
-                  'flex w-48 items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-border/30 first:rounded-t-md last:rounded-b-md',
-                  ratingValue === r.value && 'bg-border/20'
-                )}
-              >
-                <span className={cn('font-medium', r.color)}>{r.value}</span>
-                <span className="text-foreground">{r.label}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function getPlanTooltip(cell: ReviewCell): string {
-  if (cell.planApproval?.state === 'approved') return 'Plan: Approved';
-  if (cell.planApproval?.state === 'changed_since_approved') return 'Plan: Changed since approved';
-  if (cell.hasPlan) return 'Plan: Pending review';
-  return 'No plan submitted';
-}
-
-function getRetroTooltip(cell: ReviewCell): string {
-  if (cell.reviewRating) {
-    const info = getRatingInfo(cell.reviewRating.value);
-    return `Retro: ${cell.reviewRating.value} - ${info.label}`;
-  }
-  if (cell.reviewApproval?.state === 'approved') return 'Retro: Approved (no rating)';
-  if (cell.hasRetro) return 'Retro: Pending review';
-  return 'No retro submitted';
+  return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
 }
 
 export default ReviewsPage;
