@@ -68,6 +68,7 @@ export function RealtimeEventsProvider({ children }: { children: ReactNode }) {
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
+    if (wsRef.current?.readyState === WebSocket.CLOSING) return;
 
     const ws = new WebSocket(getEventsWsUrl());
     wsRef.current = ws;
@@ -95,7 +96,11 @@ export function RealtimeEventsProvider({ children }: { children: ReactNode }) {
     ws.onclose = () => {
       console.log('[RealtimeEvents] Disconnected');
       setIsConnected(false);
-      wsRef.current = null;
+      // Only nullify if this is still the current WebSocket
+      // (avoids race where a new WS was created before old one finished closing)
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+      }
 
       // Reconnect after delay if user is still logged in
       if (user) {

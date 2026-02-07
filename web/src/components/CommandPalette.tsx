@@ -4,7 +4,7 @@ import { Command } from 'cmdk';
 import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
 
-const API_URL = import.meta.env.VITE_API_URL ?? '';
+import { apiGet, apiPost } from '@/lib/api';
 
 interface SearchableDocument {
   id: string;
@@ -108,19 +108,14 @@ export function CommandPalette({ open, onOpenChange, currentDocument, onConvertD
   const createIssue = async () => {
     try {
       // Get the first program to create the issue in
-      const programsRes = await fetch(`${API_URL}/api/programs`, { credentials: 'include' });
+      const programsRes = await apiGet('/api/programs');
       if (!programsRes.ok) return;
       const programs = await programsRes.json();
       if (programs.length === 0) return;
 
-      const res = await fetch(`${API_URL}/api/issues`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          title: 'Untitled',
-          program_id: programs[0].id,
-        }),
+      const res = await apiPost('/api/issues', {
+        title: 'Untitled',
+        program_id: programs[0].id,
       });
 
       if (res.ok) {
@@ -134,12 +129,7 @@ export function CommandPalette({ open, onOpenChange, currentDocument, onConvertD
 
   const createDocument = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/documents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ title: 'Untitled', document_type: 'wiki' }),
-      });
+      const res = await apiPost('/api/documents', { title: 'Untitled', document_type: 'wiki' });
 
       if (res.ok) {
         const doc = await res.json();
@@ -160,9 +150,7 @@ export function CommandPalette({ open, onOpenChange, currentDocument, onConvertD
     const fetchDocuments = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`${API_URL}/api/documents`, {
-          credentials: 'include',
-        });
+        const res = await apiGet('/api/documents');
         if (res.ok) {
           const data = await res.json();
           setDocuments(data);

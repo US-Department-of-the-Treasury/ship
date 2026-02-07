@@ -187,6 +187,16 @@ zip -r "$BUNDLE" \
   shared/package.json \
   -x "*.git*"
 
+# Add .ebextensions and .platform at root level (EB expects them at root, not under api/)
+if [ -d "api/.ebextensions" ]; then
+  echo "Adding .ebextensions to bundle..."
+  (cd api && zip -r "$BUNDLE" .ebextensions)
+fi
+if [ -d "api/.platform" ]; then
+  echo "Adding .platform to bundle..."
+  (cd api && zip -r "$BUNDLE" .platform)
+fi
+
 echo "Bundle: $BUNDLE"
 echo "Contents:"
 unzip -l "$BUNDLE" | grep -E "^Archive|Dockerfile|package.json" | head -10

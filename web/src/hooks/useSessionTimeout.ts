@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { SESSION_TIMEOUT_MS, ABSOLUTE_SESSION_TIMEOUT_MS } from '@ship/shared';
+import { apiPost } from '@/lib/api';
 
 // Warning appears 60 seconds before timeout
 const WARNING_THRESHOLD_MS = 60 * 1000;
@@ -105,10 +106,7 @@ export function useSessionTimeout(onTimeout: () => void): SessionTimeoutState {
 
     // Call extend-session API to extend server-side session
     try {
-      const response = await fetch('/api/auth/extend-session', {
-        method: 'POST',
-        credentials: 'include',
-      });
+      const response = await apiPost('/api/auth/extend-session');
       if (!response.ok) {
         // API call failed - force logout
         console.error('Failed to extend session - forcing logout');

@@ -215,6 +215,24 @@ resource "aws_cloudfront_distribution" "frontend" {
     }
   }
 
+  # WebSocket events endpoint for real-time updates (only when EB is configured)
+  # Uses origin request policy for WebSocket compatibility
+  dynamic "ordered_cache_behavior" {
+    for_each = var.eb_environment_cname != "" ? [1] : []
+    content {
+      path_pattern           = "/events"
+      target_origin_id       = "EB-API"
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = false
+
+      # Use policies instead of forwarded_values
+      cache_policy_id          = aws_cloudfront_cache_policy.api_no_cache.id
+      origin_request_policy_id = aws_cloudfront_origin_request_policy.api.id
+    }
+  }
+
   # Well-known endpoints for OAuth/OIDC (JWKS, etc.) - only when EB is configured
   dynamic "ordered_cache_behavior" {
     for_each = var.eb_environment_cname != "" ? [1] : []
