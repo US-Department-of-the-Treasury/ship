@@ -79,6 +79,8 @@ interface ReviewCell {
   hasPlan: boolean;
   hasRetro: boolean;
   sprintId: string | null;
+  planDocId: string | null;
+  retroDocId: string | null;
 }
 
 interface ReviewsData {
