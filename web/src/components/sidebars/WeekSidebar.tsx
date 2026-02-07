@@ -205,9 +205,9 @@ export function WeekSidebar({
         </PropertyRow>
       )}
 
-      {/* Performance Rating - show when a rating has been given */}
-      {sprint.review_rating && sprint.review_rating.value && (
-        <PropertyRow label="Performance Rating">
+      {/* Performance Rating - always show when sprint has a review */}
+      <PropertyRow label="Performance Rating">
+        {sprint.review_rating?.value ? (
           <div className="flex items-center gap-2 rounded bg-border/30 px-2 py-1.5">
             <span className={`text-sm font-medium ${OPM_RATING_LABELS[sprint.review_rating.value]?.color || 'text-foreground'}`}>
               {sprint.review_rating.value}
@@ -216,8 +216,12 @@ export function WeekSidebar({
               – {OPM_RATING_LABELS[sprint.review_rating.value]?.label || 'Unknown'}
             </span>
           </div>
-        </PropertyRow>
-      )}
+        ) : (
+          <div className="rounded bg-border/20 px-2 py-1.5">
+            <span className="text-sm text-muted">Not Yet Rated</span>
+          </div>
+        )}
+      </PropertyRow>
 
       {sprint.program_name && sprint.program_id && (
         <PropertyRow label="Program">

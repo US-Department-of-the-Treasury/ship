@@ -358,6 +358,8 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       status: props.status,
       plan: props.plan,
       plan_approval: props.plan_approval,
+      review_approval: props.review_approval,
+      review_rating: props.review_rating,
       // Include belongs_to for issue, wiki, sprint, and project documents
       ...((doc.document_type === 'issue' || doc.document_type === 'wiki' || doc.document_type === 'sprint' || doc.document_type === 'project') && { belongs_to }),
     });
@@ -981,6 +983,8 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       status: props.status,
       plan: props.plan,
       plan_approval: props.plan_approval,
+      review_approval: props.review_approval,
+      review_rating: props.review_rating,
     });
   } catch (err) {
     console.error('Update document error:', err);

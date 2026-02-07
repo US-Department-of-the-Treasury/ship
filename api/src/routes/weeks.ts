@@ -85,6 +85,8 @@ function extractSprintFromRow(row: any) {
     // Approval tracking
     plan_approval: props.plan_approval || null,
     review_approval: props.review_approval || null,
+    // Performance rating (OPM 5-level scale)
+    review_rating: props.review_rating || null,
     // Accountability (sprints inherit from program, but may have direct assignment)
     accountable_id: props.accountable_id || null,
   };
