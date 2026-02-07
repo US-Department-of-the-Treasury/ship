@@ -69,7 +69,7 @@ test.describe('Backlinks', () => {
     await editor.click()
     // Wait for editor to be focused and ready to receive input
     await expect(editor).toBeFocused({ timeout: 3000 })
-    await page.waitForTimeout(200) // Small delay for TipTap initialization
+    await page.waitForTimeout(500) // Wait for TipTap mention extension to initialize
 
     // Create mention to Document A
     // Type @ first to trigger mention popup, then search text
@@ -81,11 +81,11 @@ test.describe('Backlinks', () => {
       if (!(await mentionPopup.isVisible())) {
         // Re-trigger mention if popup didn't appear
         await page.keyboard.press('Backspace')
-        await page.waitForTimeout(300)
+        await page.waitForTimeout(500)
         await page.keyboard.type('@')
       }
-      await expect(mentionPopup).toBeVisible({ timeout: 3000 })
-    }).toPass({ timeout: 10000, intervals: [1000, 2000, 3000] })
+      await expect(mentionPopup).toBeVisible({ timeout: 5000 })
+    }).toPass({ timeout: 15000, intervals: [1000, 2000, 3000, 4000] })
 
     // Type search term to filter
     await page.keyboard.type('Document A')

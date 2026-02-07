@@ -23,7 +23,10 @@ async function getCsrfToken(page: import('@playwright/test').Page, apiUrl: strin
 }
 
 test.describe('Accountability Owner Change', () => {
-  test('project owner change immediately removes action item from inference', async ({ page, apiServer }) => {
+  // project_plan accountability type was removed in commit e611139
+  // This test expects project_plan action items which no longer exist
+  // Needs rewrite for weekly_plan system
+  test.fixme('project owner change immediately removes action item from inference', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');

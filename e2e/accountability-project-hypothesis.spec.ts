@@ -23,7 +23,11 @@ async function getCsrfToken(page: import('@playwright/test').Page, apiUrl: strin
 }
 
 test.describe('Accountability Project Plan Flow', () => {
-  test('project without plan shows action item, adding plan removes it', async ({ page, apiServer }) => {
+  // project_plan accountability type was removed in commit e611139
+  // These tests need to be rewritten for the weekly_plan system
+  // See accountability.ts line 122: "Project-level plan check REMOVED - replaced by weekly_plan documents"
+
+  test.fixme('project without plan shows action item, adding plan removes it', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');
@@ -108,7 +112,7 @@ test.describe('Accountability Project Plan Flow', () => {
     expect(planItems2.length).toBe(0);
   });
 
-  test('empty plan string still shows action item', async ({ page, apiServer }) => {
+  test.fixme('empty plan string still shows action item', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');
@@ -170,7 +174,7 @@ test.describe('Accountability Project Plan Flow', () => {
     expect(planItems.length).toBe(1);
   });
 
-  test('archived projects do not show plan action items', async ({ page, apiServer }) => {
+  test.fixme('archived projects do not show plan action items', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');

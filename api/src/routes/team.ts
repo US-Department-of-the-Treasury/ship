@@ -270,7 +270,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     // First, get explicit sprint document assignments (assignee_ids array + project_id in properties)
-    // Use sprint's program association (handles legacy programId assignments without project)
+    // Program is resolved via: project -> program (preferred), or sprint -> program (fallback for legacy programId assignments)
     const explicitResult = await pool.query(
       `SELECT
          jsonb_array_elements_text(s.properties->'assignee_ids') as person_id,
@@ -278,14 +278,16 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
          s.properties->>'project_id' as project_id,
          proj.title as project_name,
          proj.properties->>'color' as project_color,
-         prog_da.related_id as program_id,
-         prog.title as program_name,
-         prog.properties->>'emoji' as program_emoji,
-         prog.properties->>'color' as program_color
+         COALESCE(prog_da.related_id, sprint_prog_da.related_id) as program_id,
+         COALESCE(prog.title, sprint_prog.title) as program_name,
+         COALESCE(prog.properties->>'emoji', sprint_prog.properties->>'emoji') as program_emoji,
+         COALESCE(prog.properties->>'color', sprint_prog.properties->>'color') as program_color
        FROM documents s
        LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
        LEFT JOIN document_associations prog_da ON proj.id = prog_da.document_id AND prog_da.relationship_type = 'program'
        LEFT JOIN documents prog ON prog_da.related_id = prog.id AND prog.document_type = 'program'
+       LEFT JOIN document_associations sprint_prog_da ON s.id = sprint_prog_da.document_id AND sprint_prog_da.relationship_type = 'program'
+       LEFT JOIN documents sprint_prog ON sprint_prog_da.related_id = sprint_prog.id AND sprint_prog.document_type = 'program'
        WHERE s.workspace_id = $1
          AND s.document_type = 'sprint'
          AND jsonb_array_length(COALESCE(s.properties->'assignee_ids', '[]'::jsonb)) > 0
