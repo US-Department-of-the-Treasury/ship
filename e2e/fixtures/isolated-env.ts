@@ -726,6 +726,34 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     );
   }
 
+  // Create sprint allocation documents (person assigned to project for a week)
+  // The team/reviews endpoint queries sprints with assignee_ids
+  const allocationSprintResult = await pool.query(
+    `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+     VALUES ($1, 'sprint', $2, $3, $4)
+     RETURNING id`,
+    [
+      workspaceId,
+      `Week ${currentSprintNumber} - Ship Core`,
+      JSON.stringify({
+        sprint_number: currentSprintNumber,
+        owner_id: userId,
+        project_id: projectIds['SHIP'],
+        assignee_ids: [personId],
+        start_date: new Date(threeMonthsAgo.getTime() + (currentSprintNumber - 1) * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      }),
+      userId,
+    ]
+  );
+  const allocationSprintId = allocationSprintResult.rows[0].id;
+
+  // Associate allocation sprint with program
+  await pool.query(
+    `INSERT INTO document_associations (document_id, related_id, relationship_type)
+     VALUES ($1, $2, 'program')`,
+    [allocationSprintId, programIds['SHIP']]
+  );
+
   // Create wiki documents with nested structure for tree testing
   // Include content for content-caching tests to work
   const welcomeContent = {
