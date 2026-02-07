@@ -9,17 +9,14 @@ beforeAll(async () => {
   process.env.NODE_ENV = 'test'
 
   // Clean up test data from previous runs to prevent duplicate key errors
-  // Order matters due to foreign key constraints
-  await pool.query('DELETE FROM workspace_invites WHERE 1=1')
-  await pool.query('DELETE FROM sessions WHERE 1=1')
-  await pool.query('DELETE FROM files WHERE 1=1')
-  await pool.query('DELETE FROM document_links WHERE 1=1')
-  await pool.query('DELETE FROM document_history WHERE 1=1')
-  await pool.query('DELETE FROM documents WHERE 1=1')
-  await pool.query('DELETE FROM audit_logs WHERE 1=1')
-  await pool.query('DELETE FROM workspace_memberships WHERE 1=1')
-  await pool.query('DELETE FROM users WHERE 1=1')
-  await pool.query('DELETE FROM workspaces WHERE 1=1')
+  // Use TRUNCATE CASCADE which is faster and bypasses row-level triggers
+  // (audit_logs has AU-9 compliance triggers preventing DELETE)
+  await pool.query(`TRUNCATE TABLE
+    workspace_invites, sessions, files, document_links, document_history,
+    comments, document_associations, document_snapshots, sprint_iterations,
+    issue_iterations, documents, audit_logs, workspace_memberships,
+    users, workspaces
+    CASCADE`)
 })
 
 afterAll(async () => {
