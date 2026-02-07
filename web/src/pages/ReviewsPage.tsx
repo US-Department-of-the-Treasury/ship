@@ -137,12 +137,20 @@ interface SelectedCell {
   cell: ReviewCell;
 }
 
+// Batch review mode state
+interface BatchMode {
+  type: 'plans' | 'retros';
+  queue: SelectedCell[];
+  currentIndex: number;
+}
+
 export function ReviewsPage() {
   const [data, setData] = useState<ReviewsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [collapsedPrograms, setCollapsedPrograms] = useState<Set<string>>(new Set());
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
+  const [batchMode, setBatchMode] = useState<BatchMode | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
 
@@ -301,6 +309,92 @@ export function ReviewsPage() {
     return rows;
   }, [programGroups, collapsedPrograms]);
 
+  // Compute pending counts for current week
+  const pendingCounts = useMemo(() => {
+    if (!data) return { plans: 0, retros: 0 };
+    let plans = 0;
+    let retros = 0;
+    const currentWeek = data.currentSprintNumber;
+    for (const person of data.people) {
+      const cell = data.reviews[person.personId]?.[currentWeek];
+      if (!cell?.sprintId) continue;
+      if (cell.hasPlan && cell.planApproval?.state !== 'approved') plans++;
+      if (cell.hasRetro && !cell.reviewRating) retros++;
+    }
+    return { plans, retros };
+  }, [data]);
+
+  // Build batch review queue from current week data
+  const buildBatchQueue = useCallback((type: 'plans' | 'retros'): SelectedCell[] => {
+    if (!data) return [];
+    const currentWeek = data.weeks.find(w => w.isCurrent);
+    if (!currentWeek) return [];
+
+    const queue: SelectedCell[] = [];
+    for (const group of programGroups) {
+      for (const person of group.people) {
+        const cell = data.reviews[person.personId]?.[currentWeek.number];
+        if (!cell?.sprintId) continue;
+
+        if (type === 'plans' && cell.hasPlan && cell.planApproval?.state !== 'approved') {
+          queue.push({
+            personId: person.personId,
+            personName: person.name,
+            weekNumber: currentWeek.number,
+            weekName: currentWeek.name,
+            type: 'plan',
+            sprintId: cell.sprintId,
+            cell,
+          });
+        }
+        if (type === 'retros' && cell.hasRetro && !cell.reviewRating) {
+          queue.push({
+            personId: person.personId,
+            personName: person.name,
+            weekNumber: currentWeek.number,
+            weekName: currentWeek.name,
+            type: 'retro',
+            sprintId: cell.sprintId,
+            cell,
+          });
+        }
+      }
+    }
+    return queue;
+  }, [data, programGroups]);
+
+  // Start batch mode
+  function startBatchMode(type: 'plans' | 'retros') {
+    const queue = buildBatchQueue(type);
+    if (queue.length === 0) return;
+    setBatchMode({ type, queue, currentIndex: 0 });
+    setSelectedCell(queue[0]!);
+  }
+
+  // Advance to next item in batch mode
+  function advanceBatch() {
+    if (!batchMode) return;
+    const nextIndex = batchMode.currentIndex + 1;
+    if (nextIndex >= batchMode.queue.length) {
+      // All done
+      setBatchMode({ ...batchMode, currentIndex: nextIndex });
+      setSelectedCell(null);
+    } else {
+      // Refresh the cell data from the latest state
+      const nextItem = batchMode.queue[nextIndex]!;
+      const freshCell = data?.reviews[nextItem.personId]?.[nextItem.weekNumber];
+      const updatedItem = freshCell ? { ...nextItem, cell: freshCell } : nextItem;
+      setBatchMode({ ...batchMode, currentIndex: nextIndex });
+      setSelectedCell(updatedItem);
+    }
+  }
+
+  // Exit batch mode
+  function exitBatchMode() {
+    setBatchMode(null);
+    setSelectedCell(null);
+  }
+
   // Scroll to current week on first render
   useEffect(() => {
     if (data && scrollContainerRef.current && !hasScrolledToCurrentRef.current) {
@@ -318,16 +412,20 @@ export function ReviewsPage() {
     }
   }, [data]);
 
-  // Handle Escape to close panel (must be before ALL early returns)
+  // Handle Escape to close panel / exit batch mode (must be before ALL early returns)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && selectedCell) {
-        setSelectedCell(null);
+      if (e.key === 'Escape') {
+        if (batchMode) {
+          exitBatchMode();
+        } else if (selectedCell) {
+          setSelectedCell(null);
+        }
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedCell]);
+  }, [selectedCell, batchMode]);
 
   function toggleProgram(programId: string | null) {
     const key = programId || '__unassigned__';
@@ -370,8 +468,28 @@ export function ReviewsPage() {
     <div className="flex h-full">
       {/* Main grid area */}
       <div className={cn('flex flex-col', selectedCell ? 'flex-1 min-w-0' : 'flex-1')}>
-      {/* Legend */}
+      {/* Legend + Batch Actions */}
       <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs">
+        {/* Batch review buttons */}
+        {pendingCounts.plans > 0 && (
+          <button
+            onClick={() => startBatchMode('plans')}
+            className="rounded bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-500 transition-colors"
+          >
+            Review Plans ({pendingCounts.plans})
+          </button>
+        )}
+        {pendingCounts.retros > 0 && (
+          <button
+            onClick={() => startBatchMode('retros')}
+            className="rounded bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-500 transition-colors"
+          >
+            Rate Retros ({pendingCounts.retros})
+          </button>
+        )}
+        {(pendingCounts.plans > 0 || pendingCounts.retros > 0) && (
+          <div className="h-4 w-px bg-border" />
+        )}
         <span className="text-muted">Review Status:</span>
         <div className="flex items-center gap-1">
           <div className="w-3 h-3 rounded" style={{ backgroundColor: REVIEW_COLORS.approved }} />
@@ -578,10 +696,10 @@ export function ReviewsPage() {
       {selectedCell && (
         <ReviewPanel
           selectedCell={selectedCell}
-          onClose={() => setSelectedCell(null)}
+          batchMode={batchMode}
+          onClose={() => batchMode ? exitBatchMode() : setSelectedCell(null)}
           onApprovePlan={(personId, weekNumber, sprintId) => {
             approvePlan(personId, weekNumber, sprintId);
-            // Update the selected cell's approval state locally
             setSelectedCell(prev => prev ? {
               ...prev,
               cell: {
@@ -589,6 +707,8 @@ export function ReviewsPage() {
                 planApproval: { state: 'approved', approved_by: null, approved_at: new Date().toISOString() },
               },
             } : null);
+            // Auto-advance in batch mode
+            if (batchMode) setTimeout(advanceBatch, 300);
           }}
           onRateRetro={(personId, weekNumber, sprintId, rating) => {
             rateRetro(personId, weekNumber, sprintId, rating);
@@ -600,8 +720,36 @@ export function ReviewsPage() {
                 reviewRating: { value: rating, rated_by: '', rated_at: new Date().toISOString() },
               },
             } : null);
+            // Auto-advance in batch mode
+            if (batchMode) setTimeout(advanceBatch, 300);
           }}
+          onSkip={batchMode ? advanceBatch : undefined}
         />
+      )}
+
+      {/* Batch mode completion state */}
+      {batchMode && batchMode.currentIndex >= batchMode.queue.length && (
+        <div className="w-[400px] flex-shrink-0 border-l border-border bg-background flex flex-col items-center justify-center gap-4 p-8">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20">
+            <svg className="w-8 h-8 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          </div>
+          <div className="text-center">
+            <div className="text-sm font-medium text-foreground">
+              All {batchMode.type === 'plans' ? 'plans' : 'retros'} reviewed!
+            </div>
+            <div className="text-xs text-muted mt-1">
+              {batchMode.queue.length} item{batchMode.queue.length !== 1 ? 's' : ''} processed
+            </div>
+          </div>
+          <button
+            onClick={exitBatchMode}
+            className="rounded bg-accent px-4 py-2 text-xs font-medium text-white hover:bg-accent/80"
+          >
+            Done
+          </button>
+        </div>
       )}
     </div>
   );
@@ -610,14 +758,18 @@ export function ReviewsPage() {
 /** Panel for reviewing plan/retro content */
 function ReviewPanel({
   selectedCell,
+  batchMode,
   onClose,
   onApprovePlan,
   onRateRetro,
+  onSkip,
 }: {
   selectedCell: SelectedCell;
+  batchMode: BatchMode | null;
   onClose: () => void;
   onApprovePlan: (personId: string, weekNumber: number, sprintId: string) => void;
   onRateRetro: (personId: string, weekNumber: number, sprintId: string, rating: number) => void;
+  onSkip?: () => void;
 }) {
   const [planDoc, setPlanDoc] = useState<WeeklyDoc | null>(null);
   const [retroDoc, setRetroDoc] = useState<WeeklyDoc | null>(null);
@@ -672,17 +824,34 @@ function ReviewPanel({
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
           <div className="text-sm font-medium text-foreground">{selectedCell.personName}</div>
-          <div className="text-xs text-muted">{selectedCell.weekName} &middot; {isRetroMode ? 'Retro' : 'Plan'}</div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted">{selectedCell.weekName} &middot; {isRetroMode ? 'Retro' : 'Plan'}</span>
+            {batchMode && (
+              <span className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                {batchMode.currentIndex + 1} of {batchMode.queue.length}
+              </span>
+            )}
+          </div>
         </div>
-        <button
-          onClick={onClose}
-          className="rounded p-1 text-muted hover:text-foreground hover:bg-border/50"
-          aria-label="Close panel"
-        >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-1">
+          {onSkip && (
+            <button
+              onClick={onSkip}
+              className="rounded px-2 py-1 text-xs text-muted hover:text-foreground hover:bg-border/50"
+            >
+              Skip
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="rounded p-1 text-muted hover:text-foreground hover:bg-border/50"
+            aria-label="Close panel"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Content */}
