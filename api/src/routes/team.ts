@@ -1351,6 +1351,240 @@ router.get('/accountability-grid-v2', authMiddleware, async (req: Request, res: 
   }
 });
 
+// GET /api/team/reviews - Manager review grid (approval status + performance ratings)
+// Returns: { people, weeks, reviews, currentSprintNumber }
+router.get('/reviews', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+    const sprintCount = Math.min(parseInt(req.query.sprint_count as string, 10) || 5, 20);
+    const showArchived = req.query.showArchived === 'true';
+
+    // Check admin access
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    // Get workspace sprint config
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    if (workspaceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Workspace not found' });
+      return;
+    }
+
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
+    const sprintDurationDays = 7;
+    const today = new Date();
+
+    let sprintStartDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      sprintStartDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      sprintStartDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      sprintStartDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
+
+    // Calculate current sprint number and range
+    const daysSinceStart = Math.floor((today.getTime() - sprintStartDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
+    const fromSprint = Math.max(1, currentSprintNumber - sprintCount + 1);
+    const toSprint = currentSprintNumber;
+
+    // Generate weeks array
+    const weeks: { number: number; name: string; startDate: string; endDate: string; isCurrent: boolean }[] = [];
+    for (let i = fromSprint; i <= toSprint; i++) {
+      const weekStart = new Date(sprintStartDate);
+      weekStart.setUTCDate(weekStart.getUTCDate() + (i - 1) * sprintDurationDays);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setUTCDate(weekEnd.getUTCDate() + sprintDurationDays - 1);
+
+      weeks.push({
+        number: i,
+        name: `Week ${i}`,
+        startDate: weekStart.toISOString().split('T')[0] || '',
+        endDate: weekEnd.toISOString().split('T')[0] || '',
+        isCurrent: i === currentSprintNumber,
+      });
+    }
+
+    // Get all workspace people
+    const peopleResult = await pool.query(
+      `SELECT id, title as name
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'person'
+         AND ($2 OR archived_at IS NULL)
+       ORDER BY title`,
+      [workspaceId, showArchived]
+    );
+
+    // Get sprint documents with approval/rating properties
+    const sprintsResult = await pool.query(
+      `SELECT
+         jsonb_array_elements_text(s.properties->'assignee_ids') as person_id,
+         (s.properties->>'sprint_number')::int as sprint_number,
+         s.id as sprint_id,
+         s.properties->>'project_id' as project_id,
+         s.properties->'plan_approval' as plan_approval,
+         s.properties->'review_approval' as review_approval,
+         s.properties->'review_rating' as review_rating,
+         proj.title as project_name,
+         prog_da.related_id as program_id,
+         prog.title as program_name,
+         prog.properties->>'color' as program_color
+       FROM documents s
+       LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
+       LEFT JOIN document_associations prog_da ON proj.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id AND prog.document_type = 'program'
+       WHERE s.workspace_id = $1
+         AND s.document_type = 'sprint'
+         AND jsonb_array_length(COALESCE(s.properties->'assignee_ids', '[]'::jsonb)) > 0
+         AND (s.properties->>'sprint_number')::int BETWEEN $2 AND $3`,
+      [workspaceId, fromSprint, toSprint]
+    );
+
+    // Get weekly plans (to check content existence)
+    const plansResult = await pool.query(
+      `SELECT
+         (properties->>'person_id') as person_id,
+         (properties->>'week_number')::int as week_number,
+         id, content
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_plan'
+         AND deleted_at IS NULL
+         AND (properties->>'week_number')::int BETWEEN $2 AND $3`,
+      [workspaceId, fromSprint, toSprint]
+    );
+
+    // Get weekly retros (to check content existence)
+    const retrosResult = await pool.query(
+      `SELECT
+         (properties->>'person_id') as person_id,
+         (properties->>'week_number')::int as week_number,
+         id, content
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_retro'
+         AND deleted_at IS NULL
+         AND (properties->>'week_number')::int BETWEEN $2 AND $3`,
+      [workspaceId, fromSprint, toSprint]
+    );
+
+    // Build plan/retro content maps: personId_weekNumber -> boolean
+    const planContent = new Map<string, boolean>();
+    for (const row of plansResult.rows) {
+      if (row.person_id && row.week_number) {
+        const key = `${row.person_id}_${row.week_number}`;
+        if (!planContent.has(key) || hasContent(row.content)) {
+          planContent.set(key, hasContent(row.content));
+        }
+      }
+    }
+
+    const retroContent = new Map<string, boolean>();
+    for (const row of retrosResult.rows) {
+      if (row.person_id && row.week_number) {
+        const key = `${row.person_id}_${row.week_number}`;
+        if (!retroContent.has(key) || hasContent(row.content)) {
+          retroContent.set(key, hasContent(row.content));
+        }
+      }
+    }
+
+    // Build sprint approval map: personId_sprintNumber -> { sprintId, planApproval, reviewApproval, reviewRating, programId, programName }
+    const sprintMap = new Map<string, {
+      sprintId: string;
+      planApproval: unknown;
+      reviewApproval: unknown;
+      reviewRating: unknown;
+      programId: string | null;
+      programName: string | null;
+      programColor: string | null;
+    }>();
+
+    for (const row of sprintsResult.rows) {
+      if (row.person_id && row.sprint_number) {
+        const key = `${row.person_id}_${row.sprint_number}`;
+        sprintMap.set(key, {
+          sprintId: row.sprint_id,
+          planApproval: row.plan_approval || null,
+          reviewApproval: row.review_approval || null,
+          reviewRating: row.review_rating || null,
+          programId: row.program_id || null,
+          programName: row.program_name || null,
+          programColor: row.program_color || null,
+        });
+      }
+    }
+
+    // Build people list with program info from current sprint
+    const people = peopleResult.rows.map((p: { id: string; name: string }) => {
+      const currentSprint = sprintMap.get(`${p.id}_${currentSprintNumber}`);
+      return {
+        personId: p.id,
+        name: p.name,
+        programId: currentSprint?.programId || null,
+        programName: currentSprint?.programName || null,
+        programColor: currentSprint?.programColor || null,
+      };
+    });
+
+    // Build reviews map: personId -> sprintNumber -> cell data
+    const reviews: Record<string, Record<number, {
+      planApproval: unknown;
+      reviewApproval: unknown;
+      reviewRating: unknown;
+      hasPlan: boolean;
+      hasRetro: boolean;
+      sprintId: string | null;
+    }>> = {};
+
+    for (const person of peopleResult.rows) {
+      const personReviews: Record<number, {
+        planApproval: unknown;
+        reviewApproval: unknown;
+        reviewRating: unknown;
+        hasPlan: boolean;
+        hasRetro: boolean;
+        sprintId: string | null;
+      }> = {};
+      for (const week of weeks) {
+        const key = `${person.id}_${week.number}`;
+        const sprint = sprintMap.get(key);
+        const contentKey = `${person.id}_${week.number}`;
+
+        personReviews[week.number] = {
+          planApproval: sprint?.planApproval || null,
+          reviewApproval: sprint?.reviewApproval || null,
+          reviewRating: sprint?.reviewRating || null,
+          hasPlan: planContent.get(contentKey) || false,
+          hasRetro: retroContent.get(contentKey) || false,
+          sprintId: sprint?.sprintId || null,
+        };
+      }
+      reviews[person.id] = personReviews;
+    }
+
+    res.json({
+      people,
+      weeks,
+      reviews,
+      currentSprintNumber,
+    });
+  } catch (err) {
+    console.error('Get team reviews error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/team/accountability-grid-v3 - Person-centric plan/retro status (like Allocation view)
 // Returns: { programs: [{ people: [{ weeks }] }], weeks, currentSprintNumber }
 // Groups people by their current week's allocation's program
