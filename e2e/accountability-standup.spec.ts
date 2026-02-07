@@ -10,6 +10,10 @@ import { test, expect } from './fixtures/isolated-env';
  *
  * These tests use API calls directly to avoid UI flakiness and
  * test the actual inference logic.
+ *
+ * Note: The isBusinessDay check happens server-side, so we check the
+ * actual day rather than trying to mock dates (browser date mocking
+ * doesn't affect the API server).
  */
 
 // Helper to get CSRF token for API requests
@@ -20,35 +24,13 @@ async function getCsrfToken(page: import('@playwright/test').Page, apiUrl: strin
   return token;
 }
 
-test.describe('Standup Accountability Flow', () => {
-  // Mock date to always be a Wednesday (business day) to avoid weekend skips
-  test.beforeEach(async ({ page }) => {
-    // Set a fixed Wednesday date for all tests
-    await page.addInitScript(() => {
-      const mockDate = new Date('2025-01-15T10:00:00'); // Wednesday
-      const OriginalDate = Date;
-      // @ts-ignore
-      globalThis.Date = class extends OriginalDate {
-        constructor(...args: unknown[]) {
-          if (args.length === 0) {
-            super(mockDate.getTime());
-          } else {
-            // @ts-ignore
-            super(...args);
-          }
-        }
-        static now() {
-          return mockDate.getTime();
-        }
-      };
-    });
-  });
+function isBusinessDay(): boolean {
+  const day = new Date().getUTCDay();
+  return day >= 1 && day <= 5; // Mon=1 through Fri=5
+}
 
-  test.fixme('user with assigned issues in current sprint sees standup action item', async ({ page, apiServer }) => {
-    // FIXME: Standup accountability inference uses server-side date while the test
-    // mocks the date only on the browser side. The sprint_number computation and
-    // isBusinessDay check happen on the server, making this test unreliable.
-    // Needs rewrite to either mock server date or use a different testing approach.
+test.describe('Standup Accountability Flow', () => {
+  test('standup action items respect business day rules', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');
@@ -77,14 +59,13 @@ test.describe('Standup Accountability Flow', () => {
     const program = await programResponse.json();
     const programId = program.id;
 
-    // Get current sprint number from server to ensure it matches the accountability
-    // service's computation (avoids timezone/date-normalization mismatches)
+    // Get current sprint number from server
     const gridResponse = await page.request.get(`${apiServer.url}/api/team/grid`);
     expect(gridResponse.ok()).toBe(true);
     const gridData = await gridResponse.json();
     const currentSprintNumber = gridData.currentSprintNumber;
 
-    // Create a sprint that's current (should be started)
+    // Create a sprint that's current
     const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
@@ -109,7 +90,7 @@ test.describe('Standup Accountability Flow', () => {
     });
     expect(issueResponse.ok()).toBe(true);
 
-    // Check action items - should include standup for this sprint
+    // Check action items
     const actionItemsResponse = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse.ok()).toBe(true);
     const actionItems = await actionItemsResponse.json();
@@ -119,15 +100,19 @@ test.describe('Standup Accountability Flow', () => {
         item.accountability_target_id === sprintId && item.accountability_type === 'standup'
     );
 
-    // Should have a standup action item for this sprint
-    expect(standupItems.length).toBe(1);
-    // Title should mention issue count
-    expect(standupItems[0].title).toContain('1 issue');
+    if (isBusinessDay()) {
+      // On business days, should have a standup action item
+      expect(standupItems.length).toBe(1);
+      expect(standupItems[0].title).toContain('1 issue');
+    } else {
+      // On weekends, standups are not required
+      expect(standupItems.length).toBe(0);
+    }
   });
 
-  test.fixme('creating standup removes action item', async ({ page, apiServer }) => {
-    // FIXME: Same server-side date issue as the test above.
-    // Date is mocked to Wednesday in beforeEach, but only on browser side.
+  test('creating standup removes action item on business days', async ({ page, apiServer }) => {
+    // This test only validates the remove-on-create behavior on business days.
+    // On weekends there's no standup item to remove, so we verify that directly.
 
     // Login to get auth cookies
     await page.goto('/login');
@@ -157,8 +142,7 @@ test.describe('Standup Accountability Flow', () => {
     const program = await programResponse.json();
     const programId = program.id;
 
-    // Get current sprint number from server to ensure it matches the accountability
-    // service's computation (avoids timezone/date-normalization mismatches)
+    // Get current sprint number from server
     const gridResponse = await page.request.get(`${apiServer.url}/api/team/grid`);
     expect(gridResponse.ok()).toBe(true);
     const gridData = await gridResponse.json();
@@ -188,7 +172,7 @@ test.describe('Standup Accountability Flow', () => {
       },
     });
 
-    // Step 1: Verify standup item exists
+    // Step 1: Check initial standup items
     const actionItemsResponse1 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse1.ok()).toBe(true);
     const actionItems1 = await actionItemsResponse1.json();
@@ -197,9 +181,17 @@ test.describe('Standup Accountability Flow', () => {
       (item: { accountability_target_id: string; accountability_type: string }) =>
         item.accountability_target_id === sprintId && item.accountability_type === 'standup'
     );
+
+    if (!isBusinessDay()) {
+      // On weekends, no standup items exist — nothing to remove
+      expect(standupItems1.length).toBe(0);
+      return; // Test passes — correct weekend behavior
+    }
+
+    // On business days, verify item exists then remove it
     expect(standupItems1.length).toBe(1);
 
-    // Step 2: Create a standup for this sprint (via sprint standups endpoint)
+    // Step 2: Create a standup for this sprint
     const standupResponse = await page.request.post(`${apiServer.url}/api/weeks/${sprintId}/standups`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
@@ -252,8 +244,7 @@ test.describe('Standup Accountability Flow', () => {
     const program = await programResponse.json();
     const programId = program.id;
 
-    // Get current sprint number from server to ensure it matches the accountability
-    // service's computation (avoids timezone/date-normalization mismatches)
+    // Get current sprint number from server
     const gridResponse = await page.request.get(`${apiServer.url}/api/team/grid`);
     expect(gridResponse.ok()).toBe(true);
     const gridData = await gridResponse.json();
@@ -285,7 +276,7 @@ test.describe('Standup Accountability Flow', () => {
         item.accountability_target_id === sprintId && item.accountability_type === 'standup'
     );
 
-    // No assigned issues = no standup action item
+    // No assigned issues = no standup action item (regardless of day)
     expect(standupItems.length).toBe(0);
   });
 });
