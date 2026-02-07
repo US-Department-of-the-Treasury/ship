@@ -284,7 +284,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
          prog.properties->>'color' as program_color
        FROM documents s
        LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
-       LEFT JOIN document_associations prog_da ON s.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN document_associations prog_da ON proj.id = prog_da.document_id AND prog_da.relationship_type = 'program'
        LEFT JOIN documents prog ON prog_da.related_id = prog.id AND prog.document_type = 'program'
        WHERE s.workspace_id = $1
          AND s.document_type = 'sprint'
@@ -1452,7 +1452,7 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
          prog.properties->>'color' as program_color
        FROM documents s
        LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
-       LEFT JOIN document_associations prog_da ON s.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN document_associations prog_da ON proj.id = prog_da.document_id AND prog_da.relationship_type = 'program'
        LEFT JOIN documents prog ON prog_da.related_id = prog.id AND prog.document_type = 'program'
        WHERE s.workspace_id = $1
          AND s.document_type = 'sprint'
