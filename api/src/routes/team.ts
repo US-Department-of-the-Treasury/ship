@@ -1480,23 +1480,25 @@ router.get('/reviews', authMiddleware, async (req: Request, res: Response) => {
       [workspaceId, fromSprint, toSprint]
     );
 
-    // Build plan/retro content maps: personId_weekNumber -> boolean
-    const planContent = new Map<string, boolean>();
+    // Build plan/retro content maps: personId_weekNumber -> { hasContent, docId }
+    const planContent = new Map<string, { hasContent: boolean; docId: string }>();
     for (const row of plansResult.rows) {
       if (row.person_id && row.week_number) {
         const key = `${row.person_id}_${row.week_number}`;
-        if (!planContent.has(key) || hasContent(row.content)) {
-          planContent.set(key, hasContent(row.content));
+        const existing = planContent.get(key);
+        if (!existing || hasContent(row.content)) {
+          planContent.set(key, { hasContent: hasContent(row.content), docId: row.id });
         }
       }
     }
 
-    const retroContent = new Map<string, boolean>();
+    const retroContent = new Map<string, { hasContent: boolean; docId: string }>();
     for (const row of retrosResult.rows) {
       if (row.person_id && row.week_number) {
         const key = `${row.person_id}_${row.week_number}`;
-        if (!retroContent.has(key) || hasContent(row.content)) {
-          retroContent.set(key, hasContent(row.content));
+        const existing = retroContent.get(key);
+        if (!existing || hasContent(row.content)) {
+          retroContent.set(key, { hasContent: hasContent(row.content), docId: row.id });
         }
       }
     }
@@ -1547,6 +1549,8 @@ router.get('/reviews', authMiddleware, async (req: Request, res: Response) => {
       hasPlan: boolean;
       hasRetro: boolean;
       sprintId: string | null;
+      planDocId: string | null;
+      retroDocId: string | null;
     }>> = {};
 
     for (const person of peopleResult.rows) {
@@ -1557,19 +1561,25 @@ router.get('/reviews', authMiddleware, async (req: Request, res: Response) => {
         hasPlan: boolean;
         hasRetro: boolean;
         sprintId: string | null;
+        planDocId: string | null;
+        retroDocId: string | null;
       }> = {};
       for (const week of weeks) {
         const key = `${person.id}_${week.number}`;
         const sprint = sprintMap.get(key);
         const contentKey = `${person.id}_${week.number}`;
+        const plan = planContent.get(contentKey);
+        const retro = retroContent.get(contentKey);
 
         personReviews[week.number] = {
           planApproval: sprint?.planApproval || null,
           reviewApproval: sprint?.reviewApproval || null,
           reviewRating: sprint?.reviewRating || null,
-          hasPlan: planContent.get(contentKey) || false,
-          hasRetro: retroContent.get(contentKey) || false,
+          hasPlan: plan?.hasContent || false,
+          hasRetro: retro?.hasContent || false,
           sprintId: sprint?.sprintId || null,
+          planDocId: plan?.docId || null,
+          retroDocId: retro?.docId || null,
         };
       }
       reviews[person.id] = personReviews;

@@ -37,6 +37,7 @@ import { UnifiedDocumentPage } from '@/pages/UnifiedDocumentPage';
 import { MyWeekPage } from '@/pages/MyWeekPage';
 import { StatusOverviewPage } from '@/pages/StatusOverviewPage';
 import { ReviewsPage } from '@/pages/ReviewsPage';
+import { ReviewQueueProvider } from '@/contexts/ReviewQueueContext';
 
 import { InviteAcceptPage } from '@/pages/InviteAccept';
 import { SetupPage } from '@/pages/Setup';
@@ -255,7 +256,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <ToastProvider>
         <MutationErrorToast />
         <BrowserRouter>
-          <App />
+          <ReviewQueueProvider>
+            <App />
+          </ReviewQueueProvider>
         </BrowserRouter>
       </ToastProvider>
       <ReactQueryDevtools initialIsOpen={false} />
