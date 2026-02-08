@@ -240,11 +240,14 @@ function WeeklyDocumentSidebar({
   const reviewQueue = useReviewQueue();
   const queueActive = reviewQueue?.state.active ?? false;
 
-  // Review mode state
+  // Approval state (always fetched, not just review mode)
   const [approvalState, setApprovalState] = useState<string | null>(null);
+  const [approvedBy, setApprovedBy] = useState<string | null>(null);
+  const [approvedAt, setApprovedAt] = useState<string | null>(null);
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
   const [currentRating, setCurrentRating] = useState<number | null>(null);
   const [approving, setApproving] = useState(false);
+  const [resolvedSprintId, setResolvedSprintId] = useState<string | null>(sprintId);
 
   // Fetch person name
   const { data: personDoc } = useQuery<{ title: string }>({
@@ -268,41 +271,76 @@ function WeeklyDocumentSidebar({
     enabled: !!projectId,
   });
 
-  // Fetch sprint approval state when in review mode
-  useQuery<{ properties?: Record<string, unknown> }>({
-    queryKey: ['document', sprintId, 'review-state'],
+  // When not in review mode, resolve the sprint ID from project_id + week_number
+  useQuery({
+    queryKey: ['sprint-lookup', projectId, weekNumber],
     queryFn: async () => {
-      const res = await apiGet(`/api/documents/${sprintId}`);
+      const res = await apiGet(`/api/documents?document_type=sprint&properties.sprint_number=${weekNumber}&properties.project_id=${projectId}`);
+      if (!res.ok) return null;
+      const docs = await res.json();
+      if (Array.isArray(docs) && docs.length > 0) {
+        setResolvedSprintId(docs[0].id);
+        return docs[0].id;
+      }
+      return null;
+    },
+    enabled: !sprintId && !!projectId && !!weekNumber,
+  });
+
+  // Fetch sprint approval state (always, using either URL sprintId or resolved one)
+  const effectiveSprintId = sprintId || resolvedSprintId;
+  const { data: approverDoc } = useQuery<{ title: string }>({
+    queryKey: ['document', approvedBy],
+    queryFn: async () => {
+      // approvedBy is a user ID, need to find their person doc
+      const res = await apiGet(`/api/documents?document_type=person&properties.user_id=${approvedBy}`);
+      if (!res.ok) return { title: '' };
+      const docs = await res.json();
+      return Array.isArray(docs) && docs.length > 0 ? docs[0] : { title: '' };
+    },
+    enabled: !!approvedBy,
+  });
+
+  useQuery<{ properties?: Record<string, unknown> }>({
+    queryKey: ['sprint-approval', effectiveSprintId],
+    queryFn: async () => {
+      const res = await apiGet(`/api/documents/${effectiveSprintId}`);
       if (!res.ok) throw new Error('Failed to fetch sprint');
       const data = await res.json();
       const props = data.properties || {};
       if (isRetro) {
-        const reviewApproval = props.review_approval as { state?: string } | null;
+        const reviewApproval = props.review_approval as { state?: string; approved_by?: string; approved_at?: string } | null;
         const reviewRating = props.review_rating as { value?: number } | null;
         setApprovalState(reviewApproval?.state || null);
+        setApprovedBy(reviewApproval?.approved_by || null);
+        setApprovedAt(reviewApproval?.approved_at || null);
         if (reviewRating?.value) {
           setCurrentRating(reviewRating.value);
           setSelectedRating(reviewRating.value);
         }
       } else {
-        const planApproval = props.plan_approval as { state?: string } | null;
+        const planApproval = props.plan_approval as { state?: string; approved_by?: string; approved_at?: string } | null;
         setApprovalState(planApproval?.state || null);
+        setApprovedBy(planApproval?.approved_by || null);
+        setApprovedAt(planApproval?.approved_at || null);
       }
       return data;
     },
-    enabled: isReviewMode && !!sprintId,
+    enabled: !!effectiveSprintId,
   });
 
   const personName = personDoc?.title || (personId ? `${personId.substring(0, 8)}...` : null);
   const projectName = projectDoc?.title || (projectId ? `${projectId.substring(0, 8)}...` : null);
 
   async function handleApprovePlan() {
-    if (!sprintId || approving) return;
+    if (!effectiveSprintId || approving) return;
     setApproving(true);
     try {
-      const res = await apiPost(`/api/weeks/${sprintId}/approve-plan`);
+      const res = await apiPost(`/api/weeks/${effectiveSprintId}/approve-plan`);
       if (res.ok) {
         setApprovalState('approved');
+        setApprovedAt(new Date().toISOString());
+        setApprovedBy('current-user');
         if (queueActive) reviewQueue?.advance();
       } else {
         console.error('Failed to approve plan:', res.status, await res.text().catch(() => ''));
@@ -314,14 +352,35 @@ function WeeklyDocumentSidebar({
     }
   }
 
-  async function handleRateRetro() {
-    if (!sprintId || !selectedRating || approving) return;
+  async function handleUnapprovePlan() {
+    if (!effectiveSprintId || approving) return;
     setApproving(true);
     try {
-      const res = await apiPost(`/api/weeks/${sprintId}/approve-review`, { rating: selectedRating });
+      const res = await apiPost(`/api/weeks/${effectiveSprintId}/unapprove-plan`);
+      if (res.ok) {
+        setApprovalState(null);
+        setApprovedBy(null);
+        setApprovedAt(null);
+      } else {
+        console.error('Failed to unapprove plan:', res.status, await res.text().catch(() => ''));
+      }
+    } catch (err) {
+      console.error('Error unapproving plan:', err);
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleRateRetro() {
+    if (!effectiveSprintId || !selectedRating || approving) return;
+    setApproving(true);
+    try {
+      const res = await apiPost(`/api/weeks/${effectiveSprintId}/approve-review`, { rating: selectedRating });
       if (res.ok) {
         setApprovalState('approved');
         setCurrentRating(selectedRating);
+        setApprovedAt(new Date().toISOString());
+        setApprovedBy('current-user');
         if (queueActive) reviewQueue?.advance();
       } else {
         console.error('Failed to rate retro:', res.status, await res.text().catch(() => ''));
@@ -331,6 +390,12 @@ function WeeklyDocumentSidebar({
     } finally {
       setApproving(false);
     }
+  }
+
+  function formatApprovalDate(dateStr: string): string {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
 
   return (
@@ -370,66 +435,130 @@ function WeeklyDocumentSidebar({
         </div>
       )}
 
-      {/* Review mode controls */}
-      {isReviewMode && sprintId && (
+      {/* Approval status (always shown) + controls (review mode only) */}
+      {effectiveSprintId && (
         <div className="border-b border-border pb-4">
           {isRetro ? (
-            /* Rating controls for retro */
             <div>
               <label className="text-xs font-medium text-muted mb-2 block">Performance Rating</label>
-              <div className="flex gap-1 mb-3">
-                {OPM_RATINGS.map(r => (
+              {/* Read-only rating display when not in review mode */}
+              {!isReviewMode && currentRating ? (
+                <div className="mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={cn('text-sm font-bold', OPM_RATINGS.find(r => r.value === currentRating)?.color)}>
+                      {currentRating}/5
+                    </span>
+                    <span className="text-xs text-muted">
+                      {OPM_RATINGS.find(r => r.value === currentRating)?.label}
+                    </span>
+                  </div>
+                  {approvedAt && (
+                    <p className="text-[11px] text-muted mt-1">
+                      Rated {formatApprovalDate(approvedAt)}
+                      {approverDoc?.title ? ` by ${approverDoc.title}` : ''}
+                    </p>
+                  )}
+                </div>
+              ) : !isReviewMode && !currentRating ? (
+                <p className="text-xs text-muted italic mb-2">Not yet rated</p>
+              ) : null}
+              {/* Editable rating controls in review mode */}
+              {isReviewMode && (
+                <>
+                  <div className="flex gap-1 mb-3">
+                    {OPM_RATINGS.map(r => (
+                      <button
+                        key={r.value}
+                        onClick={() => setSelectedRating(r.value)}
+                        className={cn(
+                          'flex-1 flex flex-col items-center gap-0.5 rounded py-1.5 text-xs transition-all',
+                          selectedRating === r.value
+                            ? 'bg-accent/20 ring-1 ring-accent'
+                            : 'bg-border/30 hover:bg-border/50'
+                        )}
+                        title={r.label}
+                      >
+                        <span className={cn('font-bold', r.color)}>{r.value}</span>
+                        <span className="text-[9px] text-muted leading-tight">{r.label.split(' ')[0]}</span>
+                      </button>
+                    ))}
+                  </div>
                   <button
-                    key={r.value}
-                    onClick={() => setSelectedRating(r.value)}
+                    onClick={handleRateRetro}
+                    disabled={!selectedRating || approving}
                     className={cn(
-                      'flex-1 flex flex-col items-center gap-0.5 rounded py-1.5 text-xs transition-all',
-                      selectedRating === r.value
-                        ? 'bg-accent/20 ring-1 ring-accent'
-                        : 'bg-border/30 hover:bg-border/50'
+                      'w-full rounded py-2 text-sm font-medium transition-colors',
+                      approvalState === 'approved' && currentRating
+                        ? 'bg-green-600/20 text-green-400'
+                        : selectedRating
+                          ? 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+                          : 'bg-border/30 text-muted cursor-not-allowed'
                     )}
-                    title={r.label}
                   >
-                    <span className={cn('font-bold', r.color)}>{r.value}</span>
-                    <span className="text-[9px] text-muted leading-tight">{r.label.split(' ')[0]}</span>
+                    {approvalState === 'approved' && currentRating ? 'Rated & Approved' : currentRating ? 'Update Rating' : 'Rate & Approve'}
                   </button>
-                ))}
-              </div>
-              <button
-                onClick={handleRateRetro}
-                disabled={!selectedRating || approving}
-                className={cn(
-                  'w-full rounded py-2 text-sm font-medium transition-colors',
-                  approvalState === 'approved' && currentRating
-                    ? 'bg-green-600/20 text-green-400'
-                    : selectedRating
-                      ? 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
-                      : 'bg-border/30 text-muted cursor-not-allowed'
-                )}
-              >
-                {approvalState === 'approved' && currentRating ? 'Rated & Approved' : currentRating ? 'Update Rating' : 'Rate & Approve'}
-              </button>
+                </>
+              )}
             </div>
           ) : (
-            /* Approve button for plan */
-            <button
-              onClick={handleApprovePlan}
-              disabled={approvalState === 'approved' || approving}
-              className={cn(
-                'w-full rounded py-2 text-sm font-medium transition-colors',
-                approvalState === 'approved'
-                  ? 'bg-green-600/20 text-green-400'
-                  : approvalState === 'changed_since_approved'
-                    ? 'bg-orange-600 text-white hover:bg-orange-500 cursor-pointer'
-                    : 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+            <div>
+              <label className="text-xs font-medium text-muted mb-2 block">Plan Approval</label>
+              {approvalState === 'approved' ? (
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="inline-flex items-center gap-1 rounded bg-green-600/20 px-2 py-1 text-xs font-medium text-green-400">
+                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
+                      Approved
+                    </span>
+                  </div>
+                  {approvedAt && (
+                    <p className="text-[11px] text-muted">
+                      {formatApprovalDate(approvedAt)}
+                      {approverDoc?.title ? ` by ${approverDoc.title}` : ''}
+                    </p>
+                  )}
+                  {isReviewMode && (
+                    <button
+                      onClick={handleUnapprovePlan}
+                      disabled={approving}
+                      className="mt-2 w-full rounded border border-border py-1.5 text-xs text-muted hover:text-foreground hover:bg-border/50 transition-colors"
+                    >
+                      Undo Approval
+                    </button>
+                  )}
+                </div>
+              ) : approvalState === 'changed_since_approved' ? (
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="inline-flex items-center gap-1 rounded bg-orange-600/20 px-2 py-1 text-xs font-medium text-orange-400">
+                      Changed since approved
+                    </span>
+                  </div>
+                  {isReviewMode && (
+                    <button
+                      onClick={handleApprovePlan}
+                      disabled={approving}
+                      className="mt-2 w-full rounded bg-orange-600 py-2 text-sm font-medium text-white hover:bg-orange-500 cursor-pointer transition-colors"
+                    >
+                      Re-approve Plan
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs text-muted italic mb-2">Not yet approved</p>
+                  {isReviewMode && (
+                    <button
+                      onClick={handleApprovePlan}
+                      disabled={approving}
+                      className="w-full rounded bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-500 cursor-pointer transition-colors"
+                    >
+                      Approve Plan
+                    </button>
+                  )}
+                </div>
               )}
-            >
-              {approvalState === 'approved'
-                ? 'Approved'
-                : approvalState === 'changed_since_approved'
-                  ? 'Re-approve Plan'
-                  : 'Approve Plan'}
-            </button>
+            </div>
           )}
         </div>
       )}

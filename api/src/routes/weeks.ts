@@ -2584,6 +2584,64 @@ router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Respo
   }
 });
 
+// POST /api/weeks/:id/unapprove-plan - Revoke plan approval (logged to history)
+router.post('/:id/unapprove-plan', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    const sprintResult = await pool.query(
+      `SELECT d.id, d.properties, prog.properties->>'accountable_id' as program_accountable_id
+       FROM documents d
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintResult.rows.length === 0) {
+      res.status(404).json({ error: 'Week not found' });
+      return;
+    }
+
+    const sprint = sprintResult.rows[0];
+    if (sprint.program_accountable_id !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the program accountable person or admin can unapprove plans' });
+      return;
+    }
+
+    const currentProps = sprint.properties || {};
+    const previousApproval = currentProps.plan_approval;
+
+    // Log the unapproval to document_history (preserves audit trail)
+    await logDocumentChange(
+      id as string,
+      'plan_approval',
+      previousApproval ? JSON.stringify(previousApproval) : null,
+      null,
+      userId
+    );
+
+    // Remove the approval from properties
+    const { plan_approval: _, ...restProps } = currentProps;
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND document_type = 'sprint'`,
+      [JSON.stringify(restProps), id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Unapprove sprint plan error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/weeks/:id/approve-review - Approve sprint review (with optional performance rating)
 router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Response) => {
   try {
