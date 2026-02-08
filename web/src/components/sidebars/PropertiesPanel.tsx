@@ -268,14 +268,12 @@ function WeeklyDocumentSidebar({
     enabled: !!projectId,
   });
 
-  // Fetch sprint data with approval state
-  // If sprintId is in URL params, fetch directly. Otherwise look up by project + week.
-  const { data: sprintData } = useQuery<{ id: string; properties: Record<string, unknown> }>({
-    queryKey: ['sprint-approval', sprintId || `lookup-${projectId}-${weekNumber}`],
+  // Fetch sprint data with approval state + approver name in a single query
+  const { data: sprintData } = useQuery<{ id: string; properties: Record<string, unknown>; approverName?: string }>({
+    queryKey: ['sprint-approval-v2', sprintId || `lookup-${projectId}-${weekNumber}`],
     queryFn: async () => {
       let sid = sprintId;
       if (!sid) {
-        // Look up sprint by project + week number
         const lookupRes = await apiGet(`/api/weeks/lookup?project_id=${projectId}&sprint_number=${weekNumber}`);
         if (!lookupRes.ok) throw new Error('Sprint not found');
         const lookup = await lookupRes.json();
@@ -283,7 +281,19 @@ function WeeklyDocumentSidebar({
       }
       const res = await apiGet(`/api/documents/${sid}`);
       if (!res.ok) throw new Error('Failed to fetch sprint');
-      return res.json();
+      const data = await res.json();
+
+      // Resolve approver name if there's an approval
+      const props = data.properties || {};
+      const approval = isRetro ? props.review_approval : props.plan_approval;
+      if (approval?.approved_by) {
+        const personRes = await fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/weeks/lookup-person?user_id=${approval.approved_by}`, { credentials: 'include' });
+        if (personRes.ok) {
+          const person = await personRes.json();
+          data.approverName = person.title;
+        }
+      }
+      return data;
     },
     enabled: !!sprintId || (!!projectId && !!weekNumber),
   });
@@ -302,20 +312,8 @@ function WeeklyDocumentSidebar({
   const approvedAt = localApprovalOverride !== null
     ? localApprovalOverride.at
     : (isRetro ? reviewApproval?.approved_at : planApproval?.approved_at) || null;
-  const approvedByUserId = isRetro ? reviewApproval?.approved_by : planApproval?.approved_by;
+  const approverName = sprintData?.approverName || null;
   const currentRating = reviewRating?.value || null;
-
-  // Resolve approver user ID to person name
-  const { data: approverPersonDoc } = useQuery<{ title: string }>({
-    queryKey: ['person-by-user', approvedByUserId],
-    queryFn: async () => {
-      // Find person doc where properties.user_id matches the approver
-      const res = await apiGet(`/api/weeks/lookup-person?user_id=${approvedByUserId}`);
-      if (!res.ok) return { title: '' };
-      return res.json();
-    },
-    enabled: !!approvedByUserId && approvalState === 'approved',
-  });
 
   const personName = personDoc?.title || (personId ? `${personId.substring(0, 8)}...` : null);
   const projectName = projectDoc?.title || (projectId ? `${projectId.substring(0, 8)}...` : null);
@@ -436,7 +434,7 @@ function WeeklyDocumentSidebar({
                   {approvedAt && (
                     <p className="text-[11px] text-muted mt-1">
                       Rated {formatApprovalDate(approvedAt)}
-                      {approverPersonDoc?.title ? ` by ${approverPersonDoc.title}` : ''}
+                      {approverName ? ` by ${approverName}` : ''}
                     </p>
                   )}
                 </div>
@@ -495,7 +493,7 @@ function WeeklyDocumentSidebar({
                   {approvedAt && (
                     <p className="text-[11px] text-muted">
                       {formatApprovalDate(approvedAt)}
-                      {approverPersonDoc?.title ? ` by ${approverPersonDoc.title}` : ''}
+                      {approverName ? ` by ${approverName}` : ''}
                     </p>
                   )}
                   {isReviewMode && (
