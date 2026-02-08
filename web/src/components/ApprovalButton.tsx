@@ -2,8 +2,7 @@ import { useState, useCallback } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { ApprovalTracking } from '@ship/shared';
 import { DiffViewer, tipTapToPlainText } from '@/components/DiffViewer';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import { apiPost } from '@/lib/api';
 
 // Inline SVG icons
 function CheckCircleIcon({ className }: { className?: string }) {
@@ -90,11 +89,7 @@ export function ApprovalButton({
 
     setIsLoading(true);
     try {
-      const response = await fetch(`${API_URL}${approveEndpoint}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const response = await apiPost(approveEndpoint);
 
       if (!response.ok) {
         const error = await response.json();
