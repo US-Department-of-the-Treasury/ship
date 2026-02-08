@@ -14,6 +14,37 @@ import { broadcastToUser } from '../collaboration/index.js';
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
+// GET /api/weeks/lookup-person - Find person document by user_id
+router.get('/lookup-person', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const userId = req.query.user_id as string;
+
+    if (!userId) {
+      res.status(400).json({ error: 'user_id is required' });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT id, title FROM documents
+       WHERE workspace_id = $1 AND document_type = 'person'
+         AND (properties->>'user_id') = $2
+       LIMIT 1`,
+      [workspaceId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Person not found' });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Person lookup error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/weeks/lookup - Find sprint by project_id + sprint_number
 // Returns the sprint document with its approval properties
 router.get('/lookup', authMiddleware, async (req: Request, res: Response) => {

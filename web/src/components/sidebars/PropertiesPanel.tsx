@@ -302,7 +302,20 @@ function WeeklyDocumentSidebar({
   const approvedAt = localApprovalOverride !== null
     ? localApprovalOverride.at
     : (isRetro ? reviewApproval?.approved_at : planApproval?.approved_at) || null;
+  const approvedByUserId = isRetro ? reviewApproval?.approved_by : planApproval?.approved_by;
   const currentRating = reviewRating?.value || null;
+
+  // Resolve approver user ID to person name
+  const { data: approverPersonDoc } = useQuery<{ title: string }>({
+    queryKey: ['person-by-user', approvedByUserId],
+    queryFn: async () => {
+      // Find person doc where properties.user_id matches the approver
+      const res = await apiGet(`/api/weeks/lookup-person?user_id=${approvedByUserId}`);
+      if (!res.ok) return { title: '' };
+      return res.json();
+    },
+    enabled: !!approvedByUserId && approvalState === 'approved',
+  });
 
   const personName = personDoc?.title || (personId ? `${personId.substring(0, 8)}...` : null);
   const projectName = projectDoc?.title || (projectId ? `${projectId.substring(0, 8)}...` : null);
@@ -423,7 +436,8 @@ function WeeklyDocumentSidebar({
                   {approvedAt && (
                     <p className="text-[11px] text-muted mt-1">
                       Rated {formatApprovalDate(approvedAt)}
-                                          </p>
+                      {approverPersonDoc?.title ? ` by ${approverPersonDoc.title}` : ''}
+                    </p>
                   )}
                 </div>
               ) : !isReviewMode && !currentRating ? (
@@ -481,7 +495,8 @@ function WeeklyDocumentSidebar({
                   {approvedAt && (
                     <p className="text-[11px] text-muted">
                       {formatApprovalDate(approvedAt)}
-                                          </p>
+                      {approverPersonDoc?.title ? ` by ${approverPersonDoc.title}` : ''}
+                    </p>
                   )}
                   {isReviewMode && (
                     <button
