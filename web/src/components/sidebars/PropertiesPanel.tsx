@@ -240,14 +240,11 @@ function WeeklyDocumentSidebar({
   const reviewQueue = useReviewQueue();
   const queueActive = reviewQueue?.state.active ?? false;
 
-  // Approval state (always fetched, not just review mode)
-  const [approvalState, setApprovalState] = useState<string | null>(null);
-  const [approvedBy, setApprovedBy] = useState<string | null>(null);
-  const [approvedAt, setApprovedAt] = useState<string | null>(null);
+  // Review action state (local only — approval data comes from queries)
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
-  const [currentRating, setCurrentRating] = useState<number | null>(null);
   const [approving, setApproving] = useState(false);
-  const [resolvedSprintId, setResolvedSprintId] = useState<string | null>(sprintId);
+  // Local override after approve/unapprove action (cleared on navigation)
+  const [localApprovalOverride, setLocalApprovalOverride] = useState<{ state: string | null; at: string | null } | null>(null);
 
   // Fetch person name
   const { data: personDoc } = useQuery<{ title: string }>({
@@ -271,63 +268,41 @@ function WeeklyDocumentSidebar({
     enabled: !!projectId,
   });
 
-  // When not in review mode, resolve the sprint ID from project_id + week_number
-  useQuery({
-    queryKey: ['sprint-lookup', projectId, weekNumber],
+  // Fetch sprint data with approval state
+  // If sprintId is in URL params, fetch directly. Otherwise look up by project + week.
+  const { data: sprintData } = useQuery<{ id: string; properties: Record<string, unknown> }>({
+    queryKey: ['sprint-approval', sprintId || `lookup-${projectId}-${weekNumber}`],
     queryFn: async () => {
-      const res = await apiGet(`/api/documents?document_type=sprint&properties.sprint_number=${weekNumber}&properties.project_id=${projectId}`);
-      if (!res.ok) return null;
-      const docs = await res.json();
-      if (Array.isArray(docs) && docs.length > 0) {
-        setResolvedSprintId(docs[0].id);
-        return docs[0].id;
+      let sid = sprintId;
+      if (!sid) {
+        // Look up sprint by project + week number
+        const lookupRes = await apiGet(`/api/weeks/lookup?project_id=${projectId}&sprint_number=${weekNumber}`);
+        if (!lookupRes.ok) throw new Error('Sprint not found');
+        const lookup = await lookupRes.json();
+        sid = lookup.id;
       }
-      return null;
-    },
-    enabled: !sprintId && !!projectId && !!weekNumber,
-  });
-
-  // Fetch sprint approval state (always, using either URL sprintId or resolved one)
-  const effectiveSprintId = sprintId || resolvedSprintId;
-  const { data: approverDoc } = useQuery<{ title: string }>({
-    queryKey: ['document', approvedBy],
-    queryFn: async () => {
-      // approvedBy is a user ID, need to find their person doc
-      const res = await apiGet(`/api/documents?document_type=person&properties.user_id=${approvedBy}`);
-      if (!res.ok) return { title: '' };
-      const docs = await res.json();
-      return Array.isArray(docs) && docs.length > 0 ? docs[0] : { title: '' };
-    },
-    enabled: !!approvedBy,
-  });
-
-  useQuery<{ properties?: Record<string, unknown> }>({
-    queryKey: ['sprint-approval', effectiveSprintId],
-    queryFn: async () => {
-      const res = await apiGet(`/api/documents/${effectiveSprintId}`);
+      const res = await apiGet(`/api/documents/${sid}`);
       if (!res.ok) throw new Error('Failed to fetch sprint');
-      const data = await res.json();
-      const props = data.properties || {};
-      if (isRetro) {
-        const reviewApproval = props.review_approval as { state?: string; approved_by?: string; approved_at?: string } | null;
-        const reviewRating = props.review_rating as { value?: number } | null;
-        setApprovalState(reviewApproval?.state || null);
-        setApprovedBy(reviewApproval?.approved_by || null);
-        setApprovedAt(reviewApproval?.approved_at || null);
-        if (reviewRating?.value) {
-          setCurrentRating(reviewRating.value);
-          setSelectedRating(reviewRating.value);
-        }
-      } else {
-        const planApproval = props.plan_approval as { state?: string; approved_by?: string; approved_at?: string } | null;
-        setApprovalState(planApproval?.state || null);
-        setApprovedBy(planApproval?.approved_by || null);
-        setApprovedAt(planApproval?.approved_at || null);
-      }
-      return data;
+      return res.json();
     },
-    enabled: !!effectiveSprintId,
+    enabled: !!sprintId || (!!projectId && !!weekNumber),
   });
+
+  const effectiveSprintId = sprintData?.id || sprintId || null;
+
+  // Derive approval state from sprint data (or local override after action)
+  const sprintProps = sprintData?.properties || {};
+  const planApproval = sprintProps.plan_approval as { state?: string; approved_by?: string; approved_at?: string } | null;
+  const reviewApproval = sprintProps.review_approval as { state?: string; approved_by?: string; approved_at?: string } | null;
+  const reviewRating = sprintProps.review_rating as { value?: number } | null;
+
+  const approvalState = localApprovalOverride !== null
+    ? localApprovalOverride.state
+    : (isRetro ? reviewApproval?.state : planApproval?.state) || null;
+  const approvedAt = localApprovalOverride !== null
+    ? localApprovalOverride.at
+    : (isRetro ? reviewApproval?.approved_at : planApproval?.approved_at) || null;
+  const currentRating = reviewRating?.value || null;
 
   const personName = personDoc?.title || (personId ? `${personId.substring(0, 8)}...` : null);
   const projectName = projectDoc?.title || (projectId ? `${projectId.substring(0, 8)}...` : null);
@@ -338,9 +313,7 @@ function WeeklyDocumentSidebar({
     try {
       const res = await apiPost(`/api/weeks/${effectiveSprintId}/approve-plan`);
       if (res.ok) {
-        setApprovalState('approved');
-        setApprovedAt(new Date().toISOString());
-        setApprovedBy('current-user');
+        setLocalApprovalOverride({ state: 'approved', at: new Date().toISOString() });
         if (queueActive) reviewQueue?.advance();
       } else {
         console.error('Failed to approve plan:', res.status, await res.text().catch(() => ''));
@@ -358,9 +331,7 @@ function WeeklyDocumentSidebar({
     try {
       const res = await apiPost(`/api/weeks/${effectiveSprintId}/unapprove-plan`);
       if (res.ok) {
-        setApprovalState(null);
-        setApprovedBy(null);
-        setApprovedAt(null);
+        setLocalApprovalOverride({ state: null, at: null });
       } else {
         console.error('Failed to unapprove plan:', res.status, await res.text().catch(() => ''));
       }
@@ -377,10 +348,7 @@ function WeeklyDocumentSidebar({
     try {
       const res = await apiPost(`/api/weeks/${effectiveSprintId}/approve-review`, { rating: selectedRating });
       if (res.ok) {
-        setApprovalState('approved');
-        setCurrentRating(selectedRating);
-        setApprovedAt(new Date().toISOString());
-        setApprovedBy('current-user');
+        setLocalApprovalOverride({ state: 'approved', at: new Date().toISOString() });
         if (queueActive) reviewQueue?.advance();
       } else {
         console.error('Failed to rate retro:', res.status, await res.text().catch(() => ''));
@@ -455,8 +423,7 @@ function WeeklyDocumentSidebar({
                   {approvedAt && (
                     <p className="text-[11px] text-muted mt-1">
                       Rated {formatApprovalDate(approvedAt)}
-                      {approverDoc?.title ? ` by ${approverDoc.title}` : ''}
-                    </p>
+                                          </p>
                   )}
                 </div>
               ) : !isReviewMode && !currentRating ? (
@@ -514,8 +481,7 @@ function WeeklyDocumentSidebar({
                   {approvedAt && (
                     <p className="text-[11px] text-muted">
                       {formatApprovalDate(approvedAt)}
-                      {approverDoc?.title ? ` by ${approverDoc.title}` : ''}
-                    </p>
+                                          </p>
                   )}
                   {isReviewMode && (
                     <button

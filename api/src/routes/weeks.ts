@@ -14,6 +14,42 @@ import { broadcastToUser } from '../collaboration/index.js';
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
+// GET /api/weeks/lookup - Find sprint by project_id + sprint_number
+// Returns the sprint document with its approval properties
+router.get('/lookup', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const projectId = req.query.project_id as string;
+    const sprintNumber = parseInt(req.query.sprint_number as string, 10);
+
+    if (!projectId || isNaN(sprintNumber)) {
+      res.status(400).json({ error: 'project_id and sprint_number are required' });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT d.id, d.properties
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
+         AND da.related_id = $2 AND da.relationship_type = 'project'
+       WHERE d.workspace_id = $1 AND d.document_type = 'sprint'
+         AND (d.properties->>'sprint_number')::int = $3
+       LIMIT 1`,
+      [workspaceId, projectId, sprintNumber]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Sprint lookup error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Validation schemas
 // Sprint properties: sprint_number, assignee_ids (array), and plan fields
 // API accepts owner_id for backwards compatibility, stored internally as assignee_ids[0]
