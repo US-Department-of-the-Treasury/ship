@@ -304,7 +304,11 @@ function WeeklyDocumentSidebar({
       if (res.ok) {
         setApprovalState('approved');
         if (queueActive) reviewQueue?.advance();
+      } else {
+        console.error('Failed to approve plan:', res.status, await res.text().catch(() => ''));
       }
+    } catch (err) {
+      console.error('Error approving plan:', err);
     } finally {
       setApproving(false);
     }
@@ -319,7 +323,11 @@ function WeeklyDocumentSidebar({
         setApprovalState('approved');
         setCurrentRating(selectedRating);
         if (queueActive) reviewQueue?.advance();
+      } else {
+        console.error('Failed to rate retro:', res.status, await res.text().catch(() => ''));
       }
+    } catch (err) {
+      console.error('Error rating retro:', err);
     } finally {
       setApproving(false);
     }

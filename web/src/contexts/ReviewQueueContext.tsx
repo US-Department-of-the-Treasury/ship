@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export interface QueueItem {
@@ -35,6 +35,10 @@ export function ReviewQueueProvider({ children }: { children: React.ReactNode })
     active: false,
   });
 
+  // Use a ref to avoid stale closures in setTimeout/callbacks
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   const navigateToItem = useCallback((item: QueueItem) => {
     navigate(`/documents/${item.docId}?review=true&sprintId=${item.sprintId}`);
   }, [navigate]);
@@ -45,29 +49,26 @@ export function ReviewQueueProvider({ children }: { children: React.ReactNode })
     navigateToItem(queue[0]!);
   }, [navigateToItem]);
 
-  const advanceToNext = useCallback((currentIndex: number, queue: QueueItem[]) => {
-    const nextIndex = currentIndex + 1;
-    if (nextIndex >= queue.length) {
-      // Queue exhausted
+  const advanceToNext = useCallback(() => {
+    const s = stateRef.current;
+    if (!s.active) return;
+    const nextIndex = s.currentIndex + 1;
+    if (nextIndex >= s.queue.length) {
       setState({ queue: [], currentIndex: 0, active: false });
       navigate('/team/reviews');
     } else {
-      setState(prev => ({ ...prev, currentIndex: nextIndex }));
-      navigateToItem(queue[nextIndex]!);
+      setState({ ...s, currentIndex: nextIndex });
+      navigateToItem(s.queue[nextIndex]!);
     }
   }, [navigate, navigateToItem]);
 
   const advance = useCallback(() => {
-    if (!state.active) return;
-    setTimeout(() => {
-      advanceToNext(state.currentIndex, state.queue);
-    }, 300);
-  }, [state.active, state.currentIndex, state.queue, advanceToNext]);
+    setTimeout(advanceToNext, 300);
+  }, [advanceToNext]);
 
   const skip = useCallback(() => {
-    if (!state.active) return;
-    advanceToNext(state.currentIndex, state.queue);
-  }, [state.active, state.currentIndex, state.queue, advanceToNext]);
+    advanceToNext();
+  }, [advanceToNext]);
 
   const exit = useCallback(() => {
     setState({ queue: [], currentIndex: 0, active: false });
