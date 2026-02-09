@@ -66,10 +66,15 @@ async function seed() {
       workspaceId = existingWorkspace.rows[0].id;
       console.log('ℹ️  Workspace already exists');
     } else {
-      // Create workspace with sprint_start_date 3 months ago
-      // This gives us historical sprint data to display
+      // Create workspace with sprint_start_date ~3 months ago, aligned to Monday.
+      // Weeks must start on Monday to match production and ensure the heatmap
+      // shows correct "due" (yellow) windows for plans (Sat-Mon) and retros (Thu-Fri).
       const threeMonthsAgo = new Date();
       threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      // Roll back to the nearest Monday (day 1)
+      const dayOfWeek = threeMonthsAgo.getDay(); // 0=Sun, 1=Mon, ...
+      const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      threeMonthsAgo.setDate(threeMonthsAgo.getDate() - daysToSubtract);
       const workspaceResult = await pool.query(
         `INSERT INTO workspaces (name, sprint_start_date)
          VALUES ($1, $2)

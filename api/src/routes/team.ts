@@ -1867,18 +1867,22 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
       now.setUTCHours(0, 0, 0, 0);
 
       if (type === 'plan') {
+        // Plan: yellow (due) from Saturday (weekStart - 2) through end-of-day Monday
+        // Red (late) from Tuesday morning (weekStart + 1) onward
         const yellowStart = new Date(weekStartDate);
         yellowStart.setUTCDate(yellowStart.getUTCDate() - 2);
         const redStart = new Date(weekStartDate);
-        redStart.setUTCDate(redStart.getUTCDate() + 2);
+        redStart.setUTCDate(redStart.getUTCDate() + 1);
         if (now < yellowStart) return 'future';
         if (now >= redStart) return 'late';
         return 'due';
       } else {
+        // Retro: yellow (due) from Thursday (weekStart + 3) through end-of-day Friday
+        // Red (late) from Saturday morning (weekStart + 5) onward
         const yellowStart = new Date(weekStartDate);
-        yellowStart.setUTCDate(yellowStart.getUTCDate() + 4);
+        yellowStart.setUTCDate(yellowStart.getUTCDate() + 3);
         const redStart = new Date(weekStartDate);
-        redStart.setUTCDate(redStart.getUTCDate() + 7);
+        redStart.setUTCDate(redStart.getUTCDate() + 5);
         if (now < yellowStart) return 'future';
         if (now >= redStart) return 'late';
         return 'due';

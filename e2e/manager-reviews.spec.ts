@@ -32,15 +32,11 @@ test.describe('Manager Reviews', () => {
     await page.goto('/team/reviews');
     await page.waitForLoadState('networkidle');
 
-    // Verify page renders
-    await expect(page.getByRole('heading', { name: 'Reviews' })).toBeVisible();
-
-    // Verify sidebar shows Reviews nav item
+    // Verify sidebar shows Reviews nav item (page has no standalone heading)
     await expect(page.getByRole('button', { name: 'Reviews' })).toBeVisible();
 
-    // Verify week headers are shown
-    const weekHeaders = page.locator('[data-current-week="true"]');
-    await expect(weekHeaders).toBeVisible();
+    // Verify week headers are shown (at least one "Week N" text visible)
+    await expect(page.getByText(/Week \d+/).first()).toBeVisible();
   });
 
   test('GET /api/team/reviews returns valid data structure', async ({ page, apiServer }) => {

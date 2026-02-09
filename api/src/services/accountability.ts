@@ -106,11 +106,19 @@ export async function checkMissingAccountability(
   items.push(...sprintItems);
 
   // 2b. Check for per-person weekly_plan and weekly_retro (based on allocations)
+  // Check both current sprint AND next sprint, since plans become due 2 days before
+  // the sprint starts (Saturday before a Monday-start week).
   if (personId && todayStr) {
     const weeklyPersonItems = await checkWeeklyPersonAccountability(
       userId, workspaceId, personId, workspaceStartDate, sprintDuration, currentSprintNumber, todayStr
     );
     items.push(...weeklyPersonItems);
+
+    // Also check next sprint - plan may be due before the sprint starts
+    const nextSprintItems = await checkWeeklyPersonAccountability(
+      userId, workspaceId, personId, workspaceStartDate, sprintDuration, currentSprintNumber + 1, todayStr
+    );
+    items.push(...nextSprintItems);
   }
 
   // 5. Check for completed sprints without review
@@ -335,9 +343,9 @@ async function checkSprintAccountability(
  * Allocations are determined by having issues assigned in a sprint for a project.
  * For each allocation, check if weekly_plan/weekly_retro exists.
  *
- * Deadlines:
- * - weekly_plan: due Monday EOD (week start + 1 day)
- * - weekly_retro: due Friday EOD (week start + 4 days)
+ * Deadlines (aligned with heatmap calculateStatus):
+ * - weekly_plan: due from Saturday (weekStart - 2), overdue from Tuesday (weekStart + 1)
+ * - weekly_retro: due from Thursday (weekStart + 3), overdue from Saturday (weekStart + 5)
  */
 async function checkWeeklyPersonAccountability(
   userId: string,
@@ -345,35 +353,45 @@ async function checkWeeklyPersonAccountability(
   personId: string,
   workspaceStartDate: Date,
   sprintDuration: number,
-  currentSprintNumber: number,
+  sprintNumber: number,
   todayStr: string
 ): Promise<MissingAccountabilityItem[]> {
   const items: MissingAccountabilityItem[] = [];
 
-  // Calculate current sprint dates
+  // Calculate sprint dates
   const sprintStartDate = new Date(workspaceStartDate);
-  sprintStartDate.setUTCDate(sprintStartDate.getUTCDate() + (currentSprintNumber - 1) * sprintDuration);
-  const sprintStartStr = sprintStartDate.toISOString().split('T')[0] || '';
+  sprintStartDate.setUTCDate(sprintStartDate.getUTCDate() + (sprintNumber - 1) * sprintDuration);
 
-  // Calculate deadlines
+  // Plan becomes actionable on Saturday before the week (weekStart - 2)
   const planDueDate = new Date(sprintStartDate);
-  planDueDate.setUTCDate(planDueDate.getUTCDate() + 1); // Monday EOD
+  planDueDate.setUTCDate(planDueDate.getUTCDate() - 2);
   const planDueStr = planDueDate.toISOString().split('T')[0] || '';
 
+  // Plan becomes overdue on Tuesday (weekStart + 1) — used for dueDate display
+  const planOverdueDate = new Date(sprintStartDate);
+  planOverdueDate.setUTCDate(planOverdueDate.getUTCDate() + 1);
+  const planOverdueStr = planOverdueDate.toISOString().split('T')[0] || '';
+
+  // Retro becomes actionable on Thursday (weekStart + 3)
   const retroDueDate = new Date(sprintStartDate);
-  retroDueDate.setUTCDate(retroDueDate.getUTCDate() + 4); // Friday EOD
+  retroDueDate.setUTCDate(retroDueDate.getUTCDate() + 3);
   const retroDueStr = retroDueDate.toISOString().split('T')[0] || '';
+
+  // Retro becomes overdue on Saturday (weekStart + 5) — used for dueDate display
+  const retroOverdueDate = new Date(sprintStartDate);
+  retroOverdueDate.setUTCDate(retroOverdueDate.getUTCDate() + 5);
+  const retroOverdueStr = retroOverdueDate.toISOString().split('T')[0] || '';
 
   // Get ALL allocations for this person/sprint (explicit assignee_ids + issue-based).
   // Note: The heatmap only displays one allocation per person per week (display limit),
   // but action items must check all allocations so nothing gets missed.
-  const allocations = await getAllocations(workspaceId, personId, userId, currentSprintNumber);
+  const allocations = await getAllocations(workspaceId, personId, userId, sprintNumber);
 
   for (const allocation of allocations) {
     const projectId = allocation.projectId;
     const projectName = allocation.projectName;
 
-    // Check for missing weekly_plan (due Monday EOD)
+    // Check for missing weekly_plan (due from Saturday before the week starts)
     // A plan counts as "done" only if it has meaningful content (not just template headings)
     if (todayStr >= planDueStr) {
       const planResult = await pool.query(
@@ -384,7 +402,7 @@ async function checkWeeklyPersonAccountability(
            AND (properties->>'project_id') = $3
            AND (properties->>'week_number')::int = $4
            AND deleted_at IS NULL`,
-        [workspaceId, personId, projectId, currentSprintNumber]
+        [workspaceId, personId, projectId, sprintNumber]
       );
 
       const planDoc = planResult.rows[0];
@@ -392,18 +410,18 @@ async function checkWeeklyPersonAccountability(
         items.push({
           type: 'weekly_plan',
           targetId: projectId,
-          targetTitle: `Week ${currentSprintNumber} Plan - ${projectName}`,
+          targetTitle: `Week ${sprintNumber} Plan - ${projectName}`,
           targetType: 'project',
-          dueDate: planDueStr,
-          message: `Write week ${currentSprintNumber} plan for ${projectName}`,
+          dueDate: todayStr >= planOverdueStr ? planOverdueStr : planDueStr,
+          message: `Write week ${sprintNumber} plan for ${projectName}`,
           personId,
           projectId,
-          weekNumber: currentSprintNumber,
+          weekNumber: sprintNumber,
         });
       }
     }
 
-    // Check for missing weekly_retro (due Friday EOD)
+    // Check for missing weekly_retro (due from Thursday of the sprint week)
     // A retro counts as "done" only if it has meaningful content (not just template headings)
     if (todayStr >= retroDueStr) {
       const retroResult = await pool.query(
@@ -414,7 +432,7 @@ async function checkWeeklyPersonAccountability(
            AND (properties->>'project_id') = $3
            AND (properties->>'week_number')::int = $4
            AND deleted_at IS NULL`,
-        [workspaceId, personId, projectId, currentSprintNumber]
+        [workspaceId, personId, projectId, sprintNumber]
       );
 
       const retroDoc = retroResult.rows[0];
@@ -422,13 +440,13 @@ async function checkWeeklyPersonAccountability(
         items.push({
           type: 'weekly_retro',
           targetId: projectId,
-          targetTitle: `Week ${currentSprintNumber} Retro - ${projectName}`,
+          targetTitle: `Week ${sprintNumber} Retro - ${projectName}`,
           targetType: 'project',
-          dueDate: retroDueStr,
-          message: `Write week ${currentSprintNumber} retro for ${projectName}`,
+          dueDate: todayStr >= retroOverdueStr ? retroOverdueStr : retroDueStr,
+          message: `Write week ${sprintNumber} retro for ${projectName}`,
           personId,
           projectId,
-          weekNumber: currentSprintNumber,
+          weekNumber: sprintNumber,
         });
       }
     }
