@@ -667,9 +667,9 @@ router.get('/:id/merge-preview', authMiddleware, async (req: Request, res: Respo
       [sourceId]
     );
 
-    // Count wiki pages with parent_id pointing at source program
-    const wikiResult = await pool.query(
-      `SELECT COUNT(*) as count FROM documents WHERE parent_id = $1 AND document_type = 'wiki'`,
+    // Count direct child documents (parent_id pointing at source program)
+    const childDocsResult = await pool.query(
+      `SELECT COUNT(*) as count FROM documents WHERE parent_id = $1`,
       [sourceId]
     );
 
@@ -677,7 +677,7 @@ router.get('/:id/merge-preview', authMiddleware, async (req: Request, res: Respo
       projects: 0,
       issues: 0,
       sprints: 0,
-      wikis: parseInt(wikiResult.rows[0]?.count) || 0,
+      wikis: parseInt(childDocsResult.rows[0]?.count) || 0,
     };
 
     for (const row of countsResult.rows) {
@@ -804,9 +804,9 @@ router.post('/:id/merge', authMiddleware, async (req: Request, res: Response) =>
       [targetId, sourceId]
     );
 
-    // 3. Re-parent wiki pages with parent_id pointing at source
-    const wikiReParentResult = await client.query(
-      `UPDATE documents SET parent_id = $1 WHERE parent_id = $2 AND document_type = 'wiki'`,
+    // 3. Re-parent all direct children (parent_id pointing at source)
+    const childReParentResult = await client.query(
+      `UPDATE documents SET parent_id = $1 WHERE parent_id = $2`,
       [targetId, sourceId]
     );
 
@@ -854,7 +854,7 @@ router.post('/:id/merge', authMiddleware, async (req: Request, res: Response) =>
         target_name: targetProgram.title,
         entities_moved: {
           associations: reParentResult.rowCount,
-          wiki_pages: wikiReParentResult.rowCount,
+          child_docs: childReParentResult.rowCount,
         },
       },
       req,
