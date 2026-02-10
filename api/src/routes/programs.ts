@@ -3,7 +3,6 @@ import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { logDocumentChange } from '../utils/document-crud.js';
 import { logAuditEvent } from '../services/audit.js';
 
 type RouterType = ReturnType<typeof Router>;
@@ -811,14 +810,18 @@ router.post('/:id/merge', authMiddleware, async (req: Request, res: Response) =>
       [targetId, sourceId]
     );
 
-    // 4. Log history for each moved entity
+    // 4. Log history for each moved entity (using client, not pool, to stay in transaction)
     for (const child of childrenResult.rows) {
-      await logDocumentChange(
-        child.document_id,
-        'belongs_to',
-        JSON.stringify([{ id: sourceId, type: 'program' }]),
-        JSON.stringify([{ id: targetId, type: 'program' }]),
-        userId
+      await client.query(
+        `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          child.document_id,
+          'belongs_to',
+          JSON.stringify([{ id: sourceId, type: 'program' }]),
+          JSON.stringify([{ id: targetId, type: 'program' }]),
+          userId,
+        ]
       );
     }
 
