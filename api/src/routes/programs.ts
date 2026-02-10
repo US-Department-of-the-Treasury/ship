@@ -785,6 +785,19 @@ router.post('/:id/merge', authMiddleware, async (req: Request, res: Response) =>
     );
 
     // 2. Re-parent all document_associations from source to target
+    //    First, remove source associations where the child already has a target association
+    //    (prevents unique constraint violation on (document_id, related_id, relationship_type))
+    await client.query(
+      `DELETE FROM document_associations
+       WHERE related_id = $1 AND relationship_type = 'program'
+         AND document_id IN (
+           SELECT document_id FROM document_associations
+           WHERE related_id = $2 AND relationship_type = 'program'
+         )`,
+      [sourceId, targetId]
+    );
+
+    //    Then update remaining source associations to point to target
     const reParentResult = await client.query(
       `UPDATE document_associations
        SET related_id = $1
