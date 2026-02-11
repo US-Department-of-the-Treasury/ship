@@ -77,6 +77,8 @@ interface EditorProps {
   onDocumentConverted?: (newDocId: string, newDocType: 'issue' | 'project') => void;
   /** Callback when plan block content changes (for sprint documents) */
   onPlanChange?: (plan: string) => void;
+  /** Banner content rendered between the title and editor content (e.g., AI quality check) */
+  contentBanner?: React.ReactNode;
 }
 
 type SyncStatus = 'connecting' | 'cached' | 'synced' | 'disconnected';
@@ -168,6 +170,7 @@ export function Editor({
   documentType,
   onDocumentConverted,
   onPlanChange,
+  contentBanner,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -872,6 +875,7 @@ export function Editor({
                 titleReadOnly && "cursor-default"
               )}
             />
+            {contentBanner}
             <div
               className="tiptap-wrapper"
               data-testid="tiptap-editor"
