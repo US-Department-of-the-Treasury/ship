@@ -166,8 +166,6 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
     // Find existing user by email only (CAIA doesn't provide x509_subject_dn)
     let user = await findUserByEmail(email);
-    console.log(`[CAIA DEBUG] User lookup for ${email}:`, user ? { id: user.id, email: user.email, is_super_admin: user.is_super_admin, last_workspace_id: user.last_workspace_id } : 'NOT FOUND');
-
     if (!user) {
       // No existing user - check for pending invite matching email
       const invite = await findPendingInviteByEmail(email);
@@ -245,7 +243,6 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
 
     const workspaces = workspacesResult.rows;
     let workspaceId = user.last_workspace_id;
-    console.log(`[CAIA DEBUG] Workspaces for user ${user.id}:`, { count: workspaces.length, workspaces, is_super_admin: user.is_super_admin });
 
     // Validate workspace access
     if (workspaceId && !workspaces.some((w: { id: string }) => w.id === workspaceId)) {

@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { cn } from '@/lib/cn';
 import { useToast } from '@/components/ui/Toast';
+import { apiPost, apiPatch, apiGet } from '@/lib/api';
 
 interface WeekReviewProps {
   sprintId: string;
@@ -14,62 +15,6 @@ interface ReviewData {
   content: JSONContent;
   is_draft: boolean;
   plan_validated?: boolean | null;
-}
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
-
-// CSRF token cache
-let csrfToken: string | null = null;
-
-async function getCsrfToken(): Promise<string> {
-  if (!csrfToken) {
-    const response = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
-    const data = await response.json();
-    csrfToken = data.token;
-  }
-  return csrfToken!;
-}
-
-async function postWithCsrf(url: string, body: object): Promise<Response> {
-  const token = await getCsrfToken();
-  let res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-    credentials: 'include',
-    body: JSON.stringify(body),
-  });
-  if (res.status === 403) {
-    csrfToken = null;
-    const newToken = await getCsrfToken();
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': newToken },
-      credentials: 'include',
-      body: JSON.stringify(body),
-    });
-  }
-  return res;
-}
-
-async function patchWithCsrf(url: string, body: object): Promise<Response> {
-  const token = await getCsrfToken();
-  let res = await fetch(url, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-    credentials: 'include',
-    body: JSON.stringify(body),
-  });
-  if (res.status === 403) {
-    csrfToken = null;
-    const newToken = await getCsrfToken();
-    res = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': newToken },
-      credentials: 'include',
-      body: JSON.stringify(body),
-    });
-  }
-  return res;
 }
 
 export function WeekReview({ sprintId }: WeekReviewProps) {
@@ -95,7 +40,7 @@ export function WeekReview({ sprintId }: WeekReviewProps) {
 
   const fetchReview = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/weeks/${sprintId}/review`, { credentials: 'include' });
+      const res = await apiGet(`/api/weeks/${sprintId}/review`);
       if (res.ok) {
         const data: ReviewData = await res.json();
         setReviewData(data);
@@ -129,7 +74,7 @@ export function WeekReview({ sprintId }: WeekReviewProps) {
 
       if (reviewData?.is_draft) {
         // POST to create new review
-        const res = await postWithCsrf(`${API_URL}/api/weeks/${sprintId}/review`, {
+        const res = await apiPost(`/api/weeks/${sprintId}/review`, {
           content,
           plan_validated: planValidated,
         });
@@ -148,7 +93,7 @@ export function WeekReview({ sprintId }: WeekReviewProps) {
         }
       } else {
         // PATCH to update existing review
-        const res = await patchWithCsrf(`${API_URL}/api/weeks/${sprintId}/review`, {
+        const res = await apiPatch(`/api/weeks/${sprintId}/review`, {
           content,
           plan_validated: planValidated,
         });

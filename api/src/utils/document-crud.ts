@@ -50,9 +50,11 @@ export async function logDocumentChange(
   oldValue: string | null,
   newValue: string | null,
   changedBy: string,
-  automatedBy?: string
+  automatedBy?: string,
+  queryRunner?: { query: typeof pool.query }
 ): Promise<void> {
-  await pool.query(
+  const db = queryRunner || pool;
+  await db.query(
     `INSERT INTO document_history (document_id, field, old_value, new_value, changed_by, automated_by)
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [documentId, field, oldValue, newValue, changedBy, automatedBy ?? null]

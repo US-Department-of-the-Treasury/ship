@@ -5,6 +5,7 @@ import { PropertyRow } from '@/components/ui/PropertyRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { isCascadeWarningError, type IncompleteChild } from '@/hooks/useIssuesQuery';
 import { apiPost, apiDelete } from '@/lib/api';
+import { formatDateRange } from '@/lib/date-utils';
 import type { BelongsTo, BelongsToType } from '@ship/shared';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -95,18 +96,6 @@ function computeSprintDates(sprintNumber: number, workspaceStartDate: Date): { s
   end.setDate(end.getDate() + 6);
   end.setHours(23, 59, 59, 999);
   return { start, end };
-}
-
-// Format date range for display (e.g., "Jan 6 - Jan 19")
-function formatDateRange(start: Date, end: Date): string {
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const startMonth = monthNames[start.getMonth()];
-  const endMonth = monthNames[end.getMonth()];
-
-  if (startMonth === endMonth) {
-    return `${startMonth} ${start.getDate()} - ${end.getDate()}`;
-  }
-  return `${startMonth} ${start.getDate()} - ${endMonth} ${end.getDate()}`;
 }
 
 export function IssueSidebar({

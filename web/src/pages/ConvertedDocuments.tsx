@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/cn';
 import { apiGet } from '@/lib/api';
+import { formatDate } from '@/lib/date-utils';
 
 interface ConvertedDocument {
   original_id: string;
@@ -72,16 +73,6 @@ export function ConvertedDocumentsPage() {
       return `/issues/${id}`;
     }
     return `/projects/${id}`;
-  }
-
-  function formatDate(dateStr: string | null) {
-    if (!dateStr) return 'Unknown date';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
   }
 
   return (

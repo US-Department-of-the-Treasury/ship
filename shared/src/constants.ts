@@ -1,6 +1,4 @@
 // Shared constants
-export const API_VERSION = 'v1';
-
 export const HTTP_STATUS = {
   OK: 200,
   CREATED: 201,

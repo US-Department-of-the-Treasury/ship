@@ -1,9 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mock pool before importing routes
+const { mockClient } = vi.hoisted(() => {
+  const mockClient = {
+    query: vi.fn().mockResolvedValue({ rows: [] }),
+    release: vi.fn(),
+  };
+  return { mockClient };
+});
 vi.mock('../db/client.js', () => ({
   pool: {
     query: vi.fn(),
+    connect: vi.fn().mockResolvedValue(mockClient),
   },
 }));
 
@@ -32,6 +40,10 @@ describe('Issues History API', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset mockClient defaults after clearAllMocks
+    mockClient.query.mockResolvedValue({ rows: [] } as any);
+    mockClient.release.mockReturnValue(undefined);
+    vi.mocked(pool).connect = vi.fn().mockResolvedValue(mockClient) as any;
     app = express();
     app.use(express.json());
     app.use('/api/issues', issuesRouter);
@@ -231,17 +243,25 @@ describe('Issues History API', () => {
         ticket_number: 1,
       };
 
-      vi.mocked(pool.query)
+      // Client queries (within transaction)
+      vi.mocked(mockClient.query)
         // Get existing issue
         .mockResolvedValueOnce({ rows: [existingIssue] } as any)
         // Check for children (cascade warning check)
         .mockResolvedValueOnce({ rows: [] } as any)
-        // Log state change
+        // BEGIN
+        .mockResolvedValueOnce({ rows: [] } as any)
+        // Log state change (document_history insert)
         .mockResolvedValueOnce({ rows: [] } as any)
         // Update issue
         .mockResolvedValueOnce({ rows: [updatedRow] } as any)
         // Fetch updated issue after UPDATE
         .mockResolvedValueOnce({ rows: [updatedRow] } as any)
+        // COMMIT
+        .mockResolvedValueOnce({ rows: [] } as any);
+
+      // Pool queries (post-commit, non-transactional)
+      vi.mocked(pool.query)
         // Get belongs_to associations
         .mockResolvedValueOnce({ rows: [] } as any);
 

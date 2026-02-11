@@ -312,85 +312,6 @@ export interface WeeklyReviewDocument extends Document {
   properties: WeeklyReviewProperties;
 }
 
-// Input types for creating/updating documents
-export interface CreateDocumentInput {
-  document_type?: DocumentType;
-  title?: string;
-  content?: Record<string, unknown>;
-  parent_id?: string | null;
-  position?: number;
-  // Note: program_id, project_id, and sprint_id removed - use belongs_to array instead
-  properties?: Record<string, unknown>;
-  visibility?: DocumentVisibility;
-}
-
-export interface UpdateDocumentInput {
-  title?: string;
-  content?: Record<string, unknown>;
-  parent_id?: string | null;
-  position?: number;
-  // Note: program_id, project_id, and sprint_id removed - use belongs_to array instead
-  properties?: Record<string, unknown>;
-  archived_at?: Date | null;
-  visibility?: DocumentVisibility;
-}
-
-// Helper type for issue creation with required properties
-export interface CreateIssueInput extends CreateDocumentInput {
-  document_type: 'issue';
-  properties: Partial<IssueProperties>;
-}
-
-// Helper type for updating issue properties
-export interface UpdateIssueInput extends UpdateDocumentInput {
-  properties?: Partial<IssueProperties>;
-}
-
-// Helper type for program creation
-export interface CreateProgramInput extends CreateDocumentInput {
-  document_type: 'program';
-  properties: {
-    color?: string;
-    emoji?: string | null;
-  };
-}
-
-// Helper type for week/sprint creation
-export interface CreateWeekInput extends CreateDocumentInput {
-  document_type: 'sprint';
-  properties?: Partial<WeekProperties>;
-}
-
-// Helper type for project creation (owner_id is optional - can be unassigned)
-export interface CreateProjectInput extends CreateDocumentInput {
-  document_type: 'project';
-  properties: {
-    impact?: ICEScore | null;
-    confidence?: ICEScore | null;
-    ease?: ICEScore | null;
-    owner_id?: string | null;  // Optional - can be unassigned
-    color?: string;
-    emoji?: string | null;
-  };
-}
-
-// Default property values
-export const DEFAULT_ISSUE_PROPERTIES: IssueProperties = {
-  state: 'backlog',
-  priority: 'medium',
-  source: 'internal',
-  assignee_id: null,
-  rejection_reason: null,
-  due_date: null,
-  is_system_generated: false,
-  accountability_target_id: null,
-  accountability_type: null,
-};
-
-export const DEFAULT_PROGRAM_PROPERTIES: Partial<ProgramProperties> = {
-  color: '#6366f1',
-};
-
 // Default project properties - ICE and owner start as null (not yet set)
 export const DEFAULT_PROJECT_PROPERTIES: Partial<ProjectProperties> = {
   impact: null,
@@ -402,48 +323,6 @@ export const DEFAULT_PROJECT_PROPERTIES: Partial<ProjectProperties> = {
 
 // Note: Sprint properties require sprint_number and owner_id at creation time
 // There is no sensible default - these must be provided
-
-// Helper functions for computing sprint dates and status from sprint_number
-
-/**
- * Compute sprint start and end dates from sprint number and workspace start date.
- * Each sprint is a 7-day window (days 0-6).
- */
-export function computeSprintDates(sprintNumber: number, workspaceStartDate: Date): { start: Date; end: Date } {
-  const start = new Date(workspaceStartDate);
-  start.setDate(start.getDate() + (sprintNumber - 1) * 7);
-  // Reset time to start of day
-  start.setHours(0, 0, 0, 0);
-
-  const end = new Date(start);
-  end.setDate(end.getDate() + 6); // 7 days total (0-6)
-  end.setHours(23, 59, 59, 999);
-
-  return { start, end };
-}
-
-/**
- * Compute sprint status from sprint number and workspace start date.
- * Status is derived from whether today falls within, before, or after the sprint window.
- */
-export function computeWeekStatus(sprintNumber: number, workspaceStartDate: Date): WeekStatus {
-  const { start, end } = computeSprintDates(sprintNumber, workspaceStartDate);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0); // Start of today for comparison
-
-  if (today < start) return 'upcoming';
-  if (today > end) return 'completed';
-  return 'active';
-}
-
-/**
- * Get the current sprint number based on workspace start date (1-week sprints).
- */
-export function getCurrentSprintNumber(workspaceStartDate: Date): number {
-  const today = new Date();
-  const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
-  return Math.max(1, Math.floor(daysSinceStart / 7) + 1);
-}
 
 // ICE Prioritization helpers
 
@@ -458,13 +337,4 @@ export function computeICEScore(impact: number | null, confidence: number | null
     return null;
   }
   return impact * confidence * ease;
-}
-
-/**
- * Compute ICE score from project properties.
- * Convenience wrapper for computeICEScore.
- * Returns null if any ICE value is unset.
- */
-export function computeProjectICEScore(properties: ProjectProperties): number | null {
-  return computeICEScore(properties.impact, properties.confidence, properties.ease);
 }

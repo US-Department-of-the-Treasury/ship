@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
+import { formatDateRange } from '@/lib/date-utils';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
@@ -512,21 +513,6 @@ function StatusIcon({
       <circle cx="12" cy="12" r="8" />
     </svg>
   );
-}
-
-function formatDateRange(startDate: string, endDate: string): string {
-  const start = new Date(startDate + 'T00:00:00Z');
-  const end = new Date(endDate + 'T00:00:00Z');
-
-  const startMonth = start.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
-  const startDay = start.getUTCDate();
-  const endMonth = end.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
-  const endDay = end.getUTCDate();
-
-  if (startMonth === endMonth) {
-    return `${startMonth} ${startDay}-${endDay}`;
-  }
-  return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
 }
 
 export default AccountabilityGrid;
