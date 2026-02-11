@@ -93,6 +93,7 @@ interface SprintDocument extends BaseDocument {
   program_id: string | null;
   program_name?: string;
   program_accountable_id?: string | null;
+  owner_reports_to?: string | null;
   issue_count?: number;
   completed_count?: number;
   plan?: string;
@@ -644,9 +645,11 @@ export function PropertiesPanel({
     if (docWithAccountable.accountable_id === user.id) return true;
 
     // For sprints, also check program_accountable_id (inherited from program)
+    // and supervisor relationship (reports_to on the sprint owner's person document)
     if (document.document_type === 'sprint') {
       const sprintDoc = document as SprintDocument;
       if (sprintDoc.program_accountable_id === user.id) return true;
+      if (sprintDoc.owner_reports_to === user.id) return true;
     }
 
     return false;
