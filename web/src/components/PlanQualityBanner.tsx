@@ -12,7 +12,57 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/cn';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
+
+// Use raw fetch for AI quality checks — these are non-critical background requests
+// that must NOT trigger session expiration redirects (apiGet/apiPost do that on 401).
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+// CSRF token cache (shared with api.ts via module scope — but we maintain our own
+// to avoid importing the helpers that redirect on 401).
+let quietCsrfToken: string | null = null;
+
+async function getQuietCsrfToken(): Promise<string | null> {
+  if (quietCsrfToken) return quietCsrfToken;
+  try {
+    const res = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    quietCsrfToken = data.token;
+    return quietCsrfToken;
+  } catch {
+    return null;
+  }
+}
+
+async function quietGet(endpoint: string): Promise<Response> {
+  return fetch(`${API_URL}${endpoint}`, { credentials: 'include' });
+}
+
+async function quietPost(endpoint: string, body: object): Promise<Response> {
+  const token = await getQuietCsrfToken();
+  return fetch(`${API_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'X-CSRF-Token': token } : {}),
+    },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+}
+
+async function quietPatch(endpoint: string, body: object): Promise<Response> {
+  const token = await getQuietCsrfToken();
+  return fetch(`${API_URL}${endpoint}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'X-CSRF-Token': token } : {}),
+    },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+}
 
 interface PlanItemAnalysis {
   text: string;
@@ -51,16 +101,16 @@ export function PlanQualityBanner({
 
   // Check AI availability and load persisted analysis from document properties
   useEffect(() => {
-    apiGet('/api/ai/status')
-      .then(r => r.json())
-      .then(data => setAiAvailable(data.available))
+    quietGet('/api/ai/status')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setAiAvailable(data?.available ?? false))
       .catch(() => setAiAvailable(false));
 
     // Load last analysis from document properties
-    apiGet(`/api/documents/${documentId}`)
-      .then(r => r.json())
+    quietGet(`/api/documents/${documentId}`)
+      .then(r => r.ok ? r.json() : null)
       .then(doc => {
-        if (doc.properties?.ai_analysis) {
+        if (doc?.properties?.ai_analysis) {
           setAnalysis(doc.properties.ai_analysis);
         }
       })
@@ -69,7 +119,7 @@ export function PlanQualityBanner({
 
   // Save analysis to document properties
   const persistAnalysis = useCallback((data: PlanAnalysisResult) => {
-    apiPatch(`/api/documents/${documentId}`, {
+    quietPatch(`/api/documents/${documentId}`, {
       properties: { ai_analysis: data },
     }).catch(() => {});
   }, [documentId]);
@@ -83,8 +133,8 @@ export function PlanQualityBanner({
     const thisRequestId = ++requestIdRef.current;
     setLoading(true);
 
-    apiPost('/api/ai/analyze-plan', { content })
-      .then(r => r.json())
+    quietPost('/api/ai/analyze-plan', { content })
+      .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (thisRequestId !== requestIdRef.current) return;
         if (data && !data.error) {
@@ -105,9 +155,9 @@ export function PlanQualityBanner({
   // On mount: if no persisted result, fetch content and run initial analysis
   useEffect(() => {
     if (!aiAvailable || analysis) return;
-    apiGet(`/api/documents/${documentId}`)
-      .then(r => r.json())
-      .then(doc => { if (doc.content) runAnalysis(doc.content); })
+    quietGet(`/api/documents/${documentId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(doc => { if (doc?.content) runAnalysis(doc.content); })
       .catch(() => {});
   }, [aiAvailable, documentId, analysis, runAnalysis]);
 
@@ -271,15 +321,16 @@ export function RetroQualityBanner({
     if (initDoneRef.current) return;
     initDoneRef.current = true;
 
-    apiGet('/api/ai/status')
-      .then(r => r.json())
-      .then(data => setAiAvailable(data.available))
+    quietGet('/api/ai/status')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setAiAvailable(data?.available ?? false))
       .catch(() => setAiAvailable(false));
 
     // Load retro doc to get persisted analysis AND plan content
-    apiGet(`/api/documents/${documentId}`)
-      .then(r => r.json())
+    quietGet(`/api/documents/${documentId}`)
+      .then(r => r.ok ? r.json() : null)
       .then(async (doc) => {
+        if (!doc) return;
         // Restore persisted analysis
         if (doc.properties?.ai_analysis) setAnalysis(doc.properties.ai_analysis);
 
@@ -294,8 +345,8 @@ export function RetroQualityBanner({
         if (personId && weekNumber) {
           const params = new URLSearchParams({ person_id: personId, week_number: String(weekNumber) });
           if (projectId) params.set('project_id', projectId);
-          const planRes = await apiGet(`/api/weekly-plans?${params}`);
-          const plans = await planRes.json();
+          const planRes = await quietGet(`/api/weekly-plans?${params}`);
+          const plans = planRes.ok ? await planRes.json() : [];
           if (plans && plans.length > 0 && plans[0].content) {
             setPlanContent(plans[0].content);
           } else {
@@ -310,7 +361,7 @@ export function RetroQualityBanner({
   }, [documentId, externalPlanContent]);
 
   const persistAnalysis = useCallback((data: RetroAnalysis) => {
-    apiPatch(`/api/documents/${documentId}`, {
+    quietPatch(`/api/documents/${documentId}`, {
       properties: { ai_analysis: data },
     }).catch(() => {});
   }, [documentId]);
@@ -323,8 +374,8 @@ export function RetroQualityBanner({
     const thisRequestId = ++requestIdRef.current;
     setLoading(true);
 
-    apiPost('/api/ai/analyze-retro', { retro_content: retroContent, plan_content: plan })
-      .then(r => r.json())
+    quietPost('/api/ai/analyze-retro', { retro_content: retroContent, plan_content: plan })
+      .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (thisRequestId !== requestIdRef.current) return;
         if (data && !data.error) {
@@ -345,9 +396,9 @@ export function RetroQualityBanner({
   // On mount: if no persisted result and plan is loaded, run initial analysis
   useEffect(() => {
     if (!aiAvailable || analysis || !planContent) return;
-    apiGet(`/api/documents/${documentId}`)
-      .then(r => r.json())
-      .then(doc => { if (doc.content) runAnalysis(doc.content, planContent); })
+    quietGet(`/api/documents/${documentId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(doc => { if (doc?.content) runAnalysis(doc.content, planContent); })
       .catch(() => {});
   }, [aiAvailable, documentId, analysis, planContent, runAnalysis]);
 

@@ -9,7 +9,42 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/cn';
-import { apiGet, apiPost } from '@/lib/api';
+
+// Use raw fetch for AI quality checks — these are non-critical background requests
+// that must NOT trigger session expiration redirects (apiGet/apiPost do that on 401).
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+let quietCsrfToken: string | null = null;
+
+async function getQuietCsrfToken(): Promise<string | null> {
+  if (quietCsrfToken) return quietCsrfToken;
+  try {
+    const res = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
+    if (!res.ok) return null;
+    const data = await res.json();
+    quietCsrfToken = data.token;
+    return quietCsrfToken;
+  } catch {
+    return null;
+  }
+}
+
+async function quietGet(endpoint: string): Promise<Response> {
+  return fetch(`${API_URL}${endpoint}`, { credentials: 'include' });
+}
+
+async function quietPost(endpoint: string, body: object): Promise<Response> {
+  const token = await getQuietCsrfToken();
+  return fetch(`${API_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'X-CSRF-Token': token } : {}),
+    },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+}
 
 // ============ Shared Types ============
 
@@ -134,7 +169,7 @@ export function PlanQualityAssistant({
 
   // Check AI availability on mount
   useEffect(() => {
-    apiGet('/api/ai/status')
+    quietGet('/api/ai/status')
       .then(r => r.json())
       .then(data => setAiAvailable(data.available))
       .catch(() => setAiAvailable(false));
@@ -146,7 +181,7 @@ export function PlanQualityAssistant({
 
     try {
       // Fetch the latest saved content from the API
-      const docRes = await apiGet(`/api/documents/${documentId}`);
+      const docRes = await quietGet(`/api/documents/${documentId}`);
       if (!docRes.ok) return;
       const doc = await docRes.json();
       const content = doc.content;
@@ -158,7 +193,7 @@ export function PlanQualityAssistant({
 
       // Content changed — trigger analysis
       setLoading(true);
-      const res = await apiPost('/api/ai/analyze-plan', { content });
+      const res = await quietPost('/api/ai/analyze-plan', { content });
       const data = await res.json();
       if (!isError(data)) {
         setAnalysis(data);
@@ -265,7 +300,7 @@ export function RetroQualityAssistant({
 
   // Check AI availability on mount
   useEffect(() => {
-    apiGet('/api/ai/status')
+    quietGet('/api/ai/status')
       .then(r => r.json())
       .then(data => setAiAvailable(data.available))
       .catch(() => setAiAvailable(false));
@@ -277,7 +312,7 @@ export function RetroQualityAssistant({
 
     try {
       // Fetch the latest saved content from the API
-      const docRes = await apiGet(`/api/documents/${documentId}`);
+      const docRes = await quietGet(`/api/documents/${documentId}`);
       if (!docRes.ok) return;
       const doc = await docRes.json();
       const content = doc.content;
@@ -289,7 +324,7 @@ export function RetroQualityAssistant({
 
       // Content changed — trigger analysis
       setLoading(true);
-      const res = await apiPost('/api/ai/analyze-retro', { retro_content: content, plan_content: planContent });
+      const res = await quietPost('/api/ai/analyze-retro', { retro_content: content, plan_content: planContent });
       const data = await res.json();
       if (!isError(data)) {
         setAnalysis(data);
