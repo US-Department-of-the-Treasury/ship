@@ -35,14 +35,19 @@ const WORKLOAD_COLORS = {
   excessive: 'text-red-400 bg-red-500/10 border-red-500/30',
 };
 
-export function PlanQualityBanner({ documentId }: { documentId: string }) {
+export function PlanQualityBanner({
+  documentId,
+  editorContent,
+}: {
+  documentId: string;
+  editorContent: Record<string, unknown> | null;
+}) {
   const [analysis, setAnalysis] = useState<PlanAnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const lastContentRef = useRef<string>('');
-  const requestIdRef = useRef(0); // For race condition handling
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const requestIdRef = useRef(0);
 
   // Check AI availability on mount
   useEffect(() => {
@@ -52,49 +57,26 @@ export function PlanQualityBanner({ documentId }: { documentId: string }) {
       .catch(() => setAiAvailable(false));
   }, []);
 
-  const checkAndAnalyze = useCallback(async () => {
-    if (!aiAvailable) return;
-
-    try {
-      const docRes = await apiGet(`/api/documents/${documentId}`);
-      if (!docRes.ok) return;
-      const doc = await docRes.json();
-      const content = doc.content;
-      if (!content) return;
-
-      const contentStr = JSON.stringify(content);
-      if (contentStr === lastContentRef.current) return;
-      lastContentRef.current = contentStr;
-
-      // Race condition: increment request ID, ignore stale responses
-      const thisRequestId = ++requestIdRef.current;
-      setLoading(true);
-
-      const res = await apiPost('/api/ai/analyze-plan', { content });
-      const data = await res.json();
-
-      // Only update if this is still the latest request
-      if (thisRequestId !== requestIdRef.current) return;
-
-      if (data && !data.error) {
-        setAnalysis(data);
-      }
-    } catch { /* keep previous */ }
-    finally { setLoading(false); }
-  }, [documentId, aiAvailable]);
-
-  // Poll with 1s debounce for initial, then every 5s
+  // Analyze when editorContent changes (already debounced by Editor's onContentChange)
   useEffect(() => {
-    if (!aiAvailable) return;
+    if (!aiAvailable || !editorContent) return;
 
-    const initialTimeout = setTimeout(checkAndAnalyze, 1000);
-    pollRef.current = setInterval(checkAndAnalyze, 5000);
+    const contentStr = JSON.stringify(editorContent);
+    if (contentStr === lastContentRef.current) return;
+    lastContentRef.current = contentStr;
 
-    return () => {
-      clearTimeout(initialTimeout);
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [aiAvailable, checkAndAnalyze]);
+    const thisRequestId = ++requestIdRef.current;
+    setLoading(true);
+
+    apiPost('/api/ai/analyze-plan', { content: editorContent })
+      .then(r => r.json())
+      .then(data => {
+        if (thisRequestId !== requestIdRef.current) return;
+        if (data && !data.error) setAnalysis(data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [editorContent, aiAvailable]);
 
   if (aiAvailable === false || aiAvailable === null) return null;
 
@@ -216,9 +198,11 @@ export function PlanQualityBanner({ documentId }: { documentId: string }) {
 /** Same pattern for retro quality — banner between title and editor content */
 export function RetroQualityBanner({
   documentId,
+  editorContent,
   planContent: externalPlanContent,
 }: {
   documentId: string;
+  editorContent: Record<string, unknown> | null;
   planContent: Record<string, unknown> | null;
 }) {
   // Fetch plan content internally if not provided
@@ -229,7 +213,6 @@ export function RetroQualityBanner({
       setFetchedPlanContent(externalPlanContent);
       return;
     }
-    // Fetch the retro doc to get person_id and week_number, then fetch the plan
     apiGet(`/api/documents/${documentId}`)
       .then(r => r.json())
       .then(doc => {
@@ -260,7 +243,6 @@ export function RetroQualityBanner({
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const lastContentRef = useRef<string>('');
   const requestIdRef = useRef(0);
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
 
   useEffect(() => {
     apiGet('/api/ai/status')
@@ -269,49 +251,29 @@ export function RetroQualityBanner({
       .catch(() => setAiAvailable(false));
   }, []);
 
-  const checkAndAnalyze = useCallback(async () => {
-    if (!aiAvailable || !planContent) return;
-
-    try {
-      const docRes = await apiGet(`/api/documents/${documentId}`);
-      if (!docRes.ok) return;
-      const doc = await docRes.json();
-      const content = doc.content;
-      if (!content) return;
-
-      const contentStr = JSON.stringify(content);
-      if (contentStr === lastContentRef.current) return;
-      lastContentRef.current = contentStr;
-
-      const thisRequestId = ++requestIdRef.current;
-      setLoading(true);
-
-      const res = await apiPost('/api/ai/analyze-retro', {
-        retro_content: content,
-        plan_content: planContent,
-      });
-      const data = await res.json();
-
-      if (thisRequestId !== requestIdRef.current) return;
-
-      if (data && !data.error) {
-        setAnalysis(data);
-      }
-    } catch { /* keep previous */ }
-    finally { setLoading(false); }
-  }, [documentId, aiAvailable, planContent]);
-
+  // Analyze when editorContent changes (already debounced by Editor)
   useEffect(() => {
-    if (!aiAvailable || !planContent) return;
+    if (!aiAvailable || !editorContent || !planContent) return;
 
-    const initialTimeout = setTimeout(checkAndAnalyze, 1000);
-    pollRef.current = setInterval(checkAndAnalyze, 5000);
+    const contentStr = JSON.stringify(editorContent);
+    if (contentStr === lastContentRef.current) return;
+    lastContentRef.current = contentStr;
 
-    return () => {
-      clearTimeout(initialTimeout);
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [aiAvailable, planContent, checkAndAnalyze]);
+    const thisRequestId = ++requestIdRef.current;
+    setLoading(true);
+
+    apiPost('/api/ai/analyze-retro', {
+      retro_content: editorContent,
+      plan_content: planContent,
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (thisRequestId !== requestIdRef.current) return;
+        if (data && !data.error) setAnalysis(data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [editorContent, aiAvailable, planContent]);
 
   if (aiAvailable === false || aiAvailable === null) return null;
   if (!analysis && !loading) return null;

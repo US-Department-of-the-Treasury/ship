@@ -384,17 +384,19 @@ export function UnifiedEditor({
   // Weekly plans and retros have computed titles (includes person name) - make read-only
   const isTitleReadOnly = document.document_type === 'weekly_plan' || document.document_type === 'weekly_retro';
 
-  // AI quality banner for weekly plan/retro documents
+  // AI quality banner — triggers analysis on content changes from the editor
+  const [editorContent, setEditorContent] = useState<Record<string, unknown> | null>(null);
+  const isWeeklyDoc = document.document_type === 'weekly_plan' || document.document_type === 'weekly_retro';
+
   const qualityBanner = useMemo(() => {
     if (document.document_type === 'weekly_plan') {
-      return <PlanQualityBanner documentId={document.id} />;
+      return <PlanQualityBanner documentId={document.id} editorContent={editorContent} />;
     }
     if (document.document_type === 'weekly_retro') {
-      // Retro banner needs plan content — passed as null initially, fetched internally
-      return <RetroQualityBanner documentId={document.id} planContent={null} />;
+      return <RetroQualityBanner documentId={document.id} editorContent={editorContent} planContent={null} />;
     }
     return undefined;
-  }, [document.id, document.document_type]);
+  }, [document.id, document.document_type, editorContent]);
 
   return (
     <Editor
@@ -416,6 +418,7 @@ export function UnifiedEditor({
       documentType={document.document_type}
       onPlanChange={document.document_type === 'sprint' || document.document_type === 'project' ? handlePlanChange : undefined}
       contentBanner={qualityBanner}
+      onContentChange={isWeeklyDoc ? setEditorContent : undefined}
     />
   );
 }
