@@ -42,7 +42,11 @@ export function PlanQualityBanner({
   documentId: string;
   editorContent: Record<string, unknown> | null;
 }) {
-  const [analysis, setAnalysis] = useState<PlanAnalysisResult | null>(null);
+  const cacheKey = `ai-plan-analysis-${documentId}`;
+  const [analysis, setAnalysis] = useState<PlanAnalysisResult | null>(() => {
+    try { const cached = localStorage.getItem(cacheKey); return cached ? JSON.parse(cached) : null; }
+    catch { return null; }
+  });
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
@@ -57,26 +61,42 @@ export function PlanQualityBanner({
       .catch(() => setAiAvailable(false));
   }, []);
 
-  // Analyze when editorContent changes (already debounced by Editor's onContentChange)
-  useEffect(() => {
-    if (!aiAvailable || !editorContent) return;
-
-    const contentStr = JSON.stringify(editorContent);
+  // Run analysis (called on content change AND on initial load)
+  const runAnalysis = useCallback((content: Record<string, unknown>) => {
+    const contentStr = JSON.stringify(content);
     if (contentStr === lastContentRef.current) return;
     lastContentRef.current = contentStr;
 
     const thisRequestId = ++requestIdRef.current;
     setLoading(true);
 
-    apiPost('/api/ai/analyze-plan', { content: editorContent })
+    apiPost('/api/ai/analyze-plan', { content })
       .then(r => r.json())
       .then(data => {
         if (thisRequestId !== requestIdRef.current) return;
-        if (data && !data.error) setAnalysis(data);
+        if (data && !data.error) {
+          setAnalysis(data);
+          try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch {}
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [editorContent, aiAvailable]);
+  }, [cacheKey]);
+
+  // Analyze when editorContent changes (debounced by Editor's onContentChange)
+  useEffect(() => {
+    if (!aiAvailable || !editorContent) return;
+    runAnalysis(editorContent);
+  }, [editorContent, aiAvailable, runAnalysis]);
+
+  // On mount: if no cached result, fetch current content and analyze
+  useEffect(() => {
+    if (!aiAvailable || analysis) return;
+    apiGet(`/api/documents/${documentId}`)
+      .then(r => r.json())
+      .then(doc => { if (doc.content) runAnalysis(doc.content); })
+      .catch(() => {});
+  }, [aiAvailable, documentId, analysis, runAnalysis]);
 
   if (aiAvailable === false) return null;
 
@@ -247,11 +267,16 @@ export function RetroQualityBanner({
   }, [documentId, externalPlanContent]);
 
   const planContent = fetchedPlanContent;
-  const [analysis, setAnalysis] = useState<{
+  type RetroAnalysis = {
     overall_score: number;
     plan_coverage: Array<{ plan_item: string; addressed: boolean; has_evidence: boolean; feedback: string }>;
     suggestions: string[];
-  } | null>(null);
+  };
+  const cacheKey = `ai-retro-analysis-${documentId}`;
+  const [analysis, setAnalysis] = useState<RetroAnalysis | null>(() => {
+    try { const cached = localStorage.getItem(cacheKey); return cached ? JSON.parse(cached) : null; }
+    catch { return null; }
+  });
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
@@ -265,29 +290,40 @@ export function RetroQualityBanner({
       .catch(() => setAiAvailable(false));
   }, []);
 
-  // Analyze when editorContent changes (already debounced by Editor)
-  useEffect(() => {
-    if (!aiAvailable || !editorContent || !planContent) return;
-
-    const contentStr = JSON.stringify(editorContent);
+  const runAnalysis = useCallback((retroContent: Record<string, unknown>, plan: Record<string, unknown>) => {
+    const contentStr = JSON.stringify(retroContent);
     if (contentStr === lastContentRef.current) return;
     lastContentRef.current = contentStr;
 
     const thisRequestId = ++requestIdRef.current;
     setLoading(true);
 
-    apiPost('/api/ai/analyze-retro', {
-      retro_content: editorContent,
-      plan_content: planContent,
-    })
+    apiPost('/api/ai/analyze-retro', { retro_content: retroContent, plan_content: plan })
       .then(r => r.json())
       .then(data => {
         if (thisRequestId !== requestIdRef.current) return;
-        if (data && !data.error) setAnalysis(data);
+        if (data && !data.error) {
+          setAnalysis(data);
+          try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch {}
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [editorContent, aiAvailable, planContent]);
+  }, [cacheKey]);
+
+  useEffect(() => {
+    if (!aiAvailable || !editorContent || !planContent) return;
+    runAnalysis(editorContent, planContent);
+  }, [editorContent, aiAvailable, planContent, runAnalysis]);
+
+  // On mount: if no cached result, fetch current content and analyze
+  useEffect(() => {
+    if (!aiAvailable || analysis || !planContent) return;
+    apiGet(`/api/documents/${documentId}`)
+      .then(r => r.json())
+      .then(doc => { if (doc.content) runAnalysis(doc.content, planContent); })
+      .catch(() => {});
+  }, [aiAvailable, documentId, analysis, planContent, runAnalysis]);
 
   if (aiAvailable === false) return null;
 
