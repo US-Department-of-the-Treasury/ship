@@ -445,21 +445,20 @@ function WeeklyDocumentSidebar({
               {/* Editable rating controls in review mode */}
               {isReviewMode && (
                 <>
-                  <div className="flex gap-1 mb-3">
+                  <div className="grid grid-cols-5 gap-1.5 mb-3">
                     {OPM_RATINGS.map(r => (
                       <button
                         key={r.value}
                         onClick={() => setSelectedRating(r.value)}
                         className={cn(
-                          'flex-1 flex flex-col items-center gap-0.5 rounded py-1.5 text-xs transition-all',
+                          'flex flex-col items-center gap-0.5 rounded py-2 text-xs transition-all',
                           selectedRating === r.value
                             ? 'bg-accent/20 ring-1 ring-accent'
                             : 'bg-border/30 hover:bg-border/50'
                         )}
                         title={r.label}
                       >
-                        <span className={cn('font-bold', r.color)}>{r.value}</span>
-                        <span className="text-[9px] text-muted leading-tight">{r.label.split(' ')[0]}</span>
+                        <span className={cn('text-sm font-bold', r.color)}>{r.value}</span>
                       </button>
                     ))}
                   </div>
