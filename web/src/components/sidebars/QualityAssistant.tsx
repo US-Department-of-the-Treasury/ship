@@ -9,8 +9,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/cn';
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
+import { apiGet, apiPost } from '@/lib/api';
 
 // ============ Shared Types ============
 
@@ -135,7 +134,7 @@ export function PlanQualityAssistant({
 
   // Check AI availability on mount
   useEffect(() => {
-    fetch(`${API_URL}/api/ai/status`, { credentials: 'include' })
+    apiGet('/api/ai/status')
       .then(r => r.json())
       .then(data => setAiAvailable(data.available))
       .catch(() => setAiAvailable(false));
@@ -147,7 +146,7 @@ export function PlanQualityAssistant({
 
     try {
       // Fetch the latest saved content from the API
-      const docRes = await fetch(`${API_URL}/api/documents/${documentId}`, { credentials: 'include' });
+      const docRes = await apiGet(`/api/documents/${documentId}`);
       if (!docRes.ok) return;
       const doc = await docRes.json();
       const content = doc.content;
@@ -159,12 +158,7 @@ export function PlanQualityAssistant({
 
       // Content changed — trigger analysis
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/ai/analyze-plan`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      });
+      const res = await apiPost('/api/ai/analyze-plan', { content });
       const data = await res.json();
       if (!isError(data)) {
         setAnalysis(data);
@@ -271,7 +265,7 @@ export function RetroQualityAssistant({
 
   // Check AI availability on mount
   useEffect(() => {
-    fetch(`${API_URL}/api/ai/status`, { credentials: 'include' })
+    apiGet('/api/ai/status')
       .then(r => r.json())
       .then(data => setAiAvailable(data.available))
       .catch(() => setAiAvailable(false));
@@ -283,7 +277,7 @@ export function RetroQualityAssistant({
 
     try {
       // Fetch the latest saved content from the API
-      const docRes = await fetch(`${API_URL}/api/documents/${documentId}`, { credentials: 'include' });
+      const docRes = await apiGet(`/api/documents/${documentId}`);
       if (!docRes.ok) return;
       const doc = await docRes.json();
       const content = doc.content;
@@ -295,12 +289,7 @@ export function RetroQualityAssistant({
 
       // Content changed — trigger analysis
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/ai/analyze-retro`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ retro_content: content, plan_content: planContent }),
-      });
+      const res = await apiPost('/api/ai/analyze-retro', { retro_content: content, plan_content: planContent });
       const data = await res.json();
       if (!isError(data)) {
         setAnalysis(data);
