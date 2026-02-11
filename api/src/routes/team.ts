@@ -746,7 +746,9 @@ router.get('/people', authMiddleware, async (req: Request, res: Response) => {
       `SELECT d.id, d.properties->>'user_id' as user_id, d.title as name,
               COALESCE(d.properties->>'email', u.email) as email,
               CASE WHEN d.archived_at IS NOT NULL THEN true ELSE false END as "isArchived",
-              CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending"
+              CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending",
+              d.properties->>'reports_to' as "reportsTo",
+              d.properties->>'role' as role
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
        WHERE d.workspace_id = $1
