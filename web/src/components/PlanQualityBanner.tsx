@@ -78,10 +78,24 @@ export function PlanQualityBanner({
       .finally(() => setLoading(false));
   }, [editorContent, aiAvailable]);
 
-  if (aiAvailable === false || aiAvailable === null) return null;
+  if (aiAvailable === false) return null;
 
-  // No analysis yet — show loading state
-  if (!analysis && !loading) return null;
+  // Skeleton / waiting state — show before first analysis
+  if (!analysis && !loading) {
+    return (
+      <div className="mb-4 pl-8">
+        <div className="w-full rounded-lg border border-border/50 bg-border/10 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <div className="h-5 w-5 rounded-full bg-border/30 animate-pulse" />
+            <div className="flex-1 h-2 rounded-full bg-border/20 overflow-hidden max-w-xs">
+              <div className="h-full w-1/3 rounded-full bg-border/30 animate-pulse" />
+            </div>
+            <span className="text-xs text-muted/50">AI quality check will appear as you write</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const percentage = analysis ? Math.round(analysis.overall_score * 100) : 0;
   const barColor = percentage >= 70 ? 'bg-green-500' : percentage >= 40 ? 'bg-yellow-500' : 'bg-red-500';
@@ -275,8 +289,23 @@ export function RetroQualityBanner({
       .finally(() => setLoading(false));
   }, [editorContent, aiAvailable, planContent]);
 
-  if (aiAvailable === false || aiAvailable === null) return null;
-  if (!analysis && !loading) return null;
+  if (aiAvailable === false) return null;
+
+  if (!analysis && !loading) {
+    return (
+      <div className="mb-4 pl-8">
+        <div className="w-full rounded-lg border border-border/50 bg-border/10 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <div className="h-5 w-5 rounded-full bg-border/30 animate-pulse" />
+            <div className="flex-1 h-2 rounded-full bg-border/20 overflow-hidden max-w-xs">
+              <div className="h-full w-1/3 rounded-full bg-border/30 animate-pulse" />
+            </div>
+            <span className="text-xs text-muted/50">AI quality check will appear as you write</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const percentage = analysis ? Math.round(analysis.overall_score * 100) : 0;
   const barColor = percentage >= 70 ? 'bg-green-500' : percentage >= 40 ? 'bg-yellow-500' : 'bg-red-500';
