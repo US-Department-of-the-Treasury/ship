@@ -236,7 +236,7 @@ export function ProjectSidebar({
                 onChange={(e) => onUpdate({ has_design_review: e.target.checked } as Partial<Project>)}
                 className="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent focus:ring-offset-background"
               />
-              <span className="ml-2 text-sm text-foreground">Design review complete</span>
+              <span className="ml-2 text-sm text-foreground">Design review approved</span>
             </label>
             {(project.has_design_review || project.design_review_notes) && (
               <textarea
