@@ -30,6 +30,7 @@ import activityRoutes from './routes/activity.js';
 import dashboardRoutes from './routes/dashboard.js';
 import associationsRoutes from './routes/associations.js';
 import accountabilityRoutes from './routes/accountability.js';
+import aiRoutes from './routes/ai.js';
 import weeklyPlansRoutes, { weeklyRetrosRouter } from './routes/weekly-plans.js';
 import { documentCommentsRouter, commentsRouter } from './routes/comments.js';
 import { setupSwagger } from './swagger.js';
@@ -209,6 +210,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // Accountability routes - inference-based action items (read-only GET)
   app.use('/api/accountability', accountabilityRoutes);
+
+  // AI analysis routes - plan and retro quality feedback (CSRF protected)
+  app.use('/api/ai', conditionalCsrf, aiRoutes);
 
   // Weekly plans routes - per-person accountability documents (CSRF protected)
   app.use('/api/weekly-plans', conditionalCsrf, weeklyPlansRoutes);

@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "7",
+    "@aws-sdk/client-bedrock-runtime": "^3.987.0",
     "@aws-sdk/client-s3": "^3.985.0",
     "@aws-sdk/client-secrets-manager": "^3.985.0",
     "@aws-sdk/client-ssm": "^3.985.0",
@@ -51,8 +52,8 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
-    "@types/cookie-parser": "^1.4.8",
     "@types/cookie": "^1.0.0",
+    "@types/cookie-parser": "^1.4.8",
     "@types/cookiejar": "^2.1.5",
     "@types/cors": "^2.8.17",
     "@types/docker-modem": "^3.0.6",
