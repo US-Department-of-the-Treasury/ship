@@ -160,17 +160,16 @@ export function WeekSidebar({
         </select>
       </PropertyRow>
 
-      {/* Plan Approval - only show when plan exists */}
-      {!!sprint.plan?.trim() && (
+      {/* Plan Approval - show when approval state exists (plans are now separate weekly_plan documents) */}
+      {sprint.plan_approval && (
         <PropertyRow label="Plan Approval">
           <ApprovalButton
           type="plan"
           approval={sprint.plan_approval}
-          hasContent={!!sprint.plan?.trim()}
+          hasContent={true}
           canApprove={canApprove}
           approveEndpoint={`/api/weeks/${sprint.id}/approve-plan`}
           approverName={sprint.plan_approval?.approved_by ? userNames[sprint.plan_approval.approved_by] : undefined}
-          currentContent={sprint.plan || ''}
           onApproved={onApprovalUpdate}
         />
         </PropertyRow>

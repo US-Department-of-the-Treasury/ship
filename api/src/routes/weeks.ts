@@ -10,6 +10,7 @@ import {
 } from '../utils/transformIssueLinks.js';
 import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
 import { broadcastToUser } from '../collaboration/index.js';
+import { extractText } from '../utils/document-content.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -2144,10 +2145,23 @@ router.get('/:id/review', authMiddleware, async (req: Request, res: Response) =>
       [id]
     );
 
+    // Fetch weekly_plan documents for this sprint (plans are now separate documents, not sprint properties)
+    const weeklyPlansResult = await pool.query(
+      `SELECT content FROM documents
+       WHERE document_type = 'weekly_plan'
+         AND (properties->>'week_number')::int = $1
+         AND workspace_id = $2
+         AND deleted_at IS NULL`,
+      [sprintProps.sprint_number || 1, workspaceId]
+    );
+    const planTexts = weeklyPlansResult.rows
+      .map((row: { content: unknown }) => extractText(row.content))
+      .filter((t: string) => t.trim().length > 0);
+
     const sprintData = {
       sprint_number: sprintProps.sprint_number || 1,
       program_name: sprint.program_name,
-      plan: sprintProps.plan || null,
+      plan: planTexts.length > 0 ? planTexts.join('\n\n') : null,
     };
 
     const prefilledContent = await generatePrefilledReviewContent(sprintData, issuesResult.rows);

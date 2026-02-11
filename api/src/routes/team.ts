@@ -2051,9 +2051,15 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
          d.id,
          d.title,
          d.properties->>'sprint_number' as sprint_number,
-         d.properties->>'plan' as plan,
          d.properties->'plan_approval' as plan_approval,
          d.properties->'review_approval' as review_approval,
+         EXISTS(
+           SELECT 1 FROM documents wp
+           WHERE wp.document_type = 'weekly_plan'
+           AND (wp.properties->>'week_number')::int = (d.properties->>'sprint_number')::int
+           AND wp.workspace_id = $1
+           AND wp.deleted_at IS NULL
+         ) as has_plan,
          EXISTS(
            SELECT 1 FROM documents sr
            WHERE sr.document_type = 'weekly_review'
@@ -2084,7 +2090,7 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       sprintAccountability[sprintNumber] = {
         id: sprint.id,
         title: sprint.title,
-        hasPlan: !!sprint.plan && sprint.plan.trim() !== '',
+        hasPlan: sprint.has_plan === true || sprint.has_plan === 't',
         planApproval: sprint.plan_approval,
         hasReview: sprint.has_review === true,
         reviewApproval: sprint.review_approval,
