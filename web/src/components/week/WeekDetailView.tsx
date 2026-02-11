@@ -188,12 +188,7 @@ export function WeekDetailView({
             ) : (
               <div className="text-sm text-muted">No estimates yet</div>
             )}
-            {sprint.plan && (
-              <div className="mt-4">
-                <h4 className="text-xs font-medium text-muted uppercase tracking-wider mb-1">Plan</h4>
-                <p className="text-sm text-foreground">{sprint.plan}</p>
-              </div>
-            )}
+            {/* Plans are now per-person weekly_plan documents, accessible via the Weeks tab */}
           </div>
 
           {/* Standups - Scrollable with fixed header */}

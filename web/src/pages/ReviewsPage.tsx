@@ -28,14 +28,15 @@ const OPM_RATINGS = [
 ] as const;
 
 // Review status colors — matches StatusOverviewHeatmap's bold style
-type ReviewStatus = 'approved' | 'needs_review' | 'late' | 'changed' | 'empty';
+type ReviewStatus = 'approved' | 'needs_review' | 'late' | 'changed' | 'changes_requested' | 'empty';
 
 const REVIEW_COLORS: Record<ReviewStatus, string> = {
-  approved: '#22c55e',     // green — approved or rated
-  needs_review: '#eab308', // yellow — submitted, needs manager action
-  late: '#ef4444',         // red — past due, nothing submitted
-  changed: '#f97316',      // orange — changed since approved
-  empty: '#6b7280',        // gray — no allocation or future
+  approved: '#22c55e',           // green — approved or rated
+  needs_review: '#eab308',       // yellow — submitted, needs manager action
+  late: '#ef4444',               // red — past due, nothing submitted
+  changed: '#f97316',            // orange — changed since approved
+  changes_requested: '#a855f7',  // purple — manager requested changes
+  empty: '#6b7280',              // gray — no allocation or future
 };
 
 const REVIEW_STATUS_TEXT: Record<ReviewStatus, string> = {
@@ -43,6 +44,7 @@ const REVIEW_STATUS_TEXT: Record<ReviewStatus, string> = {
   needs_review: 'needs review',
   late: 'late',
   changed: 'changed since approved',
+  changes_requested: 'changes requested',
   empty: 'no submission',
 };
 
@@ -104,6 +106,7 @@ interface ProgramGroup {
 function getPlanStatus(cell: ReviewCell | undefined, weekIsPast: boolean): ReviewStatus {
   if (!cell || !cell.sprintId) return 'empty';
   if (cell.planApproval?.state === 'approved') return 'approved';
+  if (cell.planApproval?.state === 'changes_requested') return 'changes_requested';
   if (cell.planApproval?.state === 'changed_since_approved') return 'changed';
   if (cell.hasPlan) return 'needs_review';
   if (weekIsPast) return 'late';
@@ -115,6 +118,7 @@ function getRetroStatus(cell: ReviewCell | undefined, weekIsPast: boolean): Revi
   if (!cell || !cell.sprintId) return 'empty';
   if (cell.reviewRating) return 'approved';
   if (cell.reviewApproval?.state === 'approved') return 'approved';
+  if (cell.reviewApproval?.state === 'changes_requested') return 'changes_requested';
   if (cell.reviewApproval?.state === 'changed_since_approved') return 'changed';
   if (cell.hasRetro) return 'needs_review';
   if (weekIsPast) return 'late';
@@ -189,6 +193,40 @@ export function ReviewsPage() {
         headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
       });
       if (!res.ok) throw new Error('Failed to approve plan');
+    } catch {
+      // Revert on error
+      fetchReviews();
+    }
+  }, [data]);
+
+  // Request changes on a plan or retro
+  const requestChanges = useCallback(async (personId: string, weekNumber: number, sprintId: string, type: 'plan' | 'retro', feedback: string) => {
+    if (!data) return;
+
+    const endpoint = type === 'plan' ? 'request-plan-changes' : 'request-retro-changes';
+    const approvalField = type === 'plan' ? 'planApproval' : 'reviewApproval';
+
+    // Optimistic update
+    setData(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, reviews: { ...prev.reviews } };
+      updated.reviews[personId] = { ...updated.reviews[personId] };
+      updated.reviews[personId][weekNumber] = {
+        ...updated.reviews[personId][weekNumber],
+        [approvalField]: { state: 'changes_requested', approved_by: null, approved_at: new Date().toISOString(), feedback },
+      };
+      return updated;
+    });
+
+    try {
+      const token = await getCsrfToken();
+      const res = await fetch(`${API_URL}/api/weeks/${sprintId}/${endpoint}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
+        body: JSON.stringify({ feedback }),
+      });
+      if (!res.ok) throw new Error('Failed to request changes');
     } catch {
       // Revert on error
       fetchReviews();
@@ -563,6 +601,10 @@ export function ReviewsPage() {
           <span>Changed</span>
         </div>
         <div className="flex items-center gap-1">
+          <div className="w-3 h-3 rounded" style={{ backgroundColor: REVIEW_COLORS.changes_requested }} />
+          <span>Changes Requested</span>
+        </div>
+        <div className="flex items-center gap-1">
           <div className="w-3 h-3 rounded" style={{ backgroundColor: REVIEW_COLORS.empty }} />
           <span>No Submission</span>
         </div>
@@ -806,6 +848,19 @@ export function ReviewsPage() {
             // Auto-advance in batch mode
             if (batchMode) setTimeout(advanceBatch, 300);
           }}
+          onRequestChanges={(personId, weekNumber, sprintId, type, feedback) => {
+            requestChanges(personId, weekNumber, sprintId, type, feedback);
+            const approvalField = type === 'plan' ? 'planApproval' : 'reviewApproval';
+            setSelectedCell(prev => prev ? {
+              ...prev,
+              cell: {
+                ...prev.cell,
+                [approvalField]: { state: 'changes_requested', approved_by: null, approved_at: new Date().toISOString(), feedback },
+              },
+            } : null);
+            // Auto-advance in batch mode
+            if (batchMode) setTimeout(advanceBatch, 300);
+          }}
           onSkip={batchMode ? advanceBatch : undefined}
         />
       )}
@@ -845,6 +900,7 @@ function ReviewPanel({
   onClose,
   onApprovePlan,
   onRateRetro,
+  onRequestChanges,
   onSkip,
 }: {
   selectedCell: SelectedCell;
@@ -852,12 +908,15 @@ function ReviewPanel({
   onClose: () => void;
   onApprovePlan: (personId: string, weekNumber: number, sprintId: string) => void;
   onRateRetro: (personId: string, weekNumber: number, sprintId: string, rating: number) => void;
+  onRequestChanges: (personId: string, weekNumber: number, sprintId: string, type: 'plan' | 'retro', feedback: string) => void;
   onSkip?: () => void;
 }) {
   const [planDoc, setPlanDoc] = useState<WeeklyDoc | null>(null);
   const [retroDoc, setRetroDoc] = useState<WeeklyDoc | null>(null);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
+  const [showFeedbackInput, setShowFeedbackInput] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
 
   // Fetch plan/retro content when selection changes
   useEffect(() => {
@@ -865,6 +924,8 @@ function ReviewPanel({
     setPlanDoc(null);
     setRetroDoc(null);
     setSelectedRating(selectedCell.cell.reviewRating?.value ?? null);
+    setShowFeedbackInput(false);
+    setFeedbackText('');
 
     const fetchDocs = async () => {
       try {
@@ -979,9 +1040,65 @@ function ReviewPanel({
         )}
       </div>
 
+      {/* Previous feedback (when changes were already requested) */}
+      {((isRetroMode && selectedCell.cell.reviewApproval?.state === 'changes_requested') ||
+        (!isRetroMode && selectedCell.cell.planApproval?.state === 'changes_requested')) && (
+        <div className="border-t border-border px-4 py-2 bg-purple-500/5">
+          <div className="text-[10px] uppercase tracking-wider text-purple-400 mb-1">Previous Feedback</div>
+          <p className="text-xs text-muted">
+            {(isRetroMode ? (selectedCell.cell.reviewApproval as { feedback?: string })?.feedback : (selectedCell.cell.planApproval as { feedback?: string })?.feedback) || 'No feedback provided'}
+          </p>
+        </div>
+      )}
+
       {/* Action bar */}
       <div className="border-t border-border px-4 py-3">
-        {isRetroMode ? (
+        {showFeedbackInput ? (
+          /* Feedback input for requesting changes */
+          <div>
+            <div className="text-xs text-muted mb-2">What needs to change?</div>
+            <textarea
+              value={feedbackText}
+              onChange={e => setFeedbackText(e.target.value)}
+              placeholder="Explain what needs to be revised..."
+              rows={3}
+              className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-purple-500"
+              autoFocus
+            />
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => {
+                  if (feedbackText.trim()) {
+                    onRequestChanges(
+                      selectedCell.personId,
+                      selectedCell.weekNumber,
+                      selectedCell.sprintId,
+                      selectedCell.type,
+                      feedbackText.trim()
+                    );
+                    setShowFeedbackInput(false);
+                    setFeedbackText('');
+                  }
+                }}
+                disabled={!feedbackText.trim()}
+                className={cn(
+                  'flex-1 rounded py-2 text-sm font-medium transition-colors',
+                  feedbackText.trim()
+                    ? 'bg-purple-600 text-white hover:bg-purple-500 cursor-pointer'
+                    : 'bg-border/30 text-muted cursor-not-allowed'
+                )}
+              >
+                Submit Request
+              </button>
+              <button
+                onClick={() => { setShowFeedbackInput(false); setFeedbackText(''); }}
+                className="rounded px-3 py-2 text-sm text-muted hover:text-foreground hover:bg-border/50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : isRetroMode ? (
           /* Rating controls for retro */
           <div>
             <div className="text-xs text-muted mb-2">Performance Rating</div>
@@ -1003,45 +1120,65 @@ function ReviewPanel({
                 </button>
               ))}
             </div>
-            <button
-              onClick={() => {
-                if (selectedRating) {
-                  onRateRetro(selectedCell.personId, selectedCell.weekNumber, selectedCell.sprintId, selectedRating);
-                }
-              }}
-              disabled={!selectedRating || !retroDoc}
-              className={cn(
-                'w-full rounded py-2 text-sm font-medium transition-colors',
-                selectedRating && retroDoc
-                  ? 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
-                  : 'bg-border/30 text-muted cursor-not-allowed'
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (selectedRating) {
+                    onRateRetro(selectedCell.personId, selectedCell.weekNumber, selectedCell.sprintId, selectedRating);
+                  }
+                }}
+                disabled={!selectedRating || !retroDoc}
+                className={cn(
+                  'flex-1 rounded py-2 text-sm font-medium transition-colors',
+                  selectedRating && retroDoc
+                    ? 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+                    : 'bg-border/30 text-muted cursor-not-allowed'
+                )}
+              >
+                {selectedCell.cell.reviewRating ? 'Update Rating' : 'Rate & Approve'}
+              </button>
+              {retroDoc && (
+                <button
+                  onClick={() => setShowFeedbackInput(true)}
+                  className="rounded px-3 py-2 text-sm font-medium text-purple-400 hover:bg-purple-500/10 transition-colors"
+                >
+                  Request Changes
+                </button>
               )}
-            >
-              {selectedCell.cell.reviewRating ? 'Update Rating' : 'Rate & Approve'}
-            </button>
+            </div>
           </div>
         ) : (
-          /* Approve button for plan */
-          <button
-            onClick={() => onApprovePlan(selectedCell.personId, selectedCell.weekNumber, selectedCell.sprintId)}
-            disabled={!canApprove}
-            className={cn(
-              'w-full rounded py-2 text-sm font-medium transition-colors',
-              planApprovalState === 'approved'
-                ? 'bg-green-600/20 text-green-400 cursor-default'
-                : canApprove
-                  ? planApprovalState === 'changed_since_approved'
-                    ? 'bg-orange-600 text-white hover:bg-orange-500 cursor-pointer'
-                    : 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
-                  : 'bg-border/30 text-muted cursor-not-allowed'
+          /* Plan actions: Approve + Request Changes */
+          <div className="flex gap-2">
+            <button
+              onClick={() => onApprovePlan(selectedCell.personId, selectedCell.weekNumber, selectedCell.sprintId)}
+              disabled={!canApprove}
+              className={cn(
+                'flex-1 rounded py-2 text-sm font-medium transition-colors',
+                planApprovalState === 'approved'
+                  ? 'bg-green-600/20 text-green-400 cursor-default'
+                  : canApprove
+                    ? planApprovalState === 'changed_since_approved'
+                      ? 'bg-orange-600 text-white hover:bg-orange-500 cursor-pointer'
+                      : 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+                    : 'bg-border/30 text-muted cursor-not-allowed'
+              )}
+            >
+              {planApprovalState === 'approved'
+                ? 'Approved'
+                : planApprovalState === 'changed_since_approved'
+                  ? 'Re-approve Plan'
+                  : 'Approve Plan'}
+            </button>
+            {canApprove && (
+              <button
+                onClick={() => setShowFeedbackInput(true)}
+                className="rounded px-3 py-2 text-sm font-medium text-purple-400 hover:bg-purple-500/10 transition-colors"
+              >
+                Request Changes
+              </button>
             )}
-          >
-            {planApprovalState === 'approved'
-              ? 'Approved'
-              : planApprovalState === 'changed_since_approved'
-                ? 'Re-approve Plan'
-                : 'Approve Plan'}
-          </button>
+          </div>
         )}
       </div>
     </div>

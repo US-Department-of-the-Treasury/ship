@@ -95,17 +95,10 @@ export async function checkMissingAccountability(
   const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
   const currentSprintNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
 
-  // 1. Check for missing standups
-  if (todayStr) {
-    const standupItems = await checkMissingStandups(userId, workspaceId, currentSprintNumber, todayStr);
-    items.push(...standupItems);
-  }
+  // Only weekly plans, retros, and changes-requested notifications are active.
+  // Standups, sprint start/issues, sprint reviews, and project retros are disabled.
 
-  // 2-4. Check sprint accountability (hypothesis, started, issues)
-  const sprintItems = await checkSprintAccountability(userId, workspaceId, workspaceStartDate, sprintDuration, today, personId);
-  items.push(...sprintItems);
-
-  // 2b. Check for per-person weekly_plan and weekly_retro (based on allocations)
+  // Check for per-person weekly_plan and weekly_retro (based on allocations)
   // Check both current sprint AND next sprint, since plans become due 2 days before
   // the sprint starts (Saturday before a Monday-start week).
   if (personId && todayStr) {
@@ -121,19 +114,11 @@ export async function checkMissingAccountability(
     items.push(...nextSprintItems);
   }
 
-  // 5. Check for completed sprints without review
-  if (todayStr) {
-    const reviewItems = await checkMissingSprintReviews(userId, workspaceId, workspaceStartDate, sprintDuration, today, todayStr);
-    items.push(...reviewItems);
+  // Check for plans/retros where manager requested changes
+  if (personId) {
+    const changesRequestedItems = await checkChangesRequested(workspaceId, personId);
+    items.push(...changesRequestedItems);
   }
-
-  // 6. Project-level plan check REMOVED - replaced by weekly_plan documents per person/project/week
-  // The old system checked properties.plan on project docs, but that field isn't exposed in the UI
-  // and has been superseded by the checkWeeklyPersonAccountability() checks above.
-
-  // 7. Check for completed projects without retro
-  const projectRetroItems = await checkProjectRetros(userId, workspaceId);
-  items.push(...projectRetroItems);
 
   return items;
 }
@@ -281,21 +266,9 @@ async function checkSprintAccountability(
 
     const sprintStartStr = sprintStartDate.toISOString().split('T')[0] || null;
 
-    // Check for missing plan
-    if (!props.plan || props.plan.trim() === '') {
-      items.push({
-        type: 'weekly_plan',
-        targetId: sprint.id,
-        targetTitle: sprintTitle,
-        targetType: 'sprint',
-        dueDate: sprintStartStr,
-        message: `Write plan for ${sprintTitle}`,
-        // Include metadata for weekly_plan document navigation
-        personId: personId || undefined,
-        projectId: projectId || undefined,
-        weekNumber: sprintNumber,
-      });
-    }
+    // NOTE: Sprint-level plan check REMOVED. Plans are now per-person weekly_plan documents,
+    // checked by checkWeeklyPersonAccountability(). The old props.plan check on the sprint
+    // document was generating false "Write plan" notifications even when plans existed.
 
     // Check if sprint hasn't been started (status !== 'active' or 'completed')
     if (props.status !== 'active' && props.status !== 'completed') {
@@ -575,6 +548,78 @@ async function checkProjectRetros(
       dueDate: null, // No specific due date for project retro
       message: `Complete retro for ${project.title || 'project'}`,
     });
+  }
+
+  return items;
+}
+
+/**
+ * Check for plans/retros where manager requested changes.
+ * Looks at sprint documents where the person is allocated and
+ * plan_approval.state or review_approval.state = 'changes_requested'.
+ */
+async function checkChangesRequested(
+  workspaceId: string,
+  personId: string
+): Promise<MissingAccountabilityItem[]> {
+  const items: MissingAccountabilityItem[] = [];
+
+  // Find sprints where this person is allocated and changes are requested
+  const result = await pool.query(
+    `SELECT
+       s.id as sprint_id,
+       (s.properties->>'sprint_number')::int as sprint_number,
+       s.properties->'plan_approval' as plan_approval,
+       s.properties->'review_approval' as review_approval,
+       s.title as sprint_title,
+       da.related_id as project_id
+     FROM documents s
+     LEFT JOIN document_associations da ON da.document_id = s.id AND da.relationship_type = 'project'
+     WHERE s.workspace_id = $1
+       AND s.document_type = 'sprint'
+       AND s.deleted_at IS NULL
+       AND $2 = ANY(
+         SELECT jsonb_array_elements_text(s.properties->'assignee_ids')
+       )
+       AND (
+         s.properties->'plan_approval'->>'state' = 'changes_requested'
+         OR s.properties->'review_approval'->>'state' = 'changes_requested'
+       )`,
+    [workspaceId, personId]
+  );
+
+  for (const row of result.rows) {
+    const sprintNumber = row.sprint_number;
+
+    // Check plan changes requested
+    if (row.plan_approval?.state === 'changes_requested') {
+      items.push({
+        type: 'changes_requested_plan',
+        targetId: row.sprint_id,
+        targetTitle: `Week ${sprintNumber} Plan`,
+        targetType: 'sprint',
+        dueDate: null,
+        message: `Changes requested on your Week ${sprintNumber} plan`,
+        personId,
+        projectId: row.project_id || undefined,
+        weekNumber: sprintNumber,
+      });
+    }
+
+    // Check retro changes requested
+    if (row.review_approval?.state === 'changes_requested') {
+      items.push({
+        type: 'changes_requested_retro',
+        targetId: row.sprint_id,
+        targetTitle: `Week ${sprintNumber} Retro`,
+        targetType: 'sprint',
+        dueDate: null,
+        message: `Changes requested on your Week ${sprintNumber} retro`,
+        personId,
+        projectId: row.project_id || undefined,
+        weekNumber: sprintNumber,
+      });
+    }
   }
 
   return items;

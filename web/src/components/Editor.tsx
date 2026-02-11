@@ -77,6 +77,10 @@ interface EditorProps {
   onDocumentConverted?: (newDocId: string, newDocType: 'issue' | 'project') => void;
   /** Callback when plan block content changes (for sprint documents) */
   onPlanChange?: (plan: string) => void;
+  /** Banner content rendered between the title and editor content (e.g., AI quality check) */
+  contentBanner?: React.ReactNode;
+  /** Callback when editor content changes (debounced). Receives TipTap JSON content. */
+  onContentChange?: (content: Record<string, unknown>) => void;
 }
 
 type SyncStatus = 'connecting' | 'cached' | 'synced' | 'disconnected';
@@ -168,6 +172,8 @@ export function Editor({
   documentType,
   onDocumentConverted,
   onPlanChange,
+  contentBanner,
+  onContentChange,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -701,6 +707,27 @@ export function Editor({
     };
   }, [editor, documentId]);
 
+  // Notify parent of content changes (debounced 3s) for AI quality analysis etc.
+  useEffect(() => {
+    if (!editor || !onContentChange) return;
+
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const debouncedNotify = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const json = editor.getJSON();
+        onContentChange(json as Record<string, unknown>);
+      }, 3000);
+    };
+
+    editor.on('update', debouncedNotify);
+
+    return () => {
+      clearTimeout(debounceTimer);
+      editor.off('update', debouncedNotify);
+    };
+  }, [editor, onContentChange]);
+
   // Sync plan content when HypothesisBlock changes (for sprint documents)
   const lastSyncedPlanRef = useRef<string | null>(null);
   useEffect(() => {
@@ -872,6 +899,7 @@ export function Editor({
                 titleReadOnly && "cursor-default"
               )}
             />
+            {contentBanner}
             <div
               className="tiptap-wrapper"
               data-testid="tiptap-editor"

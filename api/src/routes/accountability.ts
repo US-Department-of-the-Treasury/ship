@@ -45,6 +45,9 @@ router.get('/action-items', authMiddleware, async (req: Request, res: Response) 
         const dueDate = new Date(item.dueDate + 'T00:00:00Z');
         const diffTime = today.getTime() - dueDate.getTime();
         daysOverdue = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      } else if (item.type === 'changes_requested_plan' || item.type === 'changes_requested_retro') {
+        // Changes requested items have no due date but should show as "due today" urgency
+        daysOverdue = 0;
       }
 
       return {

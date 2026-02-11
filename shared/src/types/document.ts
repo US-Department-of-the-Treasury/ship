@@ -61,7 +61,9 @@ export type AccountabilityType =
   | 'week_start'
   | 'week_issues'
   | 'project_plan'
-  | 'project_retro';
+  | 'project_retro'
+  | 'changes_requested_plan'
+  | 'changes_requested_retro';
 
 // Sprint status - computed from dates, not stored
 export type WeekStatus = 'active' | 'upcoming' | 'completed';
@@ -137,14 +139,15 @@ export interface PlanHistoryEntry {
 }
 
 // Approval tracking state for accountability workflows
-export type ApprovalState = null | 'approved' | 'changed_since_approved';
+export type ApprovalState = null | 'approved' | 'changed_since_approved' | 'changes_requested';
 
 // Approval tracking structure for hypotheses, reviews, and retros
 export interface ApprovalTracking {
-  state: ApprovalState;                   // null = pending, 'approved' = current version approved, 'changed_since_approved' = needs re-review
+  state: ApprovalState;                   // null = pending, 'approved' = current version approved, 'changed_since_approved' = needs re-review, 'changes_requested' = manager requested revisions
   approved_by: string | null;             // User ID who approved
   approved_at: string | null;             // ISO 8601 timestamp of approval
   approved_version_id: number | null;     // document_history.id that was approved
+  feedback?: string | null;               // Manager's feedback when requesting changes
 }
 
 export interface WeekProperties {

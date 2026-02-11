@@ -35,6 +35,9 @@ describe('Accountability Service', () => {
 
   beforeEach(() => {
     vi.mocked(pool.query).mockReset();
+    // Default fallback: return empty rows for any unmocked query calls
+    // This prevents crashes when new accountability checks are added
+    vi.mocked(pool.query).mockResolvedValue({ rows: [] } as any);
     vi.mocked(isBusinessDay).mockReturnValue(true);
     vi.mocked(getAllocations).mockReset().mockResolvedValue([]);
   });
@@ -73,6 +76,8 @@ describe('Accountability Service', () => {
       // past sprints without review
       .mockResolvedValueOnce({ rows: [] } as any)
       // completed projects without retro
+      .mockResolvedValueOnce({ rows: [] } as any)
+      // changes_requested check
       .mockResolvedValueOnce({ rows: [] } as any);
   };
 
@@ -85,237 +90,17 @@ describe('Accountability Service', () => {
       expect(result).toEqual([]);
     });
 
-    it('returns multiple accountability types when applicable', async () => {
-      mockSetupQueries()
-        // Standup - active sprints with assigned issues
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1 }, issue_count: '3' }],
-        } as any)
-        // Standup - check for existing standup today
-        .mockResolvedValueOnce({ rows: [] } as any)
-        // Standup - last standup date
-        .mockResolvedValueOnce({ rows: [{ last_standup_date: null }] } as any)
-        // Sprint accountability - sprints owned by user
-        .mockResolvedValueOnce({
-          rows: [
-            {
-              id: sprintId,
-              title: 'Sprint 1',
-              properties: { sprint_number: 1, status: 'planning', plan: '' },
-              project_id: projectId,
-            },
-          ],
-        } as any)
-        // Sprint issues count
-        .mockResolvedValueOnce({ rows: [{ count: '0' }] } as any)
-        // Sprint reviews - past sprints without review
-        .mockResolvedValueOnce({ rows: [] } as any)
-        // Completed projects without retro
-        .mockResolvedValueOnce({ rows: [] } as any);
+    it('returns only weekly_plan/weekly_retro/changes_requested types (standups, sprint, project checks disabled)', async () => {
+      mockSetupQueries();
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
+      // Only weekly plan/retro and changes_requested checks are active
       const types = result.map((item) => item.type);
-      expect(types).toContain('standup');
-      expect(types).toContain('weekly_plan');
-      expect(types).toContain('week_start');
-      expect(types).toContain('week_issues');
-    });
-  });
-
-  describe('standup type', () => {
-    it('returns standup item with issue count', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1 }, issue_count: '5' }],
-        } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [{ last_standup_date: null }] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const standupItem = result.find((item) => item.type === 'standup');
-      expect(standupItem).toBeDefined();
-      expect(standupItem?.message).toContain('5 issues');
-      expect(standupItem?.issueCount).toBe(5);
-    });
-
-    it('skips standup check on weekends', async () => {
-      vi.mocked(isBusinessDay).mockReturnValue(false);
-
-      mockSetupQueries()
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const standupItem = result.find((item) => item.type === 'standup');
-      expect(standupItem).toBeUndefined();
-    });
-
-    it('does not return standup item when standup exists today', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1 }, issue_count: '3' }],
-        } as any)
-        .mockResolvedValueOnce({ rows: [{ id: 'standup-1' }] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const standupItem = result.find((item) => item.type === 'standup');
-      expect(standupItem).toBeUndefined();
-    });
-  });
-
-  describe('weekly_plan type', () => {
-    it('returns item when sprint has no plan', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: '' }, project_id: projectId }],
-        } as any)
-        .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const planItem = result.find((item) => item.type === 'weekly_plan');
-      expect(planItem).toBeDefined();
-      expect(planItem?.message).toContain('plan');
-      expect(planItem?.personId).toBe(personId);
-      expect(planItem?.projectId).toBe(projectId);
-      expect(planItem?.weekNumber).toBe(1);
-    });
-
-    it('does not return item when sprint has plan', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'Test plan' }, project_id: projectId }],
-        } as any)
-        .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const planItem = result.find((item) => item.type === 'weekly_plan');
-      expect(planItem).toBeUndefined();
-    });
-  });
-
-  describe('week_start type', () => {
-    it('returns item when sprint is not started', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'planning', plan: 'test' }, project_id: projectId }],
-        } as any)
-        .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const startItem = result.find((item) => item.type === 'week_start');
-      expect(startItem).toBeDefined();
-      expect(startItem?.message).toContain('Start');
-    });
-
-    it('does not return item when sprint is active', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' }, project_id: projectId }],
-        } as any)
-        .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const startItem = result.find((item) => item.type === 'week_start');
-      expect(startItem).toBeUndefined();
-    });
-  });
-
-  describe('week_issues type', () => {
-    it('returns item when sprint has no issues', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' }, project_id: projectId }],
-        } as any)
-        .mockResolvedValueOnce({ rows: [{ count: '0' }] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const issuesItem = result.find((item) => item.type === 'week_issues');
-      expect(issuesItem).toBeDefined();
-      expect(issuesItem?.message).toContain('Add issues');
-    });
-
-    it('does not return item when sprint has issues', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'test' }, project_id: projectId }],
-        } as any)
-        .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const issuesItem = result.find((item) => item.type === 'week_issues');
-      expect(issuesItem).toBeUndefined();
-    });
-  });
-
-  describe('project_retro type', () => {
-    it('returns item when project is complete but has no retro', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({
-          rows: [{ id: projectId, title: 'Completed Project', properties: {} }],
-        } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const retroItem = result.find((item) => item.type === 'project_retro');
-      expect(retroItem).toBeDefined();
-      expect(retroItem?.message).toContain('retro');
-      expect(retroItem?.targetId).toBe(projectId);
-    });
-  });
-
-  describe('weekly_review type', () => {
-    it('returns item for past sprint without review', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Past Sprint', properties: { sprint_number: 1 } }],
-        } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const reviewItem = result.find((item) => item.type === 'weekly_review');
-      expect(reviewItem).toBeDefined();
-      expect(reviewItem?.message).toContain('review');
+      expect(types).not.toContain('standup');
+      expect(types).not.toContain('week_start');
+      expect(types).not.toContain('week_issues');
+      expect(types).not.toContain('project_retro');
     });
   });
 
@@ -524,21 +309,16 @@ describe('Accountability Service', () => {
         .mockResolvedValueOnce([{ projectId: 'proj-2', projectName: 'Next Project' }]); // Week 2
 
       // Mock queries in execution order:
-      // 1. workspace, 2. person, 3. owned sprints (sprint accountability),
-      // 4-5. Week 1 plan+retro queries, 6. Week 2 plan query,
-      // 7. sprint reviews, 8. project retros
+      // 1. workspace, 2. person,
+      // 3-4. Week 1 plan+retro queries, 5. Week 2 plan query,
+      // 6. changes_requested check
+      // (standup, sprint accountability, sprint reviews, project retros are disabled)
       mockSetupQueries()
-        // owned sprints (checkSprintAccountability)
-        .mockResolvedValueOnce({ rows: [] } as any)
         // Week 1 plan - exists (done)
         .mockResolvedValueOnce({ rows: [{ id: 'plan-1', content: { type: 'doc', content: [{ type: 'text', text: 'done' }] } }] } as any)
         // Week 1 retro - exists (done) (today Jan 7 >= retroDueStr Jan 4)
         .mockResolvedValueOnce({ rows: [{ id: 'retro-1', content: { type: 'doc', content: [{ type: 'text', text: 'done' }] } }] } as any)
         // Week 2 plan - NOT exists
-        .mockResolvedValueOnce({ rows: [] } as any)
-        // sprint reviews
-        .mockResolvedValueOnce({ rows: [] } as any)
-        // project retros
         .mockResolvedValueOnce({ rows: [] } as any);
 
       const result = await checkMissingAccountability(userId, workspaceId);

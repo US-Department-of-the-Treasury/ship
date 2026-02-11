@@ -13,6 +13,7 @@ import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
 import { WeekSidebar } from '@/components/sidebars/WeekSidebar';
 import { ProgramSidebar } from '@/components/sidebars/ProgramSidebar';
 import { ContentHistoryPanel } from '@/components/ContentHistoryPanel';
+import { PlanQualityAssistant, RetroQualityAssistant } from '@/components/sidebars/QualityAssistant';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
 import { apiGet, apiPost } from '@/lib/api';
@@ -444,21 +445,20 @@ function WeeklyDocumentSidebar({
               {/* Editable rating controls in review mode */}
               {isReviewMode && (
                 <>
-                  <div className="flex gap-1 mb-3">
+                  <div className="grid grid-cols-5 gap-1.5 mb-3">
                     {OPM_RATINGS.map(r => (
                       <button
                         key={r.value}
                         onClick={() => setSelectedRating(r.value)}
                         className={cn(
-                          'flex-1 flex flex-col items-center gap-0.5 rounded py-1.5 text-xs transition-all',
+                          'flex flex-col items-center gap-0.5 rounded py-2 text-xs transition-all',
                           selectedRating === r.value
                             ? 'bg-accent/20 ring-1 ring-accent'
                             : 'bg-border/30 hover:bg-border/50'
                         )}
                         title={r.label}
                       >
-                        <span className={cn('font-bold', r.color)}>{r.value}</span>
-                        <span className="text-[9px] text-muted leading-tight">{r.label.split(' ')[0]}</span>
+                        <span className={cn('text-sm font-bold', r.color)}>{r.value}</span>
                       </button>
                     ))}
                   </div>
@@ -563,12 +563,50 @@ function WeeklyDocumentSidebar({
         </div>
       )}
 
+      {/* AI Quality Assistant moved to PlanQualityBanner (rendered above editor content) */}
+
       {/* Content History Panel */}
       <ContentHistoryPanel
         documentId={document.id}
         documentType={document.document_type as 'weekly_plan' | 'weekly_retro'}
       />
     </div>
+  );
+}
+
+/** Wrapper that fetches plan content for the retro quality assistant */
+function RetroQualityAssistantWrapper({
+  documentId,
+  content,
+  personId,
+  weekNumber,
+}: {
+  documentId: string;
+  content: Record<string, unknown>;
+  personId?: string;
+  weekNumber?: number;
+}) {
+  // Fetch the corresponding weekly plan for comparison
+  const { data: planContent } = useQuery<Record<string, unknown> | null>({
+    queryKey: ['weekly-plan-for-retro', personId, weekNumber],
+    queryFn: async () => {
+      if (!personId || !weekNumber) return null;
+      const res = await apiGet(`/api/weekly-plans?person_id=${personId}&week_number=${weekNumber}`);
+      if (!res.ok) return null;
+      const plans = await res.json();
+      if (plans.length > 0 && plans[0].content) return plans[0].content;
+      return null;
+    },
+    enabled: !!personId && !!weekNumber,
+    staleTime: 60 * 1000,
+  });
+
+  return (
+    <RetroQualityAssistant
+      documentId={documentId}
+      content={content}
+      planContent={planContent ?? null}
+    />
   );
 }
 
