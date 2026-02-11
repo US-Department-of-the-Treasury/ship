@@ -21,7 +21,7 @@ async function getCsrfToken(page: import('@playwright/test').Page, apiUrl: strin
 }
 
 test.describe('Week Accountability Flow', () => {
-  test('sprint without plan shows action item, adding plan removes it', async ({ page, apiServer }) => {
+  test('allocated person without weekly_plan shows action item, creating plan removes it', async ({ page, apiServer }) => {
     // Login to get auth cookies
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');
@@ -29,74 +29,94 @@ test.describe('Week Accountability Flow', () => {
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page).not.toHaveURL('/login', { timeout: 5000 });
 
-    // Get CSRF token for API calls
     const csrfToken = await getCsrfToken(page, apiServer.url);
 
-    // Get user ID
+    // Get user and person IDs
     const meResponse = await page.request.get(`${apiServer.url}/api/auth/me`);
     expect(meResponse.ok()).toBe(true);
     const meData = await meResponse.json();
     const userId = meData.data.user.id;
 
-    // Create a program via documents API
+    const personResponse = await page.request.get(`${apiServer.url}/api/weeks/lookup-person?user_id=${userId}`);
+    expect(personResponse.ok()).toBe(true);
+    const person = await personResponse.json();
+    const personId = person.id;
+
+    // Create program + project
     const programResponse = await page.request.post(`${apiServer.url}/api/documents`, {
       headers: { 'x-csrf-token': csrfToken },
-      data: {
-        title: 'Test Program for Sprint Plan',
-        document_type: 'program',
-      },
+      data: { title: 'Plan Test Program', document_type: 'program' },
     });
     expect(programResponse.ok()).toBe(true);
     const program = await programResponse.json();
-    const programId = program.id;
 
-    // Create a sprint without plan, owned by user
-    // Use sprint_number: 1 which has already started (workspace week_start_date is 3 months ago)
-    const sprintResponse = await page.request.post(`${apiServer.url}/api/weeks`, {
+    const projectResponse = await page.request.post(`${apiServer.url}/api/projects`, {
       headers: { 'x-csrf-token': csrfToken },
       data: {
-        title: 'Test Sprint Without Plan',
-        program_id: programId,
-        sprint_number: 1,
-        owner_id: userId,
+        title: 'Plan Test Project',
+        belongs_to: [{ id: program.id, type: 'program' }],
+        properties: { color: '#3b82f6' },
+      },
+    });
+    expect(projectResponse.ok()).toBe(true);
+    const project = await projectResponse.json();
+
+    // Create sprint with the person allocated (sprint_number: 1 is in the past, so plan is due)
+    const sprintResponse = await page.request.post(`${apiServer.url}/api/documents`, {
+      headers: { 'x-csrf-token': csrfToken },
+      data: {
+        title: 'Plan Test Sprint',
+        document_type: 'sprint',
+        belongs_to: [{ id: program.id, type: 'program' }, { id: project.id, type: 'project' }],
+        properties: { sprint_number: 1, owner_id: personId, assignee_ids: [personId], status: 'active' },
       },
     });
     expect(sprintResponse.ok()).toBe(true);
-    const sprint = await sprintResponse.json();
-    const sprintId = sprint.id;
 
-    // Step 1: Check action items - should include weekly_plan for this sprint
+    // Step 1: Check action items — should include weekly_plan (no plan document exists yet)
     const actionItemsResponse1 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse1.ok()).toBe(true);
     const actionItems1 = await actionItemsResponse1.json();
 
     const planItems1 = actionItems1.items.filter(
-      (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === sprintId && item.accountability_type === 'weekly_plan'
+      (item: { accountability_type: string }) => item.accountability_type === 'weekly_plan'
     );
+    expect(planItems1.length, 'Should have a weekly_plan action item when no plan document exists').toBeGreaterThanOrEqual(1);
 
-    // Should have weekly_plan action item
-    expect(planItems1.length).toBe(1);
-
-    // Step 2: Add plan to the sprint (uses separate /plan endpoint)
-    const addPlanResponse = await page.request.patch(`${apiServer.url}/api/weeks/${sprintId}/plan`, {
+    // Step 2: Create a weekly_plan document with content (the new way)
+    const planResponse = await page.request.post(`${apiServer.url}/api/weekly-plans`, {
       headers: { 'x-csrf-token': csrfToken },
-      data: { plan: 'This is a test plan for the sprint.' },
+      data: { person_id: personId, project_id: project.id, week_number: 1 },
     });
-    expect(addPlanResponse.ok()).toBe(true);
+    expect(planResponse.ok()).toBe(true);
+    const plan = await planResponse.json();
 
-    // Step 3: Check action items again - weekly_plan should be GONE
+    // Add content to make it count as "has content"
+    await page.request.patch(`${apiServer.url}/api/documents/${plan.id}`, {
+      headers: { 'x-csrf-token': csrfToken },
+      data: {
+        content: {
+          type: 'doc',
+          content: [
+            { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'What I plan to accomplish this week' }] },
+            { type: 'bulletList', content: [
+              { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Deliver API specification for auth module' }] }] },
+            ]},
+          ],
+        },
+      },
+    });
+
+    // Step 3: Check action items again — weekly_plan for this project/week should be gone
     const actionItemsResponse2 = await page.request.get(`${apiServer.url}/api/accountability/action-items`);
     expect(actionItemsResponse2.ok()).toBe(true);
     const actionItems2 = await actionItemsResponse2.json();
 
     const planItems2 = actionItems2.items.filter(
-      (item: { accountability_target_id: string; accountability_type: string }) =>
-        item.accountability_target_id === sprintId && item.accountability_type === 'weekly_plan'
+      (item: { accountability_type: string; project_id?: string | null }) =>
+        item.accountability_type === 'weekly_plan' && item.project_id === project.id
     );
-
-    // After adding plan, no weekly_plan item should exist
-    expect(planItems2.length).toBe(0);
+    expect(planItems2.length, 'After creating plan document, weekly_plan action item should be gone').toBe(0);
   });
 
   test('sprint not started shows action item, starting sprint removes it', async ({ page, apiServer }) => {
