@@ -66,6 +66,9 @@ function extractProjectFromRow(row: any) {
     retro_approval: props.retro_approval || null,
     has_retro: props.has_retro ?? false,
     target_date: props.target_date || null,
+    // Design review
+    has_design_review: props.has_design_review ?? null,
+    design_review_notes: props.design_review_notes || null,
   };
 }
 
@@ -103,6 +106,8 @@ const updateProjectSchema = z.object({
   archived_at: z.string().datetime().optional().nullable(),
   plan: z.string().max(2000).optional().nullable(),
   target_date: z.string().datetime().optional().nullable(),
+  has_design_review: z.boolean().optional().nullable(),
+  design_review_notes: z.string().max(2000).optional().nullable(),
 });
 
 // Schema for project retro

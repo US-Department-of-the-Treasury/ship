@@ -245,6 +245,7 @@ export function ProjectSidebar({
                 onChange={(e) => onUpdate({ design_review_notes: e.target.value } as Partial<Project>)}
                 className="w-full p-2 text-sm border border-border rounded-lg bg-background text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent resize-none"
                 rows={3}
+                maxLength={2000}
               />
             )}
           </div>
