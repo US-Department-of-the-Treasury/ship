@@ -186,14 +186,16 @@ export function OrgChartPage() {
 
   // Auto-expand ancestors when searching
   useEffect(() => {
-    if (searchMatches && searchMatches.size > 0) {
+    if (searchMatches !== null) {
+      // Save pre-search state on first search (whether or not there are matches)
       if (!preSearchExpanded) {
         setPreSearchExpanded(new Set(expandedIds));
       }
-      const ancestorIds = collectAncestorIds(people, searchMatches);
-      // Expand all ancestors + matches that have children
-      setExpandedIds(new Set([...ancestorIds, ...searchMatches]));
-    } else if (searchMatches === null && preSearchExpanded) {
+      if (searchMatches.size > 0) {
+        const ancestorIds = collectAncestorIds(people, searchMatches);
+        setExpandedIds(new Set([...ancestorIds, ...searchMatches]));
+      }
+    } else if (preSearchExpanded) {
       // Search cleared — restore previous state
       setExpandedIds(preSearchExpanded);
       setPreSearchExpanded(null);
@@ -203,7 +205,8 @@ export function OrgChartPage() {
   // Flatten tree for rendering, filtering to matches + ancestors during search
   const flatRows = useMemo(() => {
     const rows = flattenTree(tree, expandedIds);
-    if (!searchMatches || searchMatches.size === 0) return rows;
+    if (searchMatches === null) return rows; // No active search — show all
+    if (searchMatches.size === 0) return []; // Search with no matches — show empty state
     const ancestorIds = collectAncestorIds(people, searchMatches);
     const visibleIds = new Set([...searchMatches, ...ancestorIds]);
     return rows.filter(row => visibleIds.has(row.node.personId));
