@@ -123,7 +123,6 @@ function ExpandableGuide({ title, children }: { title: string; children: React.R
 
 export function PlanQualityAssistant({
   documentId,
-  content,
 }: {
   documentId: string;
   content: Record<string, unknown>;
@@ -131,8 +130,8 @@ export function PlanQualityAssistant({
   const [analysis, setAnalysis] = useState<PlanAnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const lastContentRef = useRef<string>('');
+  const pollRef = useRef<ReturnType<typeof setInterval>>();
 
   // Check AI availability on mount
   useEffect(() => {
@@ -142,15 +141,29 @@ export function PlanQualityAssistant({
       .catch(() => setAiAvailable(false));
   }, []);
 
-  // Debounced analysis on content change
-  const triggerAnalysis = useCallback(async (contentToAnalyze: Record<string, unknown>) => {
-    setLoading(true);
+  // Analyze content by fetching latest from API
+  const checkAndAnalyze = useCallback(async () => {
+    if (!aiAvailable) return;
+
     try {
+      // Fetch the latest saved content from the API
+      const docRes = await fetch(`${API_URL}/api/documents/${documentId}`, { credentials: 'include' });
+      if (!docRes.ok) return;
+      const doc = await docRes.json();
+      const content = doc.content;
+      if (!content) return;
+
+      const contentStr = JSON.stringify(content);
+      if (contentStr === lastContentRef.current) return;
+      lastContentRef.current = contentStr;
+
+      // Content changed — trigger analysis
+      setLoading(true);
       const res = await fetch(`${API_URL}/api/ai/analyze-plan`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: contentToAnalyze }),
+        body: JSON.stringify({ content }),
       });
       const data = await res.json();
       if (!isError(data)) {
@@ -158,20 +171,23 @@ export function PlanQualityAssistant({
       }
     } catch { /* keep previous analysis */ }
     finally { setLoading(false); }
-  }, []);
+  }, [documentId, aiAvailable]);
 
+  // Poll for content changes every 10 seconds
   useEffect(() => {
-    if (!aiAvailable || !content) return;
+    if (!aiAvailable) return;
 
-    const contentStr = JSON.stringify(content);
-    if (contentStr === lastContentRef.current) return;
-    lastContentRef.current = contentStr;
+    // Initial check after 5 seconds
+    const initialTimeout = setTimeout(checkAndAnalyze, 5000);
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => triggerAnalysis(content), 5000);
+    // Then poll every 10 seconds
+    pollRef.current = setInterval(checkAndAnalyze, 10000);
 
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [content, aiAvailable, triggerAnalysis]);
+    return () => {
+      clearTimeout(initialTimeout);
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [aiAvailable, checkAndAnalyze]);
 
   // Don't render if AI is unavailable
   if (aiAvailable === false) return null;
@@ -241,7 +257,6 @@ export function PlanQualityAssistant({
 
 export function RetroQualityAssistant({
   documentId,
-  content,
   planContent,
 }: {
   documentId: string;
@@ -251,8 +266,8 @@ export function RetroQualityAssistant({
   const [analysis, setAnalysis] = useState<RetroAnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const lastContentRef = useRef<string>('');
+  const pollRef = useRef<ReturnType<typeof setInterval>>();
 
   // Check AI availability on mount
   useEffect(() => {
@@ -262,15 +277,29 @@ export function RetroQualityAssistant({
       .catch(() => setAiAvailable(false));
   }, []);
 
-  // Debounced analysis on content change
-  const triggerAnalysis = useCallback(async (retroContent: Record<string, unknown>, plan: Record<string, unknown>) => {
-    setLoading(true);
+  // Analyze content by fetching latest from API
+  const checkAndAnalyze = useCallback(async () => {
+    if (!aiAvailable || !planContent) return;
+
     try {
+      // Fetch the latest saved content from the API
+      const docRes = await fetch(`${API_URL}/api/documents/${documentId}`, { credentials: 'include' });
+      if (!docRes.ok) return;
+      const doc = await docRes.json();
+      const content = doc.content;
+      if (!content) return;
+
+      const contentStr = JSON.stringify(content);
+      if (contentStr === lastContentRef.current) return;
+      lastContentRef.current = contentStr;
+
+      // Content changed — trigger analysis
+      setLoading(true);
       const res = await fetch(`${API_URL}/api/ai/analyze-retro`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ retro_content: retroContent, plan_content: plan }),
+        body: JSON.stringify({ retro_content: content, plan_content: planContent }),
       });
       const data = await res.json();
       if (!isError(data)) {
@@ -278,20 +307,20 @@ export function RetroQualityAssistant({
       }
     } catch { /* keep previous analysis */ }
     finally { setLoading(false); }
-  }, []);
+  }, [documentId, aiAvailable, planContent]);
 
+  // Poll for content changes every 10 seconds
   useEffect(() => {
-    if (!aiAvailable || !content || !planContent) return;
+    if (!aiAvailable || !planContent) return;
 
-    const contentStr = JSON.stringify(content);
-    if (contentStr === lastContentRef.current) return;
-    lastContentRef.current = contentStr;
+    const initialTimeout = setTimeout(checkAndAnalyze, 5000);
+    pollRef.current = setInterval(checkAndAnalyze, 10000);
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => triggerAnalysis(content, planContent), 5000);
-
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [content, planContent, aiAvailable, triggerAnalysis]);
+    return () => {
+      clearTimeout(initialTimeout);
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [aiAvailable, planContent, checkAndAnalyze]);
 
   // Don't render if AI is unavailable
   if (aiAvailable === false) return null;
