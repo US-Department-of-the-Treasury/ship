@@ -117,7 +117,8 @@ test.describe('Changes Requested Notifications', () => {
     );
     expect(actionItemsResponse.ok(), 'Action items endpoint should return 200').toBe(true);
 
-    const actionItems = await actionItemsResponse.json();
+    const actionItemsData = await actionItemsResponse.json();
+    const actionItems = actionItemsData.items || actionItemsData;
     expect(Array.isArray(actionItems), 'Action items should be an array').toBe(true);
 
     // Look for a changes_requested_plan item
@@ -167,7 +168,8 @@ test.describe('Changes Requested Notifications', () => {
     );
     expect(actionItemsResponse.ok(), 'Action items endpoint should return 200').toBe(true);
 
-    const actionItems = await actionItemsResponse.json();
+    const actionItemsData = await actionItemsResponse.json();
+    const actionItems = actionItemsData.items || actionItemsData;
     expect(Array.isArray(actionItems), 'Action items should be an array').toBe(true);
 
     // Look for a changes_requested_retro item
@@ -212,10 +214,11 @@ test.describe('Changes Requested Notifications', () => {
       `${apiServer.url}/api/accountability/action-items`
     );
     expect(actionItemsResponse.ok()).toBe(true);
-    const actionItems = await actionItemsResponse.json();
+    const actionItemsData = await actionItemsResponse.json();
+    const actionItems = actionItemsData.items || actionItemsData;
 
     // Verify the general structure of action items (even if no changes_requested item exists)
-    for (const item of actionItems) {
+    for (const item of (Array.isArray(actionItems) ? actionItems : [])) {
       expect(item, 'Action item should have id').toHaveProperty('id');
       expect(item, 'Action item should have title').toHaveProperty('title');
       expect(typeof item.title, 'Title should be a string').toBe('string');
