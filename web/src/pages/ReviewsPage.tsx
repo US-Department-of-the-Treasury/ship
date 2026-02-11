@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { apiPost, apiGet } from '@/lib/api';
 import { formatDateRange } from '@/lib/date-utils';
+import { useAuth } from '@/hooks/useAuth';
 import { useReviewQueue } from '@/contexts/ReviewQueueContext';
 import type { QueueItem } from '@/contexts/ReviewQueueContext';
 
@@ -50,6 +51,7 @@ interface ReviewPerson {
   programId: string | null;
   programName: string | null;
   programColor: string | null;
+  reportsTo?: string | null;
 }
 
 interface ApprovalInfo {
@@ -143,15 +145,38 @@ interface BatchMode {
 
 export function ReviewsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const reviewQueue = useReviewQueue();
   const [data, setData] = useState<ReviewsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filterMode, setFilterMode] = useState<'my-team' | 'everyone' | null>(null);
   const [collapsedPrograms, setCollapsedPrograms] = useState<Set<string>>(new Set());
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const [batchMode, setBatchMode] = useState<BatchMode | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
+
+  // Smart default: if user has direct reports, default to "my-team"
+  const hasDirectReports = useMemo(() => {
+    if (!data || !user?.id) return false;
+    return data.people.some(p => p.reportsTo === user.id);
+  }, [data, user?.id]);
+
+  useEffect(() => {
+    if (data && filterMode === null) {
+      setFilterMode(hasDirectReports ? 'my-team' : 'everyone');
+    }
+  }, [data, filterMode, hasDirectReports]);
+
+  // Filter people based on filter mode
+  const filteredPeople = useMemo(() => {
+    if (!data) return [];
+    if (filterMode === 'my-team' && user?.id) {
+      return data.people.filter(p => p.reportsTo === user.id);
+    }
+    return data.people;
+  }, [data, filterMode, user?.id]);
 
   useEffect(() => {
     fetchReviews();
@@ -257,7 +282,7 @@ export function ReviewsPage() {
     const groups = new Map<string, ProgramGroup>();
     const UNASSIGNED_KEY = '__unassigned__';
 
-    for (const person of data.people) {
+    for (const person of filteredPeople) {
       const groupKey = person.programId || UNASSIGNED_KEY;
 
       if (!groups.has(groupKey)) {
@@ -283,7 +308,7 @@ export function ReviewsPage() {
     }
 
     return sorted;
-  }, [data]);
+  }, [data, filteredPeople]);
 
   // Build row structure for synchronized scrolling
   const rowStructure = useMemo(() => {
@@ -335,7 +360,7 @@ export function ReviewsPage() {
     let pendingPlans = 0;
     let pendingRetros = 0;
     const currentWeek = data.currentSprintNumber;
-    for (const person of data.people) {
+    for (const person of filteredPeople) {
       const cell = data.reviews[person.personId]?.[currentWeek];
       if (!cell?.sprintId) continue;
       if (cell.hasPlan) {
@@ -359,7 +384,7 @@ export function ReviewsPage() {
       avgRating: ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 10) / 10 : 0,
       pendingPlans, pendingRetros,
     };
-  }, [data]);
+  }, [data, filteredPeople]);
 
   // Alias for batch mode button counts
   const pendingCounts = useMemo(() => ({
@@ -532,6 +557,36 @@ export function ReviewsPage() {
       <div className={cn('flex flex-col', selectedCell ? 'flex-1 min-w-0' : 'flex-1')}>
       {/* Legend + Batch Actions */}
       <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs">
+        {/* My Team filter */}
+        {hasDirectReports && (
+          <>
+            <div className="flex rounded-md border border-border">
+              <button
+                onClick={() => setFilterMode('my-team')}
+                className={cn(
+                  'px-2 py-0.5 transition-colors',
+                  filterMode === 'my-team'
+                    ? 'bg-accent text-white'
+                    : 'text-muted hover:text-foreground'
+                )}
+              >
+                My Team
+              </button>
+              <button
+                onClick={() => setFilterMode('everyone')}
+                className={cn(
+                  'px-2 py-0.5 transition-colors',
+                  filterMode === 'everyone'
+                    ? 'bg-accent text-white'
+                    : 'text-muted hover:text-foreground'
+                )}
+              >
+                Everyone
+              </button>
+            </div>
+            <div className="h-4 w-px bg-border" />
+          </>
+        )}
         {/* Batch review buttons */}
         {pendingCounts.plans > 0 && (
           <button
