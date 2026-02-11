@@ -667,6 +667,88 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'post',
+  path: '/weeks/{id}/request-plan-changes',
+  tags: ['Weeks'],
+  summary: 'Request changes on sprint plan',
+  description: 'Request changes on the sprint plan. Requires feedback text explaining what needs to change. Sets plan_approval.state to changes_requested.',
+  request: {
+    params: z.object({
+      id: UuidSchema,
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            feedback: z.string().min(1).describe('Feedback explaining what changes are needed'),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Changes requested on plan',
+      content: {
+        'application/json': {
+          schema: WeekResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Feedback is required',
+    },
+    403: {
+      description: 'Not authorized (not the accountable person)',
+    },
+    404: {
+      description: 'Sprint not found',
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/weeks/{id}/request-retro-changes',
+  tags: ['Weeks'],
+  summary: 'Request changes on sprint retro',
+  description: 'Request changes on the sprint retro. Requires feedback text explaining what needs to change. Sets review_approval.state to changes_requested.',
+  request: {
+    params: z.object({
+      id: UuidSchema,
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            feedback: z.string().min(1).describe('Feedback explaining what changes are needed'),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Changes requested on retro',
+      content: {
+        'application/json': {
+          schema: WeekResponseSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Feedback is required',
+    },
+    403: {
+      description: 'Not authorized (not the accountable person)',
+    },
+    404: {
+      description: 'Sprint not found',
+    },
+  },
+});
+
+registry.registerPath({
   method: 'get',
   path: '/weeks/{id}/scope-changes',
   tags: ['Weeks'],

@@ -156,6 +156,27 @@ export function ApprovalButton({
     );
   }
 
+  // Changes requested - show feedback and indicate revision needed
+  if (state === 'changes_requested') {
+    const feedbackText = approval?.feedback;
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400">
+          <RefreshIcon className="h-4 w-4" />
+          <span className="text-xs font-medium">Changes Requested</span>
+        </div>
+        {feedbackText && (
+          <div className="rounded-md bg-purple-500/10 border border-purple-500/20 px-3 py-2 text-xs text-purple-200">
+            {feedbackText}
+          </div>
+        )}
+        <span className="text-xs text-muted">
+          by {approverName || 'Manager'} on {formatDate(approvedAt)}
+        </span>
+      </div>
+    );
+  }
+
   // Changed since approved - show re-approve button and view changes link
   if (state === 'changed_since_approved') {
     return (
