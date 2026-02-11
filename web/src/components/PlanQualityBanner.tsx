@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '@/lib/cn';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet, apiPost, apiPatch } from '@/lib/api';
 
 interface PlanItemAnalysis {
   text: string;
@@ -42,24 +42,37 @@ export function PlanQualityBanner({
   documentId: string;
   editorContent: Record<string, unknown> | null;
 }) {
-  const cacheKey = `ai-plan-analysis-${documentId}`;
-  const [analysis, setAnalysis] = useState<PlanAnalysisResult | null>(() => {
-    try { const cached = localStorage.getItem(cacheKey); return cached ? JSON.parse(cached) : null; }
-    catch { return null; }
-  });
+  const [analysis, setAnalysis] = useState<PlanAnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const lastContentRef = useRef<string>('');
   const requestIdRef = useRef(0);
 
-  // Check AI availability on mount
+  // Check AI availability and load persisted analysis from document properties
   useEffect(() => {
     apiGet('/api/ai/status')
       .then(r => r.json())
       .then(data => setAiAvailable(data.available))
       .catch(() => setAiAvailable(false));
-  }, []);
+
+    // Load last analysis from document properties
+    apiGet(`/api/documents/${documentId}`)
+      .then(r => r.json())
+      .then(doc => {
+        if (doc.properties?.ai_analysis) {
+          setAnalysis(doc.properties.ai_analysis);
+        }
+      })
+      .catch(() => {});
+  }, [documentId]);
+
+  // Save analysis to document properties
+  const persistAnalysis = useCallback((data: PlanAnalysisResult) => {
+    apiPatch(`/api/documents/${documentId}`, {
+      properties: { ai_analysis: data },
+    }).catch(() => {});
+  }, [documentId]);
 
   // Run analysis (called on content change AND on initial load)
   const runAnalysis = useCallback((content: Record<string, unknown>) => {
@@ -76,12 +89,12 @@ export function PlanQualityBanner({
         if (thisRequestId !== requestIdRef.current) return;
         if (data && !data.error) {
           setAnalysis(data);
-          try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch {}
+          persistAnalysis(data);
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [cacheKey]);
+  }, [persistAnalysis]);
 
   // Analyze when editorContent changes (debounced by Editor's onContentChange)
   useEffect(() => {
@@ -89,7 +102,7 @@ export function PlanQualityBanner({
     runAnalysis(editorContent);
   }, [editorContent, aiAvailable, runAnalysis]);
 
-  // On mount: if no cached result, fetch current content and analyze
+  // On mount: if no persisted result, fetch content and run initial analysis
   useEffect(() => {
     if (!aiAvailable || analysis) return;
     apiGet(`/api/documents/${documentId}`)
@@ -272,11 +285,7 @@ export function RetroQualityBanner({
     plan_coverage: Array<{ plan_item: string; addressed: boolean; has_evidence: boolean; feedback: string }>;
     suggestions: string[];
   };
-  const cacheKey = `ai-retro-analysis-${documentId}`;
-  const [analysis, setAnalysis] = useState<RetroAnalysis | null>(() => {
-    try { const cached = localStorage.getItem(cacheKey); return cached ? JSON.parse(cached) : null; }
-    catch { return null; }
-  });
+  const [analysis, setAnalysis] = useState<RetroAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
@@ -288,7 +297,20 @@ export function RetroQualityBanner({
       .then(r => r.json())
       .then(data => setAiAvailable(data.available))
       .catch(() => setAiAvailable(false));
-  }, []);
+
+    apiGet(`/api/documents/${documentId}`)
+      .then(r => r.json())
+      .then(doc => {
+        if (doc.properties?.ai_analysis) setAnalysis(doc.properties.ai_analysis);
+      })
+      .catch(() => {});
+  }, [documentId]);
+
+  const persistAnalysis = useCallback((data: RetroAnalysis) => {
+    apiPatch(`/api/documents/${documentId}`, {
+      properties: { ai_analysis: data },
+    }).catch(() => {});
+  }, [documentId]);
 
   const runAnalysis = useCallback((retroContent: Record<string, unknown>, plan: Record<string, unknown>) => {
     const contentStr = JSON.stringify(retroContent);
@@ -304,19 +326,18 @@ export function RetroQualityBanner({
         if (thisRequestId !== requestIdRef.current) return;
         if (data && !data.error) {
           setAnalysis(data);
-          try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch {}
+          persistAnalysis(data);
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [cacheKey]);
+  }, [persistAnalysis]);
 
   useEffect(() => {
     if (!aiAvailable || !editorContent || !planContent) return;
     runAnalysis(editorContent, planContent);
   }, [editorContent, aiAvailable, planContent, runAnalysis]);
 
-  // On mount: if no cached result, fetch current content and analyze
   useEffect(() => {
     if (!aiAvailable || analysis || !planContent) return;
     apiGet(`/api/documents/${documentId}`)
