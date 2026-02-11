@@ -411,7 +411,7 @@ export function TeamModePage() {
         const mergedSprints = direction === 'left'
           ? [...newData.weeks, ...prev.weeks]
           : [...prev.weeks, ...newData.weeks];
-        return { ...prev, sprints: mergedSprints };
+        return { ...prev, weeks: mergedSprints };
       });
 
       setSprintRange(prev => {
