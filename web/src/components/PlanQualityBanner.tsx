@@ -252,59 +252,62 @@ export function RetroQualityBanner({
   editorContent: Record<string, unknown> | null;
   planContent: Record<string, unknown> | null;
 }) {
-  // Fetch plan content internally if not provided
-  const [fetchedPlanContent, setFetchedPlanContent] = useState<Record<string, unknown> | null>(externalPlanContent);
-
-  useEffect(() => {
-    if (externalPlanContent) {
-      setFetchedPlanContent(externalPlanContent);
-      return;
-    }
-    apiGet(`/api/documents/${documentId}`)
-      .then(r => r.json())
-      .then(doc => {
-        const personId = doc.properties?.person_id;
-        const weekNumber = doc.properties?.week_number;
-        if (personId && weekNumber) {
-          return apiGet(`/api/weekly-plans?person_id=${personId}&week_number=${weekNumber}`);
-        }
-        return null;
-      })
-      .then(r => r?.json())
-      .then(plans => {
-        if (plans && plans.length > 0 && plans[0].content) {
-          setFetchedPlanContent(plans[0].content);
-        }
-      })
-      .catch(() => {});
-  }, [documentId, externalPlanContent]);
-
-  const planContent = fetchedPlanContent;
   type RetroAnalysis = {
     overall_score: number;
     plan_coverage: Array<{ plan_item: string; addressed: boolean; has_evidence: boolean; feedback: string }>;
     suggestions: string[];
   };
+  const [planContent, setPlanContent] = useState<Record<string, unknown> | null>(externalPlanContent);
   const [analysis, setAnalysis] = useState<RetroAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const lastContentRef = useRef<string>('');
   const requestIdRef = useRef(0);
+  const initDoneRef = useRef(false);
 
+  // On mount: check AI, load persisted analysis, and fetch plan content
   useEffect(() => {
+    if (initDoneRef.current) return;
+    initDoneRef.current = true;
+
     apiGet('/api/ai/status')
       .then(r => r.json())
       .then(data => setAiAvailable(data.available))
       .catch(() => setAiAvailable(false));
 
+    // Load retro doc to get persisted analysis AND plan content
     apiGet(`/api/documents/${documentId}`)
       .then(r => r.json())
-      .then(doc => {
+      .then(async (doc) => {
+        // Restore persisted analysis
         if (doc.properties?.ai_analysis) setAnalysis(doc.properties.ai_analysis);
+
+        // Fetch corresponding plan content
+        if (externalPlanContent) {
+          setPlanContent(externalPlanContent);
+          return;
+        }
+        const personId = doc.properties?.person_id;
+        const projectId = doc.properties?.project_id;
+        const weekNumber = doc.properties?.week_number;
+        if (personId && weekNumber) {
+          const params = new URLSearchParams({ person_id: personId, week_number: String(weekNumber) });
+          if (projectId) params.set('project_id', projectId);
+          const planRes = await apiGet(`/api/weekly-plans?${params}`);
+          const plans = await planRes.json();
+          if (plans && plans.length > 0 && plans[0].content) {
+            setPlanContent(plans[0].content);
+          } else {
+            // No plan found — use empty doc so analysis can still run
+            setPlanContent({ type: 'doc', content: [] });
+          }
+        } else {
+          setPlanContent({ type: 'doc', content: [] });
+        }
       })
       .catch(() => {});
-  }, [documentId]);
+  }, [documentId, externalPlanContent]);
 
   const persistAnalysis = useCallback((data: RetroAnalysis) => {
     apiPatch(`/api/documents/${documentId}`, {
@@ -333,11 +336,13 @@ export function RetroQualityBanner({
       .finally(() => setLoading(false));
   }, [persistAnalysis]);
 
+  // Analyze on editor content change
   useEffect(() => {
     if (!aiAvailable || !editorContent || !planContent) return;
     runAnalysis(editorContent, planContent);
   }, [editorContent, aiAvailable, planContent, runAnalysis]);
 
+  // On mount: if no persisted result and plan is loaded, run initial analysis
   useEffect(() => {
     if (!aiAvailable || analysis || !planContent) return;
     apiGet(`/api/documents/${documentId}`)
