@@ -564,20 +564,7 @@ function WeeklyDocumentSidebar({
         </div>
       )}
 
-      {/* AI Quality Assistant */}
-      {isRetro ? (
-        <RetroQualityAssistantWrapper
-          documentId={document.id}
-          content={(document as BaseDocument & { content: Record<string, unknown> }).content || {}}
-          personId={personId}
-          weekNumber={weekNumber}
-        />
-      ) : (
-        <PlanQualityAssistant
-          documentId={document.id}
-          content={(document as BaseDocument & { content: Record<string, unknown> }).content || {}}
-        />
-      )}
+      {/* AI Quality Assistant moved to PlanQualityBanner (rendered above editor content) */}
 
       {/* Content History Panel */}
       <ContentHistoryPanel
