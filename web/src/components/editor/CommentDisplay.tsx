@@ -30,13 +30,11 @@ function findCommentPositions(doc: any): Map<string, number> {
       for (const mark of node.marks) {
         if (mark.type.name === 'commentMark' && mark.attrs.commentId) {
           const commentId = mark.attrs.commentId;
-          if (!positions.has(commentId)) {
-            // Find the end of the block containing this text
-            const $pos = doc.resolve(pos);
-            // Get the end of the parent block (depth 1 = top-level block)
-            const blockEnd = $pos.end(Math.max(1, $pos.depth));
-            positions.set(commentId, blockEnd);
-          }
+          // Always overwrite — doc.descendants iterates in document order,
+          // so the last block containing the mark wins.
+          const $pos = doc.resolve(pos);
+          const blockEnd = $pos.end(Math.max(1, $pos.depth));
+          positions.set(commentId, blockEnd);
         }
       }
     }
@@ -51,6 +49,9 @@ interface CommentDisplayStorage {
   comments: Comment[];
   onReply: ((commentId: string, content: string) => void) | null;
   onResolve: ((commentId: string, resolved: boolean) => void) | null;
+  pendingCommentId: string | null;
+  onSubmitComment: ((commentId: string, content: string) => void) | null;
+  onCancelComment: ((commentId: string) => void) | null;
 }
 
 /**
@@ -111,13 +112,13 @@ function InlineCommentThread({
         <div class="comment-header">
           <span class="comment-author">${escapeHtml(root.author.name)}</span>
           <span class="comment-time">${formatRelativeTime(root.created_at)}</span>
-          <button class="comment-resolve-btn" data-comment-id="${root.comment_id}" title="Resolve">✓</button>
+          <button class="comment-resolve-btn" data-comment-id="${escapeHtml(root.comment_id)}" title="Resolve">✓</button>
         </div>
         <div class="comment-body">${escapeHtml(root.content)}</div>
       </div>
       ${repliesHtml}
       <div class="comment-reply-area">
-        <input type="text" class="comment-reply-input" placeholder="Reply..." data-comment-id="${root.comment_id}" />
+        <input type="text" class="comment-reply-input" placeholder="Reply..." data-comment-id="${escapeHtml(root.comment_id)}" />
       </div>
     `;
   }
@@ -161,6 +162,9 @@ export const CommentDisplayExtension = Extension.create<Record<string, never>, C
       comments: [],
       onReply: null,
       onResolve: null,
+      pendingCommentId: null,
+      onSubmitComment: null,
+      onCancelComment: null,
     };
   },
 
@@ -174,14 +178,42 @@ export const CommentDisplayExtension = Extension.create<Record<string, never>, C
           decorations: (state) => {
             const { doc } = state;
             const comments = storage.comments;
+            const positions = findCommentPositions(doc);
+            const decorations: Decoration[] = [];
+
+            // Add pending comment input widget (before saved comments so it renders inline)
+            const pendingId = storage.pendingCommentId;
+            if (pendingId) {
+              const pendingPos = positions.get(pendingId);
+              if (pendingPos !== undefined) {
+                const pendingWidget = Decoration.widget(pendingPos, () => {
+                  const container = document.createElement('div');
+                  container.className = 'comment-thread-inline comment-pending-input';
+                  container.contentEditable = 'false';
+                  container.innerHTML = `
+                    <div class="comment-pending-label">Add your comment:</div>
+                    <input type="text" class="comment-pending-field" placeholder="Write a comment..." data-pending-comment-id="${escapeHtml(pendingId)}" />
+                    <div class="comment-pending-hint">Press Enter to submit, Escape to cancel</div>
+                  `;
+                  // Auto-focus the input after it's added to the DOM
+                  requestAnimationFrame(() => {
+                    const input = container.querySelector('.comment-pending-field') as HTMLInputElement;
+                    input?.focus();
+                  });
+                  return container;
+                }, {
+                  side: 1,
+                  key: `pending-comment-${pendingId}`,
+                });
+                decorations.push(pendingWidget);
+              }
+            }
 
             if (!comments || comments.length === 0) {
-              return DecorationSet.empty;
+              return DecorationSet.create(doc, decorations);
             }
 
             const threads = groupByThread(comments);
-            const positions = findCommentPositions(doc);
-            const decorations: Decoration[] = [];
 
             // Sort positions by document order (ascending)
             const sortedEntries = [...positions.entries()].sort(
@@ -279,6 +311,33 @@ export const CommentDisplayExtension = Extension.create<Record<string, never>, C
 
             keydown: (view, event) => {
               const target = event.target as HTMLElement;
+
+              // Handle Enter/Escape on pending comment input
+              if (target.classList.contains('comment-pending-field')) {
+                const input = target as HTMLInputElement;
+                const commentId = input.dataset.pendingCommentId;
+
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  const content = input.value.trim();
+                  if (commentId && content && storage.onSubmitComment) {
+                    storage.onSubmitComment(commentId, content);
+                  }
+                  event.preventDefault();
+                  return true;
+                }
+
+                if (event.key === 'Escape') {
+                  if (commentId && storage.onCancelComment) {
+                    storage.onCancelComment(commentId);
+                  }
+                  event.preventDefault();
+                  return true;
+                }
+
+                // Prevent other keys from propagating to ProseMirror
+                event.stopPropagation();
+                return true;
+              }
 
               // Handle Enter on reply input
               if (

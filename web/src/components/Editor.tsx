@@ -615,6 +615,7 @@ export function Editor({
     if (!ext) return;
 
     ext.storage.comments = comments;
+    ext.storage.pendingCommentId = pendingCommentId;
     ext.storage.onReply = (commentId: string, content: string) => {
       const rootComment = commentsRef.current.find(c => c.comment_id === commentId && !c.parent_id);
       createCommentRef.current.mutate({
@@ -634,6 +635,14 @@ export function Editor({
         // The CommentDisplay plugin handles showing resolved vs unresolved states.
       }
     };
+    ext.storage.onSubmitComment = (commentId: string, content: string) => {
+      createCommentRef.current.mutate({ comment_id: commentId, content });
+      setPendingCommentId(null);
+    };
+    ext.storage.onCancelComment = (commentId: string) => {
+      editor.commands.unsetComment(commentId);
+      setPendingCommentId(null);
+    };
 
     // Force ProseMirror to re-evaluate decorations
     // Delay to ensure DOM is ready and avoid init-time errors
@@ -647,7 +656,7 @@ export function Editor({
       }
     }, 100);
     return () => clearTimeout(timer);
-  }, [editor, comments]);
+  }, [editor, comments, pendingCommentId]);
 
   // Sync document links when editor content changes (for backlinks feature)
   const lastSyncedLinksRef = useRef<string>('');
@@ -917,35 +926,7 @@ export function Editor({
                 </button>
               </BubbleMenu>
             )}
-            {/* Pending comment input */}
-            {pendingCommentId && (
-              <div className="mx-8 my-2 border border-zinc-700 rounded-md bg-zinc-900/60 p-3">
-                <div className="text-xs text-zinc-400 mb-2">Add your comment:</div>
-                <input
-                  autoFocus
-                  type="text"
-                  className="w-full bg-zinc-800/60 border border-zinc-600 rounded px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-indigo-500"
-                  placeholder="Write a comment..."
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      const value = (e.target as HTMLInputElement).value.trim();
-                      if (value) {
-                        createComment.mutate({ comment_id: pendingCommentId, content: value });
-                        setPendingCommentId(null);
-                      }
-                    }
-                    if (e.key === 'Escape') {
-                      // Cancel: remove the mark
-                      if (editor) {
-                        editor.commands.unsetComment(pendingCommentId);
-                      }
-                      setPendingCommentId(null);
-                    }
-                  }}
-                />
-                <div className="text-xs text-zinc-500 mt-1">Press Enter to submit, Escape to cancel</div>
-              </div>
-            )}
+            {/* Pending comment input is now rendered as a ProseMirror widget decoration in CommentDisplay */}
           </div>
           {/* Spacer to fill remaining height - clickable to focus editor at end */}
           <div

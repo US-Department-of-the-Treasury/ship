@@ -769,7 +769,7 @@ span[data-emoji] {
 
 /* Inline comment thread cards (GitHub-style) */
 .comment-thread-inline {
-  margin: 8px 0;
+  margin: 4px 0;
   border: 1px solid rgba(63, 63, 70, 0.8);
   border-radius: 6px;
   background: rgba(24, 24, 27, 0.6);
@@ -893,6 +893,43 @@ span[data-emoji] {
 .comment-resolved-toggle:hover {
   color: rgba(99, 102, 241, 1);
   text-decoration: underline;
+}
+
+/* Pending comment input (inline widget decoration) */
+.comment-pending-input {
+  padding: 8px 12px;
+}
+
+.comment-pending-label {
+  font-size: 11px;
+  color: rgba(161, 161, 170, 0.7);
+  margin-bottom: 6px;
+}
+
+.comment-pending-field {
+  width: 100%;
+  background: rgba(39, 39, 42, 0.6);
+  border: 1px solid rgba(63, 63, 70, 0.6);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: rgba(228, 228, 231, 0.9);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.comment-pending-field:focus {
+  border-color: rgba(99, 102, 241, 0.6);
+}
+
+.comment-pending-field::placeholder {
+  color: rgba(113, 113, 122, 0.6);
+}
+
+.comment-pending-hint {
+  font-size: 11px;
+  color: rgba(113, 113, 122, 0.5);
+  margin-top: 4px;
 }
 
 /* Nested task lists */
