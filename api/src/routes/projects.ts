@@ -715,6 +715,16 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       propsChanged = true;
     }
 
+    if (data.has_design_review !== undefined) {
+      newProps.has_design_review = data.has_design_review;
+      propsChanged = true;
+    }
+
+    if (data.design_review_notes !== undefined) {
+      newProps.design_review_notes = data.design_review_notes;
+      propsChanged = true;
+    }
+
     if (propsChanged) {
       // Recalculate completeness when properties change
       const completeness = checkDocumentCompleteness('project', newProps, 0);
