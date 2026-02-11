@@ -35,6 +35,9 @@ describe('Accountability Service', () => {
 
   beforeEach(() => {
     vi.mocked(pool.query).mockReset();
+    // Default fallback: return empty rows for any unmocked query calls
+    // This prevents crashes when new accountability checks are added
+    vi.mocked(pool.query).mockResolvedValue({ rows: [] } as any);
     vi.mocked(isBusinessDay).mockReturnValue(true);
     vi.mocked(getAllocations).mockReset().mockResolvedValue([]);
   });
@@ -73,6 +76,8 @@ describe('Accountability Service', () => {
       // past sprints without review
       .mockResolvedValueOnce({ rows: [] } as any)
       // completed projects without retro
+      .mockResolvedValueOnce({ rows: [] } as any)
+      // changes_requested check
       .mockResolvedValueOnce({ rows: [] } as any);
   };
 

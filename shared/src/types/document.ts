@@ -61,7 +61,9 @@ export type AccountabilityType =
   | 'week_start'
   | 'week_issues'
   | 'project_plan'
-  | 'project_retro';
+  | 'project_retro'
+  | 'changes_requested_plan'
+  | 'changes_requested_retro';
 
 // Sprint status - computed from dates, not stored
 export type WeekStatus = 'active' | 'upcoming' | 'completed';

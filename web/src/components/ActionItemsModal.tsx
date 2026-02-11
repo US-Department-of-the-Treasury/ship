@@ -14,6 +14,8 @@ const ACCOUNTABILITY_TYPE_LABELS: Record<string, string> = {
   week_issues: 'Add issues',
   project_plan: 'Write plan',
   project_retro: 'Complete retro',
+  changes_requested_plan: 'Revise plan',
+  changes_requested_retro: 'Revise retro',
 };
 
 const ACCOUNTABILITY_TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -58,6 +60,16 @@ const ACCOUNTABILITY_TYPE_ICONS: Record<string, React.ReactNode> = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
     </svg>
   ),
+  changes_requested_plan: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  ),
+  changes_requested_retro: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  ),
 };
 
 function formatDueDate(dueDate: string | null, daysOverdue: number): { text: string; isOverdue: boolean } {
@@ -79,9 +91,10 @@ function formatDueDate(dueDate: string | null, daysOverdue: number): { text: str
 }
 
 function getTargetUrl(item: ActionItem): string | null {
-  // For weekly_plan and weekly_retro items, we need to call the API first - return null to signal async handling
-  if ((item.accountability_type === 'weekly_plan' || item.accountability_type === 'weekly_retro') &&
-      item.person_id && item.project_id && item.week_number) {
+  // For weekly_plan/weekly_retro and changes_requested items, we need to call the API first - return null to signal async handling
+  if ((item.accountability_type === 'weekly_plan' || item.accountability_type === 'weekly_retro' ||
+       item.accountability_type === 'changes_requested_plan' || item.accountability_type === 'changes_requested_retro') &&
+      item.person_id && item.week_number) {
     return null; // Signal that this needs async handling
   }
   // For standup items, use deep link to sprint with action param
@@ -107,7 +120,8 @@ async function createWeeklyDocumentAndGetUrl(item: ActionItem): Promise<string |
   }
 
   // Determine which API endpoint to call based on accountability type
-  const endpoint = item.accountability_type === 'weekly_retro'
+  const isRetroType = item.accountability_type === 'weekly_retro' || item.accountability_type === 'changes_requested_retro';
+  const endpoint = isRetroType
     ? '/api/weekly-retros'
     : '/api/weekly-plans';
 
@@ -198,7 +212,8 @@ export function ActionItemsModal({ open, onClose }: ActionItemsModalProps) {
     // Check if this is a weekly_plan or weekly_retro item that needs async handling
     const targetUrl = getTargetUrl(item);
 
-    if (targetUrl === null && (item.accountability_type === 'weekly_plan' || item.accountability_type === 'weekly_retro')) {
+    if (targetUrl === null && (item.accountability_type === 'weekly_plan' || item.accountability_type === 'weekly_retro' ||
+        item.accountability_type === 'changes_requested_plan' || item.accountability_type === 'changes_requested_retro')) {
       // Need to create/get the weekly plan/retro document first
       setNavigatingItemId(item.id);
       try {
