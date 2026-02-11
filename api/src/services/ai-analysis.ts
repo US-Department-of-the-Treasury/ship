@@ -171,23 +171,28 @@ Respond ONLY with valid JSON matching this exact structure:
 
 const RETRO_SYSTEM_PROMPT = `You are an AI assistant that evaluates weekly retrospectives for government employees.
 
-Your job is to compare the retro against the weekly plan and assess:
+If plan items are provided, compare the retro against the plan:
 1. **Plan coverage**: Is each plan item addressed in the retro?
 2. **Evidence**: For completed items, is there evidence of completion (links, screenshots, specific results, or the deliverable itself)?
 3. **Gap explanations**: For incomplete items, is there an explanation of what happened?
 
-Key criteria:
-- Every plan item should be mentioned in the retro
+If NO plan items are provided, evaluate the retro on its own quality:
+1. **Specificity**: Does the retro describe specific deliverables with concrete outcomes, or is it vague ("did some stuff")?
+2. **Evidence**: Does the retro include proof of work (links, documents, metrics, screenshots)?
+3. **Substance**: Does the retro represent a meaningful week of work?
+
+Key criteria for ALL retros:
+- Vague statements like "did some stuff", "worked on things", "made progress" are UNACCEPTABLE and should score very low (0.1-0.2)
 - Completed items need evidence (link, screenshot, specific result, or embedded deliverable)
-- Incomplete items need an explanation ("X took longer because Y" is fine)
-- Simply ignoring a plan item is not acceptable
+- Each item should be specific enough that a manager can verify it was done
+- "Coordinate with team" or "had meetings" are activities, not deliverables — they score low
 
 Respond ONLY with valid JSON matching this exact structure:
 {
   "overall_score": <0-1>,
   "plan_coverage": [
     {
-      "plan_item": "<text from the plan>",
+      "plan_item": "<text from the plan, or the retro item itself if no plan>",
       "addressed": <true/false>,
       "has_evidence": <true/false>,
       "feedback": "<specific feedback>"
@@ -287,14 +292,6 @@ export async function analyzeRetro(
   const planItems = extractPlanItems(planContent);
   const retroText = extractText(retroContent);
 
-  if (planItems.length === 0) {
-    return {
-      overall_score: 1,
-      plan_coverage: [],
-      suggestions: ['No plan items found for comparison.'],
-    };
-  }
-
   if (!retroText.trim()) {
     return {
       overall_score: 0,
@@ -309,19 +306,17 @@ export async function analyzeRetro(
   }
 
   // Limit content size to prevent cost amplification
-  const planItemsText = planItems.map((item, i) => `${i + 1}. ${item}`).join('\n');
+  const planItemsText = planItems.length > 0
+    ? planItems.map((item, i) => `${i + 1}. ${item}`).join('\n')
+    : '';
   const totalLength = planItemsText.length + retroText.length;
   if (totalLength > MAX_CONTENT_TEXT_LENGTH) {
     return { error: 'content_too_large' };
   }
 
-  const userPrompt = `Compare this weekly retro against the plan.
-
-PLAN ITEMS:
-${planItemsText}
-
-RETRO CONTENT:
-${retroText}`;
+  const userPrompt = planItems.length > 0
+    ? `Compare this weekly retro against the plan.\n\nPLAN ITEMS:\n${planItemsText}\n\nRETRO CONTENT:\n${retroText}`
+    : `Evaluate this weekly retro for quality. No plan was found for comparison, so evaluate the retro items on their own specificity, evidence, and substance.\n\nRETRO CONTENT:\n${retroText}`;
 
   try {
     const responseText = await callBedrock(RETRO_SYSTEM_PROMPT, userPrompt);
