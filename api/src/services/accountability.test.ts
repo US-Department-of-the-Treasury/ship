@@ -122,7 +122,8 @@ describe('Accountability Service', () => {
 
       const types = result.map((item) => item.type);
       expect(types).toContain('standup');
-      expect(types).toContain('weekly_plan');
+      // weekly_plan is now checked by checkWeeklyPersonAccountability (via allocations),
+      // not by the sprint-level check. Since getAllocations is mocked to [], no weekly_plan items.
       expect(types).toContain('week_start');
       expect(types).toContain('week_issues');
     });
@@ -180,7 +181,12 @@ describe('Accountability Service', () => {
   });
 
   describe('weekly_plan type', () => {
-    it('returns item when sprint has no plan', async () => {
+    // NOTE: The old sprint-level props.plan check was removed. Plans are now
+    // per-person weekly_plan documents checked by checkWeeklyPersonAccountability.
+    // The old check was generating false "Write plan" notifications even when
+    // weekly_plan documents existed with content.
+
+    it('does not return sprint-level plan item (removed - uses weekly_plan documents now)', async () => {
       mockSetupQueries()
         .mockResolvedValueOnce({ rows: [] } as any)
         .mockResolvedValueOnce({
@@ -192,28 +198,9 @@ describe('Accountability Service', () => {
 
       const result = await checkMissingAccountability(userId, workspaceId);
 
-      const planItem = result.find((item) => item.type === 'weekly_plan');
-      expect(planItem).toBeDefined();
-      expect(planItem?.message).toContain('plan');
-      expect(planItem?.personId).toBe(personId);
-      expect(planItem?.projectId).toBe(projectId);
-      expect(planItem?.weekNumber).toBe(1);
-    });
-
-    it('does not return item when sprint has plan', async () => {
-      mockSetupQueries()
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({
-          rows: [{ id: sprintId, title: 'Sprint 1', properties: { sprint_number: 1, status: 'active', plan: 'Test plan' }, project_id: projectId }],
-        } as any)
-        .mockResolvedValueOnce({ rows: [{ count: '5' }] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any)
-        .mockResolvedValueOnce({ rows: [] } as any);
-
-      const result = await checkMissingAccountability(userId, workspaceId);
-
-      const planItem = result.find((item) => item.type === 'weekly_plan');
-      expect(planItem).toBeUndefined();
+      // Sprint-level plan check is removed; weekly_plan items come from checkWeeklyPersonAccountability
+      const sprintPlanItem = result.find((item) => item.type === 'weekly_plan' && item.targetType === 'sprint');
+      expect(sprintPlanItem).toBeUndefined();
     });
   });
 

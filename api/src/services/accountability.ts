@@ -287,21 +287,9 @@ async function checkSprintAccountability(
 
     const sprintStartStr = sprintStartDate.toISOString().split('T')[0] || null;
 
-    // Check for missing plan
-    if (!props.plan || props.plan.trim() === '') {
-      items.push({
-        type: 'weekly_plan',
-        targetId: sprint.id,
-        targetTitle: sprintTitle,
-        targetType: 'sprint',
-        dueDate: sprintStartStr,
-        message: `Write plan for ${sprintTitle}`,
-        // Include metadata for weekly_plan document navigation
-        personId: personId || undefined,
-        projectId: projectId || undefined,
-        weekNumber: sprintNumber,
-      });
-    }
+    // NOTE: Sprint-level plan check REMOVED. Plans are now per-person weekly_plan documents,
+    // checked by checkWeeklyPersonAccountability(). The old props.plan check on the sprint
+    // document was generating false "Write plan" notifications even when plans existed.
 
     // Check if sprint hasn't been started (status !== 'active' or 'completed')
     if (props.status !== 'active' && props.status !== 'completed') {
@@ -604,8 +592,10 @@ async function checkChangesRequested(
        (s.properties->>'sprint_number')::int as sprint_number,
        s.properties->'plan_approval' as plan_approval,
        s.properties->'review_approval' as review_approval,
-       s.title as sprint_title
+       s.title as sprint_title,
+       da.related_id as project_id
      FROM documents s
+     LEFT JOIN document_associations da ON da.document_id = s.id AND da.relationship_type = 'project'
      WHERE s.workspace_id = $1
        AND s.document_type = 'sprint'
        AND s.deleted_at IS NULL
@@ -632,6 +622,7 @@ async function checkChangesRequested(
         dueDate: null,
         message: `Changes requested on your Week ${sprintNumber} plan`,
         personId,
+        projectId: row.project_id || undefined,
         weekNumber: sprintNumber,
       });
     }
@@ -646,6 +637,7 @@ async function checkChangesRequested(
         dueDate: null,
         message: `Changes requested on your Week ${sprintNumber} retro`,
         personId,
+        projectId: row.project_id || undefined,
         weekNumber: sprintNumber,
       });
     }
