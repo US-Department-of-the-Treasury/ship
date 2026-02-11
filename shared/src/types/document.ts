@@ -122,6 +122,9 @@ export interface ProjectProperties {
   // Approval tracking for accountability workflow
   plan_approval?: ApprovalTracking | null;  // Approval status for project plan
   retro_approval?: ApprovalTracking | null;       // Approval status for project retro
+  // Design review tracking
+  has_design_review?: boolean | null;  // Whether design review has been completed
+  design_review_notes?: string | null; // Optional notes from design review
   [key: string]: unknown;
 }
 
