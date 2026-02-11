@@ -2815,9 +2815,13 @@ router.post('/:id/request-plan-changes', authMiddleware, async (req: Request, re
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
-    // Validate feedback is provided
+    // Validate feedback is provided and not too long
     if (!feedback || typeof feedback !== 'string' || feedback.trim().length === 0) {
       res.status(400).json({ error: 'Feedback is required when requesting changes' });
+      return;
+    }
+    if (feedback.length > 2000) {
+      res.status(400).json({ error: 'Feedback must be 2000 characters or less' });
       return;
     }
 
@@ -2903,9 +2907,13 @@ router.post('/:id/request-retro-changes', authMiddleware, async (req: Request, r
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
 
-    // Validate feedback is provided
+    // Validate feedback is provided and not too long
     if (!feedback || typeof feedback !== 'string' || feedback.trim().length === 0) {
       res.status(400).json({ error: 'Feedback is required when requesting changes' });
+      return;
+    }
+    if (feedback.length > 2000) {
+      res.status(400).json({ error: 'Feedback must be 2000 characters or less' });
       return;
     }
 

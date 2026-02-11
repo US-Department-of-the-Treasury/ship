@@ -33,10 +33,19 @@ function getClient(): BedrockRuntimeClient | null {
   }
 }
 
-// Simple in-memory rate limiter
+// Simple in-memory rate limiter with periodic cleanup
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 10; // max requests per hour per user
 const RATE_WINDOW = 60 * 60 * 1000; // 1 hour in ms
+const MAX_CONTENT_TEXT_LENGTH = 50_000; // 50KB max extracted text sent to Bedrock
+
+// Periodically clean up expired entries to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimits) {
+    if (now >= entry.resetAt) rateLimits.delete(key);
+  }
+}, 10 * 60 * 1000); // Clean every 10 minutes
 
 function checkRateLimit(userId: string): boolean {
   const now = Date.now();
@@ -232,7 +241,13 @@ export async function analyzePlan(content: unknown): Promise<PlanAnalysisResult 
     };
   }
 
-  const userPrompt = `Analyze this weekly plan. Here are the plan items:\n\n${planItems.map((item, i) => `${i + 1}. ${item}`).join('\n')}`;
+  // Limit content size to prevent cost amplification
+  const itemsText = planItems.map((item, i) => `${i + 1}. ${item}`).join('\n');
+  if (itemsText.length > MAX_CONTENT_TEXT_LENGTH) {
+    return { error: 'content_too_large' };
+  }
+
+  const userPrompt = `Analyze this weekly plan. Here are the plan items:\n\n${itemsText}`;
 
   try {
     const responseText = await callBedrock(PLAN_SYSTEM_PROMPT, userPrompt);
@@ -293,10 +308,17 @@ export async function analyzeRetro(
     };
   }
 
+  // Limit content size to prevent cost amplification
+  const planItemsText = planItems.map((item, i) => `${i + 1}. ${item}`).join('\n');
+  const totalLength = planItemsText.length + retroText.length;
+  if (totalLength > MAX_CONTENT_TEXT_LENGTH) {
+    return { error: 'content_too_large' };
+  }
+
   const userPrompt = `Compare this weekly retro against the plan.
 
 PLAN ITEMS:
-${planItems.map((item, i) => `${i + 1}. ${item}`).join('\n')}
+${planItemsText}
 
 RETRO CONTENT:
 ${retroText}`;
