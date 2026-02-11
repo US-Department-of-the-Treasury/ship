@@ -154,6 +154,25 @@ resource "aws_iam_role_policy" "eb_ssm_access" {
 
 data "aws_caller_identity" "current" {}
 
+# IAM Role for EB instances to invoke Bedrock models (AI quality analysis)
+resource "aws_iam_role_policy" "eb_bedrock_access" {
+  name = "${var.project_name}-eb-bedrock-access"
+  role = aws_iam_role.eb_instance.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel"
+        ]
+        Resource = "arn:aws:bedrock:*::foundation-model/anthropic.*"
+      }
+    ]
+  })
+}
+
 # IAM Role for EB instances to access Secrets Manager (FPKI OAuth credentials)
 resource "aws_iam_role_policy" "eb_secrets_manager_access" {
   name = "${var.project_name}-eb-secrets-manager-access"
