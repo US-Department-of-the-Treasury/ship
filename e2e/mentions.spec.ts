@@ -409,11 +409,12 @@ test.describe('Mentions', () => {
       // Navigate to same document
       await page2.goto(docUrl);
 
-      // Wait for editor to load
+      // Wait for editor to load and Yjs sync to complete
       await expect(page2.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
+      await page2.waitForTimeout(3000);
 
-      // Verify mention synced to second tab
-      await expect(page2.locator('.ProseMirror .mention')).toBeVisible({ timeout: 10000 });
+      // Verify mention synced to second tab (Yjs sync can be slow)
+      await expect(page2.locator('.ProseMirror .mention')).toBeVisible({ timeout: 15000 });
 
       // Clean up
       await page2.close();

@@ -108,9 +108,9 @@ export function AccountabilityBanner({ itemCount, onBannerClick, isCelebrating =
     );
   }
 
-  const bgColor = urgency === 'due_today' ? 'bg-amber-600' : 'bg-red-600';
-  const hoverColor = urgency === 'due_today' ? 'hover:bg-amber-700' : 'hover:bg-red-700';
-  const badgeColor = urgency === 'due_today' ? 'bg-amber-800' : 'bg-red-800';
+  const bgColor = urgency === 'due_today' ? 'bg-amber-700' : 'bg-red-600';
+  const hoverColor = urgency === 'due_today' ? 'hover:bg-amber-800' : 'hover:bg-red-700';
+  const badgeColor = urgency === 'due_today' ? 'bg-amber-900' : 'bg-red-800';
 
   return (
     <button

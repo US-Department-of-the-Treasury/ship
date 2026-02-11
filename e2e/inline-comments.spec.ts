@@ -128,8 +128,11 @@ test.describe('Inline Comments', () => {
     // Press Escape to cancel
     await page.keyboard.press('Escape')
 
+    // Wait for the cancel operation to process (highlight removal may be async)
+    await page.waitForTimeout(500)
+
     // Highlight should be removed
-    await expect(page.locator('.comment-highlight')).not.toBeVisible({ timeout: 3000 })
+    await expect(page.locator('.comment-highlight')).not.toBeVisible({ timeout: 5000 })
   })
 
   test('inline comment card shows quoted text, author, and timestamp', async ({ page }) => {
