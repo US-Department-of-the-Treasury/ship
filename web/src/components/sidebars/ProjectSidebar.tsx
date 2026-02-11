@@ -47,6 +47,9 @@ interface Project {
   plan_approval?: ApprovalTracking | null;
   retro_approval?: ApprovalTracking | null;
   has_retro?: boolean;
+  // Design review
+  has_design_review?: boolean | null;
+  design_review_notes?: string | null;
 }
 
 interface Program {
@@ -221,6 +224,33 @@ export function ProjectSidebar({
           placeholder="Select people..."
         />
       </PropertyRow>
+
+      {/* Design Review */}
+      <div className="pt-4 border-t border-border">
+        <PropertyRow label="Design Review">
+          <div className="space-y-3">
+            <label className="flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={project.has_design_review || false}
+                onChange={(e) => onUpdate({ has_design_review: e.target.checked } as Partial<Project>)}
+                className="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent focus:ring-offset-background"
+              />
+              <span className="ml-2 text-sm text-foreground">Design review approved</span>
+            </label>
+            {(project.has_design_review || project.design_review_notes) && (
+              <textarea
+                placeholder="Optional notes about design review..."
+                value={project.design_review_notes || ''}
+                onChange={(e) => onUpdate({ design_review_notes: e.target.value } as Partial<Project>)}
+                className="w-full p-2 text-sm border border-border rounded-lg bg-background text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent resize-none"
+                rows={3}
+                maxLength={2000}
+              />
+            )}
+          </div>
+        </PropertyRow>
+      </div>
 
       {/* Approvals Section - only show if user can approve AND there's content to approve */}
       {canApprove && (!!project.plan?.trim() || project.has_retro) && (

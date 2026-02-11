@@ -268,6 +268,8 @@ async function seed() {
         ease: 3,
         plan: 'Building core features will establish the product foundation and attract early adopters.',
         monetary_impact_expected: 50000,
+        has_design_review: true,
+        design_review_notes: 'Design approved after review session on 2025-01-15. UI mockups finalized.',
       },
       {
         name: 'Bug Fixes',
@@ -278,6 +280,8 @@ async function seed() {
         ease: 4,
         plan: 'Fixing bugs will improve user retention and reduce support costs.',
         monetary_impact_expected: 15000,
+        has_design_review: false,
+        design_review_notes: null,
       },
       {
         name: 'Performance',
@@ -288,6 +292,7 @@ async function seed() {
         ease: 2,
         plan: 'Performance improvements will increase user satisfaction and enable scale.',
         monetary_impact_expected: 25000,
+        // No design review fields - will be null/undefined
       },
     ];
 
@@ -322,7 +327,7 @@ async function seed() {
           const targetDate = new Date();
           targetDate.setDate(targetDate.getDate() + (projectTemplates.indexOf(template) + 2) * 7);
 
-          const projectProperties = {
+          const projectProperties: Record<string, unknown> = {
             color: template.color,
             emoji: template.emoji,
             owner_id: owner.id,
@@ -334,6 +339,13 @@ async function seed() {
             monetary_impact_expected: template.monetary_impact_expected,
             target_date: targetDate.toISOString().split('T')[0],
           };
+          // Add design review fields if present in template
+          if ('has_design_review' in template) {
+            projectProperties.has_design_review = template.has_design_review;
+          }
+          if ('design_review_notes' in template) {
+            projectProperties.design_review_notes = template.design_review_notes;
+          }
           // Create project document without legacy program_id column
           const projectResult = await pool.query(
             `INSERT INTO documents (workspace_id, document_type, title, properties)

@@ -41,6 +41,9 @@ export interface Project {
   // Completeness flags
   is_complete: boolean | null;
   missing_fields: string[];
+  // Design review tracking
+  has_design_review?: boolean | null;
+  design_review_notes?: string | null;
   // Conversion tracking
   converted_from_id?: string | null;
 }
