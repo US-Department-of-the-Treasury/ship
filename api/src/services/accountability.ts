@@ -95,17 +95,10 @@ export async function checkMissingAccountability(
   const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
   const currentSprintNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
 
-  // 1. Check for missing standups
-  if (todayStr) {
-    const standupItems = await checkMissingStandups(userId, workspaceId, currentSprintNumber, todayStr);
-    items.push(...standupItems);
-  }
+  // Only weekly plans, retros, and changes-requested notifications are active.
+  // Standups, sprint start/issues, sprint reviews, and project retros are disabled.
 
-  // 2-4. Check sprint accountability (hypothesis, started, issues)
-  const sprintItems = await checkSprintAccountability(userId, workspaceId, workspaceStartDate, sprintDuration, today, personId);
-  items.push(...sprintItems);
-
-  // 2b. Check for per-person weekly_plan and weekly_retro (based on allocations)
+  // Check for per-person weekly_plan and weekly_retro (based on allocations)
   // Check both current sprint AND next sprint, since plans become due 2 days before
   // the sprint starts (Saturday before a Monday-start week).
   if (personId && todayStr) {
@@ -121,21 +114,7 @@ export async function checkMissingAccountability(
     items.push(...nextSprintItems);
   }
 
-  // 5. Check for completed sprints without review
-  if (todayStr) {
-    const reviewItems = await checkMissingSprintReviews(userId, workspaceId, workspaceStartDate, sprintDuration, today, todayStr);
-    items.push(...reviewItems);
-  }
-
-  // 6. Project-level plan check REMOVED - replaced by weekly_plan documents per person/project/week
-  // The old system checked properties.plan on project docs, but that field isn't exposed in the UI
-  // and has been superseded by the checkWeeklyPersonAccountability() checks above.
-
-  // 7. Check for completed projects without retro
-  const projectRetroItems = await checkProjectRetros(userId, workspaceId);
-  items.push(...projectRetroItems);
-
-  // 8. Check for plans/retros where manager requested changes
+  // Check for plans/retros where manager requested changes
   if (personId) {
     const changesRequestedItems = await checkChangesRequested(workspaceId, personId);
     items.push(...changesRequestedItems);
