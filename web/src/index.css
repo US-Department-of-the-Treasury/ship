@@ -130,12 +130,19 @@ input::placeholder {
   margin: 0.5em 0;
   overflow-x: auto;
   position: relative;
+  /* Wide content breakout - allow code blocks to expand beyond container */
+  width: max-content;
+  min-width: 100%;
+  max-width: min(1200px, calc(100vw - 380px)); /* Account for sidebars */
+  margin-left: 50%;
+  transform: translateX(-50%);
 }
 
 .ProseMirror pre code {
   background: none;
   padding: 0;
   color: #e5e7eb;
+  white-space: pre; /* Never wrap code - always expand horizontally */
 }
 
 /* Syntax highlighting for code blocks */
@@ -406,13 +413,24 @@ span[data-emoji] {
   font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
 }
 
-/* Table styles */
+/* Table styles - Wide content breakout */
+/* Wrapper for overflow scrolling (added by TipTap Table extension) */
+.ProseMirror .tableWrapper {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  /* Wide content breakout - allow tables to expand beyond container */
+  width: max-content;
+  min-width: 100%;
+  max-width: min(1200px, calc(100vw - 380px)); /* Account for sidebars */
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+
 .ProseMirror table {
   border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
-  margin: 0.5em 0;
-  overflow: hidden;
+  table-layout: auto; /* Allow cells to size based on content */
+  width: max-content;
+  min-width: 100%;
 }
 
 .ProseMirror td,
@@ -423,6 +441,7 @@ span[data-emoji] {
   vertical-align: top;
   box-sizing: border-box;
   position: relative;
+  white-space: nowrap; /* Prevent word-wrapping in table cells */
 }
 
 .ProseMirror th {
