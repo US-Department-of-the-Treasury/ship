@@ -340,7 +340,7 @@ export function OrgChartPage() {
                   aria-level={depth + 1}
                   tabIndex={isFocused ? 0 : -1}
                   onFocus={() => setFocusedIndex(index)}
-                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-sm transition-colors ${
+                  className={`flex items-start gap-1.5 rounded-md px-2 py-1 text-sm transition-colors ${
                     isFocused ? 'bg-border/50' : 'hover:bg-border/30'
                   } ${isMatch ? 'ring-1 ring-accent/50' : ''}`}
                   style={{ paddingLeft: depth * INDENT_PX + 8 }}
@@ -348,7 +348,7 @@ export function OrgChartPage() {
                   {/* Expand/collapse chevron */}
                   <button
                     onClick={(e) => { e.stopPropagation(); toggleExpand(node.personId); }}
-                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded transition-transform ${
+                    className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded transition-transform ${
                       hasChildren ? 'text-muted hover:text-foreground' : 'invisible'
                     }`}
                     tabIndex={-1}
@@ -364,34 +364,49 @@ export function OrgChartPage() {
                   </button>
 
                   {/* Avatar */}
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-white">
+                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-white">
                     {getInitials(node.name)}
                   </div>
 
-                  {/* Name (clickable link to profile) */}
-                  <button
-                    onClick={() => navigate(`/team/${node.personId}`)}
-                    className="truncate text-foreground hover:text-accent hover:underline"
-                    tabIndex={-1}
-                  >
-                    {searchMatches && debouncedQuery ? (
-                      <HighlightedText text={node.name} query={debouncedQuery} />
-                    ) : (
-                      node.name
-                    )}
-                  </button>
-
-                  {/* Role */}
-                  {node.role && (
-                    <span className="truncate text-xs text-muted">{node.role}</span>
-                  )}
-
-                  {/* Direct report count */}
-                  {node.children.length > 0 && (
-                    <span className="ml-auto shrink-0 text-xs text-muted">
-                      ({node.children.length})
-                    </span>
-                  )}
+                  {/* Two-line content area */}
+                  <div className="min-w-0 flex-1">
+                    {/* Line 1: Name + Role */}
+                    <div className="flex items-baseline gap-2">
+                      <button
+                        onClick={() => navigate(`/team/${node.personId}`)}
+                        className="truncate font-medium text-foreground hover:text-accent hover:underline"
+                        tabIndex={-1}
+                      >
+                        {searchMatches && debouncedQuery ? (
+                          <HighlightedText text={node.name} query={debouncedQuery} />
+                        ) : (
+                          node.name
+                        )}
+                      </button>
+                      {node.role && (
+                        <span className="truncate text-xs text-muted">
+                          {searchMatches && debouncedQuery ? (
+                            <HighlightedText text={node.role} query={debouncedQuery} />
+                          ) : (
+                            node.role
+                          )}
+                        </span>
+                      )}
+                      {hasChildren && (
+                        <span className="ml-auto shrink-0 rounded bg-border/60 px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                          {node.children.length} report{node.children.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    {/* Line 2: Email */}
+                    <div className="text-xs text-muted">
+                      {searchMatches && debouncedQuery ? (
+                        <HighlightedText text={node.email} query={debouncedQuery} />
+                      ) : (
+                        node.email
+                      )}
+                    </div>
+                  </div>
                 </li>
               );
             })}
