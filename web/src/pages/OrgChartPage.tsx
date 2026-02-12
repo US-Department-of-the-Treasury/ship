@@ -9,6 +9,7 @@ import {
   useSensors,
   useDraggable,
   useDroppable,
+  pointerWithin,
   DragStartEvent,
   DragEndEvent,
 } from '@dnd-kit/core';
@@ -501,7 +502,7 @@ export function OrgChartPage() {
   );
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <header className="flex h-10 items-center gap-3 border-b border-border px-4">
         <h1 className="text-sm font-medium text-foreground">Org Chart</h1>
         <span className="text-xs text-muted">{people.length} people</span>
@@ -533,6 +534,7 @@ export function OrgChartPage() {
         {canDrag ? (
           <DndContext
             sensors={sensors}
+            collisionDetection={pointerWithin}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
