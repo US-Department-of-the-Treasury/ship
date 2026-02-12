@@ -37,7 +37,7 @@ import { ActionItemsModal } from '@/components/ActionItemsModal';
 import { AccountabilityBanner } from '@/components/AccountabilityBanner';
 import { ProjectContextSidebar } from '@/components/sidebars/ProjectContextSidebar';
 
-type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'my-week' | 'project-context';
+type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'project-context';
 
 export function AppLayout() {
   const { user, logout, isSuperAdmin, impersonating, endImpersonation } = useAuth();
@@ -150,7 +150,6 @@ export function AppLayout() {
   // Determine active mode from path or document type
   const getActiveMode = (): Mode => {
     if (location.pathname.startsWith('/dashboard')) return 'dashboard';
-    if (location.pathname.startsWith('/my-week')) return 'my-week';
     // For /documents/:id routes, use document type from context
     if (location.pathname.startsWith('/documents/')) {
       if (currentDocumentType === 'wiki') return 'docs';
@@ -175,7 +174,7 @@ export function AppLayout() {
     if (location.pathname.startsWith('/programs') || location.pathname.startsWith('/feedback')) return 'programs';
     if (location.pathname.startsWith('/team')) return 'team';
     if (location.pathname.startsWith('/settings')) return 'settings';
-    return 'docs';
+    return 'dashboard';
   };
 
   const activeMode = getActiveMode();
@@ -200,7 +199,6 @@ export function AppLayout() {
   const handleModeClick = (mode: Mode) => {
     switch (mode) {
       case 'dashboard': navigate('/dashboard'); break;
-      case 'my-week': navigate('/my-week'); break;
       case 'docs': navigate('/docs'); break;
       case 'issues': navigate('/issues'); break;
       case 'projects': navigate('/projects'); break;
@@ -382,13 +380,6 @@ export function AppLayout() {
               onClick={() => handleModeClick('issues')}
             />
             <RailIcon
-              icon={<MyWeekIcon />}
-              label={hasActionItems ? "My Week (action items)" : "My Week"}
-              active={activeMode === 'my-week'}
-              onClick={() => handleModeClick('my-week')}
-              showBadge={hasActionItems}
-            />
-            <RailIcon
               icon={<TeamIcon />}
               label={standupDue ? "Teams (standup due)" : "Teams"}
               active={activeMode === 'team'}
@@ -441,7 +432,6 @@ export function AppLayout() {
             <div className="flex h-10 items-center justify-between border-b border-border px-3">
               <h2 className="text-sm font-medium text-foreground m-0">
                 {activeMode === 'dashboard' && 'Dashboard'}
-                {activeMode === 'my-week' && 'My Week'}
                 {activeMode === 'docs' && 'Docs'}
                 {activeMode === 'issues' && 'Issues'}
                 {activeMode === 'projects' && 'Projects'}
@@ -537,9 +527,6 @@ export function AppLayout() {
               )}
               {activeMode === 'dashboard' && (
                 <DashboardSidebar />
-              )}
-              {activeMode === 'my-week' && (
-                <div className="px-3 py-2 text-sm text-muted">Your week assignments</div>
               )}
               {activeMode === 'project-context' && currentDocumentProjectId && (
                 <ProjectContextSidebar
@@ -1813,16 +1800,6 @@ function ProjectsIcon() {
   return (
     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-    </svg>
-  );
-}
-
-function MyWeekIcon() {
-  // Calendar with week indicator (CalendarDays style)
-  return (
-    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" />
     </svg>
   );
 }

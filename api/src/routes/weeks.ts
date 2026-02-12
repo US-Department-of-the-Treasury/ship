@@ -361,22 +361,29 @@ router.get('/my-action-items', authMiddleware, async (req: Request, res: Respons
     const currentSprintNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
 
     // Get sprints owned by this user that need either plan or retro - join via document_associations
-    // Include current sprint (for plans) and recent past sprints (for retros)
+    // Include current sprint (for plans) and previous sprint (for retros)
+    // Plans/retros are matched by week_number property and created_by user
     const result = await pool.query(
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name,
               (d.properties->>'sprint_number')::int as sprint_number,
-              (SELECT COUNT(*) > 0 FROM documents pl WHERE pl.parent_id = d.id AND pl.document_type = 'weekly_plan') as has_plan,
+              (SELECT COUNT(*) > 0 FROM documents pl
+               WHERE pl.workspace_id = d.workspace_id
+                 AND pl.document_type = 'weekly_plan'
+                 AND (pl.properties->>'week_number')::int = (d.properties->>'sprint_number')::int
+                 AND pl.created_by = $2) as has_plan,
               (SELECT COUNT(*) > 0 FROM documents rt
-               JOIN document_associations rda ON rda.document_id = rt.id AND rda.related_id = d.id AND rda.relationship_type = 'sprint'
-               WHERE rt.properties->>'outcome' IS NOT NULL) as has_retro
+               WHERE rt.workspace_id = d.workspace_id
+                 AND rt.document_type = 'weekly_retro'
+                 AND (rt.properties->>'week_number')::int = (d.properties->>'sprint_number')::int
+                 AND rt.created_by = $2) as has_retro
        FROM documents d
        LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
        LEFT JOIN documents p ON prog_da.related_id = p.id
        WHERE d.workspace_id = $1
          AND d.document_type = 'sprint'
          AND (d.properties->>'owner_id')::uuid = $2
-         AND (d.properties->>'sprint_number')::int >= $3 - 3
+         AND (d.properties->>'sprint_number')::int >= $3 - 1
          AND (d.properties->>'sprint_number')::int <= $3
        ORDER BY (d.properties->>'sprint_number')::int DESC`,
       [workspaceId, userId, currentSprintNumber]
