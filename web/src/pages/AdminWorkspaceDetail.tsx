@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { formatDate } from '@/lib/date-utils';
 
 interface Member {
   userId: string;
@@ -193,17 +194,6 @@ export function AdminWorkspaceDetailPage() {
     setTimeout(() => setCopiedId(null), 2000);
   }
 
-  function formatDate(dateString: string) {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    return date.toLocaleDateString();
-  }
 
   if (loading) {
     return (

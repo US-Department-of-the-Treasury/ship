@@ -1,22 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
+import { apiPost, apiGet } from '@/lib/api';
+import { formatDateRange } from '@/lib/date-utils';
 import { useReviewQueue } from '@/contexts/ReviewQueueContext';
 import type { QueueItem } from '@/contexts/ReviewQueueContext';
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
-
-// CSRF token cache
-let csrfToken: string | null = null;
-
-async function getCsrfToken(): Promise<string> {
-  if (!csrfToken) {
-    const res = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
-    const data = await res.json();
-    csrfToken = data.token;
-  }
-  return csrfToken!;
-}
 
 // OPM 5-level performance rating scale
 const OPM_RATINGS = [
@@ -186,12 +174,7 @@ export function ReviewsPage() {
     });
 
     try {
-      const token = await getCsrfToken();
-      const res = await fetch(`${API_URL}/api/weeks/${sprintId}/approve-plan`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
-      });
+      const res = await apiPost(`/api/weeks/${sprintId}/approve-plan`);
       if (!res.ok) throw new Error('Failed to approve plan');
     } catch {
       // Revert on error
@@ -219,13 +202,7 @@ export function ReviewsPage() {
     });
 
     try {
-      const token = await getCsrfToken();
-      const res = await fetch(`${API_URL}/api/weeks/${sprintId}/${endpoint}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
-        body: JSON.stringify({ feedback }),
-      });
+      const res = await apiPost(`/api/weeks/${sprintId}/${endpoint}`, { feedback });
       if (!res.ok) throw new Error('Failed to request changes');
     } catch {
       // Revert on error
@@ -251,13 +228,7 @@ export function ReviewsPage() {
     });
 
     try {
-      const token = await getCsrfToken();
-      const res = await fetch(`${API_URL}/api/weeks/${sprintId}/approve-review`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', 'x-csrf-token': token },
-        body: JSON.stringify({ rating }),
-      });
+      const res = await apiPost(`/api/weeks/${sprintId}/approve-review`, { rating });
       if (!res.ok) throw new Error('Failed to rate retro');
     } catch {
       // Revert on error
@@ -268,9 +239,7 @@ export function ReviewsPage() {
   async function fetchReviews() {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/team/reviews?sprint_count=8`, {
-        credentials: 'include',
-      });
+      const res = await apiGet(`/api/team/reviews?sprint_count=8`);
       if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
       const json = await res.json();
       setData(json);
@@ -936,8 +905,8 @@ function ReviewPanel({
 
         // Fetch plan and retro in parallel
         const [planRes, retroRes] = await Promise.all([
-          fetch(`${API_URL}/api/weekly-plans?${params}`, { credentials: 'include' }),
-          fetch(`${API_URL}/api/weekly-retros?${params}`, { credentials: 'include' }),
+          apiGet(`/api/weekly-plans?${params}`),
+          apiGet(`/api/weekly-retros?${params}`),
         ]);
 
         if (planRes.ok) {
@@ -1240,21 +1209,6 @@ function TipTapNode({ node }: { node: unknown }) {
     default:
       return <div>{children}</div>;
   }
-}
-
-function formatDateRange(startDate: string, endDate: string): string {
-  const start = new Date(startDate + 'T00:00:00Z');
-  const end = new Date(endDate + 'T00:00:00Z');
-
-  const startMonth = start.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
-  const startDay = start.getUTCDate();
-  const endMonth = end.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
-  const endDay = end.getUTCDate();
-
-  if (startMonth === endMonth) {
-    return `${startMonth} ${startDay}-${endDay}`;
-  }
-  return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
 }
 
 export default ReviewsPage;

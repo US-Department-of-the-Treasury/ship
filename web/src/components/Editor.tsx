@@ -18,6 +18,7 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
@@ -567,8 +568,8 @@ export function Editor({
       },
     }),
     ImageUploadExtension.configure({
-      onUploadStart: (file) => console.log('Upload started:', file.name),
-      onUploadComplete: (url) => console.log('Upload complete:', url),
+      onUploadStart: () => {},
+      onUploadComplete: () => {},
       onUploadError: (error) => console.error('Upload error:', error),
       abortController: imageUploadAbortRef.current,
     }),
@@ -929,7 +930,9 @@ export function Editor({
                 setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
               }}
             >
-              <EditorContent editor={editor} />
+              <ErrorBoundary>
+                <EditorContent editor={editor} />
+              </ErrorBoundary>
             </div>
             {editor && !editor.isDestroyed && (
               <BubbleMenu

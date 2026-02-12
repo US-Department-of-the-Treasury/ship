@@ -207,7 +207,7 @@ export function ActionItems() {
           <h2 className="text-sm font-semibold text-amber-700 dark:text-amber-300">
             Action Items
           </h2>
-          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-600 text-white">
+          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-700 text-white">
             {data.items.length}
           </span>
         </div>

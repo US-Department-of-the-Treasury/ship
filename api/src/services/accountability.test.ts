@@ -310,15 +310,19 @@ describe('Accountability Service', () => {
 
       // Mock queries in execution order:
       // 1. workspace, 2. person,
-      // 3-4. Week 1 plan+retro queries, 5. Week 2 plan query,
-      // 6. changes_requested check
-      // (standup, sprint accountability, sprint reviews, project retros are disabled)
+      // 3. owned sprints (sprint accountability), 4-5. Week 1 plan+retro queries,
+      // 6. Week 2 plan query, 7. changes_requested check
+      // (standup skipped because isBusinessDay=false)
       mockSetupQueries()
+        // owned sprints (sprint accountability) - no sprints owned
+        .mockResolvedValueOnce({ rows: [] } as any)
         // Week 1 plan - exists (done)
         .mockResolvedValueOnce({ rows: [{ id: 'plan-1', content: { type: 'doc', content: [{ type: 'text', text: 'done' }] } }] } as any)
         // Week 1 retro - exists (done) (today Jan 7 >= retroDueStr Jan 4)
         .mockResolvedValueOnce({ rows: [{ id: 'retro-1', content: { type: 'doc', content: [{ type: 'text', text: 'done' }] } }] } as any)
         // Week 2 plan - NOT exists
+        .mockResolvedValueOnce({ rows: [] } as any)
+        // changes_requested check
         .mockResolvedValueOnce({ rows: [] } as any);
 
       const result = await checkMissingAccountability(userId, workspaceId);

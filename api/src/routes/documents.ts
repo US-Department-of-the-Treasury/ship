@@ -2,21 +2,13 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
+import { isWorkspaceAdmin } from '../middleware/visibility.js';
 import { handleVisibilityChange, handleDocumentConversion, invalidateDocumentCache, broadcastToUser } from '../collaboration/index.js';
 import { extractHypothesisFromContent, extractSuccessCriteriaFromContent, extractVisionFromContent, extractGoalsFromContent, checkDocumentCompleteness } from '../utils/extractHypothesis.js';
 import { loadContentFromYjsState } from '../utils/yjsConverter.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
-
-// Check if user is workspace admin
-async function isWorkspaceAdmin(userId: string, workspaceId: string): Promise<boolean> {
-  const result = await pool.query(
-    'SELECT role FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
-    [workspaceId, userId]
-  );
-  return result.rows[0]?.role === 'admin';
-}
 
 // Check if user can access a document (visibility check)
 async function canAccessDocument(
@@ -29,7 +21,7 @@ async function canAccessDocument(
             (d.visibility = 'workspace' OR d.created_by = $2 OR
              (SELECT role FROM workspace_memberships WHERE workspace_id = $3 AND user_id = $2) = 'admin') as can_access
      FROM documents d
-     WHERE d.id = $1 AND d.workspace_id = $3`,
+     WHERE d.id = $1 AND d.workspace_id = $3 AND d.deleted_at IS NULL`,
     [docId, userId, workspaceId]
   );
 
@@ -115,6 +107,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       FROM documents
       WHERE workspace_id = $1
         AND archived_at IS NULL
+        AND deleted_at IS NULL
         AND (visibility = 'workspace' OR created_by = $2 OR $3 = TRUE)
     `;
     const params: (string | boolean | null)[] = [workspaceId, userId, isAdmin];
@@ -389,7 +382,7 @@ router.get('/:id/content', authMiddleware, async (req: Request, res: Response) =
               (d.visibility = 'workspace' OR d.created_by = $2 OR
                (SELECT role FROM workspace_memberships WHERE workspace_id = $3 AND user_id = $2) = 'admin') as can_access
        FROM documents d
-       WHERE d.id = $1 AND d.workspace_id = $3 AND d.archived_at IS NULL`,
+       WHERE d.id = $1 AND d.workspace_id = $3 AND d.archived_at IS NULL AND d.deleted_at IS NULL`,
       [id, userId, workspaceId]
     );
 
@@ -599,6 +592,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 
 // Update document
 router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
     const id = String(req.params.id);
     const userId = String(req.userId);
@@ -638,7 +632,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     // Handle moving private doc to workspace parent (changes visibility to workspace)
     if (data.parent_id !== undefined && data.parent_id !== null && data.visibility === undefined) {
-      const parentResult = await pool.query(
+      const parentResult = await client.query(
         'SELECT visibility FROM documents WHERE id = $1 AND workspace_id = $2',
         [data.parent_id, workspaceId]
       );
@@ -647,6 +641,8 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         data.visibility = 'workspace';
       }
     }
+
+    await client.query('BEGIN');
 
     const updates: string[] = [];
     const values: any[] = [];
@@ -751,7 +747,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
         // For sprints, count linked issues via document_associations
         if (existing.document_type === 'sprint') {
-          const issueCountResult = await pool.query(
+          const issueCountResult = await client.query(
             `SELECT COUNT(*) as count FROM documents d
              JOIN document_associations da ON da.document_id = d.id
              WHERE da.related_id = $1 AND da.relationship_type = 'sprint' AND d.document_type = $2`,
@@ -801,8 +797,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
       // When changing to 'issue', assign a ticket number if not already present
       if (data.document_type === 'issue' && !existing.ticket_number) {
-        // Get next ticket number for this workspace
-        const ticketResult = await pool.query(
+        // Use advisory lock to serialize ticket number generation per workspace
+        const workspaceIdHex = workspaceId.replace(/-/g, '').substring(0, 15);
+        const lockKey = parseInt(workspaceIdHex, 16);
+        await client.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
+
+        // Now safely get next ticket number - we hold the lock until transaction ends
+        const ticketResult = await client.query(
           `SELECT COALESCE(MAX(ticket_number), 0) + 1 as next_number
            FROM documents
            WHERE workspace_id = $1 AND document_type = 'issue'`,
@@ -833,7 +834,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       const newBelongsTo = data.belongs_to || [];
 
       // Get current associations
-      const currentAssocs = await pool.query(
+      const currentAssocs = await client.query(
         'SELECT related_id, relationship_type FROM document_associations WHERE document_id = $1',
         [id]
       );
@@ -844,7 +845,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       for (const row of currentAssocs.rows) {
         const key = `${row.relationship_type}:${row.related_id}`;
         if (!newSet.has(key)) {
-          await pool.query(
+          await client.query(
             'DELETE FROM document_associations WHERE document_id = $1 AND related_id = $2 AND relationship_type = $3',
             [id, row.related_id, row.relationship_type]
           );
@@ -855,7 +856,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       for (const bt of newBelongsTo) {
         const key = `${bt.type}:${bt.id}`;
         if (!currentSet.has(key)) {
-          await pool.query(
+          await client.query(
             'INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
             [id, bt.id, bt.type]
           );
@@ -866,7 +867,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Handle sprint_id via document_associations (when passed directly, not via belongs_to)
     if (data.sprint_id !== undefined && !hasBelongsToUpdate) {
       // Remove existing sprint association
-      await pool.query(
+      await client.query(
         `DELETE FROM document_associations WHERE document_id = $1 AND relationship_type = 'sprint'`,
         [id]
       );
@@ -874,13 +875,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Add new sprint association if sprint_id is not null
       if (data.sprint_id !== null) {
         // Verify the sprint exists
-        const sprintCheck = await pool.query(
+        const sprintCheck = await client.query(
           `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'sprint' AND deleted_at IS NULL`,
           [data.sprint_id, workspaceId]
         );
 
         if (sprintCheck.rows.length > 0) {
-          await pool.query(
+          await client.query(
             `INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, 'sprint') ON CONFLICT DO NOTHING`,
             [id, data.sprint_id]
           );
@@ -891,7 +892,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Handle program_id via document_associations (when passed directly, not via belongs_to)
     if (data.program_id !== undefined && !hasBelongsToUpdate) {
       // Remove existing program association
-      await pool.query(
+      await client.query(
         `DELETE FROM document_associations WHERE document_id = $1 AND relationship_type = 'program'`,
         [id]
       );
@@ -899,13 +900,13 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       // Add new program association if program_id is not null
       if (data.program_id !== null) {
         // Verify the program exists
-        const programCheck = await pool.query(
+        const programCheck = await client.query(
           `SELECT id FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'program' AND deleted_at IS NULL`,
           [data.program_id, workspaceId]
         );
 
         if (programCheck.rows.length > 0) {
-          await pool.query(
+          await client.query(
             `INSERT INTO document_associations (document_id, related_id, relationship_type) VALUES ($1, $2, 'program') ON CONFLICT DO NOTHING`,
             [id, data.program_id]
           );
@@ -920,19 +921,14 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       updates.push(`updated_at = now()`);
     }
 
-    const result = await pool.query(
+    const result = await client.query(
       `UPDATE documents SET ${updates.join(', ')} WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1} RETURNING *`,
       [...values, id, workspaceId]
     );
 
-    // Invalidate collaboration cache when content is updated via API
-    if (contentUpdated) {
-      invalidateDocumentCache(id);
-    }
-
     // Cascade visibility changes to child documents
     if (data.visibility !== undefined && data.visibility !== existing.visibility) {
-      await pool.query(
+      await client.query(
         `WITH RECURSIVE descendants AS (
           SELECT id FROM documents WHERE parent_id = $1
           UNION ALL
@@ -943,8 +939,19 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         WHERE id IN (SELECT id FROM descendants)`,
         [id, data.visibility]
       );
+    }
 
-      // Notify WebSocket collaboration server to disconnect users who lost access
+    await client.query('COMMIT');
+
+    // Post-commit operations (non-transactional)
+
+    // Invalidate collaboration cache when content is updated via API
+    if (contentUpdated) {
+      invalidateDocumentCache(id);
+    }
+
+    // Notify WebSocket collaboration server to disconnect users who lost access
+    if (data.visibility !== undefined && data.visibility !== existing.visibility) {
       handleVisibilityChange(id, data.visibility, existing.created_by).catch((err) => {
         console.error('Failed to handle visibility change for collaboration:', err);
       });
@@ -995,8 +1002,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       review_rating: props.review_rating,
     });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Update document error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 

@@ -95,8 +95,19 @@ export async function checkMissingAccountability(
   const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
   const currentSprintNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
 
-  // Only weekly plans, retros, and changes-requested notifications are active.
-  // Standups, sprint start/issues, sprint reviews, and project retros are disabled.
+  // Check for missing standups (current sprint, business days only)
+  if (todayStr) {
+    const standupItems = await checkMissingStandups(userId, workspaceId, currentSprintNumber, todayStr);
+    items.push(...standupItems);
+  }
+
+  // Check sprint accountability: started status and issues
+  if (todayStr) {
+    const sprintItems = await checkSprintAccountability(
+      userId, workspaceId, workspaceStartDate, sprintDuration, today, personId
+    );
+    items.push(...sprintItems);
+  }
 
   // Check for per-person weekly_plan and weekly_retro (based on allocations)
   // Check both current sprint AND next sprint, since plans become due 2 days before

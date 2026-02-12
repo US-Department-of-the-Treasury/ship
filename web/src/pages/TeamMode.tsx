@@ -3,20 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ProjectCombobox, Project } from '@/components/ProjectCombobox';
 import { cn } from '@/lib/cn';
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
-
-// CSRF token cache
-let csrfToken: string | null = null;
-
-async function getCsrfToken(): Promise<string> {
-  if (!csrfToken) {
-    const res = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
-    const data = await res.json();
-    csrfToken = data.token;
-  }
-  return csrfToken!;
-}
+import { apiPost, apiGet, apiDelete } from '@/lib/api';
+import { formatDateRange } from '@/lib/date-utils';
 
 interface User {
   personId: string; // Document ID - used for allocations (works for both pending and active)
@@ -186,8 +174,8 @@ export function TeamModePage() {
       if (toSprint !== undefined) params.set('toSprint', String(toSprint));
       if (includeArchived) params.set('includeArchived', 'true');
 
-      const url = `${API_URL}/api/team/grid${params.toString() ? `?${params}` : ''}`;
-      const res = await fetch(url, { credentials: 'include' });
+      const url = `/api/team/grid${params.toString() ? `?${params}` : ''}`;
+      const res = await apiGet(url);
       if (!res.ok) throw new Error('Failed to fetch team grid');
       const json: TeamGridData = await res.json();
 
@@ -206,7 +194,7 @@ export function TeamModePage() {
 
   async function fetchProjects() {
     try {
-      const res = await fetch(`${API_URL}/api/team/projects`, { credentials: 'include' });
+      const res = await apiGet(`/api/team/projects`);
       if (res.ok) {
         const json = await res.json();
         setProjects(json);
@@ -218,7 +206,7 @@ export function TeamModePage() {
 
   async function fetchAssignments() {
     try {
-      const res = await fetch(`${API_URL}/api/team/assignments`, { credentials: 'include' });
+      const res = await apiGet(`/api/team/assignments`);
       if (res.ok) {
         const json = await res.json();
         setAssignments(json);
@@ -251,13 +239,7 @@ export function TeamModePage() {
     }));
 
     try {
-      const token = await getCsrfToken();
-      const res = await fetch(`${API_URL}/api/team/assign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-        credentials: 'include',
-        body: JSON.stringify({ personId, projectId, sprintNumber }),
-      });
+      const res = await apiPost(`/api/team/assign`, { personId, projectId, sprintNumber });
 
       const json = await res.json();
 
@@ -305,13 +287,7 @@ export function TeamModePage() {
     });
 
     try {
-      const token = await getCsrfToken();
-      const res = await fetch(`${API_URL}/api/team/assign`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-        credentials: 'include',
-        body: JSON.stringify({ personId, sprintNumber }),
-      });
+      const res = await apiDelete(`/api/team/assign`, { personId, sprintNumber });
 
       const json = await res.json();
 
@@ -332,8 +308,7 @@ export function TeamModePage() {
 
       // If there were orphaned issues, show them in a dialog (unless skipped)
       if (json.issuesOrphaned?.length > 0 && !skipConfirmation) {
-        // Issues were already moved to backlog, just inform the user
-        console.log(`${json.issuesOrphaned.length} issues moved to backlog`);
+        // Issues were already moved to backlog
       }
     } catch (err) {
       // Rollback optimistic update
@@ -398,7 +373,7 @@ export function TeamModePage() {
       });
       if (showArchived) params.set('includeArchived', 'true');
 
-      const res = await fetch(`${API_URL}/api/team/grid?${params}`, { credentials: 'include' });
+      const res = await apiGet(`/api/team/grid?${params}`);
       if (!res.ok) throw new Error('Failed to fetch more sprints');
       const newData: TeamGridData = await res.json();
 
@@ -798,22 +773,6 @@ function SprintCell({
       />
     </div>
   );
-}
-
-function formatDateRange(startDate: string, endDate: string): string {
-  // Parse as UTC to avoid timezone issues with YYYY-MM-DD format
-  const start = new Date(startDate + 'T00:00:00Z');
-  const end = new Date(endDate + 'T00:00:00Z');
-
-  const startMonth = start.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
-  const startDay = start.getUTCDate();
-  const endMonth = end.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
-  const endDay = end.getUTCDate();
-
-  if (startMonth === endMonth) {
-    return `${startMonth} ${startDay}-${endDay}`;
-  }
-  return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
 }
 
 function ChevronIcon({ className }: { className?: string }) {

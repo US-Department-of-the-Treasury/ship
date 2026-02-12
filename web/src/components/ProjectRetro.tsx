@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { cn } from '@/lib/cn';
 import { useToast } from '@/components/ui/Toast';
+import { apiPost, apiPatch, apiGet } from '@/lib/api';
 
 interface ProjectRetroProps {
   projectId: string;
@@ -24,62 +25,6 @@ interface RetroData {
     cancelled: number;
     active: number;
   };
-}
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
-
-// CSRF token cache
-let csrfToken: string | null = null;
-
-async function getCsrfToken(): Promise<string> {
-  if (!csrfToken) {
-    const response = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
-    const data = await response.json();
-    csrfToken = data.token;
-  }
-  return csrfToken!;
-}
-
-async function postWithCsrf(url: string, body: object): Promise<Response> {
-  const token = await getCsrfToken();
-  let res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-    credentials: 'include',
-    body: JSON.stringify(body),
-  });
-  if (res.status === 403) {
-    csrfToken = null;
-    const newToken = await getCsrfToken();
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': newToken },
-      credentials: 'include',
-      body: JSON.stringify(body),
-    });
-  }
-  return res;
-}
-
-async function patchWithCsrf(url: string, body: object): Promise<Response> {
-  const token = await getCsrfToken();
-  let res = await fetch(url, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-    credentials: 'include',
-    body: JSON.stringify(body),
-  });
-  if (res.status === 403) {
-    csrfToken = null;
-    const newToken = await getCsrfToken();
-    res = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': newToken },
-      credentials: 'include',
-      body: JSON.stringify(body),
-    });
-  }
-  return res;
 }
 
 export function ProjectRetro({ projectId }: ProjectRetroProps) {
@@ -108,7 +53,7 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
 
   const fetchRetro = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/projects/${projectId}/retro`, { credentials: 'include' });
+      const res = await apiGet(`/api/projects/${projectId}/retro`);
       if (res.ok) {
         const data: RetroData = await res.json();
         setRetroData(data);
@@ -144,7 +89,7 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
 
       if (retroData?.is_draft) {
         // POST to create new retro
-        const res = await postWithCsrf(`${API_URL}/api/projects/${projectId}/retro`, {
+        const res = await apiPost(`/api/projects/${projectId}/retro`, {
           content,
           plan_validated: planValidated,
           monetary_impact_actual: monetaryImpactActual || null,
@@ -161,7 +106,7 @@ export function ProjectRetro({ projectId }: ProjectRetroProps) {
         }
       } else {
         // PATCH to update existing retro
-        const res = await patchWithCsrf(`${API_URL}/api/projects/${projectId}/retro`, {
+        const res = await apiPatch(`/api/projects/${projectId}/retro`, {
           content,
           plan_validated: planValidated,
           monetary_impact_actual: monetaryImpactActual || null,

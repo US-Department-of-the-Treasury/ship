@@ -45,29 +45,6 @@ export interface AuditLog {
   createdAt: Date;
 }
 
-// Input types
-export interface CreateWorkspaceInput {
-  name: string;
-}
-
-export interface UpdateWorkspaceInput {
-  name?: string;
-}
-
-export interface CreateInviteInput {
-  email: string;
-  role?: 'admin' | 'member';
-}
-
-export interface AddMemberInput {
-  userId: string;
-  role?: 'admin' | 'member';
-}
-
-export interface UpdateMemberRoleInput {
-  role: 'admin' | 'member';
-}
-
 // Response types
 export interface WorkspaceWithRole extends Workspace {
   role: 'admin' | 'member';
