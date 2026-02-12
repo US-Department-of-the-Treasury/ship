@@ -66,6 +66,7 @@ export function TeamModePage() {
   const [filterMode, setFilterMode] = useState<'my-team' | 'everyone' | null>(null);
   const [sprintRange, setSprintRange] = useState<{ min: number; max: number } | null>(null);
   const [collapsedPrograms, setCollapsedPrograms] = useState<Set<string>>(new Set());
+  const [viewAsSprintNumber, setViewAsSprintNumber] = useState<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
 
@@ -94,7 +95,9 @@ export function TeamModePage() {
     return data.users;
   }, [data, filterMode, user?.id]);
 
-  // Group users by their current sprint assignment's program
+  // Group users by their assignment's program for the viewed sprint
+  const groupingSprintNumber = viewAsSprintNumber ?? currentSprintNumber;
+
   const programGroups = useMemo((): ProgramGroup[] => {
     if (!data) return [];
 
@@ -102,8 +105,8 @@ export function TeamModePage() {
     const UNASSIGNED_KEY = '__unassigned__';
 
     for (const user of filteredUsers) {
-      const currentAssignment = currentSprintNumber
-        ? assignments[user.personId]?.[currentSprintNumber]
+      const currentAssignment = groupingSprintNumber
+        ? assignments[user.personId]?.[groupingSprintNumber]
         : null;
 
       const groupKey = currentAssignment?.programId || UNASSIGNED_KEY;
@@ -134,7 +137,7 @@ export function TeamModePage() {
     }
 
     return sortedGroups;
-  }, [data, filteredUsers, assignments, currentSprintNumber]);
+  }, [data, filteredUsers, assignments, groupingSprintNumber]);
 
   // Toggle program group collapse
   const toggleProgramCollapse = useCallback((programId: string | null) => {
@@ -460,6 +463,16 @@ export function TeamModePage() {
     return () => container.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
+  // Escape key clears view-as mode
+  useEffect(() => {
+    if (viewAsSprintNumber === null) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setViewAsSprintNumber(null);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [viewAsSprintNumber]);
+
   // Clear error after 3 seconds
   useEffect(() => {
     if (error) {
@@ -520,6 +533,20 @@ export function TeamModePage() {
                 )}
               >
                 Everyone
+              </button>
+            </div>
+          )}
+          {viewAsSprintNumber !== null && (
+            <div className="flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-xs text-accent">
+              <span>Viewing as {data.weeks.find(w => w.number === viewAsSprintNumber)?.name ?? `Week ${viewAsSprintNumber}`}</span>
+              <button
+                onClick={() => setViewAsSprintNumber(null)}
+                className="ml-0.5 rounded p-0.5 hover:bg-accent/20"
+                title="Return to current week"
+              >
+                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
           )}
@@ -636,13 +663,19 @@ export function TeamModePage() {
                 </div>
               )}
 
-              {data.weeks.map((sprint) => (
+              {data.weeks.map((sprint) => {
+                const isActiveViewAs = sprint.number === viewAsSprintNumber;
+                const isDefaultCurrent = sprint.isCurrent && viewAsSprintNumber === null;
+                const showViewAsButton = !isActiveViewAs && !isDefaultCurrent;
+
+                return (
                 <div key={sprint.number} className="flex flex-col">
                   {/* Sprint header */}
                   <div
                     className={cn(
-                      'flex h-10 w-[180px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background',
-                      sprint.isCurrent && 'ring-1 ring-inset ring-accent/30'
+                      'group flex h-10 w-[180px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background relative',
+                      sprint.isCurrent && 'ring-1 ring-inset ring-accent/30',
+                      isActiveViewAs && 'ring-2 ring-inset ring-accent/50 bg-accent/5'
                     )}
                   >
                     <span className={cn(
@@ -654,6 +687,15 @@ export function TeamModePage() {
                     <span className="text-[10px] text-muted">
                       {formatDateRange(sprint.startDate, sprint.endDate)}
                     </span>
+                    {showViewAsButton && (
+                      <button
+                        onClick={() => setViewAsSprintNumber(sprint.number)}
+                        title="View as current week"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted opacity-0 transition-opacity hover:bg-border/50 hover:text-foreground group-hover:opacity-100"
+                      >
+                        <ViewAsIcon className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
 
                   {/* Sprint cells grouped by program */}
@@ -706,7 +748,8 @@ export function TeamModePage() {
                     );
                   })}
                 </div>
-              ))}
+                );
+              })}
 
               {loadingMore === 'right' && (
                 <div className="flex flex-col w-[60px]">
@@ -833,6 +876,15 @@ function ChevronIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  );
+}
+
+function ViewAsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
     </svg>
   );
 }
