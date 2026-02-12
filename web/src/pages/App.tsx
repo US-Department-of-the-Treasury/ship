@@ -1615,7 +1615,8 @@ function TeamSidebar() {
     location.pathname !== '/team/allocation' &&
     location.pathname !== '/team/directory' &&
     location.pathname !== '/team/status' &&
-    location.pathname !== '/team/reviews';
+    location.pathname !== '/team/reviews' &&
+    location.pathname !== '/team/org-chart';
 
   const isAllocation = location.pathname === '/team/allocation' || location.pathname === '/team';
   // Directory is active when on /team/directory OR viewing a person document
@@ -1624,6 +1625,7 @@ function TeamSidebar() {
     (location.pathname.startsWith('/documents/') && currentDocumentType === 'person');
   const isStatusOverview = location.pathname === '/team/status';
   const isReviews = location.pathname === '/team/reviews';
+  const isOrgChart = location.pathname === '/team/org-chart';
 
   // Fetch people for the sidebar list when viewing a person
   const { data: people = [] } = useTeamMembersQuery();
@@ -1691,6 +1693,20 @@ function TeamSidebar() {
             <span>Reviews</span>
           </button>
         </li>
+        <li>
+          <button
+            onClick={() => navigate('/team/org-chart')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              isOrgChart
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <OrgChartIcon />
+            <span>Org Chart</span>
+          </button>
+        </li>
       </ul>
 
       {/* People list when viewing a person */}
@@ -1756,6 +1772,14 @@ function ReviewsIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+    </svg>
+  );
+}
+
+function OrgChartIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v4m0 0a2 2 0 100 4 2 2 0 000-4zm-6 8a2 2 0 100 4 2 2 0 000-4zm0 0V12m12 4a2 2 0 100 4 2 2 0 000-4zm0 0V12m-6 0h6m-12 0h6" />
     </svg>
   );
 }

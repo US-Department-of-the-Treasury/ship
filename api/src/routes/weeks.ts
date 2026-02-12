@@ -15,6 +15,25 @@ import { extractText } from '../utils/document-content.js';
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
+/**
+ * Look up the reports_to user_id for a sprint's owner.
+ * The sprint's owner_id is a person document ID; this resolves their supervisor's user_id.
+ */
+async function getSprintOwnerReportsTo(sprintId: string, workspaceId: string): Promise<string | null> {
+  const result = await pool.query(
+    `SELECT owner_person.properties->>'reports_to' as reports_to
+     FROM documents d
+     LEFT JOIN documents owner_person
+       ON d.properties->>'owner_id' IS NOT NULL
+       AND owner_person.id = (d.properties->>'owner_id')::uuid
+       AND owner_person.document_type = 'person'
+       AND owner_person.workspace_id = $2
+     WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'`,
+    [sprintId, workspaceId]
+  );
+  return result.rows[0]?.reports_to || null;
+}
+
 // GET /api/weeks/lookup-person - Find person document by user_id
 router.get('/lookup-person', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -130,6 +149,7 @@ function extractSprintFromRow(row: any) {
     program_name: row.program_name,
     program_prefix: row.program_prefix,
     program_accountable_id: row.program_accountable_id || null,
+    owner_reports_to: row.owner_reports_to || null,
     workspace_sprint_start_date: row.workspace_sprint_start_date,
     issue_count: parseInt(row.issue_count) || 0,
     completed_count: parseInt(row.completed_count) || 0,
@@ -252,6 +272,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               p.properties->>'accountable_id' as program_accountable_id,
+              (SELECT op.properties->>'reports_to' FROM documents op WHERE d.properties->>'owner_id' IS NOT NULL AND op.id = (d.properties->>'owner_id')::uuid AND op.document_type = 'person' AND op.workspace_id = d.workspace_id) as owner_reports_to,
               $5::timestamp as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -673,6 +694,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               p.properties->>'accountable_id' as program_accountable_id,
+              (SELECT op.properties->>'reports_to' FROM documents op WHERE d.properties->>'owner_id' IS NOT NULL AND op.id = (d.properties->>'owner_id')::uuid AND op.document_type = 'person' AND op.workspace_id = d.workspace_id) as owner_reports_to,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -1079,6 +1101,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               p.properties->>'accountable_id' as program_accountable_id,
+              (SELECT op.properties->>'reports_to' FROM documents op WHERE d.properties->>'owner_id' IS NOT NULL AND op.id = (d.properties->>'owner_id')::uuid AND op.document_type = 'person' AND op.workspace_id = d.workspace_id) as owner_reports_to,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -1180,6 +1203,7 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               p.properties->>'accountable_id' as program_accountable_id,
+              (SELECT op.properties->>'reports_to' FROM documents op WHERE d.properties->>'owner_id' IS NOT NULL AND op.id = (d.properties->>'owner_id')::uuid AND op.document_type = 'person' AND op.workspace_id = d.workspace_id) as owner_reports_to,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -1387,6 +1411,7 @@ router.patch('/:id/plan', authMiddleware, async (req: Request, res: Response) =>
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               p.properties->>'accountable_id' as program_accountable_id,
+              (SELECT op.properties->>'reports_to' FROM documents op WHERE d.properties->>'owner_id' IS NOT NULL AND op.id = (d.properties->>'owner_id')::uuid AND op.document_type = 'person' AND op.workspace_id = d.workspace_id) as owner_reports_to,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -2627,9 +2652,10 @@ router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Respo
     const sprint = sprintResult.rows[0];
     const programAccountableId = sprint.program_accountable_id;
 
-    // Check authorization: must be program's accountable_id OR workspace admin
-    if (programAccountableId !== userId && !isAdmin) {
-      res.status(403).json({ error: 'Only the program accountable person or admin can approve plans' });
+    // Check authorization: must be program's accountable_id, supervisor (reports_to), OR workspace admin
+    const ownerReportsTo = await getSprintOwnerReportsTo(id as string, workspaceId);
+    if (programAccountableId !== userId && ownerReportsTo !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the supervisor, program accountable person, or admin can approve plans' });
       return;
     }
 
@@ -2690,8 +2716,9 @@ router.post('/:id/unapprove-plan', authMiddleware, async (req: Request, res: Res
     }
 
     const sprint = sprintResult.rows[0];
-    if (sprint.program_accountable_id !== userId && !isAdmin) {
-      res.status(403).json({ error: 'Only the program accountable person or admin can unapprove plans' });
+    const ownerReportsTo = await getSprintOwnerReportsTo(id as string, workspaceId);
+    if (sprint.program_accountable_id !== userId && ownerReportsTo !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the supervisor, program accountable person, or admin can unapprove plans' });
       return;
     }
 
@@ -2762,9 +2789,10 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
     const sprint = sprintResult.rows[0];
     const programAccountableId = sprint.program_accountable_id;
 
-    // Check authorization: must be program's accountable_id OR workspace admin
-    if (programAccountableId !== userId && !isAdmin) {
-      res.status(403).json({ error: 'Only the program accountable person or admin can approve reviews' });
+    // Check authorization: must be program's accountable_id, supervisor (reports_to), OR workspace admin
+    const ownerReportsTo = await getSprintOwnerReportsTo(id as string, workspaceId);
+    if (programAccountableId !== userId && ownerReportsTo !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the supervisor, program accountable person, or admin can approve reviews' });
       return;
     }
 
@@ -2861,9 +2889,10 @@ router.post('/:id/request-plan-changes', authMiddleware, async (req: Request, re
     const sprint = sprintResult.rows[0];
     const programAccountableId = sprint.program_accountable_id;
 
-    // Check authorization: must be program's accountable_id OR workspace admin
-    if (programAccountableId !== userId && !isAdmin) {
-      res.status(403).json({ error: 'Only the program accountable person or admin can request changes' });
+    // Check authorization: must be program's accountable_id, supervisor (reports_to), OR workspace admin
+    const ownerReportsTo = await getSprintOwnerReportsTo(id as string, workspaceId);
+    if (programAccountableId !== userId && ownerReportsTo !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the supervisor, program accountable person, or admin can request changes' });
       return;
     }
 
@@ -2953,9 +2982,10 @@ router.post('/:id/request-retro-changes', authMiddleware, async (req: Request, r
     const sprint = sprintResult.rows[0];
     const programAccountableId = sprint.program_accountable_id;
 
-    // Check authorization: must be program's accountable_id OR workspace admin
-    if (programAccountableId !== userId && !isAdmin) {
-      res.status(403).json({ error: 'Only the program accountable person or admin can request changes' });
+    // Check authorization: must be program's accountable_id, supervisor (reports_to), OR workspace admin
+    const ownerReportsTo = await getSprintOwnerReportsTo(id as string, workspaceId);
+    if (programAccountableId !== userId && ownerReportsTo !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the supervisor, program accountable person, or admin can request changes' });
       return;
     }
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ProjectCombobox, Project } from '@/components/ProjectCombobox';
+import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
 import { apiPost, apiGet, apiDelete } from '@/lib/api';
 import { formatDateRange } from '@/lib/date-utils';
@@ -13,6 +14,7 @@ interface User {
   email: string;
   isArchived?: boolean;
   isPending?: boolean;
+  reportsTo?: string | null; // user_id of supervisor
 }
 
 interface Sprint {
@@ -53,6 +55,7 @@ interface ProgramGroup {
 
 export function TeamModePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [data, setData] = useState<TeamGridData | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [assignments, setAssignments] = useState<Record<string, Record<number, Assignment>>>({});
@@ -60,6 +63,7 @@ export function TeamModePage() {
   const [loadingMore, setLoadingMore] = useState<'left' | 'right' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [filterMode, setFilterMode] = useState<'my-team' | 'everyone' | null>(null);
   const [sprintRange, setSprintRange] = useState<{ min: number; max: number } | null>(null);
   const [collapsedPrograms, setCollapsedPrograms] = useState<Set<string>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -68,6 +72,28 @@ export function TeamModePage() {
   // Find the current sprint number
   const currentSprintNumber = data?.currentSprintNumber ?? null;
 
+  // Smart default: if user has direct reports, default to "my-team"
+  const hasDirectReports = useMemo(() => {
+    if (!data || !user?.id) return false;
+    return data.users.some(u => u.reportsTo === user.id);
+  }, [data, user?.id]);
+
+  // Set smart default when data first loads
+  useEffect(() => {
+    if (data && filterMode === null) {
+      setFilterMode(hasDirectReports ? 'my-team' : 'everyone');
+    }
+  }, [data, filterMode, hasDirectReports]);
+
+  // Filter users based on filter mode
+  const filteredUsers = useMemo(() => {
+    if (!data) return [];
+    if (filterMode === 'my-team' && user?.id) {
+      return data.users.filter(u => u.reportsTo === user.id);
+    }
+    return data.users;
+  }, [data, filterMode, user?.id]);
+
   // Group users by their current sprint assignment's program
   const programGroups = useMemo((): ProgramGroup[] => {
     if (!data) return [];
@@ -75,7 +101,7 @@ export function TeamModePage() {
     const groups: Map<string, ProgramGroup> = new Map();
     const UNASSIGNED_KEY = '__unassigned__';
 
-    for (const user of data.users) {
+    for (const user of filteredUsers) {
       const currentAssignment = currentSprintNumber
         ? assignments[user.personId]?.[currentSprintNumber]
         : null;
@@ -108,7 +134,7 @@ export function TeamModePage() {
     }
 
     return sortedGroups;
-  }, [data, assignments, currentSprintNumber]);
+  }, [data, filteredUsers, assignments, currentSprintNumber]);
 
   // Toggle program group collapse
   const toggleProgramCollapse = useCallback((programId: string | null) => {
@@ -469,7 +495,35 @@ export function TeamModePage() {
 
       {/* Header */}
       <header className="flex h-10 items-center justify-between border-b border-border px-4">
-        <h1 className="text-sm font-medium text-foreground">Allocation</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-medium text-foreground">Allocation</h1>
+          {hasDirectReports && (
+            <div className="flex rounded-md border border-border text-xs">
+              <button
+                onClick={() => setFilterMode('my-team')}
+                className={cn(
+                  'px-2 py-0.5 transition-colors',
+                  filterMode === 'my-team'
+                    ? 'bg-accent text-white'
+                    : 'text-muted hover:text-foreground'
+                )}
+              >
+                My Team
+              </button>
+              <button
+                onClick={() => setFilterMode('everyone')}
+                className={cn(
+                  'px-2 py-0.5 transition-colors',
+                  filterMode === 'everyone'
+                    ? 'bg-accent text-white'
+                    : 'text-muted hover:text-foreground'
+                )}
+              >
+                Everyone
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-4">
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input
@@ -481,7 +535,7 @@ export function TeamModePage() {
             <span className="text-xs text-muted">Show archived</span>
           </label>
           <span className="text-xs text-muted">
-            {data.users.length} team members &middot; {projects.length} projects
+            {filteredUsers.length} team members &middot; {projects.length} projects
           </span>
         </div>
       </header>

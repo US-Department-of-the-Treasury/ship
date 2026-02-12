@@ -3,7 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { useAuth } from '@/hooks/useAuth';
 import { useDocuments } from '@/contexts/DocumentsContext';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAutoSave } from '@/hooks/useAutoSave';
+import { useAssignableMembersQuery } from '@/hooks/useTeamMembersQuery';
+import { PersonCombobox, type Person } from '@/components/PersonCombobox';
+import { PropertyRow } from '@/components/ui/PropertyRow';
 import { apiGet, apiPatch, apiDelete } from '@/lib/api';
 
 interface PersonDocument {
@@ -12,6 +16,13 @@ interface PersonDocument {
   content: unknown;
   document_type: string;
   archived_at: string | null;
+  properties?: {
+    email?: string | null;
+    role?: string | null;
+    reports_to?: string | null;
+    user_id?: string | null;
+    [key: string]: unknown;
+  };
 }
 
 interface SprintMetric {
@@ -36,6 +47,8 @@ export function PersonEditorPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { createDocument } = useDocuments();
+  const { isWorkspaceAdmin } = useWorkspace();
+  const { data: teamMembers } = useAssignableMembersQuery();
   const [person, setPerson] = useState<PersonDocument | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -151,41 +164,85 @@ export function PersonEditorPage() {
       onCreateSubDocument={handleCreateSubDocument}
       onNavigateToDocument={handleNavigateToDocument}
       sidebar={
-        <div className="space-y-4 p-4">
-          {person.archived_at && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-              <p className="text-sm font-medium text-amber-300">Archived</p>
-              <p className="mt-1 text-xs text-amber-300/70">
-                This team member has been archived and no longer has access.
-              </p>
-            </div>
-          )}
-          <PropertyRow label="Email">
-            <div className="text-sm text-foreground">
-              {person.title.toLowerCase().replace(/\s+/g, '.')}@example.com
-            </div>
-          </PropertyRow>
-          <PropertyRow label="Role">
-            <div className="text-sm text-muted">Not set</div>
-          </PropertyRow>
-          <PropertyRow label="Department">
-            <div className="text-sm text-muted">Not set</div>
-          </PropertyRow>
-
-          {metricsVisible && sprintMetrics && (
-            <SprintHistory metrics={sprintMetrics} />
-          )}
-        </div>
+        <PersonSidebar
+          person={person}
+          people={teamMembers || []}
+          isAdmin={isWorkspaceAdmin}
+          onUpdateProperties={async (updates) => {
+            await apiPatch(`/api/documents/${id}`, { properties: updates });
+            setPerson(prev => prev ? { ...prev, properties: { ...prev.properties, ...updates } } : prev);
+          }}
+          metricsVisible={metricsVisible}
+          sprintMetrics={sprintMetrics}
+        />
       }
     />
   );
 }
 
-function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
+interface PersonSidebarProps {
+  person: PersonDocument;
+  people: { id: string; user_id: string; name: string; email?: string }[];
+  isAdmin: boolean;
+  onUpdateProperties: (updates: Record<string, unknown>) => Promise<void>;
+  metricsVisible: boolean;
+  sprintMetrics: SprintMetricsResponse | null;
+}
+
+function PersonSidebar({ person, people, isAdmin, onUpdateProperties, metricsVisible, sprintMetrics }: PersonSidebarProps) {
+  const props = person.properties || {};
+  const reportsTo = (props.reports_to as string) || null;
+  const personUserId = (props.user_id as string) || null;
+
+  // Build people list for combobox, excluding the current person
+  const comboboxPeople: Person[] = people
+    .filter(p => p.user_id !== personUserId)
+    .map(p => ({ id: p.id, user_id: p.user_id, name: p.name, email: p.email || '' }));
+
+  // Find supervisor name for read-only display
+  const supervisor = reportsTo ? people.find(p => p.user_id === reportsTo) : null;
+
   return (
-    <div>
-      <label className="mb-1 block text-xs font-medium text-muted">{label}</label>
-      {children}
+    <div className="space-y-4 p-4">
+      {person.archived_at && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+          <p className="text-sm font-medium text-amber-300">Archived</p>
+          <p className="mt-1 text-xs text-amber-300/70">
+            This team member has been archived and no longer has access.
+          </p>
+        </div>
+      )}
+
+      <PropertyRow label="Email">
+        <div className="text-sm text-foreground">
+          {props.email || <span className="text-muted">Not set</span>}
+        </div>
+      </PropertyRow>
+
+      <PropertyRow label="Role">
+        <div className="text-sm text-foreground">
+          {props.role || <span className="text-muted">Not set</span>}
+        </div>
+      </PropertyRow>
+
+      <PropertyRow label="Reports To" tooltip="Official supervisor — determines performance evaluation authority">
+        {isAdmin ? (
+          <PersonCombobox
+            people={comboboxPeople}
+            value={reportsTo}
+            onChange={(value) => onUpdateProperties({ reports_to: value })}
+            placeholder="Select supervisor..."
+          />
+        ) : (
+          <div className="text-sm text-foreground">
+            {supervisor ? supervisor.name : <span className="text-muted">Not set</span>}
+          </div>
+        )}
+      </PropertyRow>
+
+      {metricsVisible && sprintMetrics && (
+        <SprintHistory metrics={sprintMetrics} />
+      )}
     </div>
   );
 }

@@ -722,6 +722,15 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const hasTopLevelProps = Object.keys(topLevelProps).length > 0;
 
+    // Restrict reports_to changes on person documents to workspace admins
+    if (existing.document_type === 'person' && data.properties?.reports_to !== undefined) {
+      const isAdmin = await isWorkspaceAdmin(userId, workspaceId);
+      if (!isAdmin) {
+        res.status(403).json({ error: 'Only workspace admins can set the reports_to field' });
+        return;
+      }
+    }
+
     // Handle properties update - merge existing, data.properties, top-level fields, and extracted values
     // Content is source of truth: extracted values override any manually set hypothesis/success_criteria/vision/goals
     if (data.properties !== undefined || contentUpdated || hasTopLevelProps) {

@@ -175,6 +175,7 @@ export interface PersonProperties {
   email?: string | null;
   role?: string | null;
   capacity_hours?: number | null;
+  reports_to?: string | null;
   [key: string]: unknown;
 }
 

@@ -32,7 +32,8 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
          d.title as name,
          COALESCE(d.properties->>'email', u.email) as email,
          CASE WHEN d.archived_at IS NOT NULL THEN true ELSE false END as "isArchived",
-         CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending"
+         CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending",
+         d.properties->>'reports_to' as "reportsTo"
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
        WHERE d.workspace_id = $1
@@ -745,7 +746,9 @@ router.get('/people', authMiddleware, async (req: Request, res: Response) => {
       `SELECT d.id, d.properties->>'user_id' as user_id, d.title as name,
               COALESCE(d.properties->>'email', u.email) as email,
               CASE WHEN d.archived_at IS NOT NULL THEN true ELSE false END as "isArchived",
-              CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending"
+              CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending",
+              d.properties->>'reports_to' as "reportsTo",
+              d.properties->>'role' as role
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
        WHERE d.workspace_id = $1
@@ -1416,9 +1419,9 @@ router.get('/reviews', authMiddleware, async (req: Request, res: Response) => {
       });
     }
 
-    // Get all workspace people
+    // Get all workspace people (include reports_to for My Team filter)
     const peopleResult = await pool.query(
-      `SELECT id, title as name
+      `SELECT id, title as name, properties->>'reports_to' as "reportsTo"
        FROM documents
        WHERE workspace_id = $1
          AND document_type = 'person'
@@ -1530,7 +1533,7 @@ router.get('/reviews', authMiddleware, async (req: Request, res: Response) => {
     }
 
     // Build people list with program info from current sprint
-    const people = peopleResult.rows.map((p: { id: string; name: string }) => {
+    const people = peopleResult.rows.map((p: { id: string; name: string; reportsTo?: string | null }) => {
       const currentSprint = sprintMap.get(`${p.id}_${currentSprintNumber}`);
       return {
         personId: p.id,
@@ -1538,6 +1541,7 @@ router.get('/reviews', authMiddleware, async (req: Request, res: Response) => {
         programId: currentSprint?.programId || null,
         programName: currentSprint?.programName || null,
         programColor: currentSprint?.programColor || null,
+        reportsTo: p.reportsTo || null,
       };
     });
 

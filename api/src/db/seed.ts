@@ -186,6 +186,47 @@ async function seed() {
       console.log(`✅ Created ${personDocsCreated} Person documents`);
     }
 
+    // Set up reports_to hierarchy: Dev User → 3 managers → remaining ICs
+    const reportingHierarchy: Record<string, string[]> = {
+      'dev@ship.local': [], // Root — no manager
+      'alice.chen@ship.local': ['dev@ship.local'],
+      'bob.martinez@ship.local': ['dev@ship.local'],
+      'carol.williams@ship.local': ['dev@ship.local'],
+      'david.kim@ship.local': ['alice.chen@ship.local'],
+      'emma.johnson@ship.local': ['alice.chen@ship.local'],
+      'frank.garcia@ship.local': ['bob.martinez@ship.local'],
+      'grace.lee@ship.local': ['bob.martinez@ship.local'],
+      'henry.patel@ship.local': ['carol.williams@ship.local'],
+      'iris.nguyen@ship.local': ['carol.williams@ship.local'],
+      'jack.brown@ship.local': ['carol.williams@ship.local'],
+    };
+
+    // Build email → user_id map
+    const emailToUserId = new Map<string, string>();
+    for (const user of allUsersForMembership.rows) {
+      emailToUserId.set(user.email, user.id);
+    }
+
+    // Set reports_to on person documents
+    let reportsToSet = 0;
+    for (const [email, managers] of Object.entries(reportingHierarchy)) {
+      if (managers.length === 0) continue; // Root has no manager
+      const managerEmail = managers[0]!;
+      const managerId = emailToUserId.get(managerEmail);
+      const userId = emailToUserId.get(email);
+      if (managerId && userId) {
+        await pool.query(
+          `UPDATE documents SET properties = properties || jsonb_build_object('reports_to', $1::text)
+           WHERE workspace_id = $2 AND document_type = 'person' AND properties->>'user_id' = $3`,
+          [managerId, workspaceId, userId]
+        );
+        reportsToSet++;
+      }
+    }
+    if (reportsToSet > 0) {
+      console.log(`✅ Set reports_to for ${reportsToSet} people (3-level hierarchy)`);
+    }
+
     // Get all user IDs for assignment (join through workspace_memberships)
     // Also get person document IDs for team allocation
     const allUsersResult = await pool.query(
