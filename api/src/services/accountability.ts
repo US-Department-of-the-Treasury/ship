@@ -357,14 +357,14 @@ async function checkWeeklyPersonAccountability(
   const planOverdueStr = planOverdueDate.toISOString().split('T')[0] || '';
 
   // Retro becomes actionable on Thursday (weekStart + 3)
-  const retroDueDate = new Date(sprintStartDate);
-  retroDueDate.setUTCDate(retroDueDate.getUTCDate() + 3);
-  const retroDueStr = retroDueDate.toISOString().split('T')[0] || '';
+  const retroActionableDate = new Date(sprintStartDate);
+  retroActionableDate.setUTCDate(retroActionableDate.getUTCDate() + 3);
+  const retroActionableStr = retroActionableDate.toISOString().split('T')[0] || '';
 
-  // Retro becomes overdue on Saturday (weekStart + 5) — used for dueDate display
-  const retroOverdueDate = new Date(sprintStartDate);
-  retroOverdueDate.setUTCDate(retroOverdueDate.getUTCDate() + 5);
-  const retroOverdueStr = retroOverdueDate.toISOString().split('T')[0] || '';
+  // Retro is due by end of Friday (weekStart + 4) — matches grid's yellow window
+  const retroDueDate = new Date(sprintStartDate);
+  retroDueDate.setUTCDate(retroDueDate.getUTCDate() + 4);
+  const retroDueStr = retroDueDate.toISOString().split('T')[0] || '';
 
   // Get ALL allocations for this person/sprint (explicit assignee_ids + issue-based).
   // Note: The heatmap only displays one allocation per person per week (display limit),
@@ -407,7 +407,7 @@ async function checkWeeklyPersonAccountability(
 
     // Check for missing weekly_retro (due from Thursday of the sprint week)
     // A retro counts as "done" only if it has meaningful content (not just template headings)
-    if (todayStr >= retroDueStr) {
+    if (todayStr >= retroActionableStr) {
       const retroResult = await pool.query(
         `SELECT id, content FROM documents
          WHERE workspace_id = $1
@@ -426,7 +426,7 @@ async function checkWeeklyPersonAccountability(
           targetId: projectId,
           targetTitle: `Week ${sprintNumber} Retro - ${projectName}`,
           targetType: 'project',
-          dueDate: todayStr >= retroOverdueStr ? retroOverdueStr : retroDueStr,
+          dueDate: retroDueStr,
           message: `Write week ${sprintNumber} retro for ${projectName}`,
           personId,
           projectId,

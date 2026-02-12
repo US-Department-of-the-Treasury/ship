@@ -289,8 +289,8 @@ describe('Accountability Service', () => {
 
       const retroItem = result.find((item) => item.type === 'weekly_retro' && item.weekNumber === 1);
       expect(retroItem).toBeDefined();
-      // Due date should reflect the overdue date (Saturday = weekStart + 5)
-      expect(retroItem?.dueDate).toBe('2024-01-06');
+      // Due date should reflect Friday (weekStart + 4), the end of the due window
+      expect(retroItem?.dueDate).toBe('2024-01-05');
     });
   });
 
