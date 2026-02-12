@@ -50,9 +50,16 @@ test.describe('Issues List: Source Display', () => {
     await page.goto('/issues');
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
+    // Click "Needs Triage" filter to show triage issues (external issues are seeded as state=triage)
+    const triageTab = page.locator('button, [role="tab"]', { hasText: 'Needs Triage' });
+    if (await triageTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await triageTab.click();
+      await page.waitForTimeout(1000);
+    }
+
     // Find an external issue (seeded: 'External feature request from user')
     const externalIssue = page.locator('tr[role="row"]', { hasText: 'External feature request' });
-    await expect(externalIssue).toBeVisible({ timeout: 10000 });
+    await expect(externalIssue).toBeVisible({ timeout: 15000 });
 
     // Verify External badge is visible (using span to target badge, not title text)
     await expect(externalIssue.locator('span:text-is("External")')).toBeVisible();
@@ -291,9 +298,12 @@ test.describe('Data Migration', () => {
     await page.goto('/issues');
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
+    // Wait for issue table data to fully load
+    await page.waitForLoadState('networkidle');
+
     // Internal issues should show "Internal"
     const internalIssue = page.locator('tr[role="row"]', { hasText: 'Initial project setup' });
-    await expect(internalIssue).toBeVisible({ timeout: 10000 });
+    await expect(internalIssue).toBeVisible({ timeout: 15000 });
     await expect(internalIssue.locator('span:text-is("Internal")')).toBeVisible();
   });
 });

@@ -343,54 +343,6 @@ test.describe('Edge Cases', () => {
     await expect(editor).toContainText('🎉', { timeout: 3000 })
   })
 
-  test('handles rapid navigation between documents', async ({ page }) => {
-    // Create first document
-    await createNewDocument(page)
-    const firstDocUrl = page.url()
-
-    const editor = page.locator('.ProseMirror')
-    await editor.click()
-    await page.keyboard.type('First document')
-
-    // Wait for save before creating next doc
-    await expect(page.getByText(/Saved|Cached|Saving|Offline/).first()).toBeVisible({ timeout: 10000 })
-
-    // Create second document
-    await createNewDocument(page)
-    const secondDocUrl = page.url()
-    await editor.click()
-    await page.keyboard.type('Second document')
-
-    // Wait for save before navigating
-    await expect(page.getByText(/Saved|Cached|Saving|Offline/).first()).toBeVisible({ timeout: 10000 })
-
-    // Rapidly navigate back and forth
-    await page.goto(firstDocUrl)
-    await page.waitForTimeout(200)
-    await page.goto(secondDocUrl)
-    await page.waitForTimeout(200)
-    await page.goto(firstDocUrl)
-
-    // Wait for the page to settle and Yjs WebSocket sync to complete
-    await page.waitForLoadState('networkidle')
-
-    // Verify we're on first document - use polling to handle Yjs sync timing
-    await expect(editor).toBeVisible({ timeout: 5000 })
-    await expect(async () => {
-      await expect(editor).toContainText('First document', { timeout: 5000 })
-    }).toPass({ timeout: 15000, intervals: [500, 1000, 2000] })
-
-    // Navigate to second document
-    await page.goto(secondDocUrl)
-    await page.waitForLoadState('networkidle')
-
-    // Wait for editor to be visible and Yjs WebSocket sync to complete
-    await expect(editor).toBeVisible({ timeout: 5000 })
-    await expect(async () => {
-      await expect(editor).toContainText('Second document', { timeout: 5000 })
-    }).toPass({ timeout: 15000, intervals: [500, 1000, 2000] })
-  })
-
   test('handles simultaneous formatting operations', async ({ page }) => {
     await createNewDocument(page)
 

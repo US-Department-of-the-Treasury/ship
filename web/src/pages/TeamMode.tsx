@@ -2,21 +2,10 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ProjectCombobox, Project } from '@/components/ProjectCombobox';
+import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
-
-// CSRF token cache
-let csrfToken: string | null = null;
-
-async function getCsrfToken(): Promise<string> {
-  if (!csrfToken) {
-    const res = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
-    const data = await res.json();
-    csrfToken = data.token;
-  }
-  return csrfToken!;
-}
+import { apiPost, apiGet, apiDelete } from '@/lib/api';
+import { formatDateRange } from '@/lib/date-utils';
 
 interface User {
   personId: string; // Document ID - used for allocations (works for both pending and active)
@@ -25,6 +14,7 @@ interface User {
   email: string;
   isArchived?: boolean;
   isPending?: boolean;
+  reportsTo?: string | null; // user_id of supervisor
 }
 
 interface Sprint {
@@ -65,6 +55,7 @@ interface ProgramGroup {
 
 export function TeamModePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [data, setData] = useState<TeamGridData | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [assignments, setAssignments] = useState<Record<string, Record<number, Assignment>>>({});
@@ -72,24 +63,50 @@ export function TeamModePage() {
   const [loadingMore, setLoadingMore] = useState<'left' | 'right' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [filterMode, setFilterMode] = useState<'my-team' | 'everyone' | null>(null);
   const [sprintRange, setSprintRange] = useState<{ min: number; max: number } | null>(null);
   const [collapsedPrograms, setCollapsedPrograms] = useState<Set<string>>(new Set());
+  const [viewAsSprintNumber, setViewAsSprintNumber] = useState<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
 
   // Find the current sprint number
   const currentSprintNumber = data?.currentSprintNumber ?? null;
 
-  // Group users by their current sprint assignment's program
+  // Smart default: if user has direct reports, default to "my-team"
+  const hasDirectReports = useMemo(() => {
+    if (!data || !user?.id) return false;
+    return data.users.some(u => u.reportsTo === user.id);
+  }, [data, user?.id]);
+
+  // Set smart default when data first loads
+  useEffect(() => {
+    if (data && filterMode === null) {
+      setFilterMode(hasDirectReports ? 'my-team' : 'everyone');
+    }
+  }, [data, filterMode, hasDirectReports]);
+
+  // Filter users based on filter mode
+  const filteredUsers = useMemo(() => {
+    if (!data) return [];
+    if (filterMode === 'my-team' && user?.id) {
+      return data.users.filter(u => u.reportsTo === user.id);
+    }
+    return data.users;
+  }, [data, filterMode, user?.id]);
+
+  // Group users by their assignment's program for the viewed sprint
+  const groupingSprintNumber = viewAsSprintNumber ?? currentSprintNumber;
+
   const programGroups = useMemo((): ProgramGroup[] => {
     if (!data) return [];
 
     const groups: Map<string, ProgramGroup> = new Map();
     const UNASSIGNED_KEY = '__unassigned__';
 
-    for (const user of data.users) {
-      const currentAssignment = currentSprintNumber
-        ? assignments[user.personId]?.[currentSprintNumber]
+    for (const user of filteredUsers) {
+      const currentAssignment = groupingSprintNumber
+        ? assignments[user.personId]?.[groupingSprintNumber]
         : null;
 
       const groupKey = currentAssignment?.programId || UNASSIGNED_KEY;
@@ -120,7 +137,7 @@ export function TeamModePage() {
     }
 
     return sortedGroups;
-  }, [data, assignments, currentSprintNumber]);
+  }, [data, filteredUsers, assignments, groupingSprintNumber]);
 
   // Toggle program group collapse
   const toggleProgramCollapse = useCallback((programId: string | null) => {
@@ -186,8 +203,8 @@ export function TeamModePage() {
       if (toSprint !== undefined) params.set('toSprint', String(toSprint));
       if (includeArchived) params.set('includeArchived', 'true');
 
-      const url = `${API_URL}/api/team/grid${params.toString() ? `?${params}` : ''}`;
-      const res = await fetch(url, { credentials: 'include' });
+      const url = `/api/team/grid${params.toString() ? `?${params}` : ''}`;
+      const res = await apiGet(url);
       if (!res.ok) throw new Error('Failed to fetch team grid');
       const json: TeamGridData = await res.json();
 
@@ -206,7 +223,7 @@ export function TeamModePage() {
 
   async function fetchProjects() {
     try {
-      const res = await fetch(`${API_URL}/api/team/projects`, { credentials: 'include' });
+      const res = await apiGet(`/api/team/projects`);
       if (res.ok) {
         const json = await res.json();
         setProjects(json);
@@ -218,7 +235,7 @@ export function TeamModePage() {
 
   async function fetchAssignments() {
     try {
-      const res = await fetch(`${API_URL}/api/team/assignments`, { credentials: 'include' });
+      const res = await apiGet(`/api/team/assignments`);
       if (res.ok) {
         const json = await res.json();
         setAssignments(json);
@@ -251,13 +268,7 @@ export function TeamModePage() {
     }));
 
     try {
-      const token = await getCsrfToken();
-      const res = await fetch(`${API_URL}/api/team/assign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-        credentials: 'include',
-        body: JSON.stringify({ personId, projectId, sprintNumber }),
-      });
+      const res = await apiPost(`/api/team/assign`, { personId, projectId, sprintNumber });
 
       const json = await res.json();
 
@@ -305,13 +316,7 @@ export function TeamModePage() {
     });
 
     try {
-      const token = await getCsrfToken();
-      const res = await fetch(`${API_URL}/api/team/assign`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-        credentials: 'include',
-        body: JSON.stringify({ personId, sprintNumber }),
-      });
+      const res = await apiDelete(`/api/team/assign`, { personId, sprintNumber });
 
       const json = await res.json();
 
@@ -332,8 +337,7 @@ export function TeamModePage() {
 
       // If there were orphaned issues, show them in a dialog (unless skipped)
       if (json.issuesOrphaned?.length > 0 && !skipConfirmation) {
-        // Issues were already moved to backlog, just inform the user
-        console.log(`${json.issuesOrphaned.length} issues moved to backlog`);
+        // Issues were already moved to backlog
       }
     } catch (err) {
       // Rollback optimistic update
@@ -398,7 +402,7 @@ export function TeamModePage() {
       });
       if (showArchived) params.set('includeArchived', 'true');
 
-      const res = await fetch(`${API_URL}/api/team/grid?${params}`, { credentials: 'include' });
+      const res = await apiGet(`/api/team/grid?${params}`);
       if (!res.ok) throw new Error('Failed to fetch more sprints');
       const newData: TeamGridData = await res.json();
 
@@ -411,7 +415,7 @@ export function TeamModePage() {
         const mergedSprints = direction === 'left'
           ? [...newData.weeks, ...prev.weeks]
           : [...prev.weeks, ...newData.weeks];
-        return { ...prev, sprints: mergedSprints };
+        return { ...prev, weeks: mergedSprints };
       });
 
       setSprintRange(prev => {
@@ -459,6 +463,16 @@ export function TeamModePage() {
     return () => container.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
+  // Escape key clears view-as mode
+  useEffect(() => {
+    if (viewAsSprintNumber === null) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setViewAsSprintNumber(null);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [viewAsSprintNumber]);
+
   // Clear error after 3 seconds
   useEffect(() => {
     if (error) {
@@ -494,7 +508,49 @@ export function TeamModePage() {
 
       {/* Header */}
       <header className="flex h-10 items-center justify-between border-b border-border px-4">
-        <h1 className="text-sm font-medium text-foreground">Allocation</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-medium text-foreground">Allocation</h1>
+          {hasDirectReports && (
+            <div className="flex rounded-md border border-border text-xs">
+              <button
+                onClick={() => setFilterMode('my-team')}
+                className={cn(
+                  'px-2 py-0.5 transition-colors',
+                  filterMode === 'my-team'
+                    ? 'bg-accent text-white'
+                    : 'text-muted hover:text-foreground'
+                )}
+              >
+                My Team
+              </button>
+              <button
+                onClick={() => setFilterMode('everyone')}
+                className={cn(
+                  'px-2 py-0.5 transition-colors',
+                  filterMode === 'everyone'
+                    ? 'bg-accent text-white'
+                    : 'text-muted hover:text-foreground'
+                )}
+              >
+                Everyone
+              </button>
+            </div>
+          )}
+          {viewAsSprintNumber !== null && (
+            <div className="flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-xs text-accent">
+              <span>Viewing as {data.weeks.find(w => w.number === viewAsSprintNumber)?.name ?? `Week ${viewAsSprintNumber}`}</span>
+              <button
+                onClick={() => setViewAsSprintNumber(null)}
+                className="ml-0.5 rounded p-0.5 hover:bg-accent/20"
+                title="Return to current week"
+              >
+                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-4">
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input
@@ -506,7 +562,7 @@ export function TeamModePage() {
             <span className="text-xs text-muted">Show archived</span>
           </label>
           <span className="text-xs text-muted">
-            {data.users.length} team members &middot; {projects.length} projects
+            {filteredUsers.length} team members &middot; {projects.length} projects
           </span>
         </div>
       </header>
@@ -607,13 +663,19 @@ export function TeamModePage() {
                 </div>
               )}
 
-              {data.weeks.map((sprint) => (
+              {data.weeks.map((sprint) => {
+                const isActiveViewAs = sprint.number === viewAsSprintNumber;
+                const isDefaultCurrent = sprint.isCurrent && viewAsSprintNumber === null;
+                const showViewAsButton = !isActiveViewAs && !isDefaultCurrent;
+
+                return (
                 <div key={sprint.number} className="flex flex-col">
                   {/* Sprint header */}
                   <div
                     className={cn(
-                      'flex h-10 w-[180px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background',
-                      sprint.isCurrent && 'ring-1 ring-inset ring-accent/30'
+                      'group flex h-10 w-[180px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background relative',
+                      sprint.isCurrent && 'ring-1 ring-inset ring-accent/30',
+                      isActiveViewAs && 'ring-2 ring-inset ring-accent/50 bg-accent/5'
                     )}
                   >
                     <span className={cn(
@@ -625,6 +687,15 @@ export function TeamModePage() {
                     <span className="text-[10px] text-muted">
                       {formatDateRange(sprint.startDate, sprint.endDate)}
                     </span>
+                    {showViewAsButton && (
+                      <button
+                        onClick={() => setViewAsSprintNumber(sprint.number)}
+                        title="View as current week"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted opacity-0 transition-opacity hover:bg-border/50 hover:text-foreground group-hover:opacity-100"
+                      >
+                        <ViewAsIcon className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
 
                   {/* Sprint cells grouped by program */}
@@ -677,7 +748,8 @@ export function TeamModePage() {
                     );
                   })}
                 </div>
-              ))}
+                );
+              })}
 
               {loadingMore === 'right' && (
                 <div className="flex flex-col w-[60px]">
@@ -800,26 +872,19 @@ function SprintCell({
   );
 }
 
-function formatDateRange(startDate: string, endDate: string): string {
-  // Parse as UTC to avoid timezone issues with YYYY-MM-DD format
-  const start = new Date(startDate + 'T00:00:00Z');
-  const end = new Date(endDate + 'T00:00:00Z');
-
-  const startMonth = start.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
-  const startDay = start.getUTCDate();
-  const endMonth = end.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
-  const endDay = end.getUTCDate();
-
-  if (startMonth === endMonth) {
-    return `${startMonth} ${startDay}-${endDay}`;
-  }
-  return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
-}
-
 function ChevronIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  );
+}
+
+function ViewAsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
     </svg>
   );
 }

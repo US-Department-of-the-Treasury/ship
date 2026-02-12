@@ -297,3 +297,88 @@ registry.registerPath({
     },
   },
 });
+
+// ============== Program Merge ==============
+
+const MergePreviewSchema = registry.register('MergePreview', z.object({
+  source: z.object({ id: UuidSchema, name: z.string() }),
+  target: z.object({ id: UuidSchema, name: z.string() }),
+  counts: z.object({
+    projects: z.number().int(),
+    issues: z.number().int(),
+    sprints: z.number().int(),
+    wikis: z.number().int(),
+  }),
+  conflicts: z.array(z.object({
+    type: z.string(),
+    message: z.string(),
+  })),
+}));
+
+registry.registerPath({
+  method: 'get',
+  path: '/programs/{id}/merge-preview',
+  operationId: 'get_program_merge_preview',
+  tags: ['Programs'],
+  summary: 'Preview program merge',
+  description: 'Returns counts of entities that will be moved from source to target program, plus any conflicts.',
+  request: {
+    params: z.object({
+      id: UuidSchema,
+    }),
+    query: z.object({
+      target_id: UuidSchema.openapi({ description: 'Target program ID to merge into' }),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Merge preview with entity counts and conflicts',
+      content: {
+        'application/json': {
+          schema: MergePreviewSchema,
+        },
+      },
+    },
+    400: { description: 'Invalid request (missing target_id, same program, or archived program)' },
+    404: { description: 'Program not found' },
+  },
+});
+
+const MergeProgramRequestSchema = registry.register('MergeProgramRequest', z.object({
+  target_id: UuidSchema.openapi({ description: 'Target program ID to merge into' }),
+  confirm_name: z.string().min(1).openapi({ description: 'Source program name for type-to-confirm safeguard' }),
+}));
+
+registry.registerPath({
+  method: 'post',
+  path: '/programs/{id}/merge',
+  operationId: 'merge_program',
+  tags: ['Programs'],
+  summary: 'Merge program into another',
+  description: 'Re-parents all child entities from source program to target program, archives the source with merge metadata.',
+  request: {
+    params: z.object({
+      id: UuidSchema,
+    }),
+    body: {
+      content: {
+        'application/json': {
+          schema: MergeProgramRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Updated target program after merge',
+      content: {
+        'application/json': {
+          schema: ProgramResponseSchema,
+        },
+      },
+    },
+    400: { description: 'Invalid request (same program or archived program)' },
+    404: { description: 'Program not found' },
+    409: { description: 'Confirmation name does not match' },
+  },
+});

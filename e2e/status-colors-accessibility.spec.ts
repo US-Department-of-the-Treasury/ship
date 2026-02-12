@@ -31,7 +31,8 @@ test.describe('Status Colors Accessibility', () => {
 
     test('priority indicators use accessible color classes', async ({ page }) => {
       await page.goto('/issues');
-      await page.waitForSelector('[data-testid="issues-list"], .issue-row, [class*="issue"]', { timeout: 10000 });
+      await page.waitForLoadState('networkidle');
+      await page.waitForSelector('[data-testid="issues-list"], .issue-row, [class*="issue"]', { timeout: 15000 });
 
       // Priority indicators should not use -400 variants
       const priorityWithLowContrast = page.locator('[class*="text-red-400"], [class*="text-yellow-400"], [class*="text-blue-400"]').filter({ hasText: /urgent|high|medium|low/i });

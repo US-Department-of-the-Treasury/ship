@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { getVisibilityContext, VISIBILITY_FILTER_SQL } from '../middleware/visibility.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { TEMPLATE_HEADINGS, extractText, hasContent } from '../utils/document-content.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -31,7 +32,8 @@ router.get('/grid', authMiddleware, async (req: Request, res: Response) => {
          d.title as name,
          COALESCE(d.properties->>'email', u.email) as email,
          CASE WHEN d.archived_at IS NOT NULL THEN true ELSE false END as "isArchived",
-         CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending"
+         CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending",
+         d.properties->>'reports_to' as "reportsTo"
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
        WHERE d.workspace_id = $1
@@ -269,7 +271,7 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     // First, get explicit sprint document assignments (assignee_ids array + project_id in properties)
-    // Use sprint's program association (handles legacy programId assignments without project)
+    // Program is resolved via: project -> program (preferred), or sprint -> program (fallback for legacy programId assignments)
     const explicitResult = await pool.query(
       `SELECT
          jsonb_array_elements_text(s.properties->'assignee_ids') as person_id,
@@ -277,14 +279,16 @@ router.get('/assignments', authMiddleware, async (req: Request, res: Response) =
          s.properties->>'project_id' as project_id,
          proj.title as project_name,
          proj.properties->>'color' as project_color,
-         prog_da.related_id as program_id,
-         prog.title as program_name,
-         prog.properties->>'emoji' as program_emoji,
-         prog.properties->>'color' as program_color
+         COALESCE(prog_da.related_id, sprint_prog_da.related_id) as program_id,
+         COALESCE(prog.title, sprint_prog.title) as program_name,
+         COALESCE(prog.properties->>'emoji', sprint_prog.properties->>'emoji') as program_emoji,
+         COALESCE(prog.properties->>'color', sprint_prog.properties->>'color') as program_color
        FROM documents s
        LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
-       LEFT JOIN document_associations prog_da ON s.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN document_associations prog_da ON proj.id = prog_da.document_id AND prog_da.relationship_type = 'program'
        LEFT JOIN documents prog ON prog_da.related_id = prog.id AND prog.document_type = 'program'
+       LEFT JOIN document_associations sprint_prog_da ON s.id = sprint_prog_da.document_id AND sprint_prog_da.relationship_type = 'program'
+       LEFT JOIN documents sprint_prog ON sprint_prog_da.related_id = sprint_prog.id AND sprint_prog.document_type = 'program'
        WHERE s.workspace_id = $1
          AND s.document_type = 'sprint'
          AND jsonb_array_length(COALESCE(s.properties->'assignee_ids', '[]'::jsonb)) > 0
@@ -552,6 +556,26 @@ router.post('/assign', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
+    // Enforce one allocation per person per week: remove from any OTHER project's sprint
+    // for the same sprint_number before assigning to the new one.
+    const conflictingSprints = await pool.query(
+      `SELECT id, properties FROM documents
+       WHERE workspace_id = $1 AND document_type = 'sprint'
+         AND (properties->>'sprint_number')::int = $2
+         AND properties->'assignee_ids' @> to_jsonb($3::text)
+         AND (properties->>'project_id' IS DISTINCT FROM $4)`,
+      [workspaceId, sprintNumber, personDocId, resolvedProjectId]
+    );
+
+    for (const conflicting of conflictingSprints.rows) {
+      const props = conflicting.properties || {};
+      const assignees: string[] = (props.assignee_ids || []).filter((id: string) => id !== personDocId);
+      await pool.query(
+        `UPDATE documents SET properties = jsonb_set(properties, '{assignee_ids}', $1::jsonb), updated_at = now() WHERE id = $2`,
+        [JSON.stringify(assignees), conflicting.id]
+      );
+    }
+
     // Find existing sprint for this program, project, and sprint number
     // Use IS NOT DISTINCT FROM for program_id to handle NULL values correctly
     let sprintResult = await pool.query(
@@ -722,7 +746,9 @@ router.get('/people', authMiddleware, async (req: Request, res: Response) => {
       `SELECT d.id, d.properties->>'user_id' as user_id, d.title as name,
               COALESCE(d.properties->>'email', u.email) as email,
               CASE WHEN d.archived_at IS NOT NULL THEN true ELSE false END as "isArchived",
-              CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending"
+              CASE WHEN d.properties->>'pending' = 'true' THEN true ELSE false END as "isPending",
+              d.properties->>'reports_to' as "reportsTo",
+              d.properties->>'role' as role
        FROM documents d
        LEFT JOIN users u ON u.id = (d.properties->>'user_id')::uuid
        WHERE d.workspace_id = $1
@@ -1042,12 +1068,6 @@ router.get('/people/:personId/sprint-metrics', authMiddleware, async (req: Reque
   }
 });
 
-// Templates for weekly plan and retro - used to check if document has content
-const TEMPLATE_HEADINGS = [
-  'What I plan to accomplish this week',
-  'What I delivered this week',
-];
-
 // GET /api/team/accountability-grid-v2 - Get per-person plan/retro status for all projects
 // Returns: { programs: [{ projects: [{ people: [{ weeks }] }] }], weeks, currentSprintNumber }
 // Query params:
@@ -1197,31 +1217,6 @@ router.get('/accountability-grid-v2', authMiddleware, async (req: Request, res: 
       [workspaceId, fromSprint, toSprint]
     );
 
-    // Helper to extract all text from a TipTap document
-    const extractText = (node: unknown): string => {
-      if (!node || typeof node !== 'object') return '';
-      const n = node as { type?: string; text?: string; content?: unknown[] };
-      if (n.type === 'text' && n.text) return n.text;
-      if (Array.isArray(n.content)) {
-        return n.content.map(extractText).join('');
-      }
-      return '';
-    };
-
-    // Helper to check if document has content beyond the template
-    const hasContent = (content: unknown): boolean => {
-      if (!content || typeof content !== 'object') return false;
-      const doc = content as { content?: unknown[] };
-      if (!Array.isArray(doc.content) || doc.content.length === 0) return false;
-
-      const allText = extractText(content).trim();
-      let textWithoutTemplate = allText;
-      for (const heading of TEMPLATE_HEADINGS) {
-        textWithoutTemplate = textWithoutTemplate.replace(heading, '');
-      }
-      return textWithoutTemplate.trim().length > 0;
-    };
-
     // Helper to calculate plan/retro status based on timing
     const calculateStatus = (
       docId: string | null,
@@ -1361,6 +1356,251 @@ router.get('/accountability-grid-v2', authMiddleware, async (req: Request, res: 
   }
 });
 
+// GET /api/team/reviews - Manager review grid (approval status + performance ratings)
+// Returns: { people, weeks, reviews, currentSprintNumber }
+router.get('/reviews', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+    const sprintCount = Math.min(parseInt(req.query.sprint_count as string, 10) || 5, 20);
+    const showArchived = req.query.showArchived === 'true';
+
+    // Check admin access
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+    if (!isAdmin) {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    // Get workspace sprint config
+    const workspaceResult = await pool.query(
+      `SELECT sprint_start_date FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    if (workspaceResult.rows.length === 0) {
+      res.status(404).json({ error: 'Workspace not found' });
+      return;
+    }
+
+    const rawSprintStartDate = workspaceResult.rows[0]?.sprint_start_date;
+    const sprintDurationDays = 7;
+    const today = new Date();
+
+    let sprintStartDate: Date;
+    if (rawSprintStartDate instanceof Date) {
+      sprintStartDate = new Date(Date.UTC(rawSprintStartDate.getFullYear(), rawSprintStartDate.getMonth(), rawSprintStartDate.getDate()));
+    } else if (typeof rawSprintStartDate === 'string') {
+      sprintStartDate = new Date(rawSprintStartDate + 'T00:00:00Z');
+    } else {
+      sprintStartDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+    }
+
+    // Calculate current sprint number and range
+    const daysSinceStart = Math.floor((today.getTime() - sprintStartDate.getTime()) / (1000 * 60 * 60 * 24));
+    const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / sprintDurationDays) + 1);
+    const fromSprint = Math.max(1, currentSprintNumber - sprintCount + 1);
+    const toSprint = currentSprintNumber;
+
+    // Generate weeks array
+    const weeks: { number: number; name: string; startDate: string; endDate: string; isCurrent: boolean }[] = [];
+    for (let i = fromSprint; i <= toSprint; i++) {
+      const weekStart = new Date(sprintStartDate);
+      weekStart.setUTCDate(weekStart.getUTCDate() + (i - 1) * sprintDurationDays);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setUTCDate(weekEnd.getUTCDate() + sprintDurationDays - 1);
+
+      weeks.push({
+        number: i,
+        name: `Week ${i}`,
+        startDate: weekStart.toISOString().split('T')[0] || '',
+        endDate: weekEnd.toISOString().split('T')[0] || '',
+        isCurrent: i === currentSprintNumber,
+      });
+    }
+
+    // Get all workspace people (include reports_to for My Team filter)
+    const peopleResult = await pool.query(
+      `SELECT id, title as name, properties->>'reports_to' as "reportsTo"
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'person'
+         AND ($2 OR archived_at IS NULL)
+       ORDER BY title`,
+      [workspaceId, showArchived]
+    );
+
+    // Get sprint documents with approval/rating properties
+    const sprintsResult = await pool.query(
+      `SELECT
+         jsonb_array_elements_text(s.properties->'assignee_ids') as person_id,
+         (s.properties->>'sprint_number')::int as sprint_number,
+         s.id as sprint_id,
+         s.properties->>'project_id' as project_id,
+         s.properties->'plan_approval' as plan_approval,
+         s.properties->'review_approval' as review_approval,
+         s.properties->'review_rating' as review_rating,
+         proj.title as project_name,
+         prog_da.related_id as program_id,
+         prog.title as program_name,
+         prog.properties->>'color' as program_color
+       FROM documents s
+       LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
+       LEFT JOIN document_associations prog_da ON proj.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id AND prog.document_type = 'program'
+       WHERE s.workspace_id = $1
+         AND s.document_type = 'sprint'
+         AND jsonb_array_length(COALESCE(s.properties->'assignee_ids', '[]'::jsonb)) > 0
+         AND (s.properties->>'sprint_number')::int BETWEEN $2 AND $3`,
+      [workspaceId, fromSprint, toSprint]
+    );
+
+    // Get weekly plans (to check content existence)
+    const plansResult = await pool.query(
+      `SELECT
+         (properties->>'person_id') as person_id,
+         (properties->>'week_number')::int as week_number,
+         id, content
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_plan'
+         AND deleted_at IS NULL
+         AND (properties->>'week_number')::int BETWEEN $2 AND $3`,
+      [workspaceId, fromSprint, toSprint]
+    );
+
+    // Get weekly retros (to check content existence)
+    const retrosResult = await pool.query(
+      `SELECT
+         (properties->>'person_id') as person_id,
+         (properties->>'week_number')::int as week_number,
+         id, content
+       FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_retro'
+         AND deleted_at IS NULL
+         AND (properties->>'week_number')::int BETWEEN $2 AND $3`,
+      [workspaceId, fromSprint, toSprint]
+    );
+
+    // Build plan/retro content maps: personId_weekNumber -> { hasContent, docId }
+    const planContent = new Map<string, { hasContent: boolean; docId: string }>();
+    for (const row of plansResult.rows) {
+      if (row.person_id && row.week_number) {
+        const key = `${row.person_id}_${row.week_number}`;
+        const existing = planContent.get(key);
+        if (!existing || hasContent(row.content)) {
+          planContent.set(key, { hasContent: hasContent(row.content), docId: row.id });
+        }
+      }
+    }
+
+    const retroContent = new Map<string, { hasContent: boolean; docId: string }>();
+    for (const row of retrosResult.rows) {
+      if (row.person_id && row.week_number) {
+        const key = `${row.person_id}_${row.week_number}`;
+        const existing = retroContent.get(key);
+        if (!existing || hasContent(row.content)) {
+          retroContent.set(key, { hasContent: hasContent(row.content), docId: row.id });
+        }
+      }
+    }
+
+    // Build sprint approval map: personId_sprintNumber -> { sprintId, planApproval, reviewApproval, reviewRating, programId, programName }
+    const sprintMap = new Map<string, {
+      sprintId: string;
+      planApproval: unknown;
+      reviewApproval: unknown;
+      reviewRating: unknown;
+      programId: string | null;
+      programName: string | null;
+      programColor: string | null;
+    }>();
+
+    for (const row of sprintsResult.rows) {
+      if (row.person_id && row.sprint_number) {
+        const key = `${row.person_id}_${row.sprint_number}`;
+        sprintMap.set(key, {
+          sprintId: row.sprint_id,
+          planApproval: row.plan_approval || null,
+          reviewApproval: row.review_approval || null,
+          reviewRating: row.review_rating || null,
+          programId: row.program_id || null,
+          programName: row.program_name || null,
+          programColor: row.program_color || null,
+        });
+      }
+    }
+
+    // Build people list with program info from current sprint
+    const people = peopleResult.rows.map((p: { id: string; name: string; reportsTo?: string | null }) => {
+      const currentSprint = sprintMap.get(`${p.id}_${currentSprintNumber}`);
+      return {
+        personId: p.id,
+        name: p.name,
+        programId: currentSprint?.programId || null,
+        programName: currentSprint?.programName || null,
+        programColor: currentSprint?.programColor || null,
+        reportsTo: p.reportsTo || null,
+      };
+    });
+
+    // Build reviews map: personId -> sprintNumber -> cell data
+    const reviews: Record<string, Record<number, {
+      planApproval: unknown;
+      reviewApproval: unknown;
+      reviewRating: unknown;
+      hasPlan: boolean;
+      hasRetro: boolean;
+      sprintId: string | null;
+      planDocId: string | null;
+      retroDocId: string | null;
+    }>> = {};
+
+    for (const person of peopleResult.rows) {
+      const personReviews: Record<number, {
+        planApproval: unknown;
+        reviewApproval: unknown;
+        reviewRating: unknown;
+        hasPlan: boolean;
+        hasRetro: boolean;
+        sprintId: string | null;
+        planDocId: string | null;
+        retroDocId: string | null;
+      }> = {};
+      for (const week of weeks) {
+        const key = `${person.id}_${week.number}`;
+        const sprint = sprintMap.get(key);
+        const contentKey = `${person.id}_${week.number}`;
+        const plan = planContent.get(contentKey);
+        const retro = retroContent.get(contentKey);
+
+        personReviews[week.number] = {
+          planApproval: sprint?.planApproval || null,
+          reviewApproval: sprint?.reviewApproval || null,
+          reviewRating: sprint?.reviewRating || null,
+          hasPlan: plan?.hasContent || false,
+          hasRetro: retro?.hasContent || false,
+          sprintId: sprint?.sprintId || null,
+          planDocId: plan?.docId || null,
+          retroDocId: retro?.docId || null,
+        };
+      }
+      reviews[person.id] = personReviews;
+    }
+
+    res.json({
+      people,
+      weeks,
+      reviews,
+      currentSprintNumber,
+    });
+  } catch (err) {
+    console.error('Get team reviews error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/team/accountability-grid-v3 - Person-centric plan/retro status (like Allocation view)
 // Returns: { programs: [{ people: [{ weeks }] }], weeks, currentSprintNumber }
 // Groups people by their current week's allocation's program
@@ -1462,7 +1702,7 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
          prog.properties->>'color' as program_color
        FROM documents s
        LEFT JOIN documents proj ON (s.properties->>'project_id')::uuid = proj.id
-       LEFT JOIN document_associations prog_da ON s.id = prog_da.document_id AND prog_da.relationship_type = 'program'
+       LEFT JOIN document_associations prog_da ON proj.id = prog_da.document_id AND prog_da.relationship_type = 'program'
        LEFT JOIN documents prog ON prog_da.related_id = prog.id AND prog.document_type = 'program'
        WHERE s.workspace_id = $1
          AND s.document_type = 'sprint'
@@ -1619,27 +1859,6 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
       [workspaceId, fromSprint, toSprint]
     );
 
-    // Helper functions (same as v2)
-    const extractText = (node: unknown): string => {
-      if (!node || typeof node !== 'object') return '';
-      const n = node as { type?: string; text?: string; content?: unknown[] };
-      if (n.type === 'text' && n.text) return n.text;
-      if (Array.isArray(n.content)) return n.content.map(extractText).join('');
-      return '';
-    };
-
-    const hasContent = (content: unknown): boolean => {
-      if (!content || typeof content !== 'object') return false;
-      const doc = content as { content?: unknown[] };
-      if (!Array.isArray(doc.content) || doc.content.length === 0) return false;
-      const allText = extractText(content).trim();
-      let textWithoutTemplate = allText;
-      for (const heading of TEMPLATE_HEADINGS) {
-        textWithoutTemplate = textWithoutTemplate.replace(heading, '');
-      }
-      return textWithoutTemplate.trim().length > 0;
-    };
-
     const calculateStatus = (
       docId: string | null,
       docContent: unknown,
@@ -1652,18 +1871,22 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
       now.setUTCHours(0, 0, 0, 0);
 
       if (type === 'plan') {
+        // Plan: yellow (due) from Saturday (weekStart - 2) through end-of-day Monday
+        // Red (late) from Tuesday morning (weekStart + 1) onward
         const yellowStart = new Date(weekStartDate);
         yellowStart.setUTCDate(yellowStart.getUTCDate() - 2);
         const redStart = new Date(weekStartDate);
-        redStart.setUTCDate(redStart.getUTCDate() + 2);
+        redStart.setUTCDate(redStart.getUTCDate() + 1);
         if (now < yellowStart) return 'future';
         if (now >= redStart) return 'late';
         return 'due';
       } else {
+        // Retro: yellow (due) from Thursday (weekStart + 3) through end-of-day Friday
+        // Red (late) from Saturday morning (weekStart + 5) onward
         const yellowStart = new Date(weekStartDate);
-        yellowStart.setUTCDate(yellowStart.getUTCDate() + 4);
+        yellowStart.setUTCDate(yellowStart.getUTCDate() + 3);
         const redStart = new Date(weekStartDate);
-        redStart.setUTCDate(redStart.getUTCDate() + 7);
+        redStart.setUTCDate(redStart.getUTCDate() + 5);
         if (now < yellowStart) return 'future';
         if (now >= redStart) return 'late';
         return 'due';
@@ -1832,9 +2055,15 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
          d.id,
          d.title,
          d.properties->>'sprint_number' as sprint_number,
-         d.properties->>'plan' as plan,
          d.properties->'plan_approval' as plan_approval,
          d.properties->'review_approval' as review_approval,
+         EXISTS(
+           SELECT 1 FROM documents wp
+           WHERE wp.document_type = 'weekly_plan'
+           AND (wp.properties->>'week_number')::int = (d.properties->>'sprint_number')::int
+           AND wp.workspace_id = $1
+           AND wp.deleted_at IS NULL
+         ) as has_plan,
          EXISTS(
            SELECT 1 FROM documents sr
            WHERE sr.document_type = 'weekly_review'
@@ -1865,7 +2094,7 @@ router.get('/accountability-grid', authMiddleware, async (req: Request, res: Res
       sprintAccountability[sprintNumber] = {
         id: sprint.id,
         title: sprint.title,
-        hasPlan: !!sprint.plan && sprint.plan.trim() !== '',
+        hasPlan: sprint.has_plan === true || sprint.has_plan === 't',
         planApproval: sprint.plan_approval,
         hasReview: sprint.has_review === true,
         reviewApproval: sprint.review_approval,

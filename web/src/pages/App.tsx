@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useFocusOnNavigate } from '@/hooks/useFocusOnNavigate';
 import { useRealtimeEvent } from '@/hooks/useRealtimeEvents';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { ArchiveIcon } from '@/components/icons/ArchiveIcon';
 import { useDocuments, WikiDocument } from '@/contexts/DocumentsContext';
 import { usePrograms, Program } from '@/contexts/ProgramsContext';
 import { useIssues, Issue } from '@/contexts/IssuesContext';
@@ -303,6 +305,7 @@ export function AppLayout() {
         itemCount={actionItemsData?.items?.length ?? 0}
         onBannerClick={() => setActionItemsModalOpen(true)}
         isCelebrating={isCelebrating}
+        urgency={actionItemsData?.has_overdue ? 'overdue' : 'due_today'}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -662,7 +665,9 @@ export function AppLayout() {
 
         {/* Main content */}
         <main id="main-content" className="flex flex-1 flex-col overflow-hidden" role="main" tabIndex={-1}>
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
 
         {/* Properties sidebar landmark - always present for proper accessibility structure */}
@@ -1710,14 +1715,6 @@ function EditIcon({ className }: { className?: string }) {
   );
 }
 
-function ArchiveIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-    </svg>
-  );
-}
-
 function TeamSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -1728,7 +1725,9 @@ function TeamSidebar() {
   const isViewingPerson = location.pathname.startsWith('/team/') &&
     location.pathname !== '/team/allocation' &&
     location.pathname !== '/team/directory' &&
-    location.pathname !== '/team/status';
+    location.pathname !== '/team/status' &&
+    location.pathname !== '/team/reviews' &&
+    location.pathname !== '/team/org-chart';
 
   const isAllocation = location.pathname === '/team/allocation' || location.pathname === '/team';
   // Directory is active when on /team/directory OR viewing a person document
@@ -1736,6 +1735,8 @@ function TeamSidebar() {
     isViewingPerson ||
     (location.pathname.startsWith('/documents/') && currentDocumentType === 'person');
   const isStatusOverview = location.pathname === '/team/status';
+  const isReviews = location.pathname === '/team/reviews';
+  const isOrgChart = location.pathname === '/team/org-chart';
 
   // Fetch people for the sidebar list when viewing a person
   const { data: people = [] } = useTeamMembersQuery();
@@ -1787,6 +1788,34 @@ function TeamSidebar() {
           >
             <ActivityIcon />
             <span>Status Overview</span>
+          </button>
+        </li>
+        <li>
+          <button
+            onClick={() => navigate('/team/reviews')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              isReviews
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <ReviewsIcon />
+            <span>Reviews</span>
+          </button>
+        </li>
+        <li>
+          <button
+            onClick={() => navigate('/team/org-chart')}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+              isOrgChart
+                ? 'bg-border/50 text-foreground'
+                : 'text-muted hover:bg-border/30 hover:text-foreground'
+            )}
+          >
+            <OrgChartIcon />
+            <span>Org Chart</span>
           </button>
         </li>
       </ul>
@@ -1846,6 +1875,22 @@ function ActivityIcon() {
   return (
     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  );
+}
+
+function ReviewsIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+    </svg>
+  );
+}
+
+function OrgChartIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v4m0 0a2 2 0 100 4 2 2 0 000-4zm-6 8a2 2 0 100 4 2 2 0 000-4zm0 0V12m12 4a2 2 0 100 4 2 2 0 000-4zm0 0V12m-6 0h6m-12 0h6" />
     </svg>
   );
 }

@@ -93,45 +93,7 @@ pnpm test             # Runs api unit tests via vitest
 
 ## Adding API Endpoints
 
-**All API routes must be registered with OpenAPI.** This ensures Swagger docs and MCP tools stay in sync automatically.
-
-When adding a new endpoint:
-
-1. **Define schemas** in `api/src/openapi/schemas/{resource}.ts`:
-   ```typescript
-   import { registry, z } from '../registry.js';
-
-   const MyResponseSchema = registry.register('MyResponse', z.object({
-     success: z.literal(true),
-     data: z.object({ /* fields */ }),
-   }));
-   ```
-
-2. **Register the path** with `registry.registerPath()`:
-   ```typescript
-   registry.registerPath({
-     method: 'get',
-     path: '/resource/{id}',
-     operationId: 'get_resource',  // Becomes MCP tool: ship_get_resource
-     summary: 'Get a resource',
-     tags: ['Resources'],
-     request: {
-       params: z.object({ id: z.string().uuid() }),
-     },
-     responses: {
-       200: {
-         description: 'Success',
-         content: { 'application/json': { schema: MyResponseSchema } },
-       },
-     },
-   });
-   ```
-
-3. **Implement the route** as usual in `api/src/routes/{resource}.ts`
-
-**Result:** Swagger UI at `/api/docs/` shows the endpoint, and MCP server auto-generates a `ship_{operationId}` tool.
-
-See `api/src/openapi/schemas/issues.ts` for a complete example.
+**All API routes must be registered with OpenAPI.** See `/ship-openapi-endpoints` skill for the full pattern (schema → register path → implement route). Result: Swagger + MCP tools auto-generated.
 
 ## Database
 
@@ -157,35 +119,18 @@ Local dev uses `.env.local` for DB connection.
 
 ## Deployment
 
-**Just run the scripts.** They handle everything (terraform lookups, building, Docker tests, upload, deploy).
+**Just run the scripts.** Use `/workflows:deploy` for the full workflow, or run manually:
 
 ```bash
-# Production deployment (from master branch)
 ./scripts/deploy.sh prod           # Backend → Elastic Beanstalk
 ./scripts/deploy-frontend.sh prod  # Frontend → S3/CloudFront
-
-# Dev/Shadow deployment
-./scripts/deploy.sh dev            # or shadow
-./scripts/deploy-frontend.sh dev   # or shadow (no shadow support yet)
 ```
 
-**DO NOT:**
-- Run `terraform init` or `terraform plan` manually - scripts handle this
-- Check EB health before deploying - scripts will fail if there's an issue
-- Overcomplicate with pre-flight checks - just run the scripts
-
-**After deploy, verify with browser:**
-1. Navigate to the deployed URL
-2. Check browser console for JavaScript errors (curl can't catch these)
-3. Verify page renders correctly
-
-**Health check URLs:**
+**After deploy, verify with browser** (curl can't catch JS errors). Health checks:
 - Prod API: `http://ship-api-prod.eba-xsaqsg9h.us-east-1.elasticbeanstalk.com/health`
 - Prod Web: `https://ship.awsdev.treasury.gov`
 
-### Shadow Environment (UAT)
-
-**Branch `feat/unified-document-model-v2`**: After completing work on this branch, ALWAYS deploy to shadow for user acceptance testing before merging to master. Production (`prod`) is only deployed after PR merge to master.
+**Shadow (UAT):** Deploy to shadow from `feat/unified-document-model-v2` before merging to master.
 
 ## Philosophy Enforcement
 
@@ -199,27 +144,4 @@ Use `/ship-philosophy-reviewer` to audit changes against Ship's core philosophy.
 
 ## Security Compliance
 
-**NEVER use `git commit --no-verify`.** This bypasses security checks and is not acceptable.
-
-### Pre-commit Hooks
-
-This repo uses `comply opensource` as a pre-commit hook to scan for:
-- Embedded secrets (gitleaks)
-- Sensitive information (AI analysis)
-- Vulnerability scanning (trivy)
-
-### When Compliance Checks Fail
-
-If the pre-commit hook fails:
-
-1. **Fix the issue** - Remove secrets, update ATTESTATION.md, etc.
-2. **If the tool itself is broken** - Report the bug, but do NOT bypass with `--no-verify`
-3. **Emergency bypass procedure** - There is none. Fix the issue or wait for tool fix.
-
-### CI Enforcement
-
-GitHub Actions runs the same compliance checks on every PR. Even if someone bypasses local hooks:
-- `secrets-scan` job runs gitleaks on full commit history
-- `attestation-check` verifies ATTESTATION.md exists and is recent
-
-These are **required status checks** - PRs cannot merge without passing.
+**NEVER use `git commit --no-verify`.** See `/ship-security-compliance` skill for pre-commit hooks (`comply opensource`), CI enforcement, and compliance check failure handling.

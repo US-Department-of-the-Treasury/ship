@@ -15,6 +15,8 @@
 
 import { pool } from '../db/client.js';
 import { addBusinessDays, isBusinessDay } from '../utils/business-days.js';
+import { hasContent } from '../utils/document-content.js';
+import { getAllocations } from '../utils/allocation.js';
 import type { AccountabilityType } from '@ship/shared';
 
 // Accountability item returned from check
@@ -93,37 +95,41 @@ export async function checkMissingAccountability(
   const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
   const currentSprintNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
 
-  // 1. Check for missing standups
+  // Check for missing standups (current sprint, business days only)
   if (todayStr) {
     const standupItems = await checkMissingStandups(userId, workspaceId, currentSprintNumber, todayStr);
     items.push(...standupItems);
   }
 
-  // 2-4. Check sprint accountability (hypothesis, started, issues)
-  const sprintItems = await checkSprintAccountability(userId, workspaceId, workspaceStartDate, sprintDuration, today, personId);
-  items.push(...sprintItems);
+  // Check sprint accountability: started status and issues
+  if (todayStr) {
+    const sprintItems = await checkSprintAccountability(
+      userId, workspaceId, workspaceStartDate, sprintDuration, today, personId
+    );
+    items.push(...sprintItems);
+  }
 
-  // 2b. Check for per-person weekly_plan and weekly_retro (based on allocations)
+  // Check for per-person weekly_plan and weekly_retro (based on allocations)
+  // Check both current sprint AND next sprint, since plans become due 2 days before
+  // the sprint starts (Saturday before a Monday-start week).
   if (personId && todayStr) {
     const weeklyPersonItems = await checkWeeklyPersonAccountability(
       userId, workspaceId, personId, workspaceStartDate, sprintDuration, currentSprintNumber, todayStr
     );
     items.push(...weeklyPersonItems);
+
+    // Also check next sprint - plan may be due before the sprint starts
+    const nextSprintItems = await checkWeeklyPersonAccountability(
+      userId, workspaceId, personId, workspaceStartDate, sprintDuration, currentSprintNumber + 1, todayStr
+    );
+    items.push(...nextSprintItems);
   }
 
-  // 5. Check for completed sprints without review
-  if (todayStr) {
-    const reviewItems = await checkMissingSprintReviews(userId, workspaceId, workspaceStartDate, sprintDuration, today, todayStr);
-    items.push(...reviewItems);
+  // Check for plans/retros where manager requested changes
+  if (personId) {
+    const changesRequestedItems = await checkChangesRequested(workspaceId, personId);
+    items.push(...changesRequestedItems);
   }
-
-  // 6. Check for projects without plan
-  const projectPlanItems = await checkProjectPlan(userId, workspaceId);
-  items.push(...projectPlanItems);
-
-  // 7. Check for completed projects without retro
-  const projectRetroItems = await checkProjectRetros(userId, workspaceId);
-  items.push(...projectRetroItems);
 
   return items;
 }
@@ -271,21 +277,9 @@ async function checkSprintAccountability(
 
     const sprintStartStr = sprintStartDate.toISOString().split('T')[0] || null;
 
-    // Check for missing plan
-    if (!props.plan || props.plan.trim() === '') {
-      items.push({
-        type: 'weekly_plan',
-        targetId: sprint.id,
-        targetTitle: sprintTitle,
-        targetType: 'sprint',
-        dueDate: sprintStartStr,
-        message: `Write plan for ${sprintTitle}`,
-        // Include metadata for weekly_plan document navigation
-        personId: personId || undefined,
-        projectId: projectId || undefined,
-        weekNumber: sprintNumber,
-      });
-    }
+    // NOTE: Sprint-level plan check REMOVED. Plans are now per-person weekly_plan documents,
+    // checked by checkWeeklyPersonAccountability(). The old props.plan check on the sprint
+    // document was generating false "Write plan" notifications even when plans existed.
 
     // Check if sprint hasn't been started (status !== 'active' or 'completed')
     if (props.status !== 'active' && props.status !== 'completed') {
@@ -333,9 +327,9 @@ async function checkSprintAccountability(
  * Allocations are determined by having issues assigned in a sprint for a project.
  * For each allocation, check if weekly_plan/weekly_retro exists.
  *
- * Deadlines:
- * - weekly_plan: due Monday EOD (week start + 1 day)
- * - weekly_retro: due Friday EOD (week start + 4 days)
+ * Deadlines (aligned with heatmap calculateStatus):
+ * - weekly_plan: due from Saturday (weekStart - 2), overdue from Tuesday (weekStart + 1)
+ * - weekly_retro: due from Thursday (weekStart + 3), overdue from Saturday (weekStart + 5)
  */
 async function checkWeeklyPersonAccountability(
   userId: string,
@@ -343,101 +337,100 @@ async function checkWeeklyPersonAccountability(
   personId: string,
   workspaceStartDate: Date,
   sprintDuration: number,
-  currentSprintNumber: number,
+  sprintNumber: number,
   todayStr: string
 ): Promise<MissingAccountabilityItem[]> {
   const items: MissingAccountabilityItem[] = [];
 
-  // Calculate current sprint dates
+  // Calculate sprint dates
   const sprintStartDate = new Date(workspaceStartDate);
-  sprintStartDate.setUTCDate(sprintStartDate.getUTCDate() + (currentSprintNumber - 1) * sprintDuration);
-  const sprintStartStr = sprintStartDate.toISOString().split('T')[0] || '';
+  sprintStartDate.setUTCDate(sprintStartDate.getUTCDate() + (sprintNumber - 1) * sprintDuration);
 
-  // Calculate deadlines
+  // Plan becomes actionable on Saturday before the week (weekStart - 2)
   const planDueDate = new Date(sprintStartDate);
-  planDueDate.setUTCDate(planDueDate.getUTCDate() + 1); // Monday EOD
+  planDueDate.setUTCDate(planDueDate.getUTCDate() - 2);
   const planDueStr = planDueDate.toISOString().split('T')[0] || '';
 
+  // Plan becomes overdue on Tuesday (weekStart + 1) — used for dueDate display
+  const planOverdueDate = new Date(sprintStartDate);
+  planOverdueDate.setUTCDate(planOverdueDate.getUTCDate() + 1);
+  const planOverdueStr = planOverdueDate.toISOString().split('T')[0] || '';
+
+  // Retro becomes actionable on Thursday (weekStart + 3)
+  const retroActionableDate = new Date(sprintStartDate);
+  retroActionableDate.setUTCDate(retroActionableDate.getUTCDate() + 3);
+  const retroActionableStr = retroActionableDate.toISOString().split('T')[0] || '';
+
+  // Retro is due by end of Friday (weekStart + 4) — matches grid's yellow window
   const retroDueDate = new Date(sprintStartDate);
-  retroDueDate.setUTCDate(retroDueDate.getUTCDate() + 4); // Friday EOD
+  retroDueDate.setUTCDate(retroDueDate.getUTCDate() + 4);
   const retroDueStr = retroDueDate.toISOString().split('T')[0] || '';
 
-  // Find projects where user has assigned issues in the current sprint
-  // This determines their "allocations" for the week
-  const allocationsResult = await pool.query(
-    `SELECT DISTINCT proj_da.related_id as project_id, proj.title as project_name
-     FROM documents i
-     JOIN document_associations sprint_da ON sprint_da.document_id = i.id AND sprint_da.relationship_type = 'sprint'
-     JOIN documents s ON s.id = sprint_da.related_id AND s.document_type = 'sprint'
-     JOIN document_associations proj_da ON proj_da.document_id = s.id AND proj_da.relationship_type = 'project'
-     JOIN documents proj ON proj.id = proj_da.related_id AND proj.document_type = 'project'
-     WHERE i.workspace_id = $1
-       AND i.document_type = 'issue'
-       AND (i.properties->>'assignee_id')::uuid = $2
-       AND (s.properties->>'sprint_number')::int = $3
-       AND i.deleted_at IS NULL
-       AND s.deleted_at IS NULL
-       AND proj.deleted_at IS NULL`,
-    [workspaceId, userId, currentSprintNumber]
-  );
+  // Get ALL allocations for this person/sprint (explicit assignee_ids + issue-based).
+  // Note: The heatmap only displays one allocation per person per week (display limit),
+  // but action items must check all allocations so nothing gets missed.
+  const allocations = await getAllocations(workspaceId, personId, userId, sprintNumber);
 
-  // For each allocation, check if weekly_plan and weekly_retro exist
-  for (const allocation of allocationsResult.rows) {
-    const projectId = allocation.project_id;
-    const projectName = allocation.project_name || 'Untitled Project';
+  for (const allocation of allocations) {
+    const projectId = allocation.projectId;
+    const projectName = allocation.projectName;
 
-    // Check for missing weekly_plan (due Monday EOD)
-    if (todayStr > planDueStr) {
+    // Check for missing weekly_plan (due from Saturday before the week starts)
+    // A plan counts as "done" only if it has meaningful content (not just template headings)
+    if (todayStr >= planDueStr) {
       const planResult = await pool.query(
-        `SELECT id FROM documents
+        `SELECT id, content FROM documents
          WHERE workspace_id = $1
            AND document_type = 'weekly_plan'
            AND (properties->>'person_id') = $2
            AND (properties->>'project_id') = $3
            AND (properties->>'week_number')::int = $4
            AND deleted_at IS NULL`,
-        [workspaceId, personId, projectId, currentSprintNumber]
+        [workspaceId, personId, projectId, sprintNumber]
       );
 
-      if (planResult.rows.length === 0) {
+      const planDoc = planResult.rows[0];
+      if (!planDoc || !hasContent(planDoc.content)) {
         items.push({
           type: 'weekly_plan',
-          targetId: projectId, // Use project as target for context
-          targetTitle: `Week ${currentSprintNumber} Plan - ${projectName}`,
+          targetId: projectId,
+          targetTitle: `Week ${sprintNumber} Plan - ${projectName}`,
           targetType: 'project',
-          dueDate: planDueStr,
-          message: `Write week ${currentSprintNumber} plan for ${projectName}`,
+          dueDate: todayStr >= planOverdueStr ? planOverdueStr : planDueStr,
+          message: `Write week ${sprintNumber} plan for ${projectName}`,
           personId,
           projectId,
-          weekNumber: currentSprintNumber,
+          weekNumber: sprintNumber,
         });
       }
     }
 
-    // Check for missing weekly_retro (due Friday EOD)
-    if (todayStr > retroDueStr) {
+    // Check for missing weekly_retro (due from Thursday of the sprint week)
+    // A retro counts as "done" only if it has meaningful content (not just template headings)
+    if (todayStr >= retroActionableStr) {
       const retroResult = await pool.query(
-        `SELECT id FROM documents
+        `SELECT id, content FROM documents
          WHERE workspace_id = $1
            AND document_type = 'weekly_retro'
            AND (properties->>'person_id') = $2
            AND (properties->>'project_id') = $3
            AND (properties->>'week_number')::int = $4
            AND deleted_at IS NULL`,
-        [workspaceId, personId, projectId, currentSprintNumber]
+        [workspaceId, personId, projectId, sprintNumber]
       );
 
-      if (retroResult.rows.length === 0) {
+      const retroDoc = retroResult.rows[0];
+      if (!retroDoc || !hasContent(retroDoc.content)) {
         items.push({
           type: 'weekly_retro',
           targetId: projectId,
-          targetTitle: `Week ${currentSprintNumber} Retro - ${projectName}`,
+          targetTitle: `Week ${sprintNumber} Retro - ${projectName}`,
           targetType: 'project',
           dueDate: retroDueStr,
-          message: `Write week ${currentSprintNumber} retro for ${projectName}`,
+          message: `Write week ${sprintNumber} retro for ${projectName}`,
           personId,
           projectId,
-          weekNumber: currentSprintNumber,
+          weekNumber: sprintNumber,
         });
       }
     }
@@ -513,41 +506,9 @@ async function checkMissingSprintReviews(
   return items;
 }
 
-/**
- * Check for projects where user is owner without plan.
- */
-async function checkProjectPlan(
-  userId: string,
-  workspaceId: string
-): Promise<MissingAccountabilityItem[]> {
-  const items: MissingAccountabilityItem[] = [];
-
-  // Find projects where user is owner without plan
-  const projectsResult = await pool.query(
-    `SELECT p.id, p.title, p.properties
-     FROM documents p
-     WHERE p.workspace_id = $1
-       AND p.document_type = 'project'
-       AND (p.properties->>'owner_id')::uuid = $2
-       AND p.deleted_at IS NULL
-       AND p.archived_at IS NULL
-       AND (p.properties->>'plan' IS NULL OR p.properties->>'plan' = '')`,
-    [workspaceId, userId]
-  );
-
-  for (const project of projectsResult.rows) {
-    items.push({
-      type: 'project_plan',
-      targetId: project.id,
-      targetTitle: project.title || 'Untitled Project',
-      targetType: 'project',
-      dueDate: null, // No specific due date for project plan
-      message: `Write plan for ${project.title || 'project'}`,
-    });
-  }
-
-  return items;
-}
+// checkProjectPlan REMOVED - replaced by weekly_plan documents per person/project/week.
+// The old system checked properties.plan on project docs, but that field was never
+// exposed in the UI and has been superseded by checkWeeklyPersonAccountability().
 
 /**
  * Check for completed projects without retro.
@@ -598,6 +559,78 @@ async function checkProjectRetros(
       dueDate: null, // No specific due date for project retro
       message: `Complete retro for ${project.title || 'project'}`,
     });
+  }
+
+  return items;
+}
+
+/**
+ * Check for plans/retros where manager requested changes.
+ * Looks at sprint documents where the person is allocated and
+ * plan_approval.state or review_approval.state = 'changes_requested'.
+ */
+async function checkChangesRequested(
+  workspaceId: string,
+  personId: string
+): Promise<MissingAccountabilityItem[]> {
+  const items: MissingAccountabilityItem[] = [];
+
+  // Find sprints where this person is allocated and changes are requested
+  const result = await pool.query(
+    `SELECT
+       s.id as sprint_id,
+       (s.properties->>'sprint_number')::int as sprint_number,
+       s.properties->'plan_approval' as plan_approval,
+       s.properties->'review_approval' as review_approval,
+       s.title as sprint_title,
+       da.related_id as project_id
+     FROM documents s
+     LEFT JOIN document_associations da ON da.document_id = s.id AND da.relationship_type = 'project'
+     WHERE s.workspace_id = $1
+       AND s.document_type = 'sprint'
+       AND s.deleted_at IS NULL
+       AND $2 = ANY(
+         SELECT jsonb_array_elements_text(s.properties->'assignee_ids')
+       )
+       AND (
+         s.properties->'plan_approval'->>'state' = 'changes_requested'
+         OR s.properties->'review_approval'->>'state' = 'changes_requested'
+       )`,
+    [workspaceId, personId]
+  );
+
+  for (const row of result.rows) {
+    const sprintNumber = row.sprint_number;
+
+    // Check plan changes requested
+    if (row.plan_approval?.state === 'changes_requested') {
+      items.push({
+        type: 'changes_requested_plan',
+        targetId: row.sprint_id,
+        targetTitle: `Week ${sprintNumber} Plan`,
+        targetType: 'sprint',
+        dueDate: null,
+        message: `Changes requested on your Week ${sprintNumber} plan`,
+        personId,
+        projectId: row.project_id || undefined,
+        weekNumber: sprintNumber,
+      });
+    }
+
+    // Check retro changes requested
+    if (row.review_approval?.state === 'changes_requested') {
+      items.push({
+        type: 'changes_requested_retro',
+        targetId: row.sprint_id,
+        targetTitle: `Week ${sprintNumber} Retro`,
+        targetType: 'sprint',
+        dueDate: null,
+        message: `Changes requested on your Week ${sprintNumber} retro`,
+        personId,
+        projectId: row.project_id || undefined,
+        weekNumber: sprintNumber,
+      });
+    }
   }
 
   return items;

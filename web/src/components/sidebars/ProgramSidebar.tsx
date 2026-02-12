@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { PersonCombobox, Person } from '@/components/PersonCombobox';
 import { MultiPersonCombobox } from '@/components/MultiPersonCombobox';
 import { PropertyRow } from '@/components/ui/PropertyRow';
+import { MergeProgramDialog } from '@/components/dialogs/MergeProgramDialog';
 
 const PROGRAM_COLORS = [
   '#6366f1', // Indigo
@@ -44,8 +46,12 @@ export function ProgramSidebar({
   onUpdate,
   highlightedFields = [],
 }: ProgramSidebarProps) {
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+
   // Helper to check if a field should be highlighted
   const isHighlighted = (field: string) => highlightedFields.includes(field);
+
+  const programName = program.title || program.name || 'Untitled';
 
   return (
     <div className="flex flex-col gap-1 p-4">
@@ -125,6 +131,24 @@ export function ProgramSidebar({
           placeholder="Select people..."
         />
       </PropertyRow>
+
+      {/* Actions */}
+      <div className="mt-6 border-t border-border pt-4">
+        <h4 className="mb-2 text-xs font-medium text-muted uppercase tracking-wider">Actions</h4>
+        <button
+          onClick={() => setMergeDialogOpen(true)}
+          className="w-full rounded border border-border px-3 py-1.5 text-left text-sm text-muted hover:border-red-500/50 hover:text-red-400 transition-colors"
+        >
+          Merge into another program
+        </button>
+      </div>
+
+      <MergeProgramDialog
+        isOpen={mergeDialogOpen}
+        onClose={() => setMergeDialogOpen(false)}
+        sourceId={program.id}
+        sourceName={programName}
+      />
     </div>
   );
 }

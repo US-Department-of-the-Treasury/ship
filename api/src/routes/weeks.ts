@@ -10,9 +10,96 @@ import {
 } from '../utils/transformIssueLinks.js';
 import { logDocumentChange, getLatestDocumentFieldHistory } from '../utils/document-crud.js';
 import { broadcastToUser } from '../collaboration/index.js';
+import { extractText } from '../utils/document-content.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
+
+/**
+ * Look up the reports_to user_id for a sprint's owner.
+ * The sprint's owner_id is a person document ID; this resolves their supervisor's user_id.
+ */
+async function getSprintOwnerReportsTo(sprintId: string, workspaceId: string): Promise<string | null> {
+  const result = await pool.query(
+    `SELECT owner_person.properties->>'reports_to' as reports_to
+     FROM documents d
+     LEFT JOIN documents owner_person
+       ON d.properties->>'owner_id' IS NOT NULL
+       AND owner_person.id = (d.properties->>'owner_id')::uuid
+       AND owner_person.document_type = 'person'
+       AND owner_person.workspace_id = $2
+     WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'`,
+    [sprintId, workspaceId]
+  );
+  return result.rows[0]?.reports_to || null;
+}
+
+// GET /api/weeks/lookup-person - Find person document by user_id
+router.get('/lookup-person', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const userId = req.query.user_id as string;
+
+    if (!userId) {
+      res.status(400).json({ error: 'user_id is required' });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT id, title FROM documents
+       WHERE workspace_id = $1 AND document_type = 'person'
+         AND (properties->>'user_id') = $2
+       LIMIT 1`,
+      [workspaceId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Person not found' });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Person lookup error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/weeks/lookup - Find sprint by project_id + sprint_number
+// Returns the sprint document with its approval properties
+router.get('/lookup', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const workspaceId = req.workspaceId!;
+    const projectId = req.query.project_id as string;
+    const sprintNumber = parseInt(req.query.sprint_number as string, 10);
+
+    if (!projectId || isNaN(sprintNumber)) {
+      res.status(400).json({ error: 'project_id and sprint_number are required' });
+      return;
+    }
+
+    const result = await pool.query(
+      `SELECT d.id, d.properties
+       FROM documents d
+       JOIN document_associations da ON da.document_id = d.id
+         AND da.related_id = $2 AND da.relationship_type = 'project'
+       WHERE d.workspace_id = $1 AND d.document_type = 'sprint'
+         AND (d.properties->>'sprint_number')::int = $3
+       LIMIT 1`,
+      [workspaceId, projectId, sprintNumber]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Sprint not found' });
+      return;
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Sprint lookup error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // Validation schemas
 // Sprint properties: sprint_number, assignee_ids (array), and plan fields
@@ -62,6 +149,7 @@ function extractSprintFromRow(row: any) {
     program_name: row.program_name,
     program_prefix: row.program_prefix,
     program_accountable_id: row.program_accountable_id || null,
+    owner_reports_to: row.owner_reports_to || null,
     workspace_sprint_start_date: row.workspace_sprint_start_date,
     issue_count: parseInt(row.issue_count) || 0,
     completed_count: parseInt(row.completed_count) || 0,
@@ -85,6 +173,8 @@ function extractSprintFromRow(row: any) {
     // Approval tracking
     plan_approval: props.plan_approval || null,
     review_approval: props.review_approval || null,
+    // Performance rating (OPM 5-level scale)
+    review_rating: props.review_rating || null,
     // Accountability (sprints inherit from program, but may have direct assignment)
     accountable_id: props.accountable_id || null,
   };
@@ -182,6 +272,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               p.properties->>'accountable_id' as program_accountable_id,
+              (SELECT op.properties->>'reports_to' FROM documents op WHERE d.properties->>'owner_id' IS NOT NULL AND op.id = (d.properties->>'owner_id')::uuid AND op.document_type = 'person' AND op.workspace_id = d.workspace_id) as owner_reports_to,
               $5::timestamp as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -603,6 +694,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               p.properties->>'accountable_id' as program_accountable_id,
+              (SELECT op.properties->>'reports_to' FROM documents op WHERE d.properties->>'owner_id' IS NOT NULL AND op.id = (d.properties->>'owner_id')::uuid AND op.document_type = 'person' AND op.workspace_id = d.workspace_id) as owner_reports_to,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -1009,6 +1101,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               p.properties->>'accountable_id' as program_accountable_id,
+              (SELECT op.properties->>'reports_to' FROM documents op WHERE d.properties->>'owner_id' IS NOT NULL AND op.id = (d.properties->>'owner_id')::uuid AND op.document_type = 'person' AND op.workspace_id = d.workspace_id) as owner_reports_to,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -1110,6 +1203,7 @@ router.post('/:id/start', authMiddleware, async (req: Request, res: Response) =>
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               p.properties->>'accountable_id' as program_accountable_id,
+              (SELECT op.properties->>'reports_to' FROM documents op WHERE d.properties->>'owner_id' IS NOT NULL AND op.id = (d.properties->>'owner_id')::uuid AND op.document_type = 'person' AND op.workspace_id = d.workspace_id) as owner_reports_to,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -1317,6 +1411,7 @@ router.patch('/:id/plan', authMiddleware, async (req: Request, res: Response) =>
       `SELECT d.id, d.title, d.properties, prog_da.related_id as program_id,
               p.title as program_name, p.properties->>'prefix' as program_prefix,
               p.properties->>'accountable_id' as program_accountable_id,
+              (SELECT op.properties->>'reports_to' FROM documents op WHERE d.properties->>'owner_id' IS NOT NULL AND op.id = (d.properties->>'owner_id')::uuid AND op.document_type = 'person' AND op.workspace_id = d.workspace_id) as owner_reports_to,
               w.sprint_start_date as workspace_sprint_start_date,
               u.id as owner_id, u.name as owner_name, u.email as owner_email,
               (SELECT COUNT(*) FROM documents i
@@ -2075,10 +2170,23 @@ router.get('/:id/review', authMiddleware, async (req: Request, res: Response) =>
       [id]
     );
 
+    // Fetch weekly_plan documents for this sprint (plans are now separate documents, not sprint properties)
+    const weeklyPlansResult = await pool.query(
+      `SELECT content FROM documents
+       WHERE document_type = 'weekly_plan'
+         AND (properties->>'week_number')::int = $1
+         AND workspace_id = $2
+         AND deleted_at IS NULL`,
+      [sprintProps.sprint_number || 1, workspaceId]
+    );
+    const planTexts = weeklyPlansResult.rows
+      .map((row: { content: unknown }) => extractText(row.content))
+      .filter((t: string) => t.trim().length > 0);
+
     const sprintData = {
       sprint_number: sprintProps.sprint_number || 1,
       program_name: sprint.program_name,
-      plan: sprintProps.plan || null,
+      plan: planTexts.length > 0 ? planTexts.join('\n\n') : null,
     };
 
     const prefilledContent = await generatePrefilledReviewContent(sprintData, issuesResult.rows);
@@ -2544,9 +2652,10 @@ router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Respo
     const sprint = sprintResult.rows[0];
     const programAccountableId = sprint.program_accountable_id;
 
-    // Check authorization: must be program's accountable_id OR workspace admin
-    if (programAccountableId !== userId && !isAdmin) {
-      res.status(403).json({ error: 'Only the program accountable person or admin can approve plans' });
+    // Check authorization: must be program's accountable_id, supervisor (reports_to), OR workspace admin
+    const ownerReportsTo = await getSprintOwnerReportsTo(id as string, workspaceId);
+    if (programAccountableId !== userId && ownerReportsTo !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the supervisor, program accountable person, or admin can approve plans' });
       return;
     }
 
@@ -2582,12 +2691,81 @@ router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Respo
   }
 });
 
-// POST /api/weeks/:id/approve-review - Approve sprint review
-router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Response) => {
+// POST /api/weeks/:id/unapprove-plan - Revoke plan approval (logged to history)
+router.post('/:id/unapprove-plan', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
+
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    const sprintResult = await pool.query(
+      `SELECT d.id, d.properties, prog.properties->>'accountable_id' as program_accountable_id
+       FROM documents d
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintResult.rows.length === 0) {
+      res.status(404).json({ error: 'Week not found' });
+      return;
+    }
+
+    const sprint = sprintResult.rows[0];
+    const ownerReportsTo = await getSprintOwnerReportsTo(id as string, workspaceId);
+    if (sprint.program_accountable_id !== userId && ownerReportsTo !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the supervisor, program accountable person, or admin can unapprove plans' });
+      return;
+    }
+
+    const currentProps = sprint.properties || {};
+    const previousApproval = currentProps.plan_approval;
+
+    // Log the unapproval to document_history (preserves audit trail)
+    await logDocumentChange(
+      id as string,
+      'plan_approval',
+      previousApproval ? JSON.stringify(previousApproval) : null,
+      null,
+      userId
+    );
+
+    // Remove the approval from properties
+    const { plan_approval: _, ...restProps } = currentProps;
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND document_type = 'sprint'`,
+      [JSON.stringify(restProps), id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Unapprove sprint plan error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/weeks/:id/approve-review - Approve sprint review (with optional performance rating)
+router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { rating } = req.body || {};
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Validate rating if provided (OPM 5-level scale: 1-5)
+    if (rating !== undefined && rating !== null) {
+      const ratingNum = Number(rating);
+      if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+        res.status(400).json({ error: 'Rating must be an integer between 1 and 5' });
+        return;
+      }
+    }
 
     // Get visibility context for admin check
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
@@ -2611,9 +2789,10 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
     const sprint = sprintResult.rows[0];
     const programAccountableId = sprint.program_accountable_id;
 
-    // Check authorization: must be program's accountable_id OR workspace admin
-    if (programAccountableId !== userId && !isAdmin) {
-      res.status(403).json({ error: 'Only the program accountable person or admin can approve reviews' });
+    // Check authorization: must be program's accountable_id, supervisor (reports_to), OR workspace admin
+    const ownerReportsTo = await getSprintOwnerReportsTo(id as string, workspaceId);
+    if (programAccountableId !== userId && ownerReportsTo !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the supervisor, program accountable person, or admin can approve reviews' });
       return;
     }
 
@@ -2632,9 +2811,9 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
       versionId = historyEntry?.id || null;
     }
 
-    // Update sprint properties with review approval
+    // Update sprint properties with review approval and optional rating
     const currentProps = sprint.properties || {};
-    const newProps = {
+    const newProps: Record<string, unknown> = {
       ...currentProps,
       review_approval: {
         state: 'approved',
@@ -2643,6 +2822,15 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
         approved_version_id: versionId,
       },
     };
+
+    // Add performance rating if provided
+    if (rating !== undefined && rating !== null) {
+      newProps.review_rating = {
+        value: Number(rating),
+        rated_by: userId,
+        rated_at: new Date().toISOString(),
+      };
+    }
 
     await pool.query(
       `UPDATE documents SET properties = $1, updated_at = now()
@@ -2653,9 +2841,195 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
     res.json({
       success: true,
       approval: newProps.review_approval,
+      review_rating: newProps.review_rating || null,
     });
   } catch (err) {
     console.error('Approve sprint review error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/weeks/:id/request-plan-changes - Request changes on sprint plan
+router.post('/:id/request-plan-changes', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { feedback } = req.body || {};
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Validate feedback is provided and not too long
+    if (!feedback || typeof feedback !== 'string' || feedback.trim().length === 0) {
+      res.status(400).json({ error: 'Feedback is required when requesting changes' });
+      return;
+    }
+    if (feedback.length > 2000) {
+      res.status(400).json({ error: 'Feedback must be 2000 characters or less' });
+      return;
+    }
+
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists and get authorization info
+    const sprintResult = await pool.query(
+      `SELECT d.id, d.properties, d.properties->>'owner_id' as sprint_owner_id,
+              prog.properties->>'accountable_id' as program_accountable_id
+       FROM documents d
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintResult.rows.length === 0) {
+      res.status(404).json({ error: 'Week not found' });
+      return;
+    }
+
+    const sprint = sprintResult.rows[0];
+    const programAccountableId = sprint.program_accountable_id;
+
+    // Check authorization: must be program's accountable_id, supervisor (reports_to), OR workspace admin
+    const ownerReportsTo = await getSprintOwnerReportsTo(id as string, workspaceId);
+    if (programAccountableId !== userId && ownerReportsTo !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the supervisor, program accountable person, or admin can request changes' });
+      return;
+    }
+
+    // Update sprint properties with changes_requested
+    const currentProps = sprint.properties || {};
+    const newProps = {
+      ...currentProps,
+      plan_approval: {
+        state: 'changes_requested',
+        approved_by: userId,
+        approved_at: new Date().toISOString(),
+        approved_version_id: null,
+        feedback: feedback.trim(),
+      },
+    };
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND document_type = 'sprint'`,
+      [JSON.stringify(newProps), id]
+    );
+
+    // Notify the sprint owner that changes were requested
+    const sprintOwnerId = sprint.sprint_owner_id;
+    if (sprintOwnerId) {
+      // Find the user_id for this person document
+      const ownerUserResult = await pool.query(
+        `SELECT properties->>'user_id' as user_id FROM documents WHERE id = $1`,
+        [sprintOwnerId]
+      );
+      const ownerUserId = ownerUserResult.rows[0]?.user_id;
+      if (ownerUserId) {
+        broadcastToUser(ownerUserId, 'accountability:updated', {
+          type: 'changes_requested_plan',
+          targetId: id as string,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      approval: newProps.plan_approval,
+    });
+  } catch (err) {
+    console.error('Request plan changes error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/weeks/:id/request-retro-changes - Request changes on sprint retro
+router.post('/:id/request-retro-changes', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { feedback } = req.body || {};
+    const userId = req.userId!;
+    const workspaceId = req.workspaceId!;
+
+    // Validate feedback is provided and not too long
+    if (!feedback || typeof feedback !== 'string' || feedback.trim().length === 0) {
+      res.status(400).json({ error: 'Feedback is required when requesting changes' });
+      return;
+    }
+    if (feedback.length > 2000) {
+      res.status(400).json({ error: 'Feedback must be 2000 characters or less' });
+      return;
+    }
+
+    const { isAdmin } = await getVisibilityContext(userId, workspaceId);
+
+    // Verify sprint exists and get authorization info
+    const sprintResult = await pool.query(
+      `SELECT d.id, d.properties, d.properties->>'owner_id' as sprint_owner_id,
+              prog.properties->>'accountable_id' as program_accountable_id
+       FROM documents d
+       LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
+       LEFT JOIN documents prog ON prog_da.related_id = prog.id
+       WHERE d.id = $1 AND d.workspace_id = $2 AND d.document_type = 'sprint'
+         AND ${VISIBILITY_FILTER_SQL('d', '$3', '$4')}`,
+      [id, workspaceId, userId, isAdmin]
+    );
+
+    if (sprintResult.rows.length === 0) {
+      res.status(404).json({ error: 'Week not found' });
+      return;
+    }
+
+    const sprint = sprintResult.rows[0];
+    const programAccountableId = sprint.program_accountable_id;
+
+    // Check authorization: must be program's accountable_id, supervisor (reports_to), OR workspace admin
+    const ownerReportsTo = await getSprintOwnerReportsTo(id as string, workspaceId);
+    if (programAccountableId !== userId && ownerReportsTo !== userId && !isAdmin) {
+      res.status(403).json({ error: 'Only the supervisor, program accountable person, or admin can request changes' });
+      return;
+    }
+
+    // Update sprint properties with changes_requested for retro
+    const currentProps = sprint.properties || {};
+    const newProps = {
+      ...currentProps,
+      review_approval: {
+        state: 'changes_requested',
+        approved_by: userId,
+        approved_at: new Date().toISOString(),
+        approved_version_id: null,
+        feedback: feedback.trim(),
+      },
+    };
+
+    await pool.query(
+      `UPDATE documents SET properties = $1, updated_at = now()
+       WHERE id = $2 AND document_type = 'sprint'`,
+      [JSON.stringify(newProps), id]
+    );
+
+    // Notify the sprint owner that changes were requested
+    const sprintOwnerId = sprint.sprint_owner_id;
+    if (sprintOwnerId) {
+      const ownerUserResult = await pool.query(
+        `SELECT properties->>'user_id' as user_id FROM documents WHERE id = $1`,
+        [sprintOwnerId]
+      );
+      const ownerUserId = ownerUserResult.rows[0]?.user_id;
+      if (ownerUserId) {
+        broadcastToUser(ownerUserId, 'accountability:updated', {
+          type: 'changes_requested_retro',
+          targetId: id as string,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      approval: newProps.review_approval,
+    });
+  } catch (err) {
+    console.error('Request retro changes error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

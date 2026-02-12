@@ -13,6 +13,8 @@ import { useToast } from '@/components/ui/Toast';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
 import { FilterTabs } from '@/components/FilterTabs';
 import { cn } from '@/lib/cn';
+import { formatDate } from '@/lib/date-utils';
+import { ArchiveIcon } from '@/components/icons/ArchiveIcon';
 import { apiPost } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { issueKeys } from '@/hooks/useIssuesQuery';
@@ -27,6 +29,7 @@ const ALL_COLUMNS: ColumnDefinition[] = [
   { key: 'ease', label: 'E', hideable: true },
   { key: 'score', label: 'Score', hideable: true },
   { key: 'program', label: 'Program', hideable: true },
+  { key: 'designReview', label: 'Design Review', hideable: true },
   { key: 'owner', label: 'Owner', hideable: true },
   { key: 'updated', label: 'Updated', hideable: true },
 ];
@@ -530,6 +533,22 @@ function ProjectRowContent({ project, visibleColumns, programNameById }: Project
           {project.program_id ? programNameById.get(project.program_id) || '—' : '—'}
         </td>
       )}
+      {/* Design Review */}
+      {visibleColumns.has('designReview') && (
+        <td className="px-4 py-3 text-sm" role="gridcell">
+          {project.has_design_review ? (
+            <span className="inline-flex items-center gap-1.5 text-green-500">
+              <CheckIcon className="h-4 w-4" />
+              <span className="font-medium">Approved</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-muted">
+              <XCircleIcon className="h-4 w-4" />
+              <span>Not Approved</span>
+            </span>
+          )}
+        </td>
+      )}
       {/* Owner */}
       {visibleColumns.has('owner') && (
         <td className="px-4 py-3 text-sm text-muted" role="gridcell">
@@ -632,30 +651,6 @@ function ProjectsBulkActionBar({
   );
 }
 
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function ArchiveIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-    </svg>
-  );
-}
-
 function TrashIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -676,6 +671,23 @@ function ArrowDownLeftIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 7L7 17M7 17H17M7 17V7" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
+function XCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" strokeWidth={1.5} />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 9l-6 6M9 9l6 6" />
     </svg>
   );
 }

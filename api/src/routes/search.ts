@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { pool } from '../db/client.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { isWorkspaceAdmin } from '../middleware/visibility.js';
 
 type RouterType = ReturnType<typeof Router>;
 export const searchRouter: RouterType = Router();
@@ -9,15 +10,6 @@ export const searchRouter: RouterType = Router();
 // This prevents users from using % and _ to match arbitrary patterns
 function escapeLikePattern(str: string): string {
   return str.replace(/[%_\\]/g, '\\$&');
-}
-
-// Check if user is workspace admin
-async function isWorkspaceAdmin(userId: string, workspaceId: string): Promise<boolean> {
-  const result = await pool.query(
-    'SELECT role FROM workspace_memberships WHERE workspace_id = $1 AND user_id = $2',
-    [workspaceId, userId]
-  );
-  return result.rows[0]?.role === 'admin';
 }
 
 // Search for mentions (people + documents)
@@ -45,6 +37,7 @@ searchRouter.get('/mentions', authMiddleware, async (req: Request, res: Response
        WHERE d.workspace_id = $1
          AND d.document_type = 'person'
          AND d.archived_at IS NULL
+         AND d.deleted_at IS NULL
          AND d.title ILIKE $2
        ORDER BY d.title ASC
        LIMIT 5`,
@@ -58,6 +51,7 @@ searchRouter.get('/mentions', authMiddleware, async (req: Request, res: Response
        FROM documents
        WHERE workspace_id = $1
          AND document_type IN ('wiki', 'issue', 'project', 'program')
+         AND deleted_at IS NULL
          AND title ILIKE $2
          AND (visibility = 'workspace' OR created_by = $3 OR $4 = TRUE)
        ORDER BY
@@ -121,6 +115,7 @@ searchRouter.get('/learnings', authMiddleware, async (req: Request, res: Respons
       WHERE d.workspace_id = $1
         AND d.document_type = 'wiki'
         AND d.archived_at IS NULL
+        AND d.deleted_at IS NULL
         AND (d.visibility = 'workspace' OR d.created_by = $2 OR $3 = TRUE)
         AND (
           d.title LIKE 'Learning:%'

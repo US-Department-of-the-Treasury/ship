@@ -1,6 +1,11 @@
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { useActionItemsQuery, ActionItem } from '@/hooks/useActionItemsQuery';
+import { apiPost } from '@/lib/api';
+
+// Types that need async document creation before navigation
+const WEEKLY_DOC_TYPES = ['weekly_plan', 'weekly_retro', 'changes_requested_plan', 'changes_requested_retro'];
 
 const ACCOUNTABILITY_TYPE_LABELS: Record<string, string> = {
   standup: 'Post standup',
@@ -70,6 +75,8 @@ function formatDueDate(dueDate: string | null, daysOverdue: number): { text: str
 }
 
 function ActionItemRow({ item }: { item: ActionItem }) {
+  const navigate = useNavigate();
+  const [navigating, setNavigating] = useState(false);
   const typeLabel = item.accountability_type
     ? ACCOUNTABILITY_TYPE_LABELS[item.accountability_type] || item.accountability_type
     : 'Action Item';
@@ -78,15 +85,51 @@ function ActionItemRow({ item }: { item: ActionItem }) {
     : null;
   const { text: dueText, isOverdue } = formatDueDate(item.due_date, item.days_overdue);
 
-  // Link to the target document if available, otherwise to the issue itself
-  const targetUrl = item.accountability_target_id
-    ? `/documents/${item.accountability_target_id}`
-    : `/documents/${item.id}`;
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+
+    // For weekly plan/retro types, create/find the actual document before navigating
+    if (item.accountability_type && WEEKLY_DOC_TYPES.includes(item.accountability_type) &&
+        item.person_id && item.week_number != null) {
+      setNavigating(true);
+      try {
+        const isRetro = item.accountability_type === 'weekly_retro' || item.accountability_type === 'changes_requested_retro';
+        const endpoint = isRetro ? '/api/weekly-retros' : '/api/weekly-plans';
+        const response = await apiPost(endpoint, {
+          person_id: item.person_id,
+          project_id: item.project_id,
+          week_number: item.week_number,
+        });
+        if (response.ok) {
+          const data = await response.json();
+          navigate(`/documents/${data.id}`);
+          return;
+        }
+      } catch { /* fall through to default */ }
+      finally { setNavigating(false); }
+    }
+
+    // For standup items, use the deep link
+    if (item.accountability_type === 'standup' && item.accountability_target_id) {
+      navigate(`/documents/${item.accountability_target_id}?action=new-standup`);
+      return;
+    }
+
+    // Default: navigate to the target document
+    const targetUrl = item.accountability_target_id
+      ? `/documents/${item.accountability_target_id}`
+      : `/documents/${item.id}`;
+    navigate(targetUrl);
+  };
 
   return (
-    <Link
-      to={targetUrl}
-      className="flex items-center gap-3 px-4 py-3 hover:bg-background/80 transition-colors"
+    <a
+      href="#"
+      onClick={handleClick}
+      className={cn(
+        "flex items-center gap-3 px-4 py-3 hover:bg-background/80 transition-colors",
+        navigating && "opacity-50 pointer-events-none"
+      )}
     >
       {/* Type icon */}
       <span className={cn(
@@ -122,7 +165,7 @@ function ActionItemRow({ item }: { item: ActionItem }) {
       <svg className="w-4 h-4 text-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
       </svg>
-    </Link>
+    </a>
   );
 }
 
@@ -164,7 +207,7 @@ export function ActionItems() {
           <h2 className="text-sm font-semibold text-amber-700 dark:text-amber-300">
             Action Items
           </h2>
-          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-600 text-white">
+          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-700 text-white">
             {data.items.length}
           </span>
         </div>

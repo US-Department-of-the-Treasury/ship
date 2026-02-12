@@ -58,7 +58,81 @@ export const TeamGridResponseSchema = z.object({
 
 registry.register('TeamGridResponse', TeamGridResponseSchema);
 
+// ============== Review Cell ==============
+
+const ReviewCellSchema = z.object({
+  planApproval: z.object({
+    state: z.enum(['approved', 'changed_since_approved']),
+    approved_by: UuidSchema.nullable(),
+    approved_at: z.string().nullable(),
+    approved_version_id: z.number().nullable(),
+  }).nullable(),
+  reviewApproval: z.object({
+    state: z.enum(['approved', 'changed_since_approved']),
+    approved_by: UuidSchema.nullable(),
+    approved_at: z.string().nullable(),
+    approved_version_id: z.number().nullable(),
+  }).nullable(),
+  reviewRating: z.object({
+    value: z.number().int().min(1).max(5),
+    rated_by: UuidSchema,
+    rated_at: z.string(),
+  }).nullable(),
+  hasPlan: z.boolean(),
+  hasRetro: z.boolean(),
+  sprintId: UuidSchema.nullable(),
+}).openapi('ReviewCell');
+
+registry.register('ReviewCell', ReviewCellSchema);
+
+const ReviewsResponseSchema = z.object({
+  people: z.array(z.object({
+    personId: UuidSchema,
+    name: z.string(),
+    programId: UuidSchema.nullable(),
+    programName: z.string().nullable(),
+    programColor: z.string().nullable(),
+  })),
+  weeks: z.array(SprintPeriodSchema),
+  reviews: z.record(z.record(ReviewCellSchema)).openapi({
+    description: 'Map of personId -> sprintNumber -> review cell data',
+  }),
+  currentSprintNumber: z.number().int(),
+}).openapi('ReviewsResponse');
+
+registry.register('ReviewsResponse', ReviewsResponseSchema);
+
 // ============== Register Team Endpoints ==============
+
+registry.registerPath({
+  method: 'get',
+  path: '/team/reviews',
+  tags: ['Team'],
+  summary: 'Get manager review grid',
+  description: 'Get person-by-week matrix of plan approval status, review approval status, and performance ratings.',
+  operationId: 'get_team_reviews',
+  request: {
+    query: z.object({
+      sprint_count: z.coerce.number().int().min(1).max(20).optional().openapi({
+        description: 'Number of weeks to include (default: 5)',
+      }),
+      showArchived: z.coerce.boolean().optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Manager review grid data',
+      content: {
+        'application/json': {
+          schema: ReviewsResponseSchema,
+        },
+      },
+    },
+    403: {
+      description: 'Admin access required',
+    },
+  },
+});
 
 registry.registerPath({
   method: 'get',

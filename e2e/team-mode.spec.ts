@@ -505,13 +505,18 @@ test.describe('Team Mode (Phase 7)', () => {
         // Wait for regrouping
         await page.waitForTimeout(500)
 
-        // Verify Unassigned count decreased
+        // Verify Unassigned count decreased (or the group disappeared entirely if count reached 0)
         const newHeader = page.getByRole('button', { name: /Unassigned \d+/ })
-        const newText = await newHeader.textContent()
-        const newCountMatch = newText?.match(/(\d+)/)
-        const newCount = newCountMatch ? parseInt(newCountMatch[1]) : 0
-
-        expect(newCount).toBeLessThan(initialCount)
+        const newHeaderCount = await newHeader.count()
+        if (newHeaderCount > 0) {
+          const newText = await newHeader.textContent()
+          const newCountMatch = newText?.match(/(\d+)/)
+          const newCount = newCountMatch ? parseInt(newCountMatch[1]) : 0
+          expect(newCount).toBeLessThan(initialCount)
+        } else {
+          // Unassigned group disappeared entirely - count went from 1 to 0
+          expect(initialCount).toBe(1)
+        }
 
         // Verify a new program group appeared
         const programGroups = page.getByRole('button', { name: /^[A-Z].*\d+$/ }).filter({ hasNotText: 'Unassigned' })

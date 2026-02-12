@@ -291,11 +291,8 @@ export function checkDocumentCompleteness(
       missingFields.push('Success Criteria');
     }
   } else if (documentType === 'sprint') {
-    // Sprints need plan + at least 1 linked issue
-    // Dates are computed from sprint_number + workspace.sprint_start_date
-    if (!props.plan || (typeof props.plan === 'string' && !props.plan.trim())) {
-      missingFields.push('Plan');
-    }
+    // Sprints need at least 1 linked issue
+    // Plans are now per-person weekly_plan documents, not sprint properties
     if (linkedIssuesCount === 0) {
       missingFields.push('Linked Issues');
     }

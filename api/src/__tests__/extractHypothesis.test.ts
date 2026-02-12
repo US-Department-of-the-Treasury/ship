@@ -599,43 +599,21 @@ describe('checkDocumentCompleteness', () => {
       expect(result.missingFields).toEqual([]);
     });
 
-    it('returns incomplete when plan is missing', () => {
+    it('returns complete when sprint has linked issues (plan check removed — plans are now weekly_plan documents)', () => {
       const properties = {};
 
       const result = checkDocumentCompleteness('sprint', properties, 1);
-      expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toContain('Plan');
+      expect(result.isComplete).toBe(true);
+      expect(result.missingFields).not.toContain('Plan');
     });
 
     it('returns incomplete when no linked issues', () => {
-      const properties = {
-        plan: 'Some plan about what we will learn',
-      };
+      const properties = {};
 
       const result = checkDocumentCompleteness('sprint', properties, 0);
       expect(result.isComplete).toBe(false);
       expect(result.missingFields).toContain('Linked Issues');
-    });
-
-    it('returns incomplete with all missing fields', () => {
-      const properties = {};
-
-      const result = checkDocumentCompleteness('sprint', properties, 0);
-      expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toEqual([
-        'Plan',
-        'Linked Issues',
-      ]);
-    });
-
-    it('treats empty plan string as missing', () => {
-      const properties = {
-        plan: '   ',
-      };
-
-      const result = checkDocumentCompleteness('sprint', properties, 1);
-      expect(result.isComplete).toBe(false);
-      expect(result.missingFields).toContain('Plan');
+      expect(result.missingFields).not.toContain('Plan');
     });
   });
 

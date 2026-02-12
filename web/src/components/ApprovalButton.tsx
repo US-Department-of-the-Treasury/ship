@@ -2,8 +2,7 @@ import { useState, useCallback } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { ApprovalTracking } from '@ship/shared';
 import { DiffViewer, tipTapToPlainText } from '@/components/DiffViewer';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import { apiPost } from '@/lib/api';
 
 // Inline SVG icons
 function CheckCircleIcon({ className }: { className?: string }) {
@@ -90,11 +89,7 @@ export function ApprovalButton({
 
     setIsLoading(true);
     try {
-      const response = await fetch(`${API_URL}${approveEndpoint}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      const response = await apiPost(approveEndpoint);
 
       if (!response.ok) {
         const error = await response.json();
@@ -161,6 +156,27 @@ export function ApprovalButton({
     );
   }
 
+  // Changes requested - show feedback and indicate revision needed
+  if (state === 'changes_requested') {
+    const feedbackText = approval?.feedback;
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400">
+          <RefreshIcon className="h-4 w-4" />
+          <span className="text-xs font-medium">Changes Requested</span>
+        </div>
+        {feedbackText && (
+          <div className="rounded-md bg-purple-500/10 border border-purple-500/20 px-3 py-2 text-xs text-purple-200">
+            {feedbackText}
+          </div>
+        )}
+        <span className="text-xs text-muted">
+          by {approverName || 'Manager'} on {formatDate(approvedAt)}
+        </span>
+      </div>
+    );
+  }
+
   // Changed since approved - show re-approve button and view changes link
   if (state === 'changed_since_approved') {
     return (
@@ -169,7 +185,7 @@ export function ApprovalButton({
           <button
             onClick={handleApprove}
             disabled={isLoading}
-            className="flex items-center gap-1.5 rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 rounded bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-800 disabled:opacity-50 transition-colors"
           >
             {isLoading ? (
               <>

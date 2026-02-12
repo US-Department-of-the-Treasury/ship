@@ -133,15 +133,12 @@ export function useSelection<T>({
 
   // Move focus without changing selection
   const moveFocus = useCallback((direction: 'up' | 'down' | 'home' | 'end') => {
-    console.log('[useSelection.moveFocus] called with direction:', direction, 'itemIds.length:', itemIds.length);
     if (itemIds.length === 0) {
-      console.log('[useSelection.moveFocus] returning early - no items');
       return;
     }
 
     setFocusedId(prev => {
       const currentIdx = prev ? itemIds.indexOf(prev) : -1;
-      console.log('[useSelection.moveFocus] prev:', prev, 'currentIdx:', currentIdx);
 
       let newFocusedId: string | null = prev;
       switch (direction) {
@@ -163,7 +160,6 @@ export function useSelection<T>({
         default:
           newFocusedId = prev;
       }
-      console.log('[useSelection.moveFocus] new focusedId:', newFocusedId);
       return newFocusedId;
     });
   }, [itemIds]);
@@ -256,7 +252,6 @@ export function useSelection<T>({
 
   // Keyboard handler
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    console.log('[useSelection.handleKeyDown] called, key:', e.key, 'target:', (e.target as HTMLElement).tagName);
     const isCtrlKey = e.metaKey || e.ctrlKey;
     const isShiftKey = e.shiftKey;
 

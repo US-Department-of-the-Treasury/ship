@@ -66,10 +66,15 @@ async function seed() {
       workspaceId = existingWorkspace.rows[0].id;
       console.log('ℹ️  Workspace already exists');
     } else {
-      // Create workspace with sprint_start_date 3 months ago
-      // This gives us historical sprint data to display
+      // Create workspace with sprint_start_date ~3 months ago, aligned to Monday.
+      // Weeks must start on Monday to match production and ensure the heatmap
+      // shows correct "due" (yellow) windows for plans (Sat-Mon) and retros (Thu-Fri).
       const threeMonthsAgo = new Date();
       threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      // Roll back to the nearest Monday (day 1)
+      const dayOfWeek = threeMonthsAgo.getDay(); // 0=Sun, 1=Mon, ...
+      const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      threeMonthsAgo.setDate(threeMonthsAgo.getDate() - daysToSubtract);
       const workspaceResult = await pool.query(
         `INSERT INTO workspaces (name, sprint_start_date)
          VALUES ($1, $2)
@@ -181,6 +186,47 @@ async function seed() {
       console.log(`✅ Created ${personDocsCreated} Person documents`);
     }
 
+    // Set up reports_to hierarchy: Dev User → 3 managers → remaining ICs
+    const reportingHierarchy: Record<string, string[]> = {
+      'dev@ship.local': [], // Root — no manager
+      'alice.chen@ship.local': ['dev@ship.local'],
+      'bob.martinez@ship.local': ['dev@ship.local'],
+      'carol.williams@ship.local': ['dev@ship.local'],
+      'david.kim@ship.local': ['alice.chen@ship.local'],
+      'emma.johnson@ship.local': ['alice.chen@ship.local'],
+      'frank.garcia@ship.local': ['bob.martinez@ship.local'],
+      'grace.lee@ship.local': ['bob.martinez@ship.local'],
+      'henry.patel@ship.local': ['carol.williams@ship.local'],
+      'iris.nguyen@ship.local': ['carol.williams@ship.local'],
+      'jack.brown@ship.local': ['carol.williams@ship.local'],
+    };
+
+    // Build email → user_id map
+    const emailToUserId = new Map<string, string>();
+    for (const user of allUsersForMembership.rows) {
+      emailToUserId.set(user.email, user.id);
+    }
+
+    // Set reports_to on person documents
+    let reportsToSet = 0;
+    for (const [email, managers] of Object.entries(reportingHierarchy)) {
+      if (managers.length === 0) continue; // Root has no manager
+      const managerEmail = managers[0]!;
+      const managerId = emailToUserId.get(managerEmail);
+      const userId = emailToUserId.get(email);
+      if (managerId && userId) {
+        await pool.query(
+          `UPDATE documents SET properties = properties || jsonb_build_object('reports_to', $1::text)
+           WHERE workspace_id = $2 AND document_type = 'person' AND properties->>'user_id' = $3`,
+          [managerId, workspaceId, userId]
+        );
+        reportsToSet++;
+      }
+    }
+    if (reportsToSet > 0) {
+      console.log(`✅ Set reports_to for ${reportsToSet} people (3-level hierarchy)`);
+    }
+
     // Get all user IDs for assignment (join through workspace_memberships)
     // Also get person document IDs for team allocation
     const allUsersResult = await pool.query(
@@ -232,6 +278,25 @@ async function seed() {
       console.log('ℹ️  All programs already exist');
     }
 
+    // Define stable teams per program so sprint ownership, issue assignment,
+    // and weekly plans/retros all align consistently.
+    // Uses names (not indices) because allUsers query order is non-deterministic.
+    const programTeamNames: string[][] = [
+      ['Dev User', 'Emma Johnson'],      // Ship Core
+      ['Alice Chen', 'Frank Garcia'],    // Authentication
+      ['Grace Lee', 'Henry Patel'],      // API Platform
+      ['Carol Williams', 'David Kim'],   // Design System
+      ['Jack Brown', 'Iris Nguyen'],     // Infrastructure
+    ];
+    const programTeams: Record<string, number[]> = {};
+    programs.forEach((prog, idx) => {
+      const names = programTeamNames[idx] || ['Dev User'];
+      programTeams[prog.id] = names.map(name => {
+        const userIdx = allUsers.findIndex((u: { name: string }) => u.name === name);
+        return userIdx >= 0 ? userIdx : 0;
+      });
+    });
+
     // Create projects for each program
     // Each project has ICE scores (Impact, Confidence, Ease) for prioritization (1-5 scale)
     const projectTemplates = [
@@ -244,6 +309,8 @@ async function seed() {
         ease: 3,
         plan: 'Building core features will establish the product foundation and attract early adopters.',
         monetary_impact_expected: 50000,
+        has_design_review: true,
+        design_review_notes: 'Design approved after review session on 2025-01-15. UI mockups finalized.',
       },
       {
         name: 'Bug Fixes',
@@ -254,6 +321,8 @@ async function seed() {
         ease: 4,
         plan: 'Fixing bugs will improve user retention and reduce support costs.',
         monetary_impact_expected: 15000,
+        has_design_review: false,
+        design_review_notes: null,
       },
       {
         name: 'Performance',
@@ -264,6 +333,7 @@ async function seed() {
         ease: 2,
         plan: 'Performance improvements will increase user satisfaction and enable scale.',
         monetary_impact_expected: 25000,
+        // No design review fields - will be null/undefined
       },
     ];
 
@@ -298,7 +368,7 @@ async function seed() {
           const targetDate = new Date();
           targetDate.setDate(targetDate.getDate() + (projectTemplates.indexOf(template) + 2) * 7);
 
-          const projectProperties = {
+          const projectProperties: Record<string, unknown> = {
             color: template.color,
             emoji: template.emoji,
             owner_id: owner.id,
@@ -310,6 +380,13 @@ async function seed() {
             monetary_impact_expected: template.monetary_impact_expected,
             target_date: targetDate.toISOString().split('T')[0],
           };
+          // Add design review fields if present in template
+          if ('has_design_review' in template) {
+            projectProperties.has_design_review = template.has_design_review;
+          }
+          if ('design_review_notes' in template) {
+            projectProperties.design_review_notes = template.design_review_notes;
+          }
           // Create project document without legacy program_id column
           const projectResult = await pool.query(
             `INSERT INTO documents (workspace_id, document_type, title, properties)
@@ -349,11 +426,11 @@ async function seed() {
     const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
 
     // Create sprints for each program (current-3 to current+3)
-    // Each sprint gets assigned an owner from the team (rotating assignment)
+    // Sprint owners and assignees come from the program's team (not global rotation)
     // Sprints are distributed among the program's projects
     const sprintsToCreate: Array<{ programId: string; projectId: string; number: number; ownerIdx: number }> = [];
-    let ownerRotation = 0;
     for (const program of programs) {
+      const team = programTeams[program.id]!;
       // Get projects for this program to distribute sprints among them
       const programProjects = projects.filter(p => p.programId === program.id);
       let projectIdx = 0;
@@ -361,13 +438,14 @@ async function seed() {
         if (sprintNum > 0) {
           // Round-robin assign sprints to projects within the program
           const project = programProjects[projectIdx % programProjects.length]!;
+          // Owner rotates within the program's team
+          const ownerIdx = team[(sprintNum - 1) % team.length]!;
           sprintsToCreate.push({
             programId: program.id,
             projectId: project.id,
             number: sprintNum,
-            ownerIdx: ownerRotation % allUsers.length
+            ownerIdx,
           });
-          ownerRotation++;
           projectIdx++;
         }
       }
@@ -436,8 +514,16 @@ async function seed() {
         else if (sprintOffset === 1) baseConfidence = 60; // Next sprint - medium
         else baseConfidence = 40; // Future sprints - lower confidence
 
-        const otherUser = allUsers[(sprint.ownerIdx + 1) % allUsers.length]!;
-        const sprintProperties = {
+        // Other assignee comes from the same program team (not global +1)
+        const team = programTeams[sprint.programId]!;
+        const otherIdx = team.find(idx => idx !== sprint.ownerIdx) ?? team[0]!;
+        const otherUser = allUsers[otherIdx]!;
+        // Set sprint status based on timing so action items don't fire for past sprints
+        let sprintStatus: string | undefined;
+        if (sprintOffset < 0) sprintStatus = 'completed';
+        else if (sprintOffset === 0) sprintStatus = 'active';
+
+        const sprintProperties: Record<string, unknown> = {
           sprint_number: sprint.number,
           owner_id: owner.id,
           project_id: sprint.projectId, // Required for team allocation
@@ -445,6 +531,7 @@ async function seed() {
           plan: sprintPlans[sprint.number % sprintPlans.length],
           success_criteria: sprintSuccessCriteria[sprint.number % sprintSuccessCriteria.length],
           confidence: baseConfidence + (Math.random() * 10 - 5), // Add some variance
+          ...(sprintStatus && { status: sprintStatus }),
         };
         // Create sprint document without legacy project_id and program_id columns
         const sprintResult = await pool.query(
@@ -577,9 +664,10 @@ async function seed() {
     }
 
     // Seed Ship Core issues with comprehensive sprint coverage
+    const shipCoreTeam = programTeams[shipCoreProgram.id]!;
     for (let i = 0; i < shipCoreIssues.length; i++) {
       const issue = shipCoreIssues[i]!;
-      const assignee = allUsers[i % allUsers.length]!;
+      const assignee = allUsers[shipCoreTeam[i % shipCoreTeam.length]!]!;
 
       // Find the sprint based on offset
       let sprintId: string | null = null;
@@ -648,9 +736,10 @@ async function seed() {
     // Seed generic issues for other programs
     const otherPrograms = programs.filter(p => p.prefix !== 'SHIP');
     for (const program of otherPrograms) {
+      const team = programTeams[program.id]!;
       for (let i = 0; i < genericIssueTemplates.length; i++) {
         const template = genericIssueTemplates[i]!;
-        const assignee = allUsers[(i + otherPrograms.indexOf(program)) % allUsers.length]!;
+        const assignee = allUsers[team[i % team.length]!]!;
 
         // Find the sprint based on offset (same pattern as Ship Core issues)
         let sprintId: string | null = null;
@@ -886,12 +975,13 @@ async function seed() {
       console.log('ℹ️  All standups already exist');
     }
 
-    // Create sample sprint reviews for completed sprints
+    // Create sprint reviews for ALL completed sprints (not just recent ones)
+    // This prevents "Complete review" action items for past sprints
     let sprintReviewsCreated = 0;
 
-    for (const sprint of shipCoreSprints) {
-      // Only add reviews to completed sprints (before current)
-      if (sprint.number < currentSprintNumber && sprint.number >= currentSprintNumber - 2) {
+    const allPastSprints = sprints.filter(s => s.number < currentSprintNumber);
+    for (const sprint of allPastSprints) {
+      {
         // Check if review exists (via junction table)
         const existingReview = await pool.query(
           `SELECT d.id FROM documents d
@@ -940,6 +1030,215 @@ async function seed() {
       console.log(`✅ Created ${sprintReviewsCreated} week reviews`);
     } else {
       console.log('ℹ️  All week reviews already exist');
+    }
+
+    // Create weekly plans and retros for allocated people
+    // This populates the Status Overview heatmap with realistic data
+    let weeklyPlansCreated = 0;
+    let weeklyRetrosCreated = 0;
+
+    // Content pools for plans (varied, realistic per-person entries)
+    const planContentPools = [
+      ['Complete API endpoint implementation', 'Write unit tests for new features', 'Review and merge open PRs', 'Update project documentation'],
+      ['Implement search functionality', 'Fix pagination across list views', 'Add error handling for edge cases', 'Pair programming session on schema design'],
+      ['Set up monitoring and alerting', 'Migrate legacy endpoints to v2', 'Conduct code reviews for the team', 'Document deployment procedures'],
+      ['Build notification system', 'Integrate with external APIs', 'Performance testing and optimization', 'Expand integration test coverage'],
+      ['Refactor data access layer', 'Implement caching strategy', 'Fix accessibility audit findings', 'Update CI/CD pipeline configuration'],
+      ['Design and build UI components', 'Implement responsive layouts', 'Cross-browser compatibility testing', 'Update design system tokens'],
+      ['Deploy infrastructure updates', 'Configure staging environment', 'Set up auto-scaling policies', 'Review and update security configs'],
+      ['Implement user settings page', 'Add form validation logic', 'Write E2E tests for critical flows', 'Optimize database queries'],
+      ['Build data export feature', 'Implement audit logging', 'Fix memory leak in worker process', 'Update dependency versions'],
+      ['Create admin dashboard widgets', 'Implement role-based access controls', 'Add rate limiting to API endpoints', 'Write technical design document'],
+      ['Implement file upload handling', 'Build progress indicator components', 'Add WebSocket reconnection logic', 'Optimize image loading performance'],
+    ];
+
+    // Content pools for retros (corresponding accomplishments)
+    const retroContentPools = [
+      ['Completed API endpoints with full CRUD operations', 'Unit tests achieving 91% coverage on new code', 'Merged 4 PRs including critical bugfix', 'API docs updated with all new endpoints'],
+      ['Search feature live with fuzzy matching support', 'Pagination fixed across all list views', 'Error handling covers 12 new edge cases', 'Database schema review completed with team'],
+      ['Grafana dashboards configured for all services', 'Migrated 3 legacy endpoints successfully', 'Reviewed 8 PRs from team members', 'Deployment runbook finalized and shared'],
+      ['Notification system handling email and in-app alerts', 'External API integration passing all tests', 'Fixed 2 critical performance bottlenecks', 'Integration test suite grew by 15 tests'],
+      ['Data layer refactored to repository pattern', 'Redis caching reducing database load by 35%', 'Fixed 6 accessibility violations (WCAG AA)', 'CI pipeline execution time reduced by 25%'],
+      ['Built 10 reusable UI components for design system', 'Responsive layouts working on all breakpoints', 'Tested on Chrome, Firefox, Safari, and Edge', 'Design tokens migrated to CSS custom properties'],
+      ['Infrastructure upgraded to latest AMI versions', 'Staging environment fully mirrors production', 'Auto-scaling tested successfully under load', 'Security configs reviewed and hardened'],
+      ['Settings page implemented with real-time preview', 'Form validation catching all invalid inputs', 'E2E test suite covers 5 critical user flows', 'Query optimization reduced avg response time 40%'],
+      ['Data export supporting CSV and JSON formats', 'Audit logging capturing all write operations', 'Memory leak identified and patched in worker', 'Dependencies updated with zero breaking changes'],
+      ['Dashboard widgets showing real-time metrics', 'RBAC implemented for admin and member roles', 'Rate limiting active on all public endpoints', 'Technical design document reviewed and approved'],
+      ['File upload working with drag-and-drop support', 'Progress indicators showing accurate ETAs', 'WebSocket auto-reconnect with exponential backoff', 'Image lazy-loading reducing initial bundle by 30%'],
+    ];
+
+    function makePlanContent(items: string[]) {
+      return {
+        type: 'doc',
+        content: [
+          {
+            type: 'heading',
+            attrs: { level: 2 },
+            content: [{ type: 'text', text: 'What I plan to accomplish this week' }],
+          },
+          {
+            type: 'bulletList',
+            content: items.map(item => ({
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: item }] }],
+            })),
+          },
+        ],
+      };
+    }
+
+    function makeRetroContent(items: string[]) {
+      return {
+        type: 'doc',
+        content: [
+          {
+            type: 'heading',
+            attrs: { level: 2 },
+            content: [{ type: 'text', text: 'What I delivered this week' }],
+          },
+          {
+            type: 'bulletList',
+            content: items.map(item => ({
+              type: 'listItem',
+              content: [{ type: 'paragraph', content: [{ type: 'text', text: item }] }],
+            })),
+          },
+        ],
+      };
+    }
+
+    // Iterate through sprint assignments and create plans/retros
+    for (let i = 0; i < sprintsToCreate.length; i++) {
+      const sprintDef = sprintsToCreate[i]!;
+      const matchingSprint = sprints.find(
+        s => s.programId === sprintDef.programId && s.number === sprintDef.number
+      );
+      if (!matchingSprint) continue;
+
+      const owner = allUsers[sprintDef.ownerIdx]!;
+      const team = programTeams[sprintDef.programId]!;
+      const otherIdx = team.find(idx => idx !== sprintDef.ownerIdx) ?? team[0]!;
+      const otherUser = allUsers[otherIdx]!;
+      const assignees = [
+        { personDocId: owner.person_doc_id, userId: owner.id },
+        { personDocId: otherUser.person_doc_id, userId: otherUser.id },
+      ].filter(a => a.personDocId);
+
+      const sprintOffset = sprintDef.number - currentSprintNumber;
+
+      for (let p = 0; p < assignees.length; p++) {
+        const assignee = assignees[p]!;
+        const contentIdx = (i + p) % planContentPools.length;
+
+        // Deterministic skip patterns for realistic gaps in past data
+        // Dev User (the login user) always gets complete data so action items
+        // don't conflict with the heatmap. Other users get realistic gaps.
+        const isDevUser = assignee.userId === allUsers.find((u: { name: string }) => u.name === 'Dev User')?.id;
+        const skipPlanForPast = !isDevUser && (i + p) % 7 === 3;     // ~14% of past plans missing
+        const skipRetroForPast = !isDevUser && (i + p) % 6 === 2;    // ~17% of past retros missing
+        const skipPlanForCurrent = !isDevUser && (i + p) % 3 === 0;  // ~33% of current plans not yet done
+
+        // Past sprints: create plan + retro with content (some deliberately skipped)
+        if (sprintOffset < 0) {
+          if (!skipPlanForPast) {
+            const existing = await pool.query(
+              `SELECT id FROM documents
+               WHERE workspace_id = $1 AND document_type = 'weekly_plan'
+                 AND (properties->>'person_id') = $2
+                 AND (properties->>'project_id') = $3
+                 AND (properties->>'week_number')::int = $4`,
+              [workspaceId, assignee.personDocId, sprintDef.projectId, sprintDef.number]
+            );
+            if (!existing.rows[0]) {
+              await pool.query(
+                `INSERT INTO documents (workspace_id, document_type, title, content, properties, visibility, created_by)
+                 VALUES ($1, 'weekly_plan', $2, $3, $4, 'workspace', $5)`,
+                [
+                  workspaceId,
+                  `Week ${sprintDef.number} Plan`,
+                  JSON.stringify(makePlanContent(planContentPools[contentIdx]!)),
+                  JSON.stringify({
+                    person_id: assignee.personDocId,
+                    project_id: sprintDef.projectId,
+                    week_number: sprintDef.number,
+                    submitted_at: new Date().toISOString(),
+                  }),
+                  assignee.userId,
+                ]
+              );
+              weeklyPlansCreated++;
+            }
+          }
+
+          if (!skipRetroForPast) {
+            const existing = await pool.query(
+              `SELECT id FROM documents
+               WHERE workspace_id = $1 AND document_type = 'weekly_retro'
+                 AND (properties->>'person_id') = $2
+                 AND (properties->>'project_id') = $3
+                 AND (properties->>'week_number')::int = $4`,
+              [workspaceId, assignee.personDocId, sprintDef.projectId, sprintDef.number]
+            );
+            if (!existing.rows[0]) {
+              await pool.query(
+                `INSERT INTO documents (workspace_id, document_type, title, content, properties, visibility, created_by)
+                 VALUES ($1, 'weekly_retro', $2, $3, $4, 'workspace', $5)`,
+                [
+                  workspaceId,
+                  `Week ${sprintDef.number} Retro`,
+                  JSON.stringify(makeRetroContent(retroContentPools[contentIdx]!)),
+                  JSON.stringify({
+                    person_id: assignee.personDocId,
+                    project_id: sprintDef.projectId,
+                    week_number: sprintDef.number,
+                    submitted_at: new Date().toISOString(),
+                  }),
+                  assignee.userId,
+                ]
+              );
+              weeklyRetrosCreated++;
+            }
+          }
+        }
+
+        // Current sprint: create plan for most people (no retros yet)
+        if (sprintOffset === 0 && !skipPlanForCurrent) {
+          const existing = await pool.query(
+            `SELECT id FROM documents
+             WHERE workspace_id = $1 AND document_type = 'weekly_plan'
+               AND (properties->>'person_id') = $2
+               AND (properties->>'project_id') = $3
+               AND (properties->>'week_number')::int = $4`,
+            [workspaceId, assignee.personDocId, sprintDef.projectId, sprintDef.number]
+          );
+          if (!existing.rows[0]) {
+            await pool.query(
+              `INSERT INTO documents (workspace_id, document_type, title, content, properties, visibility, created_by)
+               VALUES ($1, 'weekly_plan', $2, $3, $4, 'workspace', $5)`,
+              [
+                workspaceId,
+                `Week ${sprintDef.number} Plan`,
+                JSON.stringify(makePlanContent(planContentPools[contentIdx]!)),
+                JSON.stringify({
+                  person_id: assignee.personDocId,
+                  project_id: sprintDef.projectId,
+                  week_number: sprintDef.number,
+                  submitted_at: new Date().toISOString(),
+                }),
+                assignee.userId,
+              ]
+            );
+            weeklyPlansCreated++;
+          }
+        }
+      }
+    }
+
+    if (weeklyPlansCreated > 0) {
+      console.log(`✅ Created ${weeklyPlansCreated} weekly plans`);
+    }
+    if (weeklyRetrosCreated > 0) {
+      console.log(`✅ Created ${weeklyRetrosCreated} weekly retros`);
     }
 
     console.log('');

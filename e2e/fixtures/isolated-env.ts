@@ -111,12 +111,24 @@ export const test = base.extend<
       const debug = process.env.DEBUG === '1';
       if (debug) console.log(`${workerTag} Starting PostgreSQL container...`);
 
-      const container = await new PostgreSqlContainer('postgres:15')
-        .withDatabase('ship_test')
-        .withUsername('test')
-        .withPassword('test')
-        .withStartupTimeout(30000)  // 30s timeout for CI/parallel workers
-        .start();
+      // Retry container startup to handle intermittent Docker port binding failures
+      // Under parallel load, Docker's port allocation can get congested
+      let container!: StartedPostgreSqlContainer;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          container = await new PostgreSqlContainer('postgres:15')
+            .withDatabase('ship_test')
+            .withUsername('test')
+            .withPassword('test')
+            .withStartupTimeout(120000)
+            .start();
+          break;
+        } catch (err) {
+          if (debug) console.log(`${workerTag} Container start attempt ${attempt} failed: ${(err as Error).message}`);
+          if (attempt === 3) throw err;
+          await new Promise(r => setTimeout(r, 2000 * attempt));
+        }
+      }
 
       try {
         const dbUrl = container.getConnectionUri();
@@ -278,11 +290,9 @@ async function runMigrations(dbUrl: string): Promise<void> {
       )
     `);
 
-    // Step 3: Get list of already-applied migrations
-    const appliedResult = await pool.query('SELECT version FROM schema_migrations ORDER BY version');
-    const appliedMigrations = new Set(appliedResult.rows.map((r) => r.version));
-
-    // Step 4: Find and run pending migrations
+    // Step 3: Mark all migrations as applied since schema.sql represents the full current state.
+    // schema.sql includes all table definitions from all migrations, so running migrations
+    // again would fail on CREATE TABLE statements that don't use IF NOT EXISTS.
     const migrationsDir = path.join(PROJECT_ROOT, 'api/src/db/migrations');
     let migrationFiles: string[] = [];
 
@@ -296,26 +306,10 @@ async function runMigrations(dbUrl: string): Promise<void> {
 
     for (const file of migrationFiles) {
       const version = file.replace('.sql', '');
-
-      if (appliedMigrations.has(version)) {
-        continue;
-      }
-
-      const migrationPath = path.join(migrationsDir, file);
-      const migrationSql = readFileSync(migrationPath, 'utf-8');
-
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        await client.query(migrationSql);
-        await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [version]);
-        await client.query('COMMIT');
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
+      await pool.query(
+        'INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING',
+        [version]
+      );
     }
 
     // Step 5: Seed minimal test data
@@ -713,6 +707,34 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
       [issueId, programIds[issue.programKey]]
     );
   }
+
+  // Create sprint allocation documents (person assigned to project for a week)
+  // The team/reviews endpoint queries sprints with assignee_ids
+  const allocationSprintResult = await pool.query(
+    `INSERT INTO documents (workspace_id, document_type, title, properties, created_by)
+     VALUES ($1, 'sprint', $2, $3, $4)
+     RETURNING id`,
+    [
+      workspaceId,
+      `Week ${currentSprintNumber} - Ship Core`,
+      JSON.stringify({
+        sprint_number: currentSprintNumber,
+        owner_id: userId,
+        project_id: projectIds['SHIP'],
+        assignee_ids: [personId],
+        start_date: new Date(threeMonthsAgo.getTime() + (currentSprintNumber - 1) * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      }),
+      userId,
+    ]
+  );
+  const allocationSprintId = allocationSprintResult.rows[0].id;
+
+  // Associate allocation sprint with program
+  await pool.query(
+    `INSERT INTO document_associations (document_id, related_id, relationship_type)
+     VALUES ($1, $2, 'program')`,
+    [allocationSprintId, programIds['SHIP']]
+  );
 
   // Create wiki documents with nested structure for tree testing
   // Include content for content-caching tests to work

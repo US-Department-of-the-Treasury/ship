@@ -6,6 +6,7 @@ import Link from '@tiptap/extension-link';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useInvalidateStandupStatus } from '@/hooks/useStandupStatusQuery';
+import { apiPost, apiPatch, apiDelete, apiGet } from '@/lib/api';
 
 interface Standup {
   id: string;
@@ -21,40 +22,6 @@ interface Standup {
 
 interface StandupFeedProps {
   sprintId: string;
-}
-
-const API_URL = import.meta.env.VITE_API_URL ?? '';
-
-// CSRF token cache
-let csrfToken: string | null = null;
-
-async function getCsrfToken(): Promise<string> {
-  if (!csrfToken) {
-    const response = await fetch(`${API_URL}/api/csrf-token`, { credentials: 'include' });
-    const data = await response.json();
-    csrfToken = data.token;
-  }
-  return csrfToken!;
-}
-
-async function fetchWithCsrf(url: string, method: string, body?: object): Promise<Response> {
-  const token = await getCsrfToken();
-  const options: RequestInit = {
-    method,
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': token },
-    credentials: 'include',
-  };
-  if (body) {
-    options.body = JSON.stringify(body);
-  }
-  let res = await fetch(url, options);
-  if (res.status === 403) {
-    csrfToken = null;
-    const newToken = await getCsrfToken();
-    options.headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': newToken };
-    res = await fetch(url, options);
-  }
-  return res;
 }
 
 export function StandupFeed({ sprintId }: StandupFeedProps) {
@@ -103,7 +70,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
 
   const fetchStandups = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/weeks/${sprintId}/standups`, { credentials: 'include' });
+      const res = await apiGet(`/api/weeks/${sprintId}/standups`);
       if (res.ok) {
         const data = await res.json();
         setStandups(data);
@@ -129,7 +96,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
     try {
       const content = createEditor.getJSON();
 
-      const res = await fetchWithCsrf(`${API_URL}/api/weeks/${sprintId}/standups`, 'POST', {
+      const res = await apiPost(`/api/weeks/${sprintId}/standups`, {
         content,
         title: `Standup - ${new Date().toLocaleDateString()}`,
       });
@@ -165,7 +132,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
     try {
       const content = editEditor.getJSON();
 
-      const res = await fetchWithCsrf(`${API_URL}/api/standups/${standupId}`, 'PATCH', { content });
+      const res = await apiPatch(`/api/standups/${standupId}`, { content });
 
       if (res.ok) {
         setEditingId(null);
@@ -188,7 +155,7 @@ export function StandupFeed({ sprintId }: StandupFeedProps) {
     if (!confirm('Delete this standup update?')) return;
 
     try {
-      const res = await fetchWithCsrf(`${API_URL}/api/standups/${standupId}`, 'DELETE');
+      const res = await apiDelete(`/api/standups/${standupId}`);
 
       if (res.ok || res.status === 204) {
         fetchStandups();

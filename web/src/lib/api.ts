@@ -151,8 +151,8 @@ export async function apiPatch(endpoint: string, body: object): Promise<Response
   return fetchWithCsrf(endpoint, 'PATCH', body);
 }
 
-export async function apiDelete(endpoint: string): Promise<Response> {
-  return fetchWithCsrf(endpoint, 'DELETE');
+export async function apiDelete(endpoint: string, body?: object): Promise<Response> {
+  return fetchWithCsrf(endpoint, 'DELETE', body);
 }
 
 async function request<T>(

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { cn } from '@/lib/cn';
 import { getSprintStatusColor } from '@/lib/statusColors';
 import { useTheme } from '@/contexts/ThemeContext';
+import { formatDate } from '@/lib/date-utils';
 import type { Sprint } from '@/hooks/useWeeksQuery';
 
 // Re-export Sprint type for consumers
@@ -67,11 +68,6 @@ export function generateWeekWindows(
   }
 
   return windows;
-}
-
-// Format date for display
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // Format "Week of Jan 27" from a date

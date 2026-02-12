@@ -13,6 +13,7 @@ import type {
 import { DocumentTypeSelector, getMissingRequiredFields } from '@/components/sidebars/DocumentTypeSelector';
 import type { DocumentType as SelectableDocumentType } from '@/components/sidebars/DocumentTypeSelector';
 import { useAuth } from '@/hooks/useAuth';
+import { PlanQualityBanner, RetroQualityBanner } from '@/components/PlanQualityBanner';
 import { useAutoSave } from '@/hooks/useAutoSave';
 import type { Person } from '@/components/PersonCombobox';
 import type { BelongsTo } from '@ship/shared';
@@ -383,6 +384,20 @@ export function UnifiedEditor({
   // Weekly plans and retros have computed titles (includes person name) - make read-only
   const isTitleReadOnly = document.document_type === 'weekly_plan' || document.document_type === 'weekly_retro';
 
+  // AI quality banner — triggers analysis on content changes from the editor
+  const [editorContent, setEditorContent] = useState<Record<string, unknown> | null>(null);
+  const isWeeklyDoc = document.document_type === 'weekly_plan' || document.document_type === 'weekly_retro';
+
+  const qualityBanner = useMemo(() => {
+    if (document.document_type === 'weekly_plan') {
+      return <PlanQualityBanner documentId={document.id} editorContent={editorContent} />;
+    }
+    if (document.document_type === 'weekly_retro') {
+      return <RetroQualityBanner documentId={document.id} editorContent={editorContent} planContent={null} />;
+    }
+    return undefined;
+  }, [document.id, document.document_type, editorContent]);
+
   return (
     <Editor
       documentId={document.id}
@@ -402,6 +417,8 @@ export function UnifiedEditor({
       sidebar={sidebar}
       documentType={document.document_type}
       onPlanChange={document.document_type === 'sprint' || document.document_type === 'project' ? handlePlanChange : undefined}
+      contentBanner={qualityBanner}
+      onContentChange={isWeeklyDoc ? setEditorContent : undefined}
     />
   );
 }
@@ -439,8 +456,3 @@ export type {
   SprintPanelProps,
 } from '@/components/sidebars/PropertiesPanel';
 
-// Legacy re-exports for backwards compatibility (deprecated - use PropertiesPanel)
-export { WikiSidebar } from '@/components/sidebars/WikiSidebar';
-export { IssueSidebar } from '@/components/sidebars/IssueSidebar';
-export { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
-export { WeekSidebar } from '@/components/sidebars/WeekSidebar';

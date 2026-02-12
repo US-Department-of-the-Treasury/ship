@@ -17,6 +17,12 @@ interface SprintOwner {
   email: string;
 }
 
+interface ReviewRating {
+  value: number;
+  rated_by: string;
+  rated_at: string;
+}
+
 interface Sprint {
   id: string;
   title?: string;  // Used in unified document model
@@ -32,11 +38,22 @@ interface Sprint {
   // Approval tracking
   plan_approval?: ApprovalTracking | null;
   review_approval?: ApprovalTracking | null;
+  // Performance rating (OPM 5-level scale)
+  review_rating?: ReviewRating | null;
   // For RACI - who can approve
   accountable_id?: string | null;
   // Whether a review exists
   has_review?: boolean;
 }
+
+// OPM 5-level performance rating labels
+const OPM_RATING_LABELS: Record<number, { label: string; color: string }> = {
+  5: { label: 'Outstanding', color: 'text-green-500' },
+  4: { label: 'Exceeds Expectations', color: 'text-blue-500' },
+  3: { label: 'Fully Successful', color: 'text-foreground' },
+  2: { label: 'Minimally Satisfactory', color: 'text-orange-500' },
+  1: { label: 'Unacceptable', color: 'text-red-500' },
+};
 
 interface Person {
   id: string;
@@ -143,17 +160,16 @@ export function WeekSidebar({
         </select>
       </PropertyRow>
 
-      {/* Plan Approval - only show when plan exists */}
-      {!!sprint.plan?.trim() && (
+      {/* Plan Approval - show when approval state exists (plans are now separate weekly_plan documents) */}
+      {sprint.plan_approval && (
         <PropertyRow label="Plan Approval">
           <ApprovalButton
           type="plan"
           approval={sprint.plan_approval}
-          hasContent={!!sprint.plan?.trim()}
+          hasContent={true}
           canApprove={canApprove}
           approveEndpoint={`/api/weeks/${sprint.id}/approve-plan`}
           approverName={sprint.plan_approval?.approved_by ? userNames[sprint.plan_approval.approved_by] : undefined}
-          currentContent={sprint.plan || ''}
           onApproved={onApprovalUpdate}
         />
         </PropertyRow>
@@ -187,6 +203,24 @@ export function WeekSidebar({
           />
         </PropertyRow>
       )}
+
+      {/* Performance Rating - always show when sprint has a review */}
+      <PropertyRow label="Performance Rating">
+        {sprint.review_rating?.value ? (
+          <div className="flex items-center gap-2 rounded bg-border/30 px-2 py-1.5">
+            <span className={`text-sm font-medium ${OPM_RATING_LABELS[sprint.review_rating.value]?.color || 'text-foreground'}`}>
+              {sprint.review_rating.value}
+            </span>
+            <span className="text-sm text-muted">
+              – {OPM_RATING_LABELS[sprint.review_rating.value]?.label || 'Unknown'}
+            </span>
+          </div>
+        ) : (
+          <div className="rounded bg-border/20 px-2 py-1.5">
+            <span className="text-sm text-muted">Not Yet Rated</span>
+          </div>
+        )}
+      </PropertyRow>
 
       {sprint.program_name && sprint.program_id && (
         <PropertyRow label="Program">

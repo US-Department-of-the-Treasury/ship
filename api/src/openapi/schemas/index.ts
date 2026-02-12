@@ -25,6 +25,8 @@ export * from './backlinks.js';
 export * from './claude.js';
 export * from './dashboard.js';
 export * from './accountability.js';
+export * from './comments.js';
+export * from './ai.js';
 
 // Re-export registry and generator for convenience
 export { registry, generateOpenAPIDocument } from '../registry.js';

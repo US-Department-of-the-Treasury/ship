@@ -28,9 +28,8 @@ export default function SprintReviewTab({ documentId, document }: DocumentTabPro
             sprintId={documentId}
             sprintNumber={sprintNumber}
             programId={programId}
-            onDecisionMade={(decision) => {
+            onDecisionMade={() => {
               // Refresh handled internally by SprintReconciliation
-              console.log('Reconciliation decision:', decision);
             }}
           />
         </div>

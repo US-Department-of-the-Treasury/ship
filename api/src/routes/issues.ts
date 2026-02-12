@@ -673,6 +673,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 
 // Update issue
 router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
+  const client = await pool.connect();
   try {
     const id = String(req.params.id);
     const userId = req.userId!;
@@ -688,7 +689,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     // Get full existing issue for history tracking (with visibility check)
-    const existing = await pool.query(
+    const existing = await client.query(
       `SELECT id, title, properties
        FROM documents
        WHERE id = $1 AND workspace_id = $2 AND document_type = 'issue'
@@ -727,7 +728,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     if (isClosingIssue && wasNotClosed) {
       // Check if this issue has any children via junction table
-      const childrenResult = await pool.query(
+      const childrenResult = await client.query(
         `SELECT d.id, d.title, d.ticket_number, d.properties->>'state' as state
          FROM documents d
          JOIN document_associations da ON da.document_id = d.id
@@ -761,7 +762,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
       // If confirmed, orphan the children by removing their parent associations
       if (incompleteChildren.length > 0 && data.confirm_orphan_children) {
-        await pool.query(
+        await client.query(
           `DELETE FROM document_associations
            WHERE related_id = $1
              AND relationship_type = 'parent'`,
@@ -851,7 +852,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
         if (oldSprintAssoc && newSprintAssoc && oldSprintAssoc.id !== newSprintAssoc.id && currentProps.state !== 'done') {
           // Check if the old sprint is completed (based on end date)
-          const oldSprintResult = await pool.query(
+          const oldSprintResult = await client.query(
             `SELECT properties->>'sprint_number' as sprint_number, w.sprint_start_date
              FROM documents d
              JOIN workspaces w ON d.workspace_id = w.id
@@ -914,17 +915,19 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Log all changes to history
+    await client.query('BEGIN');
+
+    // Log all changes to history (within transaction)
     const automatedBy = data.claude_metadata?.updated_by;
     for (const change of changes) {
-      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.userId!, automatedBy);
+      await logDocumentChange(id!, change.field, change.oldValue, change.newValue, req.userId!, automatedBy, client);
     }
 
     // If we have document updates, do the UPDATE
     if (updates.length > 0) {
       updates.push(`updated_at = now()`);
 
-      await pool.query(
+      await client.query(
         `UPDATE documents SET ${updates.join(', ')} WHERE id = $${paramIndex} AND workspace_id = $${paramIndex + 1}`,
         [...values, id, req.workspaceId]
       );
@@ -933,28 +936,39 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     // Handle belongs_to association updates in junction table
     if (belongsToChanged) {
       // Delete all existing associations for this document
-      await pool.query(
+      await client.query(
         `DELETE FROM document_associations WHERE document_id = $1`,
         [id]
       );
 
       // Insert new associations
       for (const assoc of newBelongsTo) {
-        await pool.query(
+        await client.query(
           `INSERT INTO document_associations (document_id, related_id, relationship_type)
            VALUES ($1, $2, $3)
            ON CONFLICT (document_id, related_id, relationship_type) DO NOTHING`,
           [id, assoc.id, assoc.type]
         );
       }
+    }
 
-      // Check if a NEW sprint association was added and this is the first issue in that sprint
+    // Fetch the updated issue
+    const result = await client.query(
+      `SELECT * FROM documents WHERE id = $1 AND workspace_id = $2`,
+      [id, req.workspaceId]
+    );
+
+    await client.query('COMMIT');
+
+    // Post-commit operations (non-transactional)
+
+    // Check if a NEW sprint association was added and this is the first issue in that sprint
+    if (belongsToChanged) {
       const oldSprintIds = oldBelongsTo.filter(bt => bt.type === 'sprint').map(bt => bt.id);
       const newSprintIds = newBelongsTo.filter(bt => bt.type === 'sprint').map(bt => bt.id);
       const addedSprintIds = newSprintIds.filter(sprintId => !oldSprintIds.includes(sprintId));
 
       for (const sprintId of addedSprintIds) {
-        // Check if this sprint has only 1 issue (the one we just added)
         const issueCountResult = await pool.query(
           `SELECT COUNT(*) as count FROM document_associations
            WHERE related_id = $1 AND relationship_type = 'sprint'`,
@@ -962,18 +976,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
         );
         const issueCount = parseInt(issueCountResult.rows[0].count, 10);
 
-        // Broadcast celebration when first issue is added to sprint
         if (issueCount === 1) {
           broadcastToUser(req.userId!, 'accountability:updated', { type: 'week_issues', targetId: sprintId });
         }
       }
     }
-
-    // Fetch the updated issue
-    const result = await pool.query(
-      `SELECT * FROM documents WHERE id = $1 AND workspace_id = $2`,
-      [id, req.workspaceId]
-    );
 
     const row = result.rows[0];
     const displayId = `#${row.ticket_number}`;
@@ -982,11 +989,9 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     const belongsTo = await getBelongsToAssociations(id);
 
     // Broadcast accountability update when an action item issue is completed
-    // This triggers the celebration animation on the frontend
     if (isClosingIssue && wasNotClosed) {
       const props = row.properties || {};
       if (props.source === 'action_items') {
-        // Broadcast to the assignee (or current user if no assignee)
         const assigneeId = props.assignee_id || req.userId;
         broadcastToUser(assigneeId, 'accountability:updated', { issueId: id, state: data.state });
       }
@@ -994,8 +999,11 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     res.json({ ...issue, display_id: displayId, belongs_to: belongsTo });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Update issue error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 

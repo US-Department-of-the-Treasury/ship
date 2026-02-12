@@ -67,6 +67,13 @@ export const ProjectResponseSchema = z.object({
   has_retro: z.boolean().openapi({
     description: 'Whether project has a retrospective document',
   }),
+  // Design review
+  has_design_review: z.boolean().nullable().openapi({
+    description: 'Whether design review has been completed',
+  }),
+  design_review_notes: z.string().nullable().openapi({
+    description: 'Optional notes from design review',
+  }),
   target_date: DateTimeSchema.nullable(),
   // Inferred status
   inferred_status: z.enum(['active', 'planned', 'completed', 'backlog', 'archived']).openapi({
@@ -122,6 +129,8 @@ export const UpdateProjectSchema = z.object({
   archived_at: DateTimeSchema.optional().nullable(),
   plan: z.string().max(2000).optional().nullable(),
   target_date: DateTimeSchema.optional().nullable(),
+  has_design_review: z.boolean().optional().nullable(),
+  design_review_notes: z.string().max(2000).optional().nullable(),
 }).openapi('UpdateProject');
 
 registry.register('UpdateProject', UpdateProjectSchema);

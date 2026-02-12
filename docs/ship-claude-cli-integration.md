@@ -58,7 +58,7 @@ Add your Ship API token to `~/.claude/.env`:
 ```bash
 # Ship API Configuration
 SHIP_API_TOKEN=ship_your_token_here
-SHIP_API_URL=https://your-ship-instance.example.com/api
+SHIP_URL=https://your-ship-instance.example.com
 SHIP_PROGRAM_ID=your-program-uuid  # Optional: default program for weeks
 ```
 
@@ -254,47 +254,40 @@ Ship includes an MCP (Model Context Protocol) server that **auto-generates tools
 
 ### Configuration
 
-Add Ship's MCP server to your `~/.claude.json`:
+1. Add your Ship credentials to `~/.claude/.env`:
+
+```bash
+SHIP_API_TOKEN=ship_your_token_here
+SHIP_URL=https://ship.example.com
+```
+
+2. Add Ship's MCP server to your `~/.claude.json`:
 
 ```json
 {
   "mcpServers": {
     "ship": {
       "command": "npx",
-      "args": ["tsx", "/path/to/ship/api/src/mcp/server.ts"],
-      "env": {
-        "SHIP_API_TOKEN": "${SHIP_API_TOKEN}",
-        "SHIP_URL": "https://ship.example.com"
-      }
+      "args": ["tsx", "/path/to/ship/api/src/mcp/server.ts"]
     }
   }
 }
 ```
 
-**Environment variables:**
-- `SHIP_URL` - The Ship instance URL (e.g., `https://ship.example.com` or `http://localhost:3000`)
-- `SHIP_API_TOKEN` - Your API token from Settings > API Tokens
+The server reads `SHIP_API_TOKEN` and `SHIP_URL` from `~/.claude/.env` at startup, avoiding hardcoded credentials in your JSON config.
 
 ### How It Works
 
 At startup, the MCP server:
 
 1. **Fetches** the OpenAPI spec from `{SHIP_URL}/api/openapi.json`
-2. **Generates** MCP tools from each operation (tool name = `ship_` + operationId)
+2. **Generates** MCP tools from each HTTP operation (tool name = `ship_` + method + path)
 3. **Builds** input schemas from path parameters, query parameters, and request bodies
 4. **Executes** tool calls by making authenticated HTTP requests to the Ship API
 
 ### Available Tools
 
-Tools are generated for all documented API endpoints:
-
-```bash
-SHIP_API_TOKEN=xxx SHIP_URL=https://ship.example.com npx tsx /path/to/ship/api/src/mcp/server.ts
-# Output: Generated 64 tools from OpenAPI spec
-# Output: Ship MCP server running on https://ship.example.com
-```
-
-Tool categories include:
+Tools are generated for all documented API endpoints (~92 tools). Tool categories include:
 - **Authentication**: Login, logout, session management
 - **Issues**: CRUD, state transitions, history, iterations
 - **Sprints**: Planning, reviews, carryover
@@ -302,6 +295,7 @@ Tool categories include:
 - **Documents**: Wiki pages, search, backlinks
 - **Standups**: Daily updates and status
 - **Activity**: Change tracking and audit logs
+- **Accountability**: Action items and weekly planning
 
 ### Benefits
 

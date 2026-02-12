@@ -224,6 +224,9 @@ export default function ProjectDetailsTab({ documentId, document }: DocumentTabP
     consulted_ids: (document.consulted_ids as string[]) || [],
     informed_ids: (document.informed_ids as string[]) || [],
     converted_from_id: document.converted_from_id as string | undefined,
+    // Design review
+    has_design_review: document.has_design_review as boolean | null | undefined,
+    design_review_notes: document.design_review_notes as string | null | undefined,
   }), [document, programId]);
 
   if (!user) return null;

@@ -8,6 +8,8 @@ import { UseSelectionReturn } from '@/hooks/useSelection';
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from '@/components/ui/ContextMenu';
 import { useToast } from '@/components/ui/Toast';
 import { getContrastTextColor, cn } from '@/lib/cn';
+import { formatDate } from '@/lib/date-utils';
+import { ArchiveIcon } from '@/components/icons/ArchiveIcon';
 
 // Column definitions for programs list
 const ALL_COLUMNS: ColumnDefinition[] = [
@@ -373,31 +375,7 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
 // Icons
-function ArchiveIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-    </svg>
-  );
-}
-
 function TrashIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
