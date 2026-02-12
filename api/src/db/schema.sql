@@ -190,6 +190,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS prevent_circular_parent_trigger ON documents;
 CREATE TRIGGER prevent_circular_parent_trigger
 BEFORE INSERT OR UPDATE OF parent_id ON documents
 FOR EACH ROW
