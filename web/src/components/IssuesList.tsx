@@ -570,8 +570,11 @@ export function IssuesList({
       result = result.filter(issue => getSprintId(issue) === sprintFilter);
     }
 
-    // Apply state filter
-    if (stateFilter) {
+    // Apply state filter (or special filters)
+    if (stateFilter === '__no_project__') {
+      // Special filter: show issues without a project association
+      result = result.filter(issue => !getProjectId(issue));
+    } else if (stateFilter) {
       const states = stateFilter.split(',');
       result = result.filter(issue => states.includes(issue.state));
     }

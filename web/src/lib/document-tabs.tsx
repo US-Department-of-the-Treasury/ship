@@ -74,14 +74,14 @@ const WeekStandupsTab = React.lazy(() => import('@/components/document-tabs/Week
 export const documentTabConfigs: Record<string, DocumentTabConfig[]> = {
   project: [
     {
-      id: 'details',
-      label: 'Details',
-      component: ProjectDetailsTab,
-    },
-    {
       id: 'issues',
       label: (_, counts) => counts?.issues ? `Issues (${counts.issues})` : 'Issues',
       component: ProjectIssuesTab,
+    },
+    {
+      id: 'details',
+      label: 'Details',
+      component: ProjectDetailsTab,
     },
     {
       id: 'weeks',
