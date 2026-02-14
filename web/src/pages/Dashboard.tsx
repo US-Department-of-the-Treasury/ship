@@ -214,12 +214,13 @@ export function DashboardPage() {
                 </div>
               ) : (myWorkGrouped.overdue.length > 0 || myWorkGrouped.this_sprint.length > 0 || myWorkGrouped.later.length > 0) ? (
                 <div className="space-y-6">
-                  {/* Overdue Section */}
+                  {/* Carried Over Section - issues from past sprints still open */}
                   {myWorkGrouped.overdue.length > 0 && (
                     <div className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/20 p-4">
-                      <h2 className="text-lg font-semibold text-red-700 dark:text-red-400 mb-4">
-                        Overdue ({myWorkGrouped.overdue.length})
+                      <h2 className="text-lg font-semibold text-red-700 dark:text-red-400 mb-1">
+                        Carried Over ({myWorkGrouped.overdue.length})
                       </h2>
+                      <p className="text-xs text-red-600/70 dark:text-red-400/60 mb-4">Issues from past weeks still open</p>
                       <div className="space-y-2">
                         {myWorkGrouped.overdue.map((item) => (
                           <WorkItemCard key={item.id} item={item} />
