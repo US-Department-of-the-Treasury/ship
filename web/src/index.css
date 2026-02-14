@@ -130,12 +130,19 @@ input::placeholder {
   margin: 0.5em 0;
   overflow-x: auto;
   position: relative;
+  /* Wide content breakout - allow code blocks to expand beyond container */
+  width: max-content;
+  min-width: 100%;
+  max-width: min(1200px, calc(100vw - 380px)); /* Account for sidebars */
+  margin-left: 50%;
+  transform: translateX(-50%);
 }
 
 .ProseMirror pre code {
   background: none;
   padding: 0;
   color: #e5e7eb;
+  white-space: pre; /* Never wrap code - always expand horizontally */
 }
 
 /* Syntax highlighting for code blocks */
@@ -407,12 +414,24 @@ span[data-emoji] {
 }
 
 /* Table styles */
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+  /* Wide content breakout - expand to fill space between sidebars */
+  /* Layout: Icon Rail (48px) | Sidebar (224px) | Content (flex-1) | Properties (256px) = 528px */
+  /* Inside content: max-w-3xl (48rem) centered with mx-auto, pl-12 (48px) + pr-8 (32px) */
+  /* Inside that: ProseMirror padding-left: 32px */
+  /* Negative margins pull the table out to fill the scrollable container */
+  --mx-auto-offset: max(0px, (100vw - 528px - 48rem) / 2);
+  margin: 0.5em calc(-32px - var(--mx-auto-offset)) 0.5em calc(-80px - var(--mx-auto-offset));
+}
+
 .ProseMirror table {
   border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
-  margin: 0.5em 0;
-  overflow: hidden;
+  table-layout: auto;
+  /* Width determined by column content, not forced edge-to-edge */
+  width: max-content;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .ProseMirror td,
@@ -450,7 +469,13 @@ span[data-emoji] {
   bottom: -2px;
   width: 4px;
   background-color: #5e6ad2;
-  pointer-events: none;
+  cursor: col-resize;
+}
+
+/* Show grab cursor near column borders when table is resizable */
+.ProseMirror.resize-cursor td,
+.ProseMirror.resize-cursor th {
+  cursor: col-resize;
 }
 
 /* Toggle/Details block styles - Notion-like collapsible block */
