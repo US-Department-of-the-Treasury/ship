@@ -16,6 +16,7 @@ import { ProjectsProvider } from '@/contexts/ProjectsContext';
 import { ArchivedPersonsProvider } from '@/contexts/ArchivedPersonsContext';
 import { CurrentDocumentProvider } from '@/contexts/CurrentDocumentContext';
 import { UploadProvider } from '@/contexts/UploadContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import { LoginPage } from '@/pages/Login';
 import { AppLayout } from '@/pages/App';
 import { DocumentsPage } from '@/pages/Documents';
@@ -254,14 +255,16 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       client={queryClient}
       persistOptions={{ persister: queryPersister }}
     >
-      <ToastProvider>
-        <MutationErrorToast />
-        <BrowserRouter>
-          <ReviewQueueProvider>
-            <App />
-          </ReviewQueueProvider>
-        </BrowserRouter>
-      </ToastProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <MutationErrorToast />
+          <BrowserRouter>
+            <ReviewQueueProvider>
+              <App />
+            </ReviewQueueProvider>
+          </BrowserRouter>
+        </ToastProvider>
+      </ThemeProvider>
       <ReactQueryDevtools initialIsOpen={false} />
     </PersistQueryClientProvider>
   </React.StrictMode>

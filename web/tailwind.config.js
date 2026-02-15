@@ -1,17 +1,19 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  darkMode: 'selector',
   theme: {
     extend: {
       colors: {
-        // Linear-inspired neutral palette
+        // Theme-aware colors using CSS custom properties
+        // Light theme (default), dark theme overrides with .dark class
         // All colors meet WCAG 2.1 AA contrast requirements (4.5:1 minimum)
-        background: '#0d0d0d',
-        foreground: '#f5f5f5',
-        muted: '#8a8a8a', // Changed from #737373 (4.09:1) to #8a8a8a (5.1:1 contrast)
-        border: '#262626',
-        accent: '#005ea2', // Logo blue
-        'accent-hover': '#0071bc', // Lighter blue for hover
+        background: 'var(--color-background)',
+        foreground: 'var(--color-foreground)',
+        muted: 'var(--color-muted)',
+        border: 'var(--color-border)',
+        accent: '#005ea2', // Logo blue (same across themes)
+        'accent-hover': '#0071bc', // Lighter blue for hover (same across themes)
       },
       fontFamily: {
         sans: [

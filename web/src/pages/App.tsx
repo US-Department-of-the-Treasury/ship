@@ -36,6 +36,7 @@ import { SelectionPersistenceProvider } from '@/contexts/SelectionPersistenceCon
 import { ActionItemsModal } from '@/components/ActionItemsModal';
 import { AccountabilityBanner } from '@/components/AccountabilityBanner';
 import { ProjectContextSidebar } from '@/components/sidebars/ProjectContextSidebar';
+import { useTheme, type Theme } from '@/contexts/ThemeContext';
 
 type Mode = 'docs' | 'issues' | 'projects' | 'programs' | 'sprints' | 'team' | 'settings' | 'dashboard' | 'project-context';
 
@@ -56,6 +57,21 @@ export function AppLayout() {
   const [projectSetupWizardOpen, setProjectSetupWizardOpen] = useState(false);
   const [actionItemsModalOpen, setActionItemsModalOpen] = useState(false);
   const [actionItemsModalShownOnLoad, setActionItemsModalShownOnLoad] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  // Theme context
+  const { theme, setTheme } = useTheme();
+
+  // Close user menu on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && userMenuOpen) {
+        setUserMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [userMenuOpen]);
 
   // Session timeout handling
   const handleSessionTimeout = useCallback(() => {
@@ -403,13 +419,108 @@ export function AppLayout() {
               active={activeMode === 'settings'}
               onClick={() => handleModeClick('settings')}
             />
-            <button
-              onClick={logout}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/80 text-xs font-medium text-white hover:bg-accent transition-colors"
-              title={`${user?.name} - Click to logout`}
-            >
-              {user?.name?.charAt(0).toUpperCase() || 'U'}
-            </button>
+            <div className="relative">
+              <Tooltip content={user?.name || 'User'} side="right">
+                <button
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/80 text-xs font-medium text-white hover:bg-accent transition-colors"
+                  aria-label="User menu"
+                  aria-haspopup="menu"
+                  aria-expanded={userMenuOpen}
+                >
+                  {user?.name?.charAt(0).toUpperCase() || 'U'}
+                </button>
+              </Tooltip>
+              {userMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setUserMenuOpen(false)}
+                  />
+                  <div
+                    className={cn(
+                      'absolute bottom-0 left-full z-50 ml-2 w-48 py-1',
+                      'bg-background border border-border rounded-lg shadow-xl',
+                      'animate-in fade-in zoom-in-95 duration-100'
+                    )}
+                    role="menu"
+                    aria-label="User menu"
+                  >
+                    {/* Theme submenu */}
+                    <div className="px-2 py-1.5 text-xs font-medium text-muted uppercase tracking-wider">
+                      Theme
+                    </div>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setTheme('light');
+                        setUserMenuOpen(false);
+                      }}
+                      className={cn(
+                        'w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-2',
+                        'hover:bg-border/50 transition-colors text-foreground'
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <SunIcon />
+                        <span>Light</span>
+                      </div>
+                      {theme === 'light' && <CheckIcon />}
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setTheme('dark');
+                        setUserMenuOpen(false);
+                      }}
+                      className={cn(
+                        'w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-2',
+                        'hover:bg-border/50 transition-colors text-foreground'
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MoonIcon />
+                        <span>Dark</span>
+                      </div>
+                      {theme === 'dark' && <CheckIcon />}
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setTheme('system');
+                        setUserMenuOpen(false);
+                      }}
+                      className={cn(
+                        'w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-2',
+                        'hover:bg-border/50 transition-colors text-foreground'
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MonitorIcon />
+                        <span>Use system theme</span>
+                      </div>
+                      {theme === 'system' && <CheckIcon />}
+                    </button>
+                    <div className="my-1 h-px bg-border" role="separator" />
+                    {/* Logout */}
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        logout();
+                      }}
+                      className={cn(
+                        'w-full px-3 py-2 text-left text-sm flex items-center gap-2',
+                        'hover:bg-border/50 transition-colors text-foreground'
+                      )}
+                    >
+                      <LogoutIcon />
+                      <span>Logout</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </nav>
 
@@ -1867,6 +1978,46 @@ function GlobeIcon({ className }: { className?: string }) {
   return (
     <svg className={className || "h-4 w-4"} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+    </svg>
+  );
+}
+
+function MonitorIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="h-4 w-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
+function LogoutIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
     </svg>
   );
 }

@@ -2,7 +2,8 @@ import { useState, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/cn';
 import { apiGet, apiPatch, apiPost } from '@/lib/api';
-import { priorityColors } from '@/lib/statusColors';
+import { getPriorityColor } from '@/lib/statusColors';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface Issue {
   id: string;
@@ -62,6 +63,7 @@ export function WeekReconciliation({
   onDecisionMade,
 }: WeekReconciliationProps) {
   const queryClient = useQueryClient();
+  const { resolvedTheme } = useTheme();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -356,7 +358,7 @@ export function WeekReconciliation({
                   <div className="flex items-center gap-2">
                     <span className={cn('h-2 w-2 rounded-full flex-shrink-0', STATE_COLORS[issue.state])} />
                     <span className="text-xs font-mono text-muted">{issue.display_id}</span>
-                    <span className={cn('text-xs', priorityColors[issue.priority])}>
+                    <span className={cn('text-xs', getPriorityColor(issue.priority, resolvedTheme))}>
                       {issue.priority !== 'none' && issue.priority.charAt(0).toUpperCase()}
                     </span>
                     {issue.estimate && (

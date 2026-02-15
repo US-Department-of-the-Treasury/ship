@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { cn } from '@/lib/cn';
-import { sprintStatusColors } from '@/lib/statusColors';
+import { getSprintStatusColor } from '@/lib/statusColors';
+import { useTheme } from '@/contexts/ThemeContext';
 import { formatDate } from '@/lib/date-utils';
 import type { Sprint } from '@/hooks/useWeeksQuery';
 
@@ -120,6 +121,7 @@ function WeekWindowCard({
   onOpenSprint,
 }: WeekWindowCardProps) {
   const { sprint, status, sprint_number, start_date, end_date } = window;
+  const { resolvedTheme } = useTheme();
 
   if (sprint) {
     // Filled window - sprint exists
@@ -182,7 +184,7 @@ function WeekWindowCard({
         <div className="mt-2 flex items-center justify-between text-xs">
           <span className={cn(
             'rounded px-1.5 py-0.5 whitespace-nowrap',
-            status === 'active' ? 'bg-accent/20 text-accent' : sprintStatusColors[status]
+            status === 'active' ? 'bg-accent/20 text-accent' : getSprintStatusColor(status, resolvedTheme)
           )}>
             {status.charAt(0).toUpperCase() + status.slice(1)}
           </span>
@@ -220,7 +222,7 @@ function WeekWindowCard({
       <div className="mt-2 text-xs">
         <span className={cn(
           'rounded px-1.5 py-0.5 whitespace-nowrap',
-          sprintStatusColors[status]
+          getSprintStatusColor(status, resolvedTheme)
         )}>
           {status.charAt(0).toUpperCase() + status.slice(1)}
         </span>
