@@ -1,13 +1,11 @@
 /**
- * PlanQualityBanner — Prominent AI quality feedback bar for weekly plan editors.
+ * PlanQualityBanner / RetroQualityBanner — Compact AI quality score bars.
  *
- * Renders between the document title and editor content. Shows:
- * - Approval likelihood meter (collapsed view)
- * - Per-item feedback (expanded view)
- * - Prominent loading indicator during analysis
+ * Renders between the document title and editor content. Shows a compact
+ * score bar with overall percentage and workload badge. Per-item feedback
+ * is rendered inline via AIScoringDisplay decorations in the editor.
  *
- * Polls document content via API with 1s debounce. Uses request IDs
- * to ignore stale responses from race conditions.
+ * Uses content hashing (SHA-256) to skip re-analysis when content is unchanged.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
