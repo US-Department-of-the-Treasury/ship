@@ -963,3 +963,70 @@ span[data-emoji] {
   margin-top: 0.25em;
   margin-bottom: 0.25em;
 }
+
+/* AI Scoring inline feedback (similar treatment to inline comments) */
+.ai-scoring-inline {
+  margin: 2px 0 4px;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.ai-scoring-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  border-left: 3px solid;
+}
+
+.ai-scoring-green {
+  background: rgba(34, 197, 94, 0.06);
+  border-left-color: rgba(34, 197, 94, 0.5);
+  color: rgba(34, 197, 94, 0.8);
+}
+
+.ai-scoring-yellow {
+  background: rgba(234, 179, 8, 0.06);
+  border-left-color: rgba(234, 179, 8, 0.5);
+  color: rgba(234, 179, 8, 0.8);
+}
+
+.ai-scoring-red {
+  background: rgba(239, 68, 68, 0.06);
+  border-left-color: rgba(239, 68, 68, 0.5);
+  color: rgba(239, 68, 68, 0.8);
+}
+
+.ai-scoring-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ai-scoring-status-icon {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.ai-scoring-text {
+  flex: 1;
+  color: rgba(161, 161, 170, 0.9);
+}
+
+.ai-scoring-conciseness {
+  flex-basis: 100%;
+  margin-top: 2px;
+  padding-left: 26px;
+  color: rgba(251, 146, 60, 0.8);
+  font-style: italic;
+}

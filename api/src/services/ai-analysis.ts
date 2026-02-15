@@ -9,6 +9,7 @@
  * Gracefully degrades when Bedrock is unavailable.
  */
 
+import { createHash } from 'crypto';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { extractText } from '../utils/document-content.js';
 
@@ -108,6 +109,9 @@ export interface PlanItemAnalysis {
   score: number; // 0-1 falsifiability score
   feedback: string;
   issues: string[];
+  conciseness_score?: number; // 0-1, penalizes verbose items
+  is_verbose?: boolean;
+  conciseness_feedback?: string;
 }
 
 export interface PlanAnalysisResult {
@@ -115,6 +119,7 @@ export interface PlanAnalysisResult {
   items: PlanItemAnalysis[];
   workload_assessment: 'light' | 'moderate' | 'heavy' | 'excessive';
   workload_feedback: string;
+  content_hash?: string; // SHA-256 of input content for cache invalidation
 }
 
 export interface RetroItemAnalysis {
@@ -128,24 +133,40 @@ export interface RetroAnalysisResult {
   overall_score: number; // 0-1
   plan_coverage: RetroItemAnalysis[];
   suggestions: string[];
+  content_hash?: string; // SHA-256 of input content for cache invalidation
 }
 
 export type AnalysisError = { error: string };
 
+/** Compute SHA-256 hash of content for cache invalidation */
+function computeContentHash(content: unknown): string {
+  return createHash('sha256').update(JSON.stringify(content)).digest('hex');
+}
+
 const PLAN_SYSTEM_PROMPT = `You are an AI assistant that evaluates weekly work plans for government employees.
 
-Your job is to assess each plan item on two dimensions:
+Your job is to assess each plan item on THREE dimensions:
 1. **Verifiability (score 0-1)**: Can an independent observer determine whether this item was completed by examining evidence? A score of 1.0 means the item has a clear, measurable deliverable. A score of 0.0 means it's completely vague.
-2. **Workload**: Is the overall plan a reasonable amount of work for a full-time employee's week?
+2. **Conciseness (conciseness_score 0-1)**: Is the item stated concisely as a falsifiable deliverable? A score of 1.0 means it's a crisp 1-sentence deliverable. A score of 0.0 means it's a rambling multi-paragraph description.
+3. **Workload**: Is the overall plan a reasonable amount of work for a full-time employee's week?
 
 Key criteria for a good plan item:
 - It produces a specific, tangible deliverable (document, report, shipped feature, completed calls)
 - It has a clear definition of done
 - Someone unfamiliar with the work could verify completion
+- It is stated in 1-2 SHORT sentences maximum — just the deliverable, not a detailed description of how
+
+Conciseness rules (IMPORTANT):
+- A plan item should be a SINGLE falsifiable statement: "Ship the login page with OAuth integration"
+- NOT a paragraph: "I plan to work on the login page. This will involve setting up OAuth, configuring the redirect URIs, testing with multiple providers, and deploying to staging."
+- If an item is more than ~30 words, it's probably too verbose. Penalize the conciseness_score.
+- If an item contains multiple sentences describing process/method rather than outcome, set is_verbose=true
+- The overall_score should factor in conciseness: verbose items should drag down the overall score even if they're verifiable
 
 Common problems:
 - Activities instead of outcomes: "meet with", "coordinate with", "work on" describe what you'll DO, not what you'll PRODUCE
 - Vague scope: "improve X", "investigate Y" have no definition of done
+- Too verbose: describing HOW you'll do something instead of WHAT you'll deliver
 - Too little work: "take 5 calls" in a week is light for a full-time employee
 
 Workload assessment:
@@ -156,13 +177,16 @@ Workload assessment:
 
 Respond ONLY with valid JSON matching this exact structure:
 {
-  "overall_score": <0-1 average of item scores>,
+  "overall_score": <0-1 average of item scores, factoring in conciseness>,
   "items": [
     {
       "text": "<the plan item text>",
-      "score": <0-1>,
+      "score": <0-1 verifiability>,
       "feedback": "<specific, actionable feedback>",
-      "issues": ["<issue tag: not_falsifiable, no_deliverable, too_vague, too_light, etc>"]
+      "issues": ["<issue tag: not_falsifiable, no_deliverable, too_vague, too_verbose, too_light, etc>"],
+      "conciseness_score": <0-1>,
+      "is_verbose": <true/false>,
+      "conciseness_feedback": "<specific feedback about conciseness, or empty string if concise>"
     }
   ],
   "workload_assessment": "<light|moderate|heavy|excessive>",
@@ -235,6 +259,7 @@ async function callBedrock(systemPrompt: string, userPrompt: string): Promise<st
  * Analyze a weekly plan for quality (falsifiability and workload).
  */
 export async function analyzePlan(content: unknown): Promise<PlanAnalysisResult | AnalysisError> {
+  const contentHash = computeContentHash(content);
   const planItems = extractPlanItems(content);
 
   if (planItems.length === 0) {
@@ -243,6 +268,7 @@ export async function analyzePlan(content: unknown): Promise<PlanAnalysisResult 
       items: [],
       workload_assessment: 'light',
       workload_feedback: 'No plan items found. Add specific, verifiable deliverables for your week.',
+      content_hash: contentHash,
     };
   }
 
@@ -275,6 +301,7 @@ export async function analyzePlan(content: unknown): Promise<PlanAnalysisResult 
       item.score = Math.max(0, Math.min(1, item.score || 0));
     }
 
+    result.content_hash = contentHash;
     return result;
   } catch (err) {
     console.error('Plan analysis error:', err);
@@ -289,6 +316,7 @@ export async function analyzeRetro(
   retroContent: unknown,
   planContent: unknown
 ): Promise<RetroAnalysisResult | AnalysisError> {
+  const contentHash = computeContentHash({ retro_content: retroContent, plan_content: planContent });
   const planItems = extractPlanItems(planContent);
   const retroText = extractText(retroContent);
 
@@ -302,6 +330,7 @@ export async function analyzeRetro(
         feedback: 'This plan item is not addressed in the retro.',
       })),
       suggestions: ['Your retro is empty. Address each item from your plan.'],
+      content_hash: contentHash,
     };
   }
 
@@ -332,6 +361,7 @@ export async function analyzeRetro(
     const jsonStr = jsonMatch[1] || jsonMatch[0];
     const result = JSON.parse(jsonStr) as RetroAnalysisResult;
     result.overall_score = Math.max(0, Math.min(1, result.overall_score || 0));
+    result.content_hash = contentHash;
 
     return result;
   } catch (err) {

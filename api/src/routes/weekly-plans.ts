@@ -3,6 +3,7 @@ import { pool } from '../db/client.js';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
+import { extractText } from '../utils/document-content.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
@@ -55,7 +56,86 @@ const WEEKLY_RETRO_TEMPLATE = {
 const TEMPLATE_HEADINGS = [
   'What I plan to accomplish this week',
   'What I delivered this week',
+  'Unplanned work',
 ];
+
+/** Extract plan items from TipTap JSON content (mirrors ai-analysis.ts logic) */
+function extractPlanItems(content: unknown): string[] {
+  if (!content || typeof content !== 'object') return [];
+  const doc = content as { content?: unknown[] };
+  if (!Array.isArray(doc.content)) return [];
+
+  const items: string[] = [];
+
+  function walkNodes(nodes: unknown[]) {
+    for (const node of nodes) {
+      if (!node || typeof node !== 'object') continue;
+      const n = node as { type?: string; content?: unknown[] };
+
+      if (n.type === 'listItem' || n.type === 'taskItem') {
+        const text = extractText(n).trim();
+        if (text) items.push(text);
+      } else if (n.type === 'paragraph') {
+        // Skip headings and short fragments
+        const parentIsHeading = false; // top-level paragraphs only
+        if (!parentIsHeading) {
+          const text = extractText(n).trim();
+          if (text && text.length > 10) items.push(text);
+        }
+      }
+
+      if (n.content && n.type !== 'listItem' && n.type !== 'taskItem') {
+        walkNodes(n.content);
+      }
+    }
+  }
+
+  walkNodes(doc.content);
+  return items;
+}
+
+/** Build a retro template auto-populated with plan reference blocks */
+function buildRetroTemplateWithPlanItems(planItems: string[], planDocumentId: string): object {
+  const content: unknown[] = [
+    {
+      type: 'heading',
+      attrs: { level: 2 },
+      content: [{ type: 'text', text: 'What I delivered this week' }],
+    },
+  ];
+
+  // Add a planReference block + empty paragraph for each plan item
+  for (let i = 0; i < planItems.length; i++) {
+    content.push({
+      type: 'planReference',
+      attrs: {
+        planItemText: planItems[i],
+        planDocumentId,
+        itemIndex: i,
+      },
+    });
+    content.push({
+      type: 'paragraph',
+    });
+  }
+
+  // Add "Unplanned work" section
+  content.push({
+    type: 'heading',
+    attrs: { level: 2 },
+    content: [{ type: 'text', text: 'Unplanned work' }],
+  });
+  content.push({
+    type: 'bulletList',
+    content: [
+      { type: 'listItem', content: [{ type: 'paragraph' }] },
+      { type: 'listItem', content: [{ type: 'paragraph' }] },
+      { type: 'listItem', content: [{ type: 'paragraph' }] },
+    ],
+  });
+
+  return { type: 'doc', content };
+}
 
 // Schema for creating/getting a weekly plan
 const weeklyPlanSchema = z.object({
@@ -544,12 +624,31 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
       submitted_at: null,
     };
 
+    // Fetch corresponding plan to auto-populate retro with plan items
+    let retroTemplate = WEEKLY_RETRO_TEMPLATE;
+    const planResult = await client.query(
+      `SELECT id, content FROM documents
+       WHERE workspace_id = $1
+         AND document_type = 'weekly_plan'
+         AND (properties->>'person_id') = $2
+         AND (properties->>'project_id') = $3
+         AND (properties->>'week_number')::int = $4`,
+      [workspaceId, person_id, project_id, week_number]
+    );
+
+    if (planResult.rows.length > 0 && planResult.rows[0].content) {
+      const planItems = extractPlanItems(planResult.rows[0].content);
+      if (planItems.length > 0) {
+        retroTemplate = buildRetroTemplateWithPlanItems(planItems, planResult.rows[0].id) as typeof WEEKLY_RETRO_TEMPLATE;
+      }
+    }
+
     // Insert the document with template content
     const insertResult = await client.query(
       `INSERT INTO documents (id, workspace_id, document_type, title, content, properties, visibility, created_by, position)
        VALUES ($1, $2, 'weekly_retro', $3, $4, $5, 'workspace', $6, 0)
        RETURNING id, title, content, properties, created_at, updated_at`,
-      [docId, workspaceId, title, JSON.stringify(WEEKLY_RETRO_TEMPLATE), JSON.stringify(properties), userId]
+      [docId, workspaceId, title, JSON.stringify(retroTemplate), JSON.stringify(properties), userId]
     );
 
     // Create association with project
