@@ -10,6 +10,7 @@
 export const TEMPLATE_HEADINGS = [
   'What I plan to accomplish this week',
   'What I delivered this week',
+  'Unplanned work',
 ];
 
 /**

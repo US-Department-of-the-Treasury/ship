@@ -79,11 +79,31 @@ function findListItems(doc: any): Array<{ endPos: number; text: string }> {
     if (node.type.name === 'listItem' || node.type.name === 'taskItem') {
       const text = extractNodeText(node);
       if (text) {
-        // End position of this list item node
         const endPos = pos + node.nodeSize;
         items.push({ endPos, text });
       }
-      return false; // Don't descend into children
+      return false;
+    }
+  });
+
+  return items;
+}
+
+/**
+ * Find planReference nodes in the document (for retro documents).
+ * Returns array of { endPos, text } using the planItemText attribute.
+ */
+function findPlanReferenceNodes(doc: any): Array<{ endPos: number; text: string }> {
+  const items: Array<{ endPos: number; text: string }> = [];
+
+  doc.descendants((node: any, pos: number) => {
+    if (node.type.name === 'planReference') {
+      const text = node.attrs.planItemText || '';
+      if (text) {
+        const endPos = pos + node.nodeSize;
+        items.push({ endPos, text });
+      }
+      return false;
     }
   });
 
@@ -236,8 +256,10 @@ export const AIScoringDisplayExtension = Extension.create<Record<string, never>,
             }
 
             if (retroAnalysis && retroAnalysis.plan_coverage.length > 0) {
-              // For retros, match coverage items to planReference nodes or list items
-              const listItems = findListItems(doc);
+              // For retros, prefer planReference nodes (auto-populated retros),
+              // fall back to regular list items (free-form retros)
+              const planRefNodes = findPlanReferenceNodes(doc);
+              const listItems = planRefNodes.length > 0 ? planRefNodes : findListItems(doc);
               const coverageItems = retroAnalysis.plan_coverage.map(c => ({ text: c.plan_item }));
               const matches = matchAnalysisToListItems(listItems, coverageItems);
 
