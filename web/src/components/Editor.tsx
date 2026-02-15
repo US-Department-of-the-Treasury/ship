@@ -37,6 +37,7 @@ import { HypothesisBlockExtension } from './editor/HypothesisBlockExtension';
 import { CommentMark } from './editor/CommentMark';
 import { CommentDisplayExtension } from './editor/CommentDisplay';
 import { AIScoringDisplayExtension } from './editor/AIScoringDisplay';
+import { PlanReferenceBlockExtension } from './editor/PlanReferenceBlock';
 import { useCommentsQuery, useCreateComment, useUpdateComment } from '@/hooks/useCommentsQuery';
 import { BubbleMenu } from '@tiptap/react';
 import 'tippy.js/dist/tippy.css';
@@ -590,6 +591,7 @@ export function Editor({
     CommentMark.configure({ onAddComment: handleAddComment }),
     CommentDisplayExtension,
     AIScoringDisplayExtension,
+    PlanReferenceBlockExtension,
     slashCommandsExtension,
   ];
 
