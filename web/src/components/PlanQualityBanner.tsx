@@ -69,6 +69,9 @@ interface PlanItemAnalysis {
   score: number;
   feedback: string;
   issues: string[];
+  conciseness_score?: number;
+  is_verbose?: boolean;
+  conciseness_feedback?: string;
 }
 
 interface PlanAnalysisResult {
@@ -76,6 +79,16 @@ interface PlanAnalysisResult {
   items: PlanItemAnalysis[];
   workload_assessment: 'light' | 'moderate' | 'heavy' | 'excessive';
   workload_feedback: string;
+  content_hash?: string;
+}
+
+/** Compute SHA-256 hash of content for cache invalidation (matches backend) */
+async function computeContentHash(content: unknown): Promise<string> {
+  const data = new TextEncoder().encode(JSON.stringify(content));
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 const WORKLOAD_COLORS = {
@@ -98,6 +111,7 @@ export function PlanQualityBanner({
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const lastContentRef = useRef<string>('');
   const requestIdRef = useRef(0);
+  const persistedHashRef = useRef<string | null>(null);
 
   // Check AI availability and load persisted analysis from document properties
   useEffect(() => {
@@ -106,12 +120,13 @@ export function PlanQualityBanner({
       .then(data => setAiAvailable(data?.available ?? false))
       .catch(() => setAiAvailable(false));
 
-    // Load last analysis from document properties
+    // Load last analysis from document properties (including content hash)
     quietGet(`/api/documents/${documentId}`)
       .then(r => r.ok ? r.json() : null)
       .then(doc => {
         if (doc?.properties?.ai_analysis) {
           setAnalysis(doc.properties.ai_analysis);
+          persistedHashRef.current = doc.properties.ai_analysis.content_hash || null;
         }
       })
       .catch(() => {});
@@ -125,11 +140,22 @@ export function PlanQualityBanner({
   }, [documentId]);
 
   // Run analysis (called on content change AND on initial load)
-  const runAnalysis = useCallback((content: Record<string, unknown>) => {
+  const runAnalysis = useCallback(async (content: Record<string, unknown>) => {
     const contentStr = JSON.stringify(content);
     if (contentStr === lastContentRef.current) return;
-    lastContentRef.current = contentStr;
 
+    // Check persisted hash before calling API (avoids re-analysis on page load)
+    if (persistedHashRef.current) {
+      const currentHash = await computeContentHash(content);
+      if (currentHash === persistedHashRef.current) {
+        lastContentRef.current = contentStr;
+        persistedHashRef.current = null;
+        return;
+      }
+      persistedHashRef.current = null;
+    }
+
+    lastContentRef.current = contentStr;
     const thisRequestId = ++requestIdRef.current;
     setLoading(true);
 
@@ -274,6 +300,11 @@ export function PlanQualityBanner({
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground">{item.text}</p>
                   <p className="mt-1 text-xs text-muted leading-relaxed">{item.feedback}</p>
+                  {item.is_verbose && item.conciseness_feedback && (
+                    <p className="mt-1 text-xs text-orange-400 leading-relaxed">
+                      Conciseness: {item.conciseness_feedback}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -306,6 +337,7 @@ export function RetroQualityBanner({
     overall_score: number;
     plan_coverage: Array<{ plan_item: string; addressed: boolean; has_evidence: boolean; feedback: string }>;
     suggestions: string[];
+    content_hash?: string;
   };
   const [planContent, setPlanContent] = useState<Record<string, unknown> | null>(externalPlanContent);
   const [analysis, setAnalysis] = useState<RetroAnalysis | null>(null);
@@ -315,6 +347,7 @@ export function RetroQualityBanner({
   const lastContentRef = useRef<string>('');
   const requestIdRef = useRef(0);
   const initDoneRef = useRef(false);
+  const persistedHashRef = useRef<string | null>(null);
 
   // On mount: check AI, load persisted analysis, and fetch plan content
   useEffect(() => {
@@ -331,8 +364,11 @@ export function RetroQualityBanner({
       .then(r => r.ok ? r.json() : null)
       .then(async (doc) => {
         if (!doc) return;
-        // Restore persisted analysis
-        if (doc.properties?.ai_analysis) setAnalysis(doc.properties.ai_analysis);
+        // Restore persisted analysis (including content hash for cache check)
+        if (doc.properties?.ai_analysis) {
+          setAnalysis(doc.properties.ai_analysis);
+          persistedHashRef.current = doc.properties.ai_analysis.content_hash || null;
+        }
 
         // Fetch corresponding plan content
         if (externalPlanContent) {
@@ -366,11 +402,22 @@ export function RetroQualityBanner({
     }).catch(() => {});
   }, [documentId]);
 
-  const runAnalysis = useCallback((retroContent: Record<string, unknown>, plan: Record<string, unknown>) => {
+  const runAnalysis = useCallback(async (retroContent: Record<string, unknown>, plan: Record<string, unknown>) => {
     const contentStr = JSON.stringify(retroContent);
     if (contentStr === lastContentRef.current) return;
-    lastContentRef.current = contentStr;
 
+    // Check persisted hash before calling API (avoids re-analysis on page load)
+    if (persistedHashRef.current) {
+      const currentHash = await computeContentHash({ retro_content: retroContent, plan_content: plan });
+      if (currentHash === persistedHashRef.current) {
+        lastContentRef.current = contentStr;
+        persistedHashRef.current = null;
+        return;
+      }
+      persistedHashRef.current = null;
+    }
+
+    lastContentRef.current = contentStr;
     const thisRequestId = ++requestIdRef.current;
     setLoading(true);
 
