@@ -386,17 +386,26 @@ export function UnifiedEditor({
 
   // AI quality banner — triggers analysis on content changes from the editor
   const [editorContent, setEditorContent] = useState<Record<string, unknown> | null>(null);
+  const [aiScoringAnalysis, setAiScoringAnalysis] = useState<{ planAnalysis?: unknown; retroAnalysis?: unknown } | null>(null);
   const isWeeklyDoc = document.document_type === 'weekly_plan' || document.document_type === 'weekly_retro';
+
+  const handlePlanAnalysisChange = useCallback((analysis: unknown) => {
+    setAiScoringAnalysis(analysis ? { planAnalysis: analysis } : null);
+  }, []);
+
+  const handleRetroAnalysisChange = useCallback((analysis: unknown) => {
+    setAiScoringAnalysis(analysis ? { retroAnalysis: analysis } : null);
+  }, []);
 
   const qualityBanner = useMemo(() => {
     if (document.document_type === 'weekly_plan') {
-      return <PlanQualityBanner documentId={document.id} editorContent={editorContent} />;
+      return <PlanQualityBanner documentId={document.id} editorContent={editorContent} onAnalysisChange={handlePlanAnalysisChange} />;
     }
     if (document.document_type === 'weekly_retro') {
-      return <RetroQualityBanner documentId={document.id} editorContent={editorContent} planContent={null} />;
+      return <RetroQualityBanner documentId={document.id} editorContent={editorContent} planContent={null} onAnalysisChange={handleRetroAnalysisChange} />;
     }
     return undefined;
-  }, [document.id, document.document_type, editorContent]);
+  }, [document.id, document.document_type, editorContent, handlePlanAnalysisChange, handleRetroAnalysisChange]);
 
   return (
     <Editor
@@ -419,6 +428,7 @@ export function UnifiedEditor({
       onPlanChange={document.document_type === 'sprint' || document.document_type === 'project' ? handlePlanChange : undefined}
       contentBanner={qualityBanner}
       onContentChange={isWeeklyDoc ? setEditorContent : undefined}
+      aiScoringAnalysis={isWeeklyDoc ? aiScoringAnalysis : undefined}
     />
   );
 }

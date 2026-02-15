@@ -36,6 +36,7 @@ import { TableOfContentsExtension } from './editor/TableOfContents';
 import { HypothesisBlockExtension } from './editor/HypothesisBlockExtension';
 import { CommentMark } from './editor/CommentMark';
 import { CommentDisplayExtension } from './editor/CommentDisplay';
+import { AIScoringDisplayExtension } from './editor/AIScoringDisplay';
 import { useCommentsQuery, useCreateComment, useUpdateComment } from '@/hooks/useCommentsQuery';
 import { BubbleMenu } from '@tiptap/react';
 import 'tippy.js/dist/tippy.css';
@@ -82,6 +83,8 @@ interface EditorProps {
   contentBanner?: React.ReactNode;
   /** Callback when editor content changes (debounced). Receives TipTap JSON content. */
   onContentChange?: (content: Record<string, unknown>) => void;
+  /** AI scoring analysis data to render as inline decorations */
+  aiScoringAnalysis?: { planAnalysis?: unknown; retroAnalysis?: unknown } | null;
 }
 
 type SyncStatus = 'connecting' | 'cached' | 'synced' | 'disconnected';
@@ -175,6 +178,7 @@ export function Editor({
   onPlanChange,
   contentBanner,
   onContentChange,
+  aiScoringAnalysis,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -585,6 +589,7 @@ export function Editor({
     HypothesisBlockExtension,
     CommentMark.configure({ onAddComment: handleAddComment }),
     CommentDisplayExtension,
+    AIScoringDisplayExtension,
     slashCommandsExtension,
   ];
 
@@ -664,6 +669,28 @@ export function Editor({
     }, 100);
     return () => clearTimeout(timer);
   }, [editor, comments, pendingCommentId]);
+
+  // Sync AI scoring data into the AIScoringDisplay extension storage
+  useEffect(() => {
+    if (!editor || !aiScoringAnalysis) return;
+    const ext = editor.extensionManager.extensions.find(e => e.name === 'aiScoringDisplay');
+    if (!ext) return;
+
+    ext.storage.planAnalysis = aiScoringAnalysis.planAnalysis || null;
+    ext.storage.retroAnalysis = aiScoringAnalysis.retroAnalysis || null;
+
+    // Force ProseMirror to re-evaluate decorations
+    const timer = setTimeout(() => {
+      if (!editor.isDestroyed && editor.view) {
+        try {
+          editor.view.updateState(editor.view.state);
+        } catch {
+          // Ignore DOM errors during initialization
+        }
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [editor, aiScoringAnalysis]);
 
   // Sync document links when editor content changes (for backlinks feature)
   const lastSyncedLinksRef = useRef<string>('');
