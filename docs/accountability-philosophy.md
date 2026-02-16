@@ -93,8 +93,8 @@ Weeks end with two documents that close the learning loop:
 
 A weekly review answers: **What did we actually deliver?**
 
-- Issues completed vs. planned
-- What carried over to next week
+- Issues completed vs. what the plan declared
+- What was not completed and why
 - Any scope changes or surprises
 
 This is execution tracking—did we do what we said we'd do?

@@ -240,7 +240,7 @@ List issues with optional filters.
 - `priority` - urgent, high, medium, low, none
 - `assignee_id` - UUID or "null"/"unassigned"
 - `program_id` - Filter by program association
-- `sprint_id` - Filter by week association (historical field name)
+- `week_id` - Filter by week association (via document_associations table)
 - `source` - internal or external
 - `parent_filter` - top_level, has_children, is_sub_issue
 
@@ -378,9 +378,8 @@ Bulk update multiple issues.
   "action": "update",
   "updates": {
     "state": "done",
-    "sprint_id": "uuid",
     "assignee_id": "uuid",
-    "project_id": "uuid"
+    "belongs_to": [{ "id": "uuid", "type": "sprint" }]
   }
 }
 ```

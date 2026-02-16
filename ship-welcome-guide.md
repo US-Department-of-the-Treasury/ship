@@ -39,9 +39,9 @@ Ship is a project management platform designed for teams that ship software. It 
 
 | Concept | Purpose | Contains |
 |---------|---------|----------|
-| **Program** | High-level initiative or team | Projects + Sprints |
+| **Program** | High-level initiative or team | Projects + Weeks |
 | **Project** | Focused body of work with a goal | Issues + Documentation |
-| **Sprint** | Time-boxed work period (usually 1-2 weeks) | Issues from any project |
+| **Week** | 7-day accountability window (inferred time period) | Issues worked on during that week |
 | **Issue** | Single unit of work | Description, status, assignee |
 
 ---
@@ -119,7 +119,7 @@ Projects represent focused bodies of work within your program.
 
 ### Step 3: Add Issues
 
-Issues are individual units of work. They can belong to projects and be assigned to sprints.
+Issues are individual units of work. They can belong to projects and be associated with weeks.
 
 1. Open a project
 2. Go to the **Issues** tab
@@ -276,22 +276,21 @@ Issues can belong to multiple contexts simultaneously:
 │                                                          │
 │  belongs_to:                                             │
 │    ├── Project: "Auth System"                            │
-│    ├── Sprint: "Sprint 14"                               │
-│    └── Sprint: "Sprint 15" (carried over)                │
+│    └── Week: "Week 14"                                   │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```
 
 This enables:
-- Issues spanning multiple sprints (carry-over)
-- Viewing issues by project OR by sprint
+- Viewing issues by project OR by week
 - Flexible organization without duplication
+- Issues as trailing indicators of what was done during a week
 
 ### Bulk Operations
 
 Select multiple issues with checkboxes to:
 - Change status (e.g., mark all as done)
-- Assign to sprint
+- Associate with week
 - Change priority
 - Add/remove tags
 
@@ -303,7 +302,7 @@ Filter issues by:
 - **Status**: Triage, Backlog, Todo, In Progress, In Review, Done, Cancelled
 - **Priority**: Urgent, High, Medium, Low, None
 - **Assignee**: Team member
-- **Sprint**: Current, specific, or none
+- **Week**: Current, specific, or none
 - **Tags**: Custom labels
 
 Filters sync to the URL, making them shareable.

@@ -21,7 +21,7 @@ Ship follows a document-first approach where everything (issues, weeks, programs
 ## Workflow 1: Issue Triage & Assignment
 
 ### Goal
-See incoming issues across programs and assign them to a week in <3 clicks.
+See incoming issues across programs and triage them in <3 clicks.
 
 ### Current Path
 
@@ -33,59 +33,39 @@ See incoming issues across programs and assign them to a week in <3 clicks.
    - Issues page shows all issues filtered by state
    - Default view shows all states
 
-3. **Assign to Week**
+3. **Associate with Week** (if needed)
    - Click an issue to open the issue editor
-   - In the Properties sidebar (right side), find "Week" dropdown
-   - Select a week from the dropdown
-   - Issue is now assigned to that week
+   - In the Properties sidebar (right side), use "belongs_to" to associate with a week
+   - Week associations use the `document_associations` table
 
 ### Known Issues
-- [ ] **BUG**: Week assignment dropdown may not work (API field mismatch)
-- [ ] No bulk assignment capability yet
+- [ ] No bulk association capability yet
 - [ ] No drag-and-drop from issues list to week
 
 ---
 
-## Workflow 2: Week Planning
+## Workflow 2: Weekly Planning (Plan-Driven)
 
 ### Goal
-Create a week with clear goals and plan which issues to include.
+Write a weekly plan that declares intent, then track execution through issues.
 
 ### Current Path
 
-1. **Navigate to a Program**
-   - Click "Programs" in the left icon rail
-   - Click a program name in the sidebar (e.g., "Ship Core")
+1. **Navigate to "My Work"**
+   - The dashboard answers "what do I need to do right now?"
+   - It surfaces accountability rituals: write your plan, write your retro
+   - When rituals are done, it shows current project context from your weekly plan
 
-2. **View Program's Weeks**
-   - In Program view, click "Weeks" tab *(currently broken)*
-   - **Workaround**: Navigate directly to `/programs/{id}/view` and use Weeks tab
+2. **Write a Weekly Plan**
+   - Plans are the unit of intent -- they declare what you will accomplish this week
+   - Create a weekly plan document for your week
+   - Describe goals, hypothesis, and key deliverables
 
-3. **Create New Week**
-   - Click "New Week" button
-   - Fill in: Name, Start Date, End Date, Goal
-   - Click "Create Week"
-
-4. **Week Planning View**
-   - Navigate to `/weeks/{id}/view` to see the planning board
-   - **Left column**: Backlog (program issues not in any week)
-   - **Right column**: Week (issues assigned to this week)
-
-5. **Add Issues to Week**
-   - Click the green "+" button on any backlog issue
-   - Issue moves from Backlog to Week column
-   - *(Currently broken - see bugs)*
-
-6. **Set Week Goal**
-   - Click "Click to add a week goal..." text
-   - Type your goal (hypothesis for the week)
-   - Click "Save"
-   - *(Currently broken - API doesn't accept goal field)*
+3. **Associate Issues as Needed**
+   - Issues are a trailing indicator (what was done), not a leading indicator (what to do)
+   - Associate issues with weeks via the `document_associations` table as work progresses
 
 ### Known Issues
-- [ ] **BUG**: Tab switching doesn't work in Program view
-- [ ] **BUG**: "+" button returns 400 error (wrong field name)
-- [ ] **BUG**: Week goal save returns 400 error (field not in schema)
 - [ ] No drag-and-drop for planning
 
 ---
@@ -97,23 +77,17 @@ Track issues through states with visual clarity and see progress at a glance.
 
 ### Current Path
 
-1. **Start the Week**
-   - From week view (`/weeks/{id}/view`)
-   - Click "Start Week" button (changes status from Planned to Active)
-   - Week is now active
+1. **Week is Active**
+   - Week status is computed from dates (no manual start/complete needed)
+   - When `today` falls within the week's date range, it's active
 
 2. **Work on Issues**
-   - Click an issue in the Week column to open it
-   - Update state via the Properties sidebar: backlog → todo → in_progress → done
+   - Open issues and update state via the Properties sidebar: backlog -> todo -> in_progress -> done
    - Add notes, comments, or updates in the document area
 
 3. **Track Progress**
    - Week view shows progress bar: "X% complete (Y/Z)"
    - Progress updates automatically as issues move to "done" state
-
-4. **Complete Week**
-   - When work is done, click "Complete Week" button
-   - Week status changes to Completed
 
 ### Issue States
 
@@ -126,7 +100,6 @@ Track issues through states with visual clarity and see progress at a glance.
 | cancelled | Won't do | Red dot |
 
 ### Known Issues
-- [ ] Issues can't be moved to week (API bug)
 - [ ] No keyboard shortcuts for state changes
 - [ ] No board view (only list view exists)
 
@@ -187,7 +160,7 @@ The intended workflow:
 | Open specific program | Sidebar → Program name | `Cmd+K` → program name |
 | View week | URL: `/weeks/{id}/view` | Click week card |
 | Create issue | Issues page → New Issue | `Cmd+K` → "new issue" |
-| Create week | Program → Weeks → New | `Cmd+K` → "new week" |
+| Create week | Program -> Weeks -> New | `Cmd+K` -> "new week" |
 
 ### Keyboard Shortcuts (Planned)
 
@@ -199,7 +172,7 @@ The intended workflow:
 | `1-4` | Set issue state (todo/in_progress/done/cancelled) |
 | `P` | Set priority |
 | `A` | Assign to user |
-| `S` | Assign to week |
+| `S` | Associate with week |
 
 ---
 

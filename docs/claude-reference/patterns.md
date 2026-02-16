@@ -170,7 +170,8 @@ SELECT
   p.properties->>'color' as program_color,
   (d.properties->>'priority')::text as priority
 FROM documents d
-LEFT JOIN documents s ON s.id = d.sprint_id
+LEFT JOIN document_associations da ON da.document_id = d.id AND da.relationship_type = 'sprint'
+LEFT JOIN documents s ON s.id = da.related_id
 ```
 
 Store properties as JSONB:

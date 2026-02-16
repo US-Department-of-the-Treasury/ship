@@ -65,3 +65,72 @@ registry.registerPath({
     },
   },
 });
+
+// ============== My Focus ==============
+
+export const PlanItemSchema = z.object({
+  text: z.string(),
+  checked: z.boolean(),
+}).openapi('PlanItem');
+
+registry.register('PlanItem', PlanItemSchema);
+
+export const FocusPlanSchema = z.object({
+  id: UuidSchema.nullable(),
+  week_number: z.number().int(),
+  items: z.array(PlanItemSchema),
+}).openapi('FocusPlan');
+
+registry.register('FocusPlan', FocusPlanSchema);
+
+export const RecentActivityItemSchema = z.object({
+  id: UuidSchema,
+  title: z.string(),
+  ticket_number: z.number().int(),
+  state: z.string(),
+  updated_at: z.string(),
+}).openapi('RecentActivityItem');
+
+registry.register('RecentActivityItem', RecentActivityItemSchema);
+
+export const FocusProjectSchema = z.object({
+  id: UuidSchema,
+  title: z.string(),
+  program_name: z.string().nullable(),
+  plan: FocusPlanSchema,
+  previous_plan: FocusPlanSchema,
+  recent_activity: z.array(RecentActivityItemSchema),
+}).openapi('FocusProject');
+
+registry.register('FocusProject', FocusProjectSchema);
+
+export const MyFocusResponseSchema = z.object({
+  person_id: UuidSchema,
+  current_week_number: z.number().int(),
+  week_start: z.string().openapi({ description: 'ISO date string (YYYY-MM-DD)' }),
+  week_end: z.string().openapi({ description: 'ISO date string (YYYY-MM-DD)' }),
+  projects: z.array(FocusProjectSchema),
+}).openapi('MyFocusResponse');
+
+registry.register('MyFocusResponse', MyFocusResponseSchema);
+
+registry.registerPath({
+  method: 'get',
+  path: '/dashboard/my-focus',
+  tags: ['Dashboard'],
+  summary: 'Get my project focus for the current week',
+  description: 'Returns the current user\'s project context: allocated projects, current and previous week plans with parsed items, and recent issue activity.',
+  responses: {
+    200: {
+      description: 'Project focus data for the current user',
+      content: {
+        'application/json': {
+          schema: MyFocusResponseSchema,
+        },
+      },
+    },
+    404: {
+      description: 'Person not found for current user',
+    },
+  },
+});

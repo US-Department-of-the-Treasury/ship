@@ -136,8 +136,8 @@ This branch implements the "Ship Clarity" philosophy - a systematic approach to 
 ### Document Model Extension
 
 Two new document types added to unified model:
-- `standup` - Daily updates (sprint_id, author_id)
-- `sprint_review` - Sprint retrospectives (sprint_id, owner_id)
+- `standup` - Daily updates (week association via document_associations, author_id)
+- `sprint_review` - Week reviews (historical name; week association via document_associations, owner_id)
 
 ### Authorization Patterns
 

@@ -127,7 +127,7 @@ Every week has an owner - a single person accountable for:
 |--------|---------------|---------------|
 | Frequency | Every week | End of project |
 | Scope | What happened this week | Did the hypothesis validate |
-| Focus | Issues completed/carried | Business outcome achieved |
+| Focus | Issues completed, plan vs reality | Business outcome achieved |
 | Validation | N/A (execution tracking) | Validated or Invalidated |
 
 ## Issues: Work Units
@@ -143,17 +143,17 @@ An issue represents a discrete piece of work:
 
 ### Issue Relationships
 
-Issues belong to **programs** (always) and can be assigned to **weeks** (when planned):
+Issues belong to **programs** (always) and can be associated with **weeks** (when worked on during that week) and **projects** (to track which experiment they support):
 
 ```
 Program: Platform Security
-├── Issue: Fix SQL injection vulnerability    ← Week of Jan 27
-├── Issue: Implement rate limiting            ← Week of Jan 27
+├── Issue: Fix SQL injection vulnerability    ← associated with Week of Jan 27
+├── Issue: Implement rate limiting            ← associated with Week of Jan 27
 ├── Issue: Research OAuth alternatives        ← (backlog)
 └── Issue: Update security docs               ← (backlog)
 ```
 
-Issues can also be associated with **projects** to track which experiment they support.
+Issues are a trailing indicator -- they record what was done. The weekly plan is the leading indicator that declares intent.
 
 ### Issue States
 
@@ -175,9 +175,9 @@ triage → backlog → todo → in_progress → in_review → done
 
 1. **Program Setup**: Create programs for long-lived initiatives
 2. **Project Planning**: Define projects with hypotheses and ICE scores
-3. **Weekly Planning**: Pull issues into the week backlog
-4. **Execution**: Work issues through states (todo → done)
-5. **Weekly Review**: Document what was delivered
+3. **Weekly Plan**: Write a plan declaring what you intend to accomplish this week and why
+4. **Execution**: Do the work; issues track what was actually done (todo -> done)
+5. **Weekly Retro**: Reflect on what happened vs. what was planned
 6. **Project Retro**: Validate or invalidate the hypothesis
 
 ## Standups: Asynchronous Progress Updates
