@@ -14,8 +14,8 @@ export const ICEScoreSchema = z.number().int().min(1).max(5).openapi({
 
 // ============== Approval Tracking ==============
 
-export const ApprovalStateSchema = z.enum(['approved', 'changed_since_approved']).nullable().openapi({
-  description: 'Approval state: null = pending, approved = current version approved, changed_since_approved = needs re-review',
+export const ApprovalStateSchema = z.enum(['approved', 'changed_since_approved', 'changes_requested']).nullable().openapi({
+  description: 'Approval state: null = pending, approved = current version approved, changed_since_approved = needs re-review, changes_requested = reviewer requested revisions',
 });
 
 export const ApprovalTrackingSchema = z.object({
@@ -24,6 +24,12 @@ export const ApprovalTrackingSchema = z.object({
   approved_at: DateTimeSchema.nullable(),
   approved_version_id: z.number().int().nullable().openapi({
     description: 'document_history.id that was approved',
+  }),
+  feedback: z.string().nullable().optional().openapi({
+    description: 'Feedback explaining required revisions when state is changes_requested',
+  }),
+  comment: z.string().nullable().optional().openapi({
+    description: 'Optional manager note attached to an approval decision',
   }),
 }).openapi('ApprovalTracking');
 

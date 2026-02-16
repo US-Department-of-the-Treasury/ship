@@ -4,7 +4,7 @@
  * This component consolidates the 4 type-specific sidebars into a single entry point.
  * It adapts based on document_type while maintaining the same rendering patterns.
  */
-import { useMemo, useCallback, useState } from 'react';
+import { useMemo, useCallback, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
@@ -242,11 +242,20 @@ function WeeklyDocumentSidebar({
   const reviewQueue = useReviewQueue();
   const queueActive = reviewQueue?.state.active ?? false;
 
-  // Review action state (local only — approval data comes from queries)
+  // Review action state (local only — canonical approval data comes from sprint queries)
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
+  const [approvalCommentInput, setApprovalCommentInput] = useState('');
+  const [showRequestChangesInput, setShowRequestChangesInput] = useState(false);
+  const [requestChangesFeedback, setRequestChangesFeedback] = useState('');
   const [approving, setApproving] = useState(false);
-  // Local override after approve/unapprove action (cleared on navigation)
-  const [localApprovalOverride, setLocalApprovalOverride] = useState<{ state: string | null; at: string | null } | null>(null);
+  // Local override after approval actions (cleared on navigation)
+  const [localApprovalOverride, setLocalApprovalOverride] = useState<{
+    state: string | null;
+    at: string | null;
+    comment: string | null;
+    feedback: string | null;
+    rating: number | null;
+  } | null>(null);
 
   // Fetch person name
   const { data: personDoc } = useQuery<{ title: string }>({
@@ -304,29 +313,70 @@ function WeeklyDocumentSidebar({
 
   // Derive approval state from sprint data (or local override after action)
   const sprintProps = sprintData?.properties || {};
-  const planApproval = sprintProps.plan_approval as { state?: string; approved_by?: string; approved_at?: string } | null;
-  const reviewApproval = sprintProps.review_approval as { state?: string; approved_by?: string; approved_at?: string } | null;
+  const planApproval = sprintProps.plan_approval as {
+    state?: string;
+    approved_by?: string;
+    approved_at?: string;
+    feedback?: string | null;
+    comment?: string | null;
+  } | null;
+  const reviewApproval = sprintProps.review_approval as {
+    state?: string;
+    approved_by?: string;
+    approved_at?: string;
+    feedback?: string | null;
+    comment?: string | null;
+  } | null;
   const reviewRating = sprintProps.review_rating as { value?: number } | null;
+  const activeApproval = isRetro ? reviewApproval : planApproval;
 
   const approvalState = localApprovalOverride !== null
     ? localApprovalOverride.state
-    : (isRetro ? reviewApproval?.state : planApproval?.state) || null;
+    : activeApproval?.state || null;
   const approvedAt = localApprovalOverride !== null
     ? localApprovalOverride.at
-    : (isRetro ? reviewApproval?.approved_at : planApproval?.approved_at) || null;
+    : activeApproval?.approved_at || null;
+  const approvalComment = localApprovalOverride !== null
+    ? localApprovalOverride.comment
+    : (activeApproval?.comment ?? null);
+  const requestChangesComment = localApprovalOverride !== null
+    ? localApprovalOverride.feedback
+    : (activeApproval?.feedback ?? null);
   const approverName = sprintData?.approverName || null;
-  const currentRating = reviewRating?.value || null;
+  const currentRating = localApprovalOverride !== null
+    ? localApprovalOverride.rating
+    : (reviewRating?.value || null);
 
   const personName = personDoc?.title || (personId ? `${personId.substring(0, 8)}...` : null);
   const projectName = projectDoc?.title || (projectId ? `${projectId.substring(0, 8)}...` : null);
+
+  // Initialize controls from current approval state when navigating between documents
+  useEffect(() => {
+    setSelectedRating(currentRating ?? null);
+    setApprovalCommentInput(approvalComment ?? '');
+    setShowRequestChangesInput(false);
+    setRequestChangesFeedback('');
+  }, [effectiveSprintId, currentRating, approvalComment]);
 
   async function handleApprovePlan() {
     if (!effectiveSprintId || approving) return;
     setApproving(true);
     try {
-      const res = await apiPost(`/api/weeks/${effectiveSprintId}/approve-plan`);
+      const res = await apiPost(`/api/weeks/${effectiveSprintId}/approve-plan`, {
+        comment: approvalCommentInput,
+      });
       if (res.ok) {
-        setLocalApprovalOverride({ state: 'approved', at: new Date().toISOString() });
+        const data = await res.json().catch(() => ({}));
+        const approval = data?.approval as { state?: string; approved_at?: string; comment?: string | null } | undefined;
+        setLocalApprovalOverride({
+          state: approval?.state ?? 'approved',
+          at: approval?.approved_at ?? new Date().toISOString(),
+          comment: approval?.comment ?? (approvalCommentInput.trim() || null),
+          feedback: null,
+          rating: currentRating,
+        });
+        setShowRequestChangesInput(false);
+        setRequestChangesFeedback('');
         if (queueActive) reviewQueue?.advance();
       } else {
         console.error('Failed to approve plan:', res.status, await res.text().catch(() => ''));
@@ -338,30 +388,61 @@ function WeeklyDocumentSidebar({
     }
   }
 
-  async function handleUnapprovePlan() {
+  async function handleRequestChanges() {
     if (!effectiveSprintId || approving) return;
+    const feedback = requestChangesFeedback.trim();
+    if (!feedback) return;
+
     setApproving(true);
     try {
-      const res = await apiPost(`/api/weeks/${effectiveSprintId}/unapprove-plan`);
+      const endpoint = isRetro ? 'request-retro-changes' : 'request-plan-changes';
+      const res = await apiPost(`/api/weeks/${effectiveSprintId}/${endpoint}`, { feedback });
       if (res.ok) {
-        setLocalApprovalOverride({ state: null, at: null });
+        const data = await res.json().catch(() => ({}));
+        const approval = data?.approval as { state?: string; approved_at?: string; feedback?: string | null } | undefined;
+        setLocalApprovalOverride({
+          state: approval?.state ?? 'changes_requested',
+          at: approval?.approved_at ?? new Date().toISOString(),
+          comment: null,
+          feedback: approval?.feedback ?? feedback,
+          rating: currentRating,
+        });
+        setShowRequestChangesInput(false);
+        setRequestChangesFeedback('');
+        if (queueActive) reviewQueue?.advance();
       } else {
-        console.error('Failed to unapprove plan:', res.status, await res.text().catch(() => ''));
+        console.error('Failed to request changes:', res.status, await res.text().catch(() => ''));
       }
     } catch (err) {
-      console.error('Error unapproving plan:', err);
+      console.error('Error requesting changes:', err);
     } finally {
       setApproving(false);
     }
   }
 
   async function handleRateRetro() {
-    if (!effectiveSprintId || !selectedRating || approving) return;
+    const ratingToSubmit = selectedRating ?? currentRating;
+    if (!effectiveSprintId || !ratingToSubmit || approving) return;
+
     setApproving(true);
     try {
-      const res = await apiPost(`/api/weeks/${effectiveSprintId}/approve-review`, { rating: selectedRating });
+      const res = await apiPost(`/api/weeks/${effectiveSprintId}/approve-review`, {
+        rating: ratingToSubmit,
+        comment: approvalCommentInput,
+      });
       if (res.ok) {
-        setLocalApprovalOverride({ state: 'approved', at: new Date().toISOString() });
+        const data = await res.json().catch(() => ({}));
+        const approval = data?.approval as { state?: string; approved_at?: string; comment?: string | null } | undefined;
+        const rating = (data?.review_rating as { value?: number } | null)?.value ?? ratingToSubmit;
+        setLocalApprovalOverride({
+          state: approval?.state ?? 'approved',
+          at: approval?.approved_at ?? new Date().toISOString(),
+          comment: approval?.comment ?? (approvalCommentInput.trim() || null),
+          feedback: null,
+          rating,
+        });
+        setShowRequestChangesInput(false);
+        setRequestChangesFeedback('');
         if (queueActive) reviewQueue?.advance();
       } else {
         console.error('Failed to rate retro:', res.status, await res.text().catch(() => ''));
@@ -443,100 +524,230 @@ function WeeklyDocumentSidebar({
               ) : !isReviewMode && !currentRating ? (
                 <p className="text-xs text-muted italic mb-2">Not yet rated</p>
               ) : null}
-              {/* Editable rating controls in review mode */}
+
+              {approvalComment && (
+                <div className="mb-3 rounded border border-border bg-border/20 px-2.5 py-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Approval Note</p>
+                  <p className="mt-1 text-xs text-foreground">{approvalComment}</p>
+                </div>
+              )}
+
+              {requestChangesComment && (
+                <div className="mb-3 rounded border border-purple-500/30 bg-purple-500/10 px-2.5 py-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-purple-400">Changes Requested</p>
+                  <p className="mt-1 text-xs text-purple-200">{requestChangesComment}</p>
+                </div>
+              )}
+
+              {/* Editable rating/comment controls in review mode */}
               {isReviewMode && (
                 <>
-                  <div className="grid grid-cols-5 gap-1.5 mb-3">
-                    {OPM_RATINGS.map(r => (
-                      <button
-                        key={r.value}
-                        onClick={() => setSelectedRating(r.value)}
-                        className={cn(
-                          'flex flex-col items-center gap-0.5 rounded py-2 text-xs transition-all',
-                          selectedRating === r.value
-                            ? 'bg-accent/20 ring-1 ring-accent'
-                            : 'bg-border/30 hover:bg-border/50'
-                        )}
-                        title={r.label}
-                      >
-                        <span className={cn('text-sm font-bold', r.color)}>{r.value}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    onClick={handleRateRetro}
-                    disabled={!selectedRating || approving}
-                    className={cn(
-                      'w-full rounded py-2 text-sm font-medium transition-colors',
-                      approvalState === 'approved' && currentRating
-                        ? 'bg-green-600/20 text-green-400'
-                        : selectedRating
-                          ? 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
-                          : 'bg-border/30 text-muted cursor-not-allowed'
-                    )}
-                  >
-                    {approvalState === 'approved' && currentRating ? 'Rated & Approved' : currentRating ? 'Update Rating' : 'Rate & Approve'}
-                  </button>
+                  {!showRequestChangesInput ? (
+                    <>
+                      <div className="grid grid-cols-5 gap-1.5 mb-3">
+                        {OPM_RATINGS.map(r => (
+                          <button
+                            key={r.value}
+                            onClick={() => setSelectedRating(r.value)}
+                            className={cn(
+                              'flex flex-col items-center gap-0.5 rounded py-2 text-xs transition-all',
+                              (selectedRating ?? currentRating) === r.value
+                                ? 'bg-accent/20 ring-1 ring-accent'
+                                : 'bg-border/30 hover:bg-border/50'
+                            )}
+                            title={r.label}
+                          >
+                            <span className={cn('text-sm font-bold', r.color)}>{r.value}</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      <label className="text-xs font-medium text-muted mb-1 block">Approval Note (optional)</label>
+                      <textarea
+                        value={approvalCommentInput}
+                        onChange={(e) => setApprovalCommentInput(e.target.value)}
+                        placeholder="Add context for this decision..."
+                        rows={3}
+                        className="mb-3 w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleRateRetro}
+                          disabled={!(selectedRating ?? currentRating) || approving}
+                          className={cn(
+                            'w-full rounded py-2 text-sm font-medium transition-colors',
+                            (selectedRating ?? currentRating)
+                              ? 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+                              : 'bg-border/30 text-muted cursor-not-allowed'
+                          )}
+                        >
+                          {approvalState === 'approved' ? 'Update Approval' : approvalState === 'changed_since_approved' ? 'Re-approve & Rate' : 'Rate & Approve'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowRequestChangesInput(true);
+                            setRequestChangesFeedback('');
+                          }}
+                          className="rounded px-3 py-2 text-sm font-medium text-purple-400 hover:bg-purple-500/10 transition-colors"
+                        >
+                          Request Changes
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <label className="text-xs font-medium text-muted mb-1 block">What needs to change?</label>
+                      <textarea
+                        value={requestChangesFeedback}
+                        onChange={(e) => setRequestChangesFeedback(e.target.value)}
+                        placeholder="Explain what needs to be revised..."
+                        rows={3}
+                        className="mb-3 w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleRequestChanges}
+                          disabled={!requestChangesFeedback.trim() || approving}
+                          className={cn(
+                            'flex-1 rounded py-2 text-sm font-medium transition-colors',
+                            requestChangesFeedback.trim()
+                              ? 'bg-purple-600 text-white hover:bg-purple-500'
+                              : 'bg-border/30 text-muted cursor-not-allowed'
+                          )}
+                        >
+                          Submit Request
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowRequestChangesInput(false);
+                            setRequestChangesFeedback('');
+                          }}
+                          className="rounded px-3 py-2 text-sm text-muted hover:text-foreground hover:bg-border/50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
           ) : (
             <div>
               <label className="text-xs font-medium text-muted mb-2 block">Plan Approval</label>
-              {approvalState === 'approved' ? (
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="inline-flex items-center gap-1 rounded bg-green-600/20 px-2 py-1 text-xs font-medium text-green-400">
-                      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
-                      Approved
-                    </span>
-                  </div>
-                  {approvedAt && (
-                    <p className="text-[11px] text-muted">
-                      {formatApprovalDate(approvedAt)}
-                      {approverName ? ` by ${approverName}` : ''}
-                    </p>
-                  )}
-                  {isReviewMode && (
-                    <button
-                      onClick={handleUnapprovePlan}
-                      disabled={approving}
-                      className="mt-2 w-full rounded border border-border py-1.5 text-xs text-muted hover:text-foreground hover:bg-border/50 transition-colors"
-                    >
-                      Undo Approval
-                    </button>
-                  )}
+              <div className="mb-2">
+                {approvalState === 'approved' ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-green-600/20 px-2 py-1 text-xs font-medium text-green-400">
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
+                    Approved
+                  </span>
+                ) : approvalState === 'changed_since_approved' ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-orange-600/20 px-2 py-1 text-xs font-medium text-orange-400">
+                    Changed since approved
+                  </span>
+                ) : approvalState === 'changes_requested' ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-purple-600/20 px-2 py-1 text-xs font-medium text-purple-400">
+                    Changes requested
+                  </span>
+                ) : (
+                  <p className="text-xs text-muted italic">Not yet approved</p>
+                )}
+              </div>
+
+              {approvedAt && (
+                <p className="text-[11px] text-muted mb-2">
+                  {formatApprovalDate(approvedAt)}
+                  {approverName ? ` by ${approverName}` : ''}
+                </p>
+              )}
+
+              {approvalComment && (
+                <div className="mb-3 rounded border border-border bg-border/20 px-2.5 py-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Approval Note</p>
+                  <p className="mt-1 text-xs text-foreground">{approvalComment}</p>
                 </div>
-              ) : approvalState === 'changed_since_approved' ? (
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="inline-flex items-center gap-1 rounded bg-orange-600/20 px-2 py-1 text-xs font-medium text-orange-400">
-                      Changed since approved
-                    </span>
-                  </div>
-                  {isReviewMode && (
-                    <button
-                      onClick={handleApprovePlan}
-                      disabled={approving}
-                      className="mt-2 w-full rounded bg-orange-600 py-2 text-sm font-medium text-white hover:bg-orange-500 cursor-pointer transition-colors"
-                    >
-                      Re-approve Plan
-                    </button>
-                  )}
+              )}
+
+              {requestChangesComment && (
+                <div className="mb-3 rounded border border-purple-500/30 bg-purple-500/10 px-2.5 py-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-purple-400">Changes Requested</p>
+                  <p className="mt-1 text-xs text-purple-200">{requestChangesComment}</p>
                 </div>
-              ) : (
-                <div>
-                  <p className="text-xs text-muted italic mb-2">Not yet approved</p>
-                  {isReviewMode && (
-                    <button
-                      onClick={handleApprovePlan}
-                      disabled={approving}
-                      className="w-full rounded bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-500 cursor-pointer transition-colors"
-                    >
-                      Approve Plan
-                    </button>
+              )}
+
+              {isReviewMode && (
+                <>
+                  {!showRequestChangesInput ? (
+                    <div>
+                      <label className="text-xs font-medium text-muted mb-1 block">Approval Note (optional)</label>
+                      <textarea
+                        value={approvalCommentInput}
+                        onChange={(e) => setApprovalCommentInput(e.target.value)}
+                        placeholder="Add context for this decision..."
+                        rows={3}
+                        className="mb-3 w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleApprovePlan}
+                          disabled={approving}
+                          className={cn(
+                            'flex-1 rounded py-2 text-sm font-medium transition-colors',
+                            approvalState === 'changed_since_approved'
+                              ? 'bg-orange-600 text-white hover:bg-orange-500'
+                              : 'bg-green-600 text-white hover:bg-green-500'
+                          )}
+                        >
+                          {approvalState === 'approved' ? 'Update Approval' : approvalState === 'changed_since_approved' ? 'Re-approve Plan' : 'Approve Plan'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowRequestChangesInput(true);
+                            setRequestChangesFeedback('');
+                          }}
+                          className="rounded px-3 py-2 text-sm font-medium text-purple-400 hover:bg-purple-500/10 transition-colors"
+                        >
+                          Request Changes
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="text-xs font-medium text-muted mb-1 block">What needs to change?</label>
+                      <textarea
+                        value={requestChangesFeedback}
+                        onChange={(e) => setRequestChangesFeedback(e.target.value)}
+                        placeholder="Explain what needs to be revised..."
+                        rows={3}
+                        className="mb-3 w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleRequestChanges}
+                          disabled={!requestChangesFeedback.trim() || approving}
+                          className={cn(
+                            'flex-1 rounded py-2 text-sm font-medium transition-colors',
+                            requestChangesFeedback.trim()
+                              ? 'bg-purple-600 text-white hover:bg-purple-500'
+                              : 'bg-border/30 text-muted cursor-not-allowed'
+                          )}
+                        >
+                          Submit Request
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowRequestChangesInput(false);
+                            setRequestChangesFeedback('');
+                          }}
+                          className="rounded px-3 py-2 text-sm text-muted hover:text-foreground hover:bg-border/50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
                   )}
-                </div>
+                </>
               )}
             </div>
           )}
