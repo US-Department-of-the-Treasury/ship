@@ -290,7 +290,7 @@ At startup, the MCP server:
 Tools are generated for all documented API endpoints (~92 tools). Tool categories include:
 - **Authentication**: Login, logout, session management
 - **Issues**: CRUD, state transitions, history, iterations
-- **Sprints**: Planning, reviews, carryover
+- **Weeks**: Planning, reviews, retros
 - **Projects & Programs**: Organization hierarchy
 - **Documents**: Wiki pages, search, backlinks
 - **Standups**: Daily updates and status

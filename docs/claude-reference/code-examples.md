@@ -19,10 +19,9 @@ const router: RouterType = Router();
 // 1. Zod schema at top
 const createIssueSchema = z.object({
   title: z.string().min(1).max(500),
-  project_id: z.string().uuid(),
-  sprint_id: z.string().uuid().optional(),
   state: z.enum(['triage', 'backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional(),
   priority: z.enum(['urgent', 'high', 'medium', 'low']).optional(),
+  belongs_to: z.array(belongsToEntrySchema).optional().default([]),
 });
 
 // 2. Row extractor function
@@ -73,7 +72,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     return;
   }
 
-  const { title, project_id, sprint_id, state, priority } = parsed.data;
+  const { title, state, priority, belongs_to } = parsed.data;
 
   // ... create logic
 });

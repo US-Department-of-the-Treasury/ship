@@ -3,8 +3,7 @@ import { useEffect } from 'react';
 import { cn } from '@/lib/cn';
 
 const STORAGE_KEY = 'dashboard-view';
-
-type DashboardView = 'my-work' | 'overview';
+export type DashboardView = 'my-work' | 'overview';
 
 export function DashboardSidebar() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -22,13 +21,10 @@ export function DashboardSidebar() {
 
   const setView = (view: DashboardView) => {
     localStorage.setItem(STORAGE_KEY, view);
-    if (view === 'my-work') {
-      // Clear the param for default view
-      setSearchParams({}, { replace: true });
-    } else {
-      setSearchParams({ view }, { replace: true });
-    }
+    setSearchParams(view === 'my-work' ? {} : { view }, { replace: true });
   };
+
+  const isMyWork = currentView === 'my-work' && !searchParams.has('view');
 
   return (
     <div className="flex flex-col gap-1 px-2 py-2">
@@ -36,7 +32,7 @@ export function DashboardSidebar() {
         onClick={() => setView('my-work')}
         className={cn(
           'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-          currentView === 'my-work'
+          isMyWork
             ? 'bg-accent/10 text-accent font-medium'
             : 'text-muted hover:bg-border/30 hover:text-foreground'
         )}
@@ -46,10 +42,11 @@ export function DashboardSidebar() {
         </svg>
         My Work
       </button>
+
       <button
         onClick={() => setView('overview')}
         className={cn(
-          'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+          'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors mt-1',
           currentView === 'overview'
             ? 'bg-accent/10 text-accent font-medium'
             : 'text-muted hover:bg-border/30 hover:text-foreground'

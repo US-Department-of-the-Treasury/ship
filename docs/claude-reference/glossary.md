@@ -178,10 +178,10 @@ Playwright marker for unimplemented tests. Prevents silent passing of empty test
 ## Week Concepts
 
 ### Week
-Time-boxed development period (7 days). Uses `sprint_number` field (historical name), `goal`, computed dates. Database document type is `'sprint'` for historical compatibility.
+Derived 7-day time window computed from workspace start date. Not a container you assign things to -- weeks are inferred time periods. Database document type is `'sprint'` (historical DB name retained for compatibility). Uses `sprint_number` field (historical name) and computed dates.
 
-### Week Plan
-Document capturing week planning decisions. Created at week start. Database document type is `'sprint_plan'` (historical name).
+### Weekly Plan
+Document declaring intent for the week -- what you plan to accomplish and why. Plans are the unit of intent. Written before the week starts. Database document type is `'sprint_plan'` (historical name). Issues are a trailing indicator (what was done); the plan is the leading indicator (what to do).
 
 ### Standup
 Daily status update document. Tracks what was done, what's planned, blockers.
@@ -189,11 +189,11 @@ Daily status update document. Tracks what was done, what's planned, blockers.
 ### Week Review
 Document for end-of-week demonstration and stakeholder feedback. Database document type is `'sprint_review'` (historical name).
 
-### Week Retro (Retrospective)
-Document for team reflection. What went well, what to improve. Database document type is `'sprint_retro'` (historical name).
+### Weekly Retro (Retrospective)
+Document for team reflection. What went well, what to improve, plan vs. reality. Database document type is `'sprint_retro'` (historical name).
 
 ### ICE Score
-Issue prioritization metric: Impact × Confidence × Ease. Stored in issue properties.
+Project prioritization metric: Impact x Confidence x Ease. Stored in project properties.
 
 ## Document Hierarchy
 

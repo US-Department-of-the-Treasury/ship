@@ -108,7 +108,6 @@ erDiagram
         uuid workspace_id FK
         uuid parent_id FK
         uuid project_id FK
-        uuid sprint_id FK
         uuid program_id FK
         string visibility
     }

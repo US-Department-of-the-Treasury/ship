@@ -43,7 +43,7 @@ Documents use BOTH direct columns AND a junction table for associations. This is
 -- api/src/db/schema.sql:107-109
 program_id UUID REFERENCES documents(id)
 project_id UUID REFERENCES documents(id)
-sprint_id UUID REFERENCES documents(id)
+-- Note: sprint_id was dropped by migration 027
 ```
 
 **New system (junction table):**

@@ -301,7 +301,7 @@ sendError(res, 500, 'Internal server error');
 interface WorkItem {
   id: string;
   title: string;
-  type: 'issue' | 'project' | 'sprint';
+  type: 'issue' | 'project';
   // ...
 }
 
@@ -337,7 +337,7 @@ Put shared types in `shared/src/types/`:
 export interface WorkItem {
   id: string;
   title: string;
-  type: 'issue' | 'project' | 'sprint';
+  type: 'issue' | 'project';
   // ...
 }
 
