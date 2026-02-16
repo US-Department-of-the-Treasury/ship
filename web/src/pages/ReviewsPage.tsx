@@ -24,7 +24,7 @@ const REVIEW_COLORS: Record<ReviewStatus, string> = {
   needs_review: '#eab308',       // yellow — submitted, needs manager action
   late: '#ef4444',               // red — past due, nothing submitted
   changed: '#f97316',            // orange — changed since approved
-  changes_requested: '#a855f7',  // purple — manager requested changes
+  changes_requested: '#ea580c',  // orange — manager requested changes
   empty: '#6b7280',              // gray — no allocation or future
 };
 
@@ -36,6 +36,14 @@ const REVIEW_STATUS_TEXT: Record<ReviewStatus, string> = {
   changes_requested: 'changes requested',
   empty: 'no submission',
 };
+
+function needsPlanReview(cell: ReviewCell | undefined): boolean {
+  return Boolean(cell?.sprintId && cell.hasPlan && cell.planApproval?.state !== 'approved');
+}
+
+function needsRetroReview(cell: ReviewCell | undefined): boolean {
+  return Boolean(cell?.sprintId && cell.hasRetro && !cell.reviewRating);
+}
 
 interface Week {
   number: number;
@@ -156,6 +164,8 @@ export function ReviewsPage() {
   const [collapsedPrograms, setCollapsedPrograms] = useState<Set<string>>(new Set());
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const [batchMode, setBatchMode] = useState<BatchMode | null>(null);
+  const [selectedPlanWeek, setSelectedPlanWeek] = useState<number | null>(null);
+  const [selectedRetroWeek, setSelectedRetroWeek] = useState<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledToCurrentRef = useRef(false);
 
@@ -179,6 +189,12 @@ export function ReviewsPage() {
     }
     return data.people;
   }, [data, filterMode, user?.id]);
+
+  // Recalculate manager action defaults when switching review scope.
+  useEffect(() => {
+    setSelectedPlanWeek(null);
+    setSelectedRetroWeek(null);
+  }, [filterMode]);
 
   useEffect(() => {
     fetchReviews();
@@ -360,79 +376,118 @@ export function ReviewsPage() {
     return rows;
   }, [programGroups, collapsedPrograms]);
 
-  // Compute stats for current week (pending counts, totals, avg rating)
-  const weekStats = useMemo(() => {
-    if (!data) return { plansApproved: 0, plansTotal: 0, retrosRated: 0, retrosTotal: 0, avgRating: 0, pendingPlans: 0, pendingRetros: 0 };
-    let plansApproved = 0;
-    let plansTotal = 0;
-    let retrosRated = 0;
-    let retrosTotal = 0;
-    let ratingSum = 0;
-    let ratingCount = 0;
-    let pendingPlans = 0;
-    let pendingRetros = 0;
-    const currentWeek = data.currentSprintNumber;
+  // Per-week actionable review counts for manager actions
+  const weekReviewCounts = useMemo((): Record<number, { plans: number; retros: number }> => {
+    const counts: Record<number, { plans: number; retros: number }> = {};
+    if (!data) return counts;
+
+    for (const week of data.weeks) {
+      counts[week.number] = { plans: 0, retros: 0 };
+    }
+
     for (const person of filteredPeople) {
-      const cell = data.reviews[person.personId]?.[currentWeek];
-      if (!cell?.sprintId) continue;
-      if (cell.hasPlan) {
-        plansTotal++;
-        if (cell.planApproval?.state === 'approved') plansApproved++;
-        else pendingPlans++;
-      }
-      if (cell.hasRetro) {
-        retrosTotal++;
-        if (cell.reviewRating) {
-          retrosRated++;
-          ratingSum += cell.reviewRating.value;
-          ratingCount++;
-        } else {
-          pendingRetros++;
-        }
+      for (const week of data.weeks) {
+        const cell = data.reviews[person.personId]?.[week.number];
+        if (needsPlanReview(cell)) counts[week.number]!.plans += 1;
+        if (needsRetroReview(cell)) counts[week.number]!.retros += 1;
       }
     }
-    return {
-      plansApproved, plansTotal, retrosRated, retrosTotal,
-      avgRating: ratingCount > 0 ? Math.round((ratingSum / ratingCount) * 10) / 10 : 0,
-      pendingPlans, pendingRetros,
-    };
+
+    return counts;
   }, [data, filteredPeople]);
 
-  // Alias for batch mode button counts
-  const pendingCounts = useMemo(() => ({
-    plans: weekStats.pendingPlans,
-    retros: weekStats.pendingRetros,
-  }), [weekStats]);
-
-  // Build batch review queue from current week data
-  const buildBatchQueue = useCallback((type: 'plans' | 'retros'): SelectedCell[] => {
+  const weeksDescending = useMemo(() => {
     if (!data) return [];
-    const currentWeek = data.weeks.find(w => w.isCurrent);
-    if (!currentWeek) return [];
+    return [...data.weeks].sort((a, b) => b.number - a.number);
+  }, [data]);
+
+  const defaultPlanWeek = useMemo(() => {
+    if (!data) return null;
+
+    const currentWeekNumber = data.currentSprintNumber;
+    if ((weekReviewCounts[currentWeekNumber]?.plans ?? 0) > 0) {
+      return currentWeekNumber;
+    }
+
+    const latestWithPendingPlans = weeksDescending.find(week => (weekReviewCounts[week.number]?.plans ?? 0) > 0);
+    return latestWithPendingPlans?.number ?? currentWeekNumber;
+  }, [data, weekReviewCounts, weeksDescending]);
+
+  const defaultRetroWeek = useMemo(() => {
+    if (!data) return null;
+
+    const currentWeekNumber = data.currentSprintNumber;
+    const previousWeekNumber = currentWeekNumber - 1;
+    const isMonday = new Date().getDay() === 1;
+
+    if (isMonday && previousWeekNumber >= 1 && (weekReviewCounts[previousWeekNumber]?.retros ?? 0) > 0) {
+      return previousWeekNumber;
+    }
+
+    const latestWithPendingRetros = weeksDescending.find(week => (weekReviewCounts[week.number]?.retros ?? 0) > 0);
+    if (latestWithPendingRetros) {
+      return latestWithPendingRetros.number;
+    }
+
+    if (previousWeekNumber >= 1 && data.weeks.some(week => week.number === previousWeekNumber)) {
+      return previousWeekNumber;
+    }
+
+    return currentWeekNumber;
+  }, [data, weekReviewCounts, weeksDescending]);
+
+  useEffect(() => {
+    if (!data || defaultPlanWeek === null) return;
+    const selectedExists = selectedPlanWeek !== null && data.weeks.some(week => week.number === selectedPlanWeek);
+    if (!selectedExists) {
+      setSelectedPlanWeek(defaultPlanWeek);
+    }
+  }, [data, defaultPlanWeek, selectedPlanWeek]);
+
+  useEffect(() => {
+    if (!data || defaultRetroWeek === null) return;
+    const selectedExists = selectedRetroWeek !== null && data.weeks.some(week => week.number === selectedRetroWeek);
+    if (!selectedExists) {
+      setSelectedRetroWeek(defaultRetroWeek);
+    }
+  }, [data, defaultRetroWeek, selectedRetroWeek]);
+
+  const effectivePlanWeek = selectedPlanWeek ?? defaultPlanWeek ?? data?.currentSprintNumber ?? 1;
+  const effectiveRetroWeek = selectedRetroWeek ?? defaultRetroWeek ?? data?.currentSprintNumber ?? 1;
+  const selectedPlanPendingCount = weekReviewCounts[effectivePlanWeek]?.plans ?? 0;
+  const selectedRetroPendingCount = weekReviewCounts[effectiveRetroWeek]?.retros ?? 0;
+  const selectedPlanWeekLabel = data?.weeks.find(week => week.number === effectivePlanWeek)?.name ?? `Week ${effectivePlanWeek}`;
+  const selectedRetroWeekLabel = data?.weeks.find(week => week.number === effectiveRetroWeek)?.name ?? `Week ${effectiveRetroWeek}`;
+
+  // Build batch review queue for selected week data
+  const buildBatchQueue = useCallback((type: 'plans' | 'retros', weekNumber: number): SelectedCell[] => {
+    if (!data) return [];
+    const selectedWeek = data.weeks.find(w => w.number === weekNumber);
+    if (!selectedWeek) return [];
 
     const queue: SelectedCell[] = [];
     for (const group of programGroups) {
       for (const person of group.people) {
-        const cell = data.reviews[person.personId]?.[currentWeek.number];
+        const cell = data.reviews[person.personId]?.[selectedWeek.number];
         if (!cell?.sprintId) continue;
 
-        if (type === 'plans' && cell.hasPlan && cell.planApproval?.state !== 'approved') {
+        if (type === 'plans' && needsPlanReview(cell)) {
           queue.push({
             personId: person.personId,
             personName: person.name,
-            weekNumber: currentWeek.number,
-            weekName: currentWeek.name,
+            weekNumber: selectedWeek.number,
+            weekName: selectedWeek.name,
             type: 'plan',
             sprintId: cell.sprintId,
             cell,
           });
         }
-        if (type === 'retros' && cell.hasRetro && !cell.reviewRating) {
+        if (type === 'retros' && needsRetroReview(cell)) {
           queue.push({
             personId: person.personId,
             personName: person.name,
-            weekNumber: currentWeek.number,
-            weekName: currentWeek.name,
+            weekNumber: selectedWeek.number,
+            weekName: selectedWeek.name,
             type: 'retro',
             sprintId: cell.sprintId,
             cell,
@@ -444,9 +499,9 @@ export function ReviewsPage() {
   }, [data, programGroups]);
 
   // Start batch review via queue context (navigates to documents)
-  function startBatchReview(type: 'plans' | 'retros') {
+  function startBatchReview(type: 'plans' | 'retros', weekNumber: number) {
     if (!reviewQueue || !data) return;
-    const selectedCells = buildBatchQueue(type);
+    const selectedCells = buildBatchQueue(type, weekNumber);
     if (selectedCells.length === 0) return;
 
     const queueItems: QueueItem[] = selectedCells
@@ -567,8 +622,9 @@ export function ReviewsPage() {
     <div className="flex h-full">
       {/* Main grid area */}
       <div className={cn('flex flex-col', selectedCell ? 'flex-1 min-w-0' : 'flex-1')}>
-      {/* Legend + Batch Actions */}
-      <div className="flex items-center gap-4 px-4 py-2 border-b border-border text-xs">
+      {/* Status legend + filters */}
+      <div className="border-b border-border px-4 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-3">
         {/* My Team filter */}
         {hasDirectReports && (
           <>
@@ -599,26 +655,6 @@ export function ReviewsPage() {
             <div className="h-4 w-px bg-border" />
           </>
         )}
-        {/* Batch review buttons */}
-        {pendingCounts.plans > 0 && (
-          <button
-            onClick={() => startBatchReview('plans')}
-            className="rounded bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-500 transition-colors"
-          >
-            Review Plans ({pendingCounts.plans})
-          </button>
-        )}
-        {pendingCounts.retros > 0 && (
-          <button
-            onClick={() => startBatchReview('retros')}
-            className="rounded bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-500 transition-colors"
-          >
-            Rate Retros ({pendingCounts.retros})
-          </button>
-        )}
-        {(pendingCounts.plans > 0 || pendingCounts.retros > 0) && (
-          <div className="h-4 w-px bg-border" />
-        )}
         <span className="text-muted">Review Status:</span>
         <div className="flex items-center gap-1">
           <div className="w-3 h-3 rounded" style={{ backgroundColor: REVIEW_COLORS.approved }} />
@@ -644,53 +680,86 @@ export function ReviewsPage() {
           <div className="w-3 h-3 rounded" style={{ backgroundColor: REVIEW_COLORS.empty }} />
           <span>No Submission</span>
         </div>
-        <span className="text-muted ml-4">|</span>
         <span className="text-muted">Left = Plan, Right = Retro</span>
+        </div>
       </div>
 
-      {/* Summary Stats */}
-      {(weekStats.plansTotal > 0 || weekStats.retrosTotal > 0) && (
-        <div className="flex items-center gap-6 px-4 py-1.5 border-b border-border text-xs bg-border/10">
-          <span className="text-muted font-medium">This Week:</span>
-          {weekStats.plansTotal > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="text-foreground">Plans:</span>
-              <span className={cn('font-medium', weekStats.plansApproved === weekStats.plansTotal ? 'text-green-500' : 'text-foreground')}>
-                {weekStats.plansApproved}/{weekStats.plansTotal}
-              </span>
-              <div className="w-16 h-1.5 rounded-full bg-border overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-green-500 transition-all"
-                  style={{ width: `${weekStats.plansTotal > 0 ? (weekStats.plansApproved / weekStats.plansTotal) * 100 : 0}%` }}
-                />
-              </div>
-            </div>
-          )}
-          {weekStats.retrosTotal > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="text-foreground">Retros:</span>
-              <span className={cn('font-medium', weekStats.retrosRated === weekStats.retrosTotal ? 'text-green-500' : 'text-foreground')}>
-                {weekStats.retrosRated}/{weekStats.retrosTotal}
-              </span>
-              <div className="w-16 h-1.5 rounded-full bg-border overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-green-500 transition-all"
-                  style={{ width: `${weekStats.retrosTotal > 0 ? (weekStats.retrosRated / weekStats.retrosTotal) * 100 : 0}%` }}
-                />
-              </div>
-            </div>
-          )}
-          {weekStats.avgRating > 0 && (
-            <div className="flex items-center gap-1">
-              <span className="text-foreground">Avg Rating:</span>
-              <span className="font-medium text-foreground">{weekStats.avgRating}</span>
-            </div>
-          )}
-          {weekStats.plansApproved === weekStats.plansTotal && weekStats.retrosRated === weekStats.retrosTotal && weekStats.plansTotal > 0 && (
-            <span className="text-green-500 font-medium">All reviewed</span>
+      {/* Manager action bar */}
+      <div className="border-b border-border bg-border/10 px-4 py-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Manager Actions</span>
+
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background/70 px-2 py-1">
+            <label htmlFor="plans-week-select" className="text-[11px] font-medium text-muted">Plans</label>
+            <select
+              id="plans-week-select"
+              value={String(effectivePlanWeek)}
+              onChange={e => setSelectedPlanWeek(Number(e.target.value))}
+              className="h-7 rounded border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+            >
+              {weeksDescending.map(week => {
+                const count = weekReviewCounts[week.number]?.plans ?? 0;
+                return (
+                  <option key={`plan-week-${week.number}`} value={week.number}>
+                    {week.name} ({count})
+                  </option>
+                );
+              })}
+            </select>
+            <button
+              onClick={() => startBatchReview('plans', effectivePlanWeek)}
+              disabled={selectedPlanPendingCount === 0}
+              aria-label={`Review Plans for ${selectedPlanWeekLabel} (${selectedPlanPendingCount} pending)`}
+              title={`Review Plans for ${selectedPlanWeekLabel} (${selectedPlanPendingCount} pending)`}
+              className={cn(
+                'h-7 rounded px-2.5 text-xs font-medium transition-colors',
+                selectedPlanPendingCount > 0
+                  ? 'bg-yellow-600 text-white hover:bg-yellow-500'
+                  : 'bg-border/40 text-muted cursor-not-allowed'
+              )}
+            >
+              Review Plans
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background/70 px-2 py-1">
+            <label htmlFor="retros-week-select" className="text-[11px] font-medium text-muted">Retros</label>
+            <select
+              id="retros-week-select"
+              value={String(effectiveRetroWeek)}
+              onChange={e => setSelectedRetroWeek(Number(e.target.value))}
+              className="h-7 rounded border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+            >
+              {weeksDescending.map(week => {
+                const count = weekReviewCounts[week.number]?.retros ?? 0;
+                return (
+                  <option key={`retro-week-${week.number}`} value={week.number}>
+                    {week.name} ({count})
+                  </option>
+                );
+              })}
+            </select>
+            <button
+              onClick={() => startBatchReview('retros', effectiveRetroWeek)}
+              disabled={selectedRetroPendingCount === 0}
+              aria-label={`Review Retros for ${selectedRetroWeekLabel} (${selectedRetroPendingCount} pending)`}
+              title={`Review Retros for ${selectedRetroWeekLabel} (${selectedRetroPendingCount} pending)`}
+              className={cn(
+                'h-7 rounded px-2.5 text-xs font-medium transition-colors',
+                selectedRetroPendingCount > 0
+                  ? 'bg-yellow-600 text-white hover:bg-yellow-500'
+                  : 'bg-border/40 text-muted cursor-not-allowed'
+              )}
+            >
+              Review Retros
+            </button>
+          </div>
+
+          {(selectedPlanPendingCount === 0 && selectedRetroPendingCount === 0) && (
+            <span className="text-xs text-muted">No pending reviews in selected weeks.</span>
           )}
         </div>
-      )}
+      </div>
 
       {/* Grid container */}
       <div ref={scrollContainerRef} className="flex-1 overflow-auto pb-20">

@@ -33,10 +33,17 @@ test.describe('Manager Reviews', () => {
     await page.waitForLoadState('networkidle');
 
     // Verify sidebar shows Reviews nav item (page has no standalone heading)
-    await expect(page.getByRole('button', { name: 'Reviews' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reviews', exact: true })).toBeVisible();
 
     // Verify week headers are shown (at least one "Week N" text visible)
-    await expect(page.getByText(/Week \d+/).first()).toBeVisible();
+    await expect(page.locator('span', { hasText: /^Week \d+$/ }).first()).toBeVisible();
+
+    // Verify manager action sub-bar is present with week-selectable review actions
+    await expect(page.getByText('Manager Actions')).toBeVisible();
+    await expect(page.locator('#plans-week-select')).toBeVisible();
+    await expect(page.locator('#retros-week-select')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Review Plans/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Review Retros/ })).toBeVisible();
   });
 
   test('GET /api/team/reviews returns valid data structure', async ({ page, apiServer }) => {
