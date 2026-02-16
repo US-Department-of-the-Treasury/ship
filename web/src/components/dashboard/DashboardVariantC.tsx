@@ -111,6 +111,8 @@ function buildTimeline(actionItems: ActionItem[], weekNumber: number): TimelineD
     { label: 'Wed', rituals: [] },
     { label: 'Thu', rituals: [] },
     { label: 'Fri', rituals: [] },
+    { label: 'Sat', rituals: [] },
+    { label: 'Sun', rituals: [] },
   ];
 
   // Plans are due Monday
@@ -166,13 +168,14 @@ function findNextRitual(weekNumber: number): string | null {
 
 function WeekTimeline({ items, allComplete }: { items: TimelineDay[]; allComplete: boolean }) {
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 1=Mon ... 5=Fri
+  const jsDay = today.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+  // Convert to Mon=0 ... Sun=6 to match our items array
+  const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
 
   return (
     <div className="flex rounded-lg border border-border overflow-hidden">
       {items.map((day, i) => {
-        const dayNum = i + 1;
-        const isToday = dayNum === dayOfWeek;
+        const isToday = i === dayIndex;
 
         return (
           <div

@@ -5,10 +5,7 @@ import { useProjects, Project } from '@/contexts/ProjectsContext';
 import { useDashboardActionItems } from '@/hooks/useDashboardActionItems';
 import { cn } from '@/lib/cn';
 import { formatRelativeTime } from '@/lib/date-utils';
-import { DashboardVariantA } from '@/components/dashboard/DashboardVariantA';
-import { DashboardVariantB } from '@/components/dashboard/DashboardVariantB';
 import { DashboardVariantC } from '@/components/dashboard/DashboardVariantC';
-import { type DashboardVariant, getStoredVariant } from '@/components/DashboardSidebar';
 
 type DashboardView = 'my-work' | 'overview';
 
@@ -48,8 +45,6 @@ function extractTextFromContent(content: unknown): string {
 export function DashboardPage() {
   const [searchParams] = useSearchParams();
   const currentView: DashboardView = (searchParams.get('view') as DashboardView) || 'my-work';
-  const selectedVariant: DashboardVariant | null = searchParams.get('variant') as DashboardVariant | null;
-  const activeVariant = selectedVariant || getStoredVariant();
 
   const { data: weeksData, isLoading: weeksLoading } = useActiveWeeksQuery();
   const { projects, loading: projectsLoading } = useProjects();
@@ -174,26 +169,17 @@ export function DashboardPage() {
           {/* Header */}
           <div>
             <h1 className="text-2xl font-bold text-foreground">
-              {currentView === 'my-work' || selectedVariant ? 'My Work' : 'Dashboard'}
+              {currentView === 'my-work' ? 'My Work' : 'Dashboard'}
             </h1>
             <p className="mt-1 text-sm text-muted">
-              {currentView === 'my-work' || selectedVariant
+              {currentView === 'my-work'
                 ? 'What you need to do right now'
                 : 'Cross-program overview of work transparency'}
             </p>
           </div>
 
-          {currentView === 'my-work' || selectedVariant ? (
-            /* My Work View - Render selected variant */
-            <>
-              {activeVariant === 'project-cockpit' ? (
-                <DashboardVariantB />
-              ) : activeVariant === 'accountability-pulse' ? (
-                <DashboardVariantC />
-              ) : (
-                <DashboardVariantA />
-              )}
-            </>
+          {currentView === 'my-work' ? (
+            <DashboardVariantC />
           ) : (
             /* Overview View - Stats and Lists */
             <>

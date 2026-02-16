@@ -3,19 +3,11 @@ import { useEffect } from 'react';
 import { cn } from '@/lib/cn';
 
 const STORAGE_KEY = 'dashboard-view';
-const VARIANT_STORAGE_KEY = 'dashboard-variant';
-
 export type DashboardView = 'my-work' | 'overview';
-export type DashboardVariant = 'focused-runway' | 'project-cockpit' | 'accountability-pulse';
-
-export function getStoredVariant(): DashboardVariant {
-  return (localStorage.getItem(VARIANT_STORAGE_KEY) as DashboardVariant) || 'focused-runway';
-}
 
 export function DashboardSidebar() {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentView = (searchParams.get('view') as DashboardView) || 'my-work';
-  const currentVariant = (searchParams.get('variant') as DashboardVariant) || getStoredVariant();
 
   // On mount, restore saved view preference if no view param is set
   useEffect(() => {
@@ -29,21 +21,10 @@ export function DashboardSidebar() {
 
   const setView = (view: DashboardView) => {
     localStorage.setItem(STORAGE_KEY, view);
-    if (view === 'my-work') {
-      const variant = getStoredVariant();
-      setSearchParams({ variant }, { replace: true });
-    } else {
-      setSearchParams({ view }, { replace: true });
-    }
+    setSearchParams(view === 'my-work' ? {} : { view }, { replace: true });
   };
 
-  const setVariant = (variant: DashboardVariant) => {
-    localStorage.setItem(VARIANT_STORAGE_KEY, variant);
-    localStorage.setItem(STORAGE_KEY, 'my-work');
-    setSearchParams({ variant }, { replace: true });
-  };
-
-  const isMyWork = currentView === 'my-work' || searchParams.has('variant');
+  const isMyWork = currentView === 'my-work' && !searchParams.has('view');
 
   return (
     <div className="flex flex-col gap-1 px-2 py-2">
@@ -51,10 +32,8 @@ export function DashboardSidebar() {
         onClick={() => setView('my-work')}
         className={cn(
           'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-          isMyWork && !searchParams.has('variant')
+          isMyWork
             ? 'bg-accent/10 text-accent font-medium'
-            : isMyWork
-            ? 'text-accent font-medium'
             : 'text-muted hover:bg-border/30 hover:text-foreground'
         )}
       >
@@ -64,33 +43,11 @@ export function DashboardSidebar() {
         My Work
       </button>
 
-      {/* Variant sub-items */}
-      <div className="ml-6 flex flex-col gap-0.5">
-        <VariantItem
-          label="Focused Runway"
-          variant="focused-runway"
-          currentVariant={isMyWork ? currentVariant : null}
-          onClick={() => setVariant('focused-runway')}
-        />
-        <VariantItem
-          label="Project Cockpit"
-          variant="project-cockpit"
-          currentVariant={isMyWork ? currentVariant : null}
-          onClick={() => setVariant('project-cockpit')}
-        />
-        <VariantItem
-          label="Accountability Pulse"
-          variant="accountability-pulse"
-          currentVariant={isMyWork ? currentVariant : null}
-          onClick={() => setVariant('accountability-pulse')}
-        />
-      </div>
-
       <button
         onClick={() => setView('overview')}
         className={cn(
           'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors mt-1',
-          currentView === 'overview' && !searchParams.has('variant')
+          currentView === 'overview'
             ? 'bg-accent/10 text-accent font-medium'
             : 'text-muted hover:bg-border/30 hover:text-foreground'
         )}
@@ -101,37 +58,5 @@ export function DashboardSidebar() {
         Overview
       </button>
     </div>
-  );
-}
-
-function VariantItem({
-  label,
-  variant,
-  currentVariant,
-  onClick,
-}: {
-  label: string;
-  variant: DashboardVariant;
-  currentVariant: DashboardVariant | null;
-  onClick: () => void;
-}) {
-  const isActive = currentVariant === variant;
-
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors',
-        isActive
-          ? 'bg-accent/10 text-accent font-medium'
-          : 'text-muted hover:bg-border/30 hover:text-foreground'
-      )}
-    >
-      <span className={cn(
-        'h-1.5 w-1.5 rounded-full',
-        isActive ? 'bg-accent' : 'bg-border'
-      )} />
-      {label}
-    </button>
   );
 }
