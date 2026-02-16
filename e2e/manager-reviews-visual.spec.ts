@@ -1,0 +1,242 @@
+import { test, expect } from './fixtures/isolated-env';
+
+type ReviewArtifacts = {
+  sprintId: string;
+  planId: string;
+  retroId: string;
+};
+
+async function login(page: import('@playwright/test').Page) {
+  await page.goto('/login');
+  await page.locator('#email').fill('dev@ship.local');
+  await page.locator('#password').fill('admin123');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).not.toHaveURL('/login', { timeout: 10000 });
+}
+
+async function getCsrf(page: import('@playwright/test').Page, apiUrl: string): Promise<string> {
+  const response = await page.request.get(`${apiUrl}/api/csrf-token`);
+  expect(response.ok()).toBe(true);
+  const { token } = await response.json();
+  return token;
+}
+
+async function createReviewArtifacts(
+  page: import('@playwright/test').Page,
+  apiUrl: string
+): Promise<ReviewArtifacts> {
+  const csrf = await getCsrf(page, apiUrl);
+
+  const meRes = await page.request.get(`${apiUrl}/api/auth/me`);
+  expect(meRes.ok()).toBe(true);
+  const me = await meRes.json();
+  const userId = me.data.user.id as string;
+
+  const personRes = await page.request.get(`${apiUrl}/api/weeks/lookup-person?user_id=${userId}`);
+  expect(personRes.ok()).toBe(true);
+  const person = await personRes.json();
+  const personId = person.id as string;
+
+  const reviewsRes = await page.request.get(`${apiUrl}/api/team/reviews?sprint_count=1`);
+  expect(reviewsRes.ok()).toBe(true);
+  const reviewsData = await reviewsRes.json();
+  const currentWeekNumber = (reviewsData.currentSprintNumber || 1) as number;
+
+  const programRes = await page.request.post(`${apiUrl}/api/programs`, {
+    headers: { 'x-csrf-token': csrf },
+    data: {
+      title: 'Visual Review Program',
+      properties: { color: '#0ea5e9' },
+    },
+  });
+  expect(programRes.ok()).toBe(true);
+  const program = await programRes.json();
+
+  const projectRes = await page.request.post(`${apiUrl}/api/projects`, {
+    headers: { 'x-csrf-token': csrf },
+    data: {
+      title: 'Visual Review Project',
+      belongs_to: [{ id: program.id, type: 'program' }],
+      properties: { color: '#22c55e' },
+    },
+  });
+  expect(projectRes.ok()).toBe(true);
+  const project = await projectRes.json();
+
+  const sprintRes = await page.request.post(`${apiUrl}/api/documents`, {
+    headers: { 'x-csrf-token': csrf },
+    data: {
+      document_type: 'sprint',
+      title: `Week ${currentWeekNumber}`,
+      belongs_to: [{ id: program.id, type: 'program' }, { id: project.id, type: 'project' }],
+      properties: {
+        sprint_number: currentWeekNumber,
+        owner_id: personId,
+        assignee_ids: [personId],
+        status: 'active',
+      },
+    },
+  });
+  expect(sprintRes.ok()).toBe(true);
+  const sprint = await sprintRes.json();
+  const sprintId = sprint.id as string;
+
+  const planRes = await page.request.post(`${apiUrl}/api/weekly-plans`, {
+    headers: { 'x-csrf-token': csrf },
+    data: { person_id: personId, project_id: project.id, week_number: currentWeekNumber },
+  });
+  expect(planRes.ok()).toBe(true);
+  const plan = await planRes.json();
+
+  const retroRes = await page.request.post(`${apiUrl}/api/weekly-retros`, {
+    headers: { 'x-csrf-token': csrf },
+    data: { person_id: personId, project_id: project.id, week_number: currentWeekNumber },
+  });
+  expect(retroRes.ok()).toBe(true);
+  const retro = await retroRes.json();
+
+  const planContent = {
+    type: 'doc',
+    content: [
+      {
+        type: 'heading',
+        attrs: { level: 1 },
+        content: [{ type: 'text', text: 'Visual verification weekly plan' }],
+      },
+      {
+        type: 'bulletList',
+        content: [
+          {
+            type: 'listItem',
+            content: [
+              { type: 'paragraph', content: [{ type: 'text', text: 'Prepare API instrumentation rollout' }] },
+            ],
+          },
+          {
+            type: 'listItem',
+            content: [
+              { type: 'paragraph', content: [{ type: 'text', text: 'Deliver onboarding support for new teammate' }] },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const retroContent = {
+    type: 'doc',
+    content: [
+      {
+        type: 'heading',
+        attrs: { level: 1 },
+        content: [{ type: 'text', text: 'Visual verification retrospective' }],
+      },
+      {
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'Completed setup tasks and validated sprint handoff quality.' }],
+      },
+    ],
+  };
+
+  const patchPlanRes = await page.request.patch(`${apiUrl}/api/documents/${plan.id}`, {
+    headers: { 'x-csrf-token': csrf },
+    data: { content: planContent },
+  });
+  expect(patchPlanRes.ok()).toBe(true);
+
+  const patchRetroRes = await page.request.patch(`${apiUrl}/api/documents/${retro.id}`, {
+    headers: { 'x-csrf-token': csrf },
+    data: { content: retroContent },
+  });
+  expect(patchRetroRes.ok()).toBe(true);
+
+  return { sprintId, planId: plan.id as string, retroId: retro.id as string };
+}
+
+test.describe('Manager Reviews Visual Verification', () => {
+  test('plan review supports request changes and approve-with-note flows', async ({ page, apiServer }, testInfo) => {
+    await login(page);
+    const { sprintId, planId } = await createReviewArtifacts(page, apiServer.url);
+
+    await page.goto(`/documents/${planId}?review=true&sprintId=${sprintId}`);
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByText('Plan Approval')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: 'Request Changes' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Request Changes' }).click();
+    await expect(page.getByRole('button', { name: 'Submit Request' })).toBeVisible();
+    await page.getByPlaceholder('Explain what needs to be revised...').fill(
+      'Please add measurable outcomes for each planned deliverable.'
+    );
+
+    await page.screenshot({
+      path: testInfo.outputPath('plan-review-request-changes-form.png'),
+      fullPage: true,
+    });
+
+    await page.getByRole('button', { name: 'Submit Request' }).click();
+    await expect(
+      page.locator('span').filter({ hasText: /^Changes requested$/ }).first()
+    ).toBeVisible();
+    await expect(page.getByText('Please add measurable outcomes for each planned deliverable.')).toBeVisible();
+
+    await page.getByPlaceholder('Add context for this decision...').fill(
+      'He onboarded last week and received equipment late; this pace is expected.'
+    );
+    await page.getByRole('button', { name: 'Approve Plan' }).click();
+
+    await expect(page.getByText('Approved')).toBeVisible();
+    await expect(
+      page.getByText('He onboarded last week and received equipment late; this pace is expected.').first()
+    ).toBeVisible();
+
+    await page.screenshot({
+      path: testInfo.outputPath('plan-review-approved-with-note.png'),
+      fullPage: true,
+    });
+  });
+
+  test('retro review requires a rating before approve and persists note', async ({ page, apiServer }, testInfo) => {
+    await login(page);
+    const { sprintId, retroId } = await createReviewArtifacts(page, apiServer.url);
+
+    await page.goto(`/documents/${retroId}?review=true&sprintId=${sprintId}`);
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByText('Performance Rating')).toBeVisible({ timeout: 10000 });
+    const rateButton = page.getByRole('button', { name: /Rate & Approve|Update Approval/ });
+    await expect(rateButton).toBeDisabled();
+
+    await page.getByPlaceholder('Add context for this decision...').fill(
+      'Strong retrospective quality for a first full week after onboarding.'
+    );
+    await page.locator('button[title=\"Fully Successful\"]').click();
+    await expect(rateButton).toBeEnabled();
+
+    await page.screenshot({
+      path: testInfo.outputPath('retro-review-before-approve.png'),
+      fullPage: true,
+    });
+
+    await rateButton.click();
+    await expect(rateButton).toHaveText('Update Approval');
+    await expect(page.getByText('Approval Note', { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText('Strong retrospective quality for a first full week after onboarding.').first()
+    ).toBeVisible();
+
+    const sprintResponse = await page.request.get(`${apiServer.url}/api/weeks/${sprintId}`);
+    expect(sprintResponse.ok()).toBe(true);
+    const sprintData = await sprintResponse.json();
+    expect(sprintData.review_approval?.state).toBe('approved');
+    expect(sprintData.review_approval?.comment).toBe(
+      'Strong retrospective quality for a first full week after onboarding.'
+    );
+    expect(sprintData.review_rating?.value).toBe(3);
+
+    await page.screenshot({
+      path: testInfo.outputPath('retro-review-approved-with-rating.png'),
+      fullPage: true,
+    });
+  });
+});

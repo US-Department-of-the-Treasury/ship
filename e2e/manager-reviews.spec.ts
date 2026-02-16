@@ -8,7 +8,7 @@ import { test, expect } from './fixtures/isolated-env';
  * 2. Reviews page sidebar navigation works
  * 3. GET /api/team/reviews returns expected data structure
  * 4. POST /api/weeks/:id/approve-review with rating works
- * 5. Rating validation rejects invalid values
+ * 5. Rating validation rejects invalid/missing values
  */
 
 // Helper to get CSRF token for API requests
@@ -160,7 +160,7 @@ test.describe('Manager Reviews', () => {
     expect(resFloat.status()).toBe(400);
   });
 
-  test('POST /api/weeks/:id/approve-review without rating is backward compatible', async ({ page, apiServer }) => {
+  test('POST /api/weeks/:id/approve-review without rating is rejected', async ({ page, apiServer }) => {
     // Login
     await page.goto('/login');
     await page.locator('#email').fill('dev@ship.local');
@@ -176,19 +176,14 @@ test.describe('Manager Reviews', () => {
     expect(weeksData.weeks.length).toBeGreaterThan(0);
     const sprintId = weeksData.weeks[0].id;
 
-    // Approve without rating (backward compatible)
+    // Approve without rating (not allowed)
     const response = await page.request.post(
       `${apiServer.url}/api/weeks/${sprintId}/approve-review`,
       {
         headers: { 'x-csrf-token': csrfToken },
       }
     );
-    expect(response.ok()).toBe(true);
-
-    const result = await response.json();
-    expect(result.success).toBe(true);
-    expect(result.approval.state).toBe('approved');
-    expect(result.review_rating).toBeNull();
+    expect(response.status()).toBe(400);
   });
 
   test('GET /api/team/reviews rejects non-admin users', async ({ page, apiServer }) => {

@@ -59,6 +59,8 @@ interface ApprovalInfo {
   approved_by?: string | null;
   approved_at?: string | null;
   approved_version_id?: number | null;
+  feedback?: string | null;
+  comment?: string | null;
 }
 
 interface RatingInfo {
@@ -183,7 +185,7 @@ export function ReviewsPage() {
   }, []);
 
   // Approve a plan optimistically
-  const approvePlan = useCallback(async (personId: string, weekNumber: number, sprintId: string) => {
+  const approvePlan = useCallback(async (personId: string, weekNumber: number, sprintId: string, comment?: string) => {
     if (!data) return;
 
     // Optimistic update
@@ -193,13 +195,18 @@ export function ReviewsPage() {
       updated.reviews[personId] = { ...updated.reviews[personId] };
       updated.reviews[personId][weekNumber] = {
         ...updated.reviews[personId][weekNumber],
-        planApproval: { state: 'approved', approved_by: null, approved_at: new Date().toISOString() },
+        planApproval: {
+          state: 'approved',
+          approved_by: null,
+          approved_at: new Date().toISOString(),
+          comment: comment?.trim() || null,
+        },
       };
       return updated;
     });
 
     try {
-      const res = await apiPost(`/api/weeks/${sprintId}/approve-plan`);
+      const res = await apiPost(`/api/weeks/${sprintId}/approve-plan`, { comment });
       if (!res.ok) throw new Error('Failed to approve plan');
     } catch {
       // Revert on error
@@ -236,7 +243,7 @@ export function ReviewsPage() {
   }, [data]);
 
   // Rate a retro (also approves it)
-  const rateRetro = useCallback(async (personId: string, weekNumber: number, sprintId: string, rating: number) => {
+  const rateRetro = useCallback(async (personId: string, weekNumber: number, sprintId: string, rating: number, comment?: string) => {
     if (!data) return;
 
     // Optimistic update
@@ -246,14 +253,19 @@ export function ReviewsPage() {
       updated.reviews[personId] = { ...updated.reviews[personId] };
       updated.reviews[personId][weekNumber] = {
         ...updated.reviews[personId][weekNumber],
-        reviewApproval: { state: 'approved', approved_by: null, approved_at: new Date().toISOString() },
+        reviewApproval: {
+          state: 'approved',
+          approved_by: null,
+          approved_at: new Date().toISOString(),
+          comment: comment?.trim() || null,
+        },
         reviewRating: { value: rating, rated_by: '', rated_at: new Date().toISOString() },
       };
       return updated;
     });
 
     try {
-      const res = await apiPost(`/api/weeks/${sprintId}/approve-review`, { rating });
+      const res = await apiPost(`/api/weeks/${sprintId}/approve-review`, { rating, comment });
       if (!res.ok) throw new Error('Failed to rate retro');
     } catch {
       // Revert on error
@@ -847,25 +859,35 @@ export function ReviewsPage() {
           selectedCell={selectedCell}
           batchMode={batchMode}
           onClose={() => batchMode ? exitBatchMode() : setSelectedCell(null)}
-          onApprovePlan={(personId, weekNumber, sprintId) => {
-            approvePlan(personId, weekNumber, sprintId);
+          onApprovePlan={(personId, weekNumber, sprintId, comment) => {
+            approvePlan(personId, weekNumber, sprintId, comment);
             setSelectedCell(prev => prev ? {
               ...prev,
               cell: {
                 ...prev.cell,
-                planApproval: { state: 'approved', approved_by: null, approved_at: new Date().toISOString() },
+                planApproval: {
+                  state: 'approved',
+                  approved_by: null,
+                  approved_at: new Date().toISOString(),
+                  comment: comment?.trim() || null,
+                },
               },
             } : null);
             // Auto-advance in batch mode
             if (batchMode) setTimeout(advanceBatch, 300);
           }}
-          onRateRetro={(personId, weekNumber, sprintId, rating) => {
-            rateRetro(personId, weekNumber, sprintId, rating);
+          onRateRetro={(personId, weekNumber, sprintId, rating, comment) => {
+            rateRetro(personId, weekNumber, sprintId, rating, comment);
             setSelectedCell(prev => prev ? {
               ...prev,
               cell: {
                 ...prev.cell,
-                reviewApproval: { state: 'approved', approved_by: null, approved_at: new Date().toISOString() },
+                reviewApproval: {
+                  state: 'approved',
+                  approved_by: null,
+                  approved_at: new Date().toISOString(),
+                  comment: comment?.trim() || null,
+                },
                 reviewRating: { value: rating, rated_by: '', rated_at: new Date().toISOString() },
               },
             } : null);
@@ -930,8 +952,8 @@ function ReviewPanel({
   selectedCell: SelectedCell;
   batchMode: BatchMode | null;
   onClose: () => void;
-  onApprovePlan: (personId: string, weekNumber: number, sprintId: string) => void;
-  onRateRetro: (personId: string, weekNumber: number, sprintId: string, rating: number) => void;
+  onApprovePlan: (personId: string, weekNumber: number, sprintId: string, comment?: string) => void;
+  onRateRetro: (personId: string, weekNumber: number, sprintId: string, rating: number, comment?: string) => void;
   onRequestChanges: (personId: string, weekNumber: number, sprintId: string, type: 'plan' | 'retro', feedback: string) => void;
   onSkip?: () => void;
 }) {
@@ -939,6 +961,7 @@ function ReviewPanel({
   const [retroDoc, setRetroDoc] = useState<WeeklyDoc | null>(null);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
+  const [approvalComment, setApprovalComment] = useState('');
   const [showFeedbackInput, setShowFeedbackInput] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
 
@@ -948,6 +971,10 @@ function ReviewPanel({
     setPlanDoc(null);
     setRetroDoc(null);
     setSelectedRating(selectedCell.cell.reviewRating?.value ?? null);
+    const existingComment = selectedCell.type === 'retro'
+      ? selectedCell.cell.reviewApproval?.comment
+      : selectedCell.cell.planApproval?.comment;
+    setApprovalComment(existingComment ?? '');
     setShowFeedbackInput(false);
     setFeedbackText('');
 
@@ -984,7 +1011,7 @@ function ReviewPanel({
 
   const isRetroMode = selectedCell.type === 'retro';
   const planApprovalState = selectedCell.cell.planApproval?.state;
-  const canApprove = selectedCell.cell.hasPlan && planApprovalState !== 'approved';
+  const canApprove = selectedCell.cell.hasPlan;
 
   return (
     <div className="w-[400px] flex-shrink-0 border-l border-border bg-background flex flex-col overflow-hidden">
@@ -1075,6 +1102,17 @@ function ReviewPanel({
         </div>
       )}
 
+      {/* Existing approval note */}
+      {((isRetroMode && selectedCell.cell.reviewApproval?.comment) ||
+        (!isRetroMode && selectedCell.cell.planApproval?.comment)) && (
+        <div className="border-t border-border px-4 py-2 bg-border/20">
+          <div className="text-[10px] uppercase tracking-wider text-muted mb-1">Approval Note</div>
+          <p className="text-xs text-foreground">
+            {isRetroMode ? selectedCell.cell.reviewApproval?.comment : selectedCell.cell.planApproval?.comment}
+          </p>
+        </div>
+      )}
+
       {/* Action bar */}
       <div className="border-t border-border px-4 py-3">
         {showFeedbackInput ? (
@@ -1144,11 +1182,25 @@ function ReviewPanel({
                 </button>
               ))}
             </div>
+            <label className="text-xs text-muted mb-1 block">Approval Note (optional)</label>
+            <textarea
+              value={approvalComment}
+              onChange={e => setApprovalComment(e.target.value)}
+              placeholder="Add context for this decision..."
+              rows={3}
+              className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-accent mb-3"
+            />
             <div className="flex gap-2">
               <button
                 onClick={() => {
                   if (selectedRating) {
-                    onRateRetro(selectedCell.personId, selectedCell.weekNumber, selectedCell.sprintId, selectedRating);
+                    onRateRetro(
+                      selectedCell.personId,
+                      selectedCell.weekNumber,
+                      selectedCell.sprintId,
+                      selectedRating,
+                      approvalComment
+                    );
                   }
                 }}
                 disabled={!selectedRating || !retroDoc}
@@ -1159,7 +1211,7 @@ function ReviewPanel({
                     : 'bg-border/30 text-muted cursor-not-allowed'
                 )}
               >
-                {selectedCell.cell.reviewRating ? 'Update Rating' : 'Rate & Approve'}
+                {selectedCell.cell.reviewRating ? 'Update Approval' : 'Rate & Approve'}
               </button>
               {retroDoc && (
                 <button
@@ -1173,35 +1225,45 @@ function ReviewPanel({
           </div>
         ) : (
           /* Plan actions: Approve + Request Changes */
-          <div className="flex gap-2">
-            <button
-              onClick={() => onApprovePlan(selectedCell.personId, selectedCell.weekNumber, selectedCell.sprintId)}
-              disabled={!canApprove}
-              className={cn(
-                'flex-1 rounded py-2 text-sm font-medium transition-colors',
-                planApprovalState === 'approved'
-                  ? 'bg-green-600/20 text-green-400 cursor-default'
-                  : canApprove
-                    ? planApprovalState === 'changed_since_approved'
-                      ? 'bg-orange-600 text-white hover:bg-orange-500 cursor-pointer'
-                      : 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
-                    : 'bg-border/30 text-muted cursor-not-allowed'
-              )}
-            >
-              {planApprovalState === 'approved'
-                ? 'Approved'
-                : planApprovalState === 'changed_since_approved'
-                  ? 'Re-approve Plan'
-                  : 'Approve Plan'}
-            </button>
-            {canApprove && (
+          <div>
+            <label className="text-xs text-muted mb-1 block">Approval Note (optional)</label>
+            <textarea
+              value={approvalComment}
+              onChange={e => setApprovalComment(e.target.value)}
+              placeholder="Add context for this decision..."
+              rows={3}
+              className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-accent mb-3"
+            />
+            <div className="flex gap-2">
               <button
-                onClick={() => setShowFeedbackInput(true)}
-                className="rounded px-3 py-2 text-sm font-medium text-purple-400 hover:bg-purple-500/10 transition-colors"
+                onClick={() => onApprovePlan(selectedCell.personId, selectedCell.weekNumber, selectedCell.sprintId, approvalComment)}
+                disabled={!canApprove}
+                className={cn(
+                  'flex-1 rounded py-2 text-sm font-medium transition-colors',
+                  planApprovalState === 'approved'
+                    ? 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+                    : canApprove
+                      ? planApprovalState === 'changed_since_approved'
+                        ? 'bg-orange-600 text-white hover:bg-orange-500 cursor-pointer'
+                        : 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
+                      : 'bg-border/30 text-muted cursor-not-allowed'
+                )}
               >
-                Request Changes
+                {planApprovalState === 'approved'
+                  ? 'Update Approval'
+                  : planApprovalState === 'changed_since_approved'
+                    ? 'Re-approve Plan'
+                    : 'Approve Plan'}
               </button>
-            )}
+              {canApprove && (
+                <button
+                  onClick={() => setShowFeedbackInput(true)}
+                  className="rounded px-3 py-2 text-sm font-medium text-purple-400 hover:bg-purple-500/10 transition-colors"
+                >
+                  Request Changes
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

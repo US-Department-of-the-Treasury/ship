@@ -34,6 +34,56 @@ async function getSprintOwnerReportsTo(sprintId: string, workspaceId: string): P
   return result.rows[0]?.reports_to || null;
 }
 
+/**
+ * Parse optional approval comment from request body.
+ * `comment` is considered "provided" only when the key exists in the payload.
+ */
+function parseApprovalComment(body: unknown): { provided: boolean; value: string | null; error?: string } {
+  if (!body || typeof body !== 'object') {
+    return { provided: false, value: null };
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(body, 'comment')) {
+    return { provided: false, value: null };
+  }
+
+  const raw = (body as Record<string, unknown>).comment;
+  if (raw === null || raw === undefined) {
+    return { provided: true, value: null };
+  }
+
+  if (typeof raw !== 'string') {
+    return { provided: true, value: null, error: 'Comment must be a string' };
+  }
+
+  if (raw.length > 2000) {
+    return { provided: true, value: null, error: 'Comment must be 2000 characters or less' };
+  }
+
+  const trimmed = raw.trim();
+  return { provided: true, value: trimmed.length > 0 ? trimmed : null };
+}
+
+/**
+ * Broadcast accountability refresh to the sprint owner (if they have a user account).
+ */
+async function broadcastAccountabilityUpdateToSprintOwner(
+  sprintOwnerId: string | null | undefined,
+  targetId: string,
+  type: string
+): Promise<void> {
+  if (!sprintOwnerId) return;
+
+  const ownerUserResult = await pool.query(
+    `SELECT properties->>'user_id' as user_id FROM documents WHERE id = $1`,
+    [sprintOwnerId]
+  );
+  const ownerUserId = ownerUserResult.rows[0]?.user_id;
+  if (!ownerUserId) return;
+
+  broadcastToUser(ownerUserId, 'accountability:updated', { type, targetId });
+}
+
 // GET /api/weeks/lookup-person - Find person document by user_id
 router.get('/lookup-person', authMiddleware, async (req: Request, res: Response) => {
   try {
@@ -2636,13 +2686,19 @@ router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Respo
     const { id } = req.params;
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
+    const parsedComment = parseApprovalComment(req.body);
+    if (parsedComment.error) {
+      res.status(400).json({ error: parsedComment.error });
+      return;
+    }
 
     // Get visibility context for admin check
     const { isAdmin } = await getVisibilityContext(userId, workspaceId);
 
     // Verify sprint exists, get properties and program's accountable_id
     const sprintResult = await pool.query(
-      `SELECT d.id, d.properties, prog.properties->>'accountable_id' as program_accountable_id
+      `SELECT d.id, d.properties, d.properties->>'owner_id' as sprint_owner_id,
+              prog.properties->>'accountable_id' as program_accountable_id
        FROM documents d
        LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
        LEFT JOIN documents prog ON prog_da.related_id = prog.id
@@ -2672,14 +2728,23 @@ router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Respo
 
     // Update sprint properties with approval
     const currentProps = sprint.properties || {};
+    const previousApproval = currentProps.plan_approval || null;
+    const previousComment = typeof previousApproval?.comment === 'string'
+      ? previousApproval.comment
+      : null;
+    const resolvedComment = parsedComment.provided
+      ? parsedComment.value
+      : (previousComment ?? null);
+    const newApproval = {
+      state: 'approved',
+      approved_by: userId,
+      approved_at: new Date().toISOString(),
+      approved_version_id: versionId,
+      comment: resolvedComment,
+    };
     const newProps = {
       ...currentProps,
-      plan_approval: {
-        state: 'approved',
-        approved_by: userId,
-        approved_at: new Date().toISOString(),
-        approved_version_id: versionId,
-      },
+      plan_approval: newApproval,
     };
 
     await pool.query(
@@ -2688,9 +2753,26 @@ router.post('/:id/approve-plan', authMiddleware, async (req: Request, res: Respo
       [JSON.stringify(newProps), id]
     );
 
+    // If approval comment changed, log to history for auditability.
+    if (previousComment !== resolvedComment) {
+      await logDocumentChange(
+        id as string,
+        'plan_approval',
+        previousApproval ? JSON.stringify(previousApproval) : null,
+        JSON.stringify(newApproval),
+        userId
+      );
+    }
+
+    await broadcastAccountabilityUpdateToSprintOwner(
+      sprint.sprint_owner_id,
+      id as string,
+      'plan_approved'
+    );
+
     res.json({
       success: true,
-      approval: newProps.plan_approval,
+      approval: newApproval,
     });
   } catch (err) {
     console.error('Approve sprint plan error:', err);
@@ -2757,21 +2839,28 @@ router.post('/:id/unapprove-plan', authMiddleware, async (req: Request, res: Res
   }
 });
 
-// POST /api/weeks/:id/approve-review - Approve sprint review (with optional performance rating)
+// POST /api/weeks/:id/approve-review - Approve sprint review (rating required)
 router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { rating } = req.body || {};
     const userId = req.userId!;
     const workspaceId = req.workspaceId!;
+    const parsedComment = parseApprovalComment(req.body);
+    if (parsedComment.error) {
+      res.status(400).json({ error: parsedComment.error });
+      return;
+    }
 
-    // Validate rating if provided (OPM 5-level scale: 1-5)
-    if (rating !== undefined && rating !== null) {
-      const ratingNum = Number(rating);
-      if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
-        res.status(400).json({ error: 'Rating must be an integer between 1 and 5' });
-        return;
-      }
+    // Rating is required for retro approvals (OPM 5-level scale: 1-5)
+    if (rating === undefined || rating === null) {
+      res.status(400).json({ error: 'Rating is required when approving retros' });
+      return;
+    }
+    const ratingNum = Number(rating);
+    if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
+      res.status(400).json({ error: 'Rating must be an integer between 1 and 5' });
+      return;
     }
 
     // Get visibility context for admin check
@@ -2779,7 +2868,8 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
 
     // Verify sprint exists, get properties and program's accountable_id
     const sprintResult = await pool.query(
-      `SELECT d.id, d.properties, prog.properties->>'accountable_id' as program_accountable_id
+      `SELECT d.id, d.properties, d.properties->>'owner_id' as sprint_owner_id,
+              prog.properties->>'accountable_id' as program_accountable_id
        FROM documents d
        LEFT JOIN document_associations prog_da ON prog_da.document_id = d.id AND prog_da.relationship_type = 'program'
        LEFT JOIN documents prog ON prog_da.related_id = prog.id
@@ -2818,26 +2908,31 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
       versionId = historyEntry?.id || null;
     }
 
-    // Update sprint properties with review approval and optional rating
+    // Update sprint properties with review approval and rating
     const currentProps = sprint.properties || {};
+    const previousApproval = currentProps.review_approval || null;
+    const previousComment = typeof previousApproval?.comment === 'string'
+      ? previousApproval.comment
+      : null;
+    const resolvedComment = parsedComment.provided
+      ? parsedComment.value
+      : (previousComment ?? null);
+    const newApproval = {
+      state: 'approved',
+      approved_by: userId,
+      approved_at: new Date().toISOString(),
+      approved_version_id: versionId,
+      comment: resolvedComment,
+    };
     const newProps: Record<string, unknown> = {
       ...currentProps,
-      review_approval: {
-        state: 'approved',
-        approved_by: userId,
-        approved_at: new Date().toISOString(),
-        approved_version_id: versionId,
-      },
-    };
-
-    // Add performance rating if provided
-    if (rating !== undefined && rating !== null) {
-      newProps.review_rating = {
-        value: Number(rating),
+      review_approval: newApproval,
+      review_rating: {
+        value: ratingNum,
         rated_by: userId,
         rated_at: new Date().toISOString(),
-      };
-    }
+      },
+    };
 
     await pool.query(
       `UPDATE documents SET properties = $1, updated_at = now()
@@ -2845,10 +2940,27 @@ router.post('/:id/approve-review', authMiddleware, async (req: Request, res: Res
       [JSON.stringify(newProps), id]
     );
 
+    // If approval comment changed, log to history for auditability.
+    if (previousComment !== resolvedComment) {
+      await logDocumentChange(
+        id as string,
+        'review_approval',
+        previousApproval ? JSON.stringify(previousApproval) : null,
+        JSON.stringify(newApproval),
+        userId
+      );
+    }
+
+    await broadcastAccountabilityUpdateToSprintOwner(
+      sprint.sprint_owner_id,
+      id as string,
+      'review_approved'
+    );
+
     res.json({
       success: true,
-      approval: newProps.review_approval,
-      review_rating: newProps.review_rating || null,
+      approval: newApproval,
+      review_rating: newProps.review_rating,
     });
   } catch (err) {
     console.error('Approve sprint review error:', err);

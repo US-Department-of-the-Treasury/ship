@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PropertyRow } from '@/components/ui/PropertyRow';
 import { Combobox } from '@/components/ui/Combobox';
 import { ApprovalButton } from '@/components/ApprovalButton';
+import { apiPost } from '@/lib/api';
 import type { ApprovalTracking } from '@ship/shared';
 
 const STATUS_OPTIONS = [
@@ -95,6 +96,8 @@ export function WeekSidebar({
   onApprovalUpdate,
 }: WeekSidebarProps) {
   const navigate = useNavigate();
+  const [selectedReviewRating, setSelectedReviewRating] = useState<number | null>(sprint.review_rating?.value ?? null);
+  const [ratingInProgress, setRatingInProgress] = useState(false);
   // Helper to check if a field should be highlighted
   const isHighlighted = (field: string) => highlightedFields.includes(field);
 
@@ -128,6 +131,27 @@ export function WeekSidebar({
         };
       });
   }, [people, existingSprints]);
+
+  useEffect(() => {
+    setSelectedReviewRating(sprint.review_rating?.value ?? null);
+  }, [sprint.id, sprint.review_rating?.value]);
+
+  async function handleApproveReviewWithRating() {
+    if (!canApprove || !sprint.has_review || !selectedReviewRating || ratingInProgress) return;
+    setRatingInProgress(true);
+    try {
+      const res = await apiPost(`/api/weeks/${sprint.id}/approve-review`, { rating: selectedReviewRating });
+      if (!res.ok) {
+        console.error('Failed to approve review with rating:', res.status, await res.text().catch(() => ''));
+        return;
+      }
+      onApprovalUpdate?.();
+    } catch (err) {
+      console.error('Error approving review with rating:', err);
+    } finally {
+      setRatingInProgress(false);
+    }
+  }
 
   return (
     <div className="space-y-4 p-4">
@@ -192,15 +216,56 @@ export function WeekSidebar({
       {/* Review Approval - only show for completed sprints with a review */}
       {sprint.status === 'completed' && (
         <PropertyRow label="Review Approval">
-          <ApprovalButton
-            type="review"
-            approval={sprint.review_approval}
-            hasContent={sprint.has_review ?? false}
-            canApprove={canApprove}
-            approveEndpoint={`/api/weeks/${sprint.id}/approve-review`}
-            approverName={sprint.review_approval?.approved_by ? userNames[sprint.review_approval.approved_by] : undefined}
-            onApproved={onApprovalUpdate}
-          />
+          <div className="space-y-2">
+            {!sprint.has_review && (
+              <div className="text-xs text-muted">Write review to enable approval</div>
+            )}
+
+            {sprint.review_approval?.state === 'approved' && (
+              <div className="text-xs text-green-400">Approved</div>
+            )}
+            {sprint.review_approval?.state === 'changed_since_approved' && (
+              <div className="text-xs text-orange-400">Changed since approved</div>
+            )}
+            {sprint.review_approval?.state === 'changes_requested' && (
+              <div className="text-xs text-purple-400">Changes requested</div>
+            )}
+            {!sprint.review_approval?.state && sprint.has_review && (
+              <div className="text-xs text-muted">Pending review</div>
+            )}
+
+            {canApprove && sprint.has_review && (
+              <>
+                <div className="grid grid-cols-5 gap-1">
+                  {([1, 2, 3, 4, 5] as const).map((rating) => (
+                    <button
+                      key={rating}
+                      onClick={() => setSelectedReviewRating(rating)}
+                      className={`rounded px-2 py-1 text-xs transition-colors ${
+                        selectedReviewRating === rating
+                          ? 'bg-accent text-white'
+                          : 'bg-border/40 text-muted hover:bg-border'
+                      }`}
+                      title={OPM_RATING_LABELS[rating].label}
+                    >
+                      {rating}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={handleApproveReviewWithRating}
+                  disabled={!selectedReviewRating || ratingInProgress}
+                  className={`w-full rounded py-1.5 text-xs font-medium transition-colors ${
+                    selectedReviewRating && !ratingInProgress
+                      ? 'bg-green-600 text-white hover:bg-green-500'
+                      : 'bg-border/30 text-muted cursor-not-allowed'
+                  }`}
+                >
+                  {sprint.review_approval?.state === 'approved' ? 'Update Approval' : 'Rate & Approve'}
+                </button>
+              </>
+            )}
+          </div>
         </PropertyRow>
       )}
 

@@ -148,6 +148,7 @@ export interface ApprovalTracking {
   approved_at: string | null;             // ISO 8601 timestamp of approval
   approved_version_id: number | null;     // document_history.id that was approved
   feedback?: string | null;               // Manager's feedback when requesting changes
+  comment?: string | null;                // Optional manager note when approving
 }
 
 export interface WeekProperties {

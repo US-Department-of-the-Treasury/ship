@@ -101,7 +101,11 @@ A good weekly review includes:
 1. Navigate to the completed week
 2. In the sidebar, find **Review Approval**
 3. Read the review content
-4. Click **Approve Review** if satisfactory
+4. Choose one action:
+   - **Approve** (optionally add an approval note)
+   - **Request Changes** (requires feedback and reopens the owner's action item)
+   - **Skip** (move to the next item without a decision)
+5. For retros, select a **1-5 performance rating** when approving
 
 ### Common Issues to Flag
 
@@ -181,6 +185,7 @@ The item has never been approved. Shows as:
 The item has been approved and hasn't changed. Shows as:
 - Green checkmark icon
 - "Approved by [Name] on [Date]"
+- Optional approval note (if the reviewer left one)
 
 ### Changed Since Approved
 
@@ -189,6 +194,13 @@ The item was approved but has been modified since. Shows as:
 - "View changes since last approval" link
 
 This state requires your attention—the content you approved is no longer current.
+
+### Changes Requested
+
+The reviewer explicitly kicked the item back for revision. Shows as:
+- Purple "Changes Requested" state
+- Required reviewer feedback explaining what to fix
+- A new action item for the owner until the item is re-approved
 
 ## Using the Diff Viewer
 

@@ -745,7 +745,7 @@ describe('Sprints API', () => {
     })
   })
 
-  describe('POST /api/weeks/:id/approve-review (with rating)', () => {
+  describe('POST /api/weeks/:id/approve-review and approve-plan comments', () => {
     let adminCookie: string
     let adminCsrfToken: string
     let adminUserId: string
@@ -805,16 +805,14 @@ describe('Sprints API', () => {
       )
     })
 
-    it('should approve review without rating (backward compatible)', async () => {
+    it('should reject review approval without rating', async () => {
       const res = await request(app)
         .post(`/api/weeks/${approvalSprintId}/approve-review`)
         .set('Cookie', adminCookie)
         .set('x-csrf-token', adminCsrfToken)
 
-      expect(res.status).toBe(200)
-      expect(res.body.success).toBe(true)
-      expect(res.body.approval.state).toBe('approved')
-      expect(res.body.review_rating).toBeNull()
+      expect(res.status).toBe(400)
+      expect(res.body.error).toContain('Rating is required')
     })
 
     it('should approve review with rating', async () => {
@@ -831,6 +829,32 @@ describe('Sprints API', () => {
       expect(res.body.review_rating.value).toBe(3)
       expect(res.body.review_rating.rated_by).toBe(adminUserId)
       expect(res.body.review_rating.rated_at).toBeDefined()
+    })
+
+    it('should approve plan with optional comment', async () => {
+      const res = await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-plan`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ comment: 'Onboarding week, expected slower output' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+      expect(res.body.approval.state).toBe('approved')
+      expect(res.body.approval.comment).toBe('Onboarding week, expected slower output')
+    })
+
+    it('should approve review with rating and optional comment', async () => {
+      const res = await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-review`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ rating: 4, comment: 'Strong retrospective with clear learnings' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.success).toBe(true)
+      expect(res.body.approval.comment).toBe('Strong retrospective with clear learnings')
+      expect(res.body.review_rating.value).toBe(4)
     })
 
     it('should accept all valid ratings (1-5)', async () => {
@@ -891,6 +915,37 @@ describe('Sprints API', () => {
         [approvalSprintId]
       )
       expect(dbResult.rows[0].review_rating.value).toBe(4)
+    })
+
+    it('should allow editing approval comment and log review_approval history', async () => {
+      await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-review`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ rating: 3, comment: 'Initial note' })
+
+      const res = await request(app)
+        .post(`/api/weeks/${approvalSprintId}/approve-review`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ rating: 3, comment: 'Updated note after follow-up' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.approval.comment).toBe('Updated note after follow-up')
+
+      const historyResult = await pool.query(
+        `SELECT field, old_value, new_value
+         FROM document_history
+         WHERE document_id = $1
+           AND field = 'review_approval'
+         ORDER BY id DESC
+         LIMIT 1`,
+        [approvalSprintId]
+      )
+
+      expect(historyResult.rows.length).toBeGreaterThan(0)
+      expect(historyResult.rows[0].old_value).toContain('Initial note')
+      expect(historyResult.rows[0].new_value).toContain('Updated note after follow-up')
     })
 
     it('should reject non-admin non-accountable user', async () => {

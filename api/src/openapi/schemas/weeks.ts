@@ -604,11 +604,20 @@ registry.registerPath({
   path: '/weeks/{id}/approve-plan',
   tags: ['Weeks'],
   summary: 'Approve sprint plan',
-  description: 'Mark the sprint plan as approved by the accountable person.',
+  description: 'Mark the sprint plan as approved by the accountable person. Optionally include a manager comment.',
   request: {
     params: z.object({
       id: UuidSchema,
     }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            comment: z.string().max(2000).optional().nullable().describe('Optional manager note to persist with approval'),
+          }),
+        },
+      },
+    },
   },
   responses: {
     200: {
@@ -633,7 +642,7 @@ registry.registerPath({
   path: '/weeks/{id}/approve-review',
   tags: ['Weeks'],
   summary: 'Approve sprint review',
-  description: 'Mark the sprint review as approved by the accountable person. Optionally include a performance rating (1-5 OPM scale).',
+  description: 'Mark the sprint review as approved by the accountable person. Rating is required (1-5 OPM scale). Optional manager comment can be included.',
   request: {
     params: z.object({
       id: UuidSchema,
@@ -642,7 +651,8 @@ registry.registerPath({
       content: {
         'application/json': {
           schema: z.object({
-            rating: z.number().int().min(1).max(5).optional().describe('Performance rating (1=Unacceptable, 2=Minimally Satisfactory, 3=Fully Successful, 4=Exceeds Expectations, 5=Outstanding)'),
+            rating: z.number().int().min(1).max(5).describe('Required performance rating (1=Unacceptable, 2=Minimally Satisfactory, 3=Fully Successful, 4=Exceeds Expectations, 5=Outstanding)'),
+            comment: z.string().max(2000).optional().nullable().describe('Optional manager note to persist with approval'),
           }),
         },
       },
