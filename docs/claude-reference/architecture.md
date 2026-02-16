@@ -71,7 +71,7 @@ CREATE TYPE document_type AS ENUM (
 | `issue` | Work items (tasks/bugs) | state, priority, assignee_id, ticket_number |
 | `program` | Long-lived product/initiative | color, emoji |
 | `project` | Time-bounded deliverable | impact, confidence, ease (ICE scores), owner_id |
-| `sprint` | Week container (historical name) | sprint_number, owner_id |
+| `sprint` | Week container (historical DB name for "week") | sprint_number, owner_id |
 | `person` | User profile document | email, role, capacity_hours |
 
 ### Document Schema
@@ -89,8 +89,9 @@ interface Document {
   // Associations (columns for efficient querying)
   program_id?: string | null;
   project_id?: string | null;
-  sprint_id?: string | null;
   parent_id?: string | null;
+  // Note: sprint_id was dropped by migration 027.
+  // Week assignments now use the document_associations table.
 
   // Type-specific properties (JSONB)
   properties: Record<string, unknown>;
@@ -366,13 +367,12 @@ CREATE TABLE sessions (
 
 ### 5. Properties in JSONB, Associations in Columns
 
-Association fields (`program_id`, `project_id`, `sprint_id`) are columns for efficient joins. Type-specific properties go in JSONB.
+Association fields (`program_id`, `project_id`) are columns for efficient joins. Week assignments use the `document_associations` table (`sprint_id` column was dropped by migration 027). Type-specific properties go in JSONB.
 
 ```sql
 -- api/src/db/schema.sql:107-116
 program_id UUID REFERENCES documents(id),
 project_id UUID REFERENCES documents(id),
-sprint_id UUID REFERENCES documents(id),
 properties JSONB DEFAULT '{}',
 ```
 

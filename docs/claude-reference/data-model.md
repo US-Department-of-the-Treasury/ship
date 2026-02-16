@@ -45,10 +45,10 @@ CREATE TABLE documents (
   parent_id UUID REFERENCES documents(id) ON DELETE CASCADE,
   position INTEGER DEFAULT 0,
 
-  -- Associations (deprecated - use document_associations table)
+  -- Associations (transitioning to document_associations table)
   program_id UUID REFERENCES documents(id) ON DELETE SET NULL,
   project_id UUID REFERENCES documents(id) ON DELETE SET NULL,
-  sprint_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+  -- Note: sprint_id was dropped by migration 027. Week assignments use document_associations.
 
   -- Type-specific properties (JSONB)
   properties JSONB DEFAULT '{}',
@@ -122,7 +122,7 @@ CREATE INDEX idx_documents_parent_id ON documents(parent_id);
 CREATE INDEX idx_documents_document_type ON documents(document_type);
 CREATE INDEX idx_documents_program_id ON documents(program_id);
 CREATE INDEX idx_documents_project_id ON documents(project_id);
-CREATE INDEX idx_documents_sprint_id ON documents(sprint_id);
+-- Note: idx_documents_sprint_id was dropped with the sprint_id column (migration 027)
 CREATE INDEX idx_documents_properties ON documents USING GIN (properties);
 CREATE INDEX idx_documents_visibility ON documents(visibility);
 
@@ -157,7 +157,7 @@ CREATE TABLE document_associations (
 **Relationship types:**
 - `parent` - Hierarchy/nesting
 - `project` - Issue belongs to project
-- `sprint` - Issue assigned to week (historical relationship name)
+- `sprint` - Issue assigned to week (historical relationship name; replaces the dropped sprint_id column)
 - `program` - Document belongs to program
 
 **Why junction table:**

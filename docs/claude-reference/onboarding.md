@@ -105,14 +105,14 @@ Document types stored in `document_type` field:
 - `issue` - Work items (tracked tasks)
 - `program` - Products/initiatives
 - `project` - Time-bounded deliverables
-- `sprint` - Week containers (historical database name)
+- `sprint` - Week containers (historical DB name for "week")
 - `person` - User profiles
 
 Key relationships:
 - `program_id` - Which program a document belongs to
 - `project_id` - Which project an issue belongs to
-- `sprint_id` - Which week an issue is assigned to (historical field name)
 - `parent_id` - Document hierarchy
+- Week assignments use the `document_associations` table (the `sprint_id` column was dropped by migration 027)
 
 ### 4-Panel Editor Layout
 

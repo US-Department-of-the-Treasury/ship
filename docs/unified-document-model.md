@@ -69,7 +69,7 @@ The `document_type` field describes **what kind** of document it is:
 | `issue`        | Work item (tracked task)   | State, assignees, priority, ticket number, dates |
 | `program`      | Product/Initiative         | Long-lived container, has members, ticket prefix |
 | `project`      | Time-bounded deliverable   | Groups issues, has dates, belongs to program     |
-| `sprint`       | Program's week container   | Week number, program_id, contains week's work    |
+| `sprint`       | Week container (historical DB name) | Week number, program_id, contains week's work |
 | `weekly_plan`  | Weekly planning doc        | Child of week, required before week starts       |
 | `weekly_retro` | Weekly retrospective       | Child of week, required after week ends          |
 | `person`       | User profile page          | `properties.user_id` links to auth user, capacity, skills |
@@ -211,8 +211,9 @@ interface Document {
   // Location/associations (columns, not in properties)
   program_id: string | null; // null = workspace-level
   project_id: string | null; // for issues
-  sprint_id: string | null; // when assigned to week (historical field name)
   parent_id: string | null; // document tree nesting
+  // Note: sprint_id column was dropped by migration 027.
+  // Week assignments now use the document_associations table.
 
   // Content
   title: string; // Always "Untitled" for new docs
@@ -231,7 +232,7 @@ interface Document {
 
 ### Relationship Strategy
 
-Association fields (`program_id`, `project_id`, `sprint_id`, `parent_id`) are **columns** for efficient querying. Everything else type-specific goes in `properties` JSONB.
+Association fields (`program_id`, `project_id`, `parent_id`) are **columns** for efficient querying. Week assignments use the `document_associations` table (`sprint_id` column was dropped by migration 027). Everything else type-specific goes in `properties` JSONB.
 
 ### Properties System
 
