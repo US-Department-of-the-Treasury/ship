@@ -138,20 +138,20 @@ test.describe('Performance - Page Load', () => {
     // Wait for docs page to load - either shows editor or document list
     await page.waitForLoadState('networkidle')
 
-    // Measure navigation to Issues
+    // Measure navigation to Projects
     let startTime = Date.now()
-    await page.getByRole('button', { name: 'Issues' }).click()
-    await expect(page).toHaveURL('/issues', { timeout: 5000 })
+    await page.getByRole('button', { name: 'Projects' }).click()
+    await expect(page).toHaveURL('/projects', { timeout: 5000 })
     let navTime = Date.now() - startTime
-    console.log(`Navigation to Issues: ${navTime}ms`)
+    console.log(`Navigation to Projects: ${navTime}ms`)
     expect(navTime).toBeLessThan(2000)
 
-    // Navigate to Programs (icon rail uses "Programs", not "Projects")
+    // Navigate to Programs
     startTime = Date.now()
     await page.getByRole('button', { name: 'Programs' }).click()
     await expect(page).toHaveURL('/programs', { timeout: 5000 })
     navTime = Date.now() - startTime
-    console.log(`Navigation to Projects: ${navTime}ms`)
+    console.log(`Navigation to Programs: ${navTime}ms`)
     expect(navTime).toBeLessThan(2000)
 
     // Navigate back to Docs

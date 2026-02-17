@@ -33,7 +33,7 @@ test.describe('Status Overview Heatmap', () => {
     // Should see status legend
     await expect(page.getByText('Status:')).toBeVisible({ timeout: 10000 })
     await expect(page.getByText('Done')).toBeVisible()
-    await expect(page.getByText('Due')).toBeVisible()
+    await expect(page.getByText('Due', { exact: true })).toBeVisible()
     await expect(page.getByText('Late')).toBeVisible()
     await expect(page.getByText('Future', { exact: true })).toBeVisible()
 

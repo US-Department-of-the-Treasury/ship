@@ -303,9 +303,9 @@ test.describe('Timer Reset Behavior', () => {
     // Advance 10 minutes
     await page.clock.fastForward(10 * 60 * 1000);
 
-    // Navigate to issues page - NOTE: this click counts as activity and resets the timer
-    await page.getByRole('button', { name: 'Issues' }).click();
-    await expect(page.getByRole('heading', { level: 1, name: 'Issues' })).toBeVisible({ timeout: 5000 });
+    // Navigate to programs page - NOTE: this click counts as activity and resets the timer
+    await page.getByRole('button', { name: 'Programs' }).click();
+    await expect(page).toHaveURL(/\/programs/, { timeout: 5000 });
 
     // Timer was reset by the click, so we need to wait full 14 min from the click
     await page.clock.fastForward(SESSION_TIMEOUT_MS - WARNING_THRESHOLD_MS);

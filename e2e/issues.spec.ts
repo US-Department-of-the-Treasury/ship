@@ -12,9 +12,9 @@ test.describe('Issues (Phase 5)', () => {
     await expect(page).not.toHaveURL('/login', { timeout: 5000 })
   })
 
-  test('can navigate to Issues mode via icon rail', async ({ page }) => {
-    // Click Issues icon in the rail
-    await page.getByRole('button', { name: /issues/i }).click()
+  test('can navigate to Issues mode via URL', async ({ page }) => {
+    // Navigate to issues via URL (Issues is not in the icon rail)
+    await page.goto('/issues')
 
     // Should be in issues mode
     await expect(page).toHaveURL(/\/issues/)

@@ -125,7 +125,7 @@ test.describe('Request Changes UI', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(
-      page.getByText(/Week \d+/).first(),
+      page.locator('span').filter({ hasText: /^Week \d+$/ }).first(),
       'Reviews page should show week headers'
     ).toBeVisible({ timeout: 10000 });
 
