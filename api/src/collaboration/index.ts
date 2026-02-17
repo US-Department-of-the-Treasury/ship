@@ -92,7 +92,11 @@ const conns = new Map<WebSocket, { docName: string; awarenessClientId: number; u
 
 // Global events connections (separate from document collaboration)
 // These persist across navigation and are used for real-time notifications
-const eventConns = new Map<WebSocket, { userId: string; workspaceId: string }>();
+const eventConns = new Map<WebSocket, { userId: string; workspaceId: string; sessionId: string }>();
+
+// Track last session activity update time per WebSocket (for throttling)
+const lastSessionActivityUpdate = new Map<WebSocket, number>();
+const SESSION_ACTIVITY_UPDATE_THRESHOLD_MS = 60 * 1000; // Only update DB every 60 seconds
 
 // Debounce persistence (save every 2 seconds after changes)
 const pendingSaves = new Map<string, NodeJS.Timeout>();
@@ -343,8 +347,8 @@ function handleMessage(ws: WebSocket, message: Uint8Array, docName: string, doc:
   }
 }
 
-// Validate session from cookie header - returns userId/workspaceId or null
-async function validateWebSocketSession(request: IncomingMessage): Promise<{ userId: string; workspaceId: string } | null> {
+// Validate session from cookie header - returns userId/workspaceId/sessionId or null
+async function validateWebSocketSession(request: IncomingMessage): Promise<{ userId: string; workspaceId: string; sessionId: string } | null> {
   const cookieHeader = request.headers.cookie;
   if (!cookieHeader) return null;
 
@@ -386,7 +390,7 @@ async function validateWebSocketSession(request: IncomingMessage): Promise<{ use
       [now, sessionId]
     );
 
-    return { userId: session.user_id, workspaceId: session.workspace_id };
+    return { userId: session.user_id, workspaceId: session.workspace_id, sessionId };
   } catch {
     return null;
   }
@@ -786,15 +790,15 @@ export function setupCollaboration(server: Server) {
   });
 
   // Handle events WebSocket connections (for real-time notifications)
-  eventsWss.on('connection', (ws: WebSocket, sessionData: { userId: string; workspaceId: string }) => {
-    eventConns.set(ws, { userId: sessionData.userId, workspaceId: sessionData.workspaceId });
+  eventsWss.on('connection', (ws: WebSocket, sessionData: { userId: string; workspaceId: string; sessionId: string }) => {
+    eventConns.set(ws, { userId: sessionData.userId, workspaceId: sessionData.workspaceId, sessionId: sessionData.sessionId });
     console.log(`[Events] User ${sessionData.userId} connected (${eventConns.size} total connections)`);
 
     // Send initial connected message
     ws.send(JSON.stringify({ type: 'connected', data: {} }));
 
     // Handle ping/pong for keepalive with rate limiting
-    ws.on('message', (data: Buffer) => {
+    ws.on('message', async (data: Buffer) => {
       // DDoS protection: Rate limit events WebSocket messages
       if (isMessageRateLimited(ws)) {
         const violations = (rateLimitViolations.get(ws) || 0) + 1;
@@ -814,6 +818,23 @@ export function setupCollaboration(server: Server) {
       try {
         const message = JSON.parse(data.toString());
         if (message.type === 'ping') {
+          // Update session activity (throttled to avoid excessive DB writes)
+          // This keeps the session alive while the user has the app open,
+          // even if they're not making REST API calls
+          const now = Date.now();
+          const lastUpdate = lastSessionActivityUpdate.get(ws) || 0;
+          if (now - lastUpdate > SESSION_ACTIVITY_UPDATE_THRESHOLD_MS) {
+            lastSessionActivityUpdate.set(ws, now);
+            try {
+              await pool.query(
+                'UPDATE sessions SET last_activity = $1 WHERE id = $2',
+                [new Date(), sessionData.sessionId]
+              );
+            } catch (err) {
+              // Log but don't fail - session update is best-effort
+              console.error('[Events] Failed to update session activity:', err);
+            }
+          }
           ws.send(JSON.stringify({ type: 'pong' }));
         }
       } catch {
@@ -825,6 +846,7 @@ export function setupCollaboration(server: Server) {
       eventConns.delete(ws);
       rateLimitViolations.delete(ws);
       messageTimestamps.delete(ws);
+      lastSessionActivityUpdate.delete(ws);
       console.log(`[Events] User ${sessionData.userId} disconnected (${eventConns.size} total connections)`);
     });
   });
