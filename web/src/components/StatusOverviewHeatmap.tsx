@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
-import { apiPost } from '@/lib/api';
+import { createOrGetWeeklyDocumentId } from '@/lib/accountability';
 import { formatDateRange } from '@/lib/date-utils';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
@@ -207,18 +207,16 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
 
     setNavigatingCell({ personId, weekNumber, type });
     try {
-      const endpoint = type === 'plan' ? '/api/weekly-plans' : '/api/weekly-retros';
-      const response = await apiPost(endpoint, {
-        person_id: personId,
-        project_id: projectId,
-        week_number: weekNumber,
+      const documentId = await createOrGetWeeklyDocumentId({
+        kind: type,
+        personId,
+        projectId,
+        weekNumber,
       });
-
-      if (response.ok) {
-        const doc = await response.json();
-        navigate(`/documents/${doc.id}`);
+      if (documentId) {
+        navigate(`/documents/${documentId}`);
       } else {
-        console.error(`Failed to create weekly ${type}:`, await response.text());
+        console.error(`Failed to create weekly ${type}: request returned no document id`);
       }
     } catch (err) {
       console.error(`Failed to create weekly ${type}:`, err);

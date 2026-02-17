@@ -2,20 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { useActionItemsQuery, ActionItem } from '@/hooks/useActionItemsQuery';
-import { apiPost } from '@/lib/api';
-
-// Types that need async document creation before navigation
-const WEEKLY_DOC_TYPES = ['weekly_plan', 'weekly_retro', 'changes_requested_plan', 'changes_requested_retro'];
-
-const ACCOUNTABILITY_TYPE_LABELS: Record<string, string> = {
-  standup: 'Post standup',
-  weekly_plan: 'Write plan',
-  weekly_review: 'Complete review',
-  week_start: 'Start week',
-  week_issues: 'Add issues',
-  project_plan: 'Write plan',
-  project_retro: 'Complete retro',
-};
+import {
+  ACCOUNTABILITY_TYPE_LABELS,
+  createOrGetWeeklyDocumentId,
+  formatActionItemDueDate,
+  getWeeklyDocumentKindForAccountabilityType,
+} from '@/lib/accountability';
 
 const ACCOUNTABILITY_TYPE_ICONS: Record<string, React.ReactNode> = {
   standup: (
@@ -56,24 +48,6 @@ const ACCOUNTABILITY_TYPE_ICONS: Record<string, React.ReactNode> = {
   ),
 };
 
-function formatDueDate(dueDate: string | null, daysOverdue: number): { text: string; isOverdue: boolean } {
-  if (!dueDate) {
-    return { text: 'No due date', isOverdue: false };
-  }
-
-  if (daysOverdue > 0) {
-    return { text: `${daysOverdue} day${daysOverdue === 1 ? '' : 's'} overdue`, isOverdue: true };
-  } else if (daysOverdue === 0) {
-    return { text: 'Due today', isOverdue: true };
-  } else {
-    const dueDateObj = new Date(dueDate + 'T00:00:00');
-    return {
-      text: `Due ${dueDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-      isOverdue: false,
-    };
-  }
-}
-
 function ActionItemRow({ item }: { item: ActionItem }) {
   const navigate = useNavigate();
   const [navigating, setNavigating] = useState(false);
@@ -83,26 +57,24 @@ function ActionItemRow({ item }: { item: ActionItem }) {
   const icon = item.accountability_type
     ? ACCOUNTABILITY_TYPE_ICONS[item.accountability_type]
     : null;
-  const { text: dueText, isOverdue } = formatDueDate(item.due_date, item.days_overdue);
+  const { text: dueText, isOverdue } = formatActionItemDueDate(item.due_date, item.days_overdue);
 
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();
 
     // For weekly plan/retro types, create/find the actual document before navigating
-    if (item.accountability_type && WEEKLY_DOC_TYPES.includes(item.accountability_type) &&
-        item.person_id && item.week_number != null) {
+    const weeklyDocKind = getWeeklyDocumentKindForAccountabilityType(item.accountability_type);
+    if (weeklyDocKind && item.person_id && item.project_id && item.week_number != null) {
       setNavigating(true);
       try {
-        const isRetro = item.accountability_type === 'weekly_retro' || item.accountability_type === 'changes_requested_retro';
-        const endpoint = isRetro ? '/api/weekly-retros' : '/api/weekly-plans';
-        const response = await apiPost(endpoint, {
-          person_id: item.person_id,
-          project_id: item.project_id,
-          week_number: item.week_number,
+        const documentId = await createOrGetWeeklyDocumentId({
+          kind: weeklyDocKind,
+          personId: item.person_id,
+          projectId: item.project_id,
+          weekNumber: item.week_number,
         });
-        if (response.ok) {
-          const data = await response.json();
-          navigate(`/documents/${data.id}`);
+        if (documentId) {
+          navigate(`/documents/${documentId}`);
           return;
         }
       } catch { /* fall through to default */ }
