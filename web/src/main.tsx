@@ -21,7 +21,6 @@ import { AppLayout } from '@/pages/App';
 import { DocumentsPage } from '@/pages/Documents';
 import { IssuesPage } from '@/pages/Issues';
 import { ProgramsPage } from '@/pages/Programs';
-import { WeeksPage } from '@/pages/Weeks';
 import { TeamModePage } from '@/pages/TeamMode';
 import { TeamDirectoryPage } from '@/pages/TeamDirectory';
 import { PersonEditorPage } from '@/pages/PersonEditor';

@@ -3,20 +3,12 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 import { useActionItemsQuery, ActionItem } from '@/hooks/useActionItemsQuery';
-import { apiPost } from '@/lib/api';
-
-const ACCOUNTABILITY_TYPE_LABELS: Record<string, string> = {
-  standup: 'Post standup',
-  weekly_plan: 'Write plan',
-  weekly_retro: 'Write retro',
-  weekly_review: 'Complete review',
-  week_start: 'Start week',
-  week_issues: 'Add issues',
-  project_plan: 'Write plan',
-  project_retro: 'Complete retro',
-  changes_requested_plan: 'Revise plan',
-  changes_requested_retro: 'Revise retro',
-};
+import {
+  ACCOUNTABILITY_TYPE_LABELS,
+  createOrGetWeeklyDocumentId,
+  formatActionItemDueDate,
+  getWeeklyDocumentKindForAccountabilityType,
+} from '@/lib/accountability';
 
 const ACCOUNTABILITY_TYPE_ICONS: Record<string, React.ReactNode> = {
   standup: (
@@ -72,80 +64,6 @@ const ACCOUNTABILITY_TYPE_ICONS: Record<string, React.ReactNode> = {
   ),
 };
 
-function formatDueDate(dueDate: string | null, daysOverdue: number): { text: string; isOverdue: boolean } {
-  if (!dueDate) {
-    return { text: 'No due date', isOverdue: false };
-  }
-
-  if (daysOverdue > 0) {
-    return { text: `${daysOverdue} day${daysOverdue === 1 ? '' : 's'} overdue`, isOverdue: true };
-  } else if (daysOverdue === 0) {
-    return { text: 'Due today', isOverdue: true };
-  } else {
-    const dueDateObj = new Date(dueDate + 'T00:00:00');
-    return {
-      text: `Due ${dueDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-      isOverdue: false,
-    };
-  }
-}
-
-function getTargetUrl(item: ActionItem): string | null {
-  // For weekly_plan/weekly_retro and changes_requested items, we need to call the API first - return null to signal async handling
-  if ((item.accountability_type === 'weekly_plan' || item.accountability_type === 'weekly_retro' ||
-       item.accountability_type === 'changes_requested_plan' || item.accountability_type === 'changes_requested_retro') &&
-      item.person_id && item.week_number) {
-    return null; // Signal that this needs async handling
-  }
-  // For standup items, use deep link to sprint with action param
-  if (item.accountability_type === 'standup' && item.accountability_target_id) {
-    return `/documents/${item.accountability_target_id}?action=new-standup`;
-  }
-  // For all other types, link to the target document
-  if (item.accountability_target_id) {
-    return `/documents/${item.accountability_target_id}`;
-  }
-  // Fallback to the issue itself
-  return `/documents/${item.id}`;
-}
-
-/**
- * Create or get existing weekly plan/retro document and return its URL.
- * Returns null if the API call fails or required data is missing.
- */
-async function createWeeklyDocumentAndGetUrl(item: ActionItem): Promise<string | null> {
-  if (!item.person_id || !item.project_id || item.week_number == null) {
-    // Missing required data, fall back to target document
-    return item.accountability_target_id ? `/documents/${item.accountability_target_id}` : null;
-  }
-
-  // Determine which API endpoint to call based on accountability type
-  const isRetroType = item.accountability_type === 'weekly_retro' || item.accountability_type === 'changes_requested_retro';
-  const endpoint = isRetroType
-    ? '/api/weekly-retros'
-    : '/api/weekly-plans';
-
-  try {
-    const response = await apiPost(endpoint, {
-      person_id: item.person_id,
-      project_id: item.project_id,
-      week_number: item.week_number,
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      return `/documents/${data.id}`;
-    } else {
-      console.error(`Failed to create ${item.accountability_type}:`, await response.text());
-      // Fall back to sprint document
-      return item.accountability_target_id ? `/documents/${item.accountability_target_id}` : null;
-    }
-  } catch (error) {
-    console.error(`Error creating ${item.accountability_type}:`, error);
-    return item.accountability_target_id ? `/documents/${item.accountability_target_id}` : null;
-  }
-}
-
 function ActionItemRow({ item, onItemClick, isLoading }: { item: ActionItem; onItemClick: (item: ActionItem) => void; isLoading?: boolean }) {
   const typeLabel = item.accountability_type
     ? ACCOUNTABILITY_TYPE_LABELS[item.accountability_type] || item.accountability_type
@@ -153,7 +71,7 @@ function ActionItemRow({ item, onItemClick, isLoading }: { item: ActionItem; onI
   const icon = item.accountability_type
     ? ACCOUNTABILITY_TYPE_ICONS[item.accountability_type]
     : null;
-  const { text: dueText, isOverdue } = formatDueDate(item.due_date, item.days_overdue);
+  const { text: dueText, isOverdue } = formatActionItemDueDate(item.due_date, item.days_overdue);
 
   return (
     <button
@@ -209,35 +127,35 @@ export function ActionItemsModal({ open, onClose }: ActionItemsModalProps) {
   const [navigatingItemId, setNavigatingItemId] = useState<string | null>(null);
 
   const handleItemClick = async (item: ActionItem) => {
-    // Check if this is a weekly_plan or weekly_retro item that needs async handling
-    const targetUrl = getTargetUrl(item);
-
-    if (targetUrl === null && (item.accountability_type === 'weekly_plan' || item.accountability_type === 'weekly_retro' ||
-        item.accountability_type === 'changes_requested_plan' || item.accountability_type === 'changes_requested_retro')) {
-      // Need to create/get the weekly plan/retro document first
+    const weeklyDocKind = getWeeklyDocumentKindForAccountabilityType(item.accountability_type);
+    if (weeklyDocKind && item.person_id && item.project_id && item.week_number != null) {
       setNavigatingItemId(item.id);
       try {
-        const docUrl = await createWeeklyDocumentAndGetUrl(item);
-        if (docUrl) {
-          onClose();
-          navigate(docUrl);
-        } else {
-          // Fallback to target document if API fails
-          const fallbackUrl = item.accountability_target_id
-            ? `/documents/${item.accountability_target_id}`
-            : `/documents/${item.id}`;
-          onClose();
-          navigate(fallbackUrl);
-        }
+        const documentId = await createOrGetWeeklyDocumentId({
+          kind: weeklyDocKind,
+          personId: item.person_id,
+          projectId: item.project_id,
+          weekNumber: item.week_number,
+        });
+        const fallbackUrl = item.accountability_target_id
+          ? `/documents/${item.accountability_target_id}`
+          : `/documents/${item.id}`;
+        onClose();
+        navigate(documentId ? `/documents/${documentId}` : fallbackUrl);
       } finally {
         setNavigatingItemId(null);
       }
-    } else {
-      // Close modal and navigate in same window
-      // User can reopen modal via the persistent banner
-      onClose();
-      navigate(targetUrl || `/documents/${item.id}`);
+      return;
     }
+
+    if (item.accountability_type === 'standup' && item.accountability_target_id) {
+      onClose();
+      navigate(`/documents/${item.accountability_target_id}?action=new-standup`);
+      return;
+    }
+
+    onClose();
+    navigate(item.accountability_target_id ? `/documents/${item.accountability_target_id}` : `/documents/${item.id}`);
   };
 
   const items = data?.items ?? [];

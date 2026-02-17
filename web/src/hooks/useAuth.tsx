@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from 'react';
 import { api, UserInfo, Workspace } from '@/lib/api';
@@ -72,12 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [impersonating, setImpersonating] = useState<{ userId: string; userName: string } | null>(null);
+  const sessionCheckStartedRef = useRef(false);
   const { setCurrentWorkspace, setWorkspaces } = useWorkspace();
 
   const isSuperAdmin = user?.isSuperAdmin ?? false;
 
   // Check session on mount
   useEffect(() => {
+    // React StrictMode runs effects twice in development; ensure one session check per mount.
+    if (sessionCheckStartedRef.current) return;
+    sessionCheckStartedRef.current = true;
+
     const checkSession = async () => {
       try {
         const response = await api.auth.me();
