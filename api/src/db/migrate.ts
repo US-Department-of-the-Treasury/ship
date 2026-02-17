@@ -18,6 +18,71 @@ config({ path: join(dirname(fileURLToPath(import.meta.url)), '../../.env.local')
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+/**
+ * Run migrations on a given pool (used by tests and CLI)
+ * Assumes schema.sql has already been run
+ */
+export async function runMigrations(pool: Pool): Promise<void> {
+  // Create migrations tracking table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+
+  // Get list of already-applied migrations
+  const appliedResult = await pool.query('SELECT version FROM schema_migrations ORDER BY version');
+  const appliedMigrations = new Set(appliedResult.rows.map(r => r.version));
+
+  // Find and run pending migrations
+  const migrationsDir = join(__dirname, 'migrations');
+  let migrationFiles: string[] = [];
+
+  try {
+    migrationFiles = readdirSync(migrationsDir)
+      .filter(f => f.endsWith('.sql'))
+      .sort(); // Ensures numeric order: 001_, 002_, etc.
+  } catch {
+    console.log('ℹ️  No migrations directory found');
+  }
+
+  let migrationsRun = 0;
+  for (const file of migrationFiles) {
+    const version = file.replace('.sql', '');
+
+    if (appliedMigrations.has(version)) {
+      continue; // Already applied
+    }
+
+    console.log(`  Running migration: ${file}`);
+    const migrationPath = join(migrationsDir, file);
+    const migrationSql = readFileSync(migrationPath, 'utf-8');
+
+    // Run migration in a transaction
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(migrationSql);
+      await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [version]);
+      await client.query('COMMIT');
+      console.log(`  ✅ ${file} applied`);
+      migrationsRun++;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  if (migrationsRun === 0) {
+    console.log('✅ All migrations already applied');
+  } else {
+    console.log(`✅ ${migrationsRun} migration(s) applied successfully`);
+  }
+}
+
 async function migrate() {
   await loadProductionSecrets();
 
@@ -41,64 +106,8 @@ async function migrate() {
     await pool.query(schema);
     console.log('✅ Schema applied');
 
-    // Step 2: Create migrations tracking table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        version TEXT PRIMARY KEY,
-        applied_at TIMESTAMPTZ DEFAULT now()
-      )
-    `);
-
-    // Step 3: Get list of already-applied migrations
-    const appliedResult = await pool.query('SELECT version FROM schema_migrations ORDER BY version');
-    const appliedMigrations = new Set(appliedResult.rows.map(r => r.version));
-
-    // Step 4: Find and run pending migrations
-    const migrationsDir = join(__dirname, 'migrations');
-    let migrationFiles: string[] = [];
-
-    try {
-      migrationFiles = readdirSync(migrationsDir)
-        .filter(f => f.endsWith('.sql'))
-        .sort(); // Ensures numeric order: 001_, 002_, etc.
-    } catch {
-      console.log('ℹ️  No migrations directory found');
-    }
-
-    let migrationsRun = 0;
-    for (const file of migrationFiles) {
-      const version = file.replace('.sql', '');
-
-      if (appliedMigrations.has(version)) {
-        continue; // Already applied
-      }
-
-      console.log(`  Running migration: ${file}`);
-      const migrationPath = join(migrationsDir, file);
-      const migrationSql = readFileSync(migrationPath, 'utf-8');
-
-      // Run migration in a transaction
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        await client.query(migrationSql);
-        await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [version]);
-        await client.query('COMMIT');
-        console.log(`  ✅ ${file} applied`);
-        migrationsRun++;
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
-    }
-
-    if (migrationsRun === 0) {
-      console.log('✅ All migrations already applied');
-    } else {
-      console.log(`✅ ${migrationsRun} migration(s) applied successfully`);
-    }
+    // Step 2: Run numbered migrations
+    await runMigrations(pool);
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -114,4 +123,8 @@ async function migrate() {
   }
 }
 
-migrate();
+// Only run if this is the main module (not imported)
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  migrate();
+}
