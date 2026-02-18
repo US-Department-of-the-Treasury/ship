@@ -38,11 +38,15 @@ const REVIEW_STATUS_TEXT: Record<ReviewStatus, string> = {
 };
 
 function needsPlanReview(cell: ReviewCell | undefined): boolean {
-  return Boolean(cell?.sprintId && cell.hasPlan && cell.planApproval?.state !== 'approved');
+  if (!cell?.sprintId || !cell.hasPlan) return false;
+  const approvalState = cell.planApproval?.state;
+  return approvalState !== 'approved' && approvalState !== 'changes_requested';
 }
 
 function needsRetroReview(cell: ReviewCell | undefined): boolean {
-  return Boolean(cell?.sprintId && cell.hasRetro && !cell.reviewRating);
+  if (!cell?.sprintId || !cell.hasRetro) return false;
+  const approvalState = cell.reviewApproval?.state;
+  return approvalState !== 'approved' && approvalState !== 'changes_requested';
 }
 
 interface Week {
@@ -116,10 +120,10 @@ function getPlanStatus(cell: ReviewCell | undefined, weekIsPast: boolean): Revie
 /** Determine the review status color for a retro cell */
 function getRetroStatus(cell: ReviewCell | undefined, weekIsPast: boolean): ReviewStatus {
   if (!cell || !cell.sprintId) return 'empty';
-  if (cell.reviewRating) return 'approved';
-  if (cell.reviewApproval?.state === 'approved') return 'approved';
   if (cell.reviewApproval?.state === 'changes_requested') return 'changes_requested';
   if (cell.reviewApproval?.state === 'changed_since_approved') return 'changed';
+  if (cell.reviewRating) return 'approved';
+  if (cell.reviewApproval?.state === 'approved') return 'approved';
   if (cell.hasRetro) return 'needs_review';
   if (weekIsPast) return 'late';
   return 'empty';

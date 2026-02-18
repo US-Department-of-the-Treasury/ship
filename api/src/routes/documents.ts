@@ -654,6 +654,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
     let extractedVision: string | null = null;
     let extractedGoals: string | null = null;
     let contentUpdated = false;
+    let resubmissionTarget: { sprintId: string; reviewerUserId: string | null } | null = null;
 
     if (data.title !== undefined) {
       updates.push(`title = $${paramIndex++}`);
@@ -935,6 +936,70 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       [...values, id, workspaceId]
     );
 
+    // When a weekly plan/retro is edited after changes were requested, move it back to re-review.
+    if (contentUpdated && (existing.document_type === 'weekly_plan' || existing.document_type === 'weekly_retro')) {
+      const docProps = (existing.properties || {}) as Record<string, unknown>;
+      const personId = typeof docProps.person_id === 'string' ? docProps.person_id : null;
+      const projectId = typeof docProps.project_id === 'string' ? docProps.project_id : null;
+      const rawWeekNumber = docProps.week_number;
+      const weekNumber = typeof rawWeekNumber === 'number'
+        ? rawWeekNumber
+        : typeof rawWeekNumber === 'string'
+          ? Number.parseInt(rawWeekNumber, 10)
+          : NaN;
+
+      if (personId && projectId && Number.isFinite(weekNumber)) {
+        const sprintResult = await client.query(
+          `SELECT id, properties
+           FROM documents
+           WHERE workspace_id = $1
+             AND document_type = 'sprint'
+             AND deleted_at IS NULL
+             AND (properties->>'project_id') = $2
+             AND (properties->>'sprint_number')::int = $3
+             AND (
+               properties->>'owner_id' = $4
+               OR EXISTS (
+                 SELECT 1
+                 FROM jsonb_array_elements_text(COALESCE(properties->'assignee_ids', '[]'::jsonb)) AS assignee_id
+                 WHERE assignee_id = $4
+               )
+             )
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [workspaceId, projectId, weekNumber, personId]
+        );
+
+        if (sprintResult.rows.length > 0) {
+          const sprint = sprintResult.rows[0];
+          const sprintProps = (sprint.properties || {}) as Record<string, unknown>;
+          const approvalKey = existing.document_type === 'weekly_plan' ? 'plan_approval' : 'review_approval';
+          const approval = sprintProps[approvalKey] as { state?: string; approved_by?: string | null } | undefined;
+
+          if (approval?.state === 'changes_requested') {
+            const nextProps = {
+              ...sprintProps,
+              [approvalKey]: {
+                ...approval,
+                state: 'changed_since_approved',
+              },
+            };
+
+            await client.query(
+              `UPDATE documents SET properties = $1, updated_at = now()
+               WHERE id = $2 AND document_type = 'sprint'`,
+              [JSON.stringify(nextProps), sprint.id]
+            );
+
+            resubmissionTarget = {
+              sprintId: String(sprint.id),
+              reviewerUserId: typeof approval.approved_by === 'string' ? approval.approved_by : null,
+            };
+          }
+        }
+      }
+    }
+
     // Cascade visibility changes to child documents
     if (data.visibility !== undefined && data.visibility !== existing.visibility) {
       await client.query(
@@ -964,6 +1029,20 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
       handleVisibilityChange(id, data.visibility, existing.created_by).catch((err) => {
         console.error('Failed to handle visibility change for collaboration:', err);
       });
+    }
+
+    if (resubmissionTarget) {
+      // Refresh action items for the document owner and reviewer after resubmission.
+      broadcastToUser(userId, 'accountability:updated', {
+        type: existing.document_type,
+        targetId: resubmissionTarget.sprintId,
+      });
+      if (resubmissionTarget.reviewerUserId && resubmissionTarget.reviewerUserId !== userId) {
+        broadcastToUser(resubmissionTarget.reviewerUserId, 'accountability:updated', {
+          type: existing.document_type,
+          targetId: resubmissionTarget.sprintId,
+        });
+      }
     }
 
     // Flatten properties for backwards compatibility (match GET endpoint format)

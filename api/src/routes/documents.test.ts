@@ -197,6 +197,218 @@ describe('Documents API - PATCH with Issue Fields', () => {
   })
 })
 
+describe('Documents API - Weekly Doc Resubmission', () => {
+  const app = createApp()
+  const testRunId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  const testEmail = `docs-weekly-resubmit-${testRunId}@ship.local`
+  const testWorkspaceName = `Docs Weekly Resubmit ${testRunId}`
+
+  let sessionCookie: string
+  let csrfToken: string
+  let testWorkspaceId: string
+  let testUserId: string
+  let testPersonId: string
+  let testProjectId: string
+
+  beforeAll(async () => {
+    const workspaceResult = await pool.query(
+      `INSERT INTO workspaces (name) VALUES ($1) RETURNING id`,
+      [testWorkspaceName]
+    )
+    testWorkspaceId = workspaceResult.rows[0].id
+
+    const userResult = await pool.query(
+      `INSERT INTO users (email, password_hash, name)
+       VALUES ($1, 'test-hash', 'Weekly Resubmit User')
+       RETURNING id`,
+      [testEmail]
+    )
+    testUserId = userResult.rows[0].id
+
+    await pool.query(
+      `INSERT INTO workspace_memberships (workspace_id, user_id, role)
+       VALUES ($1, $2, 'member')`,
+      [testWorkspaceId, testUserId]
+    )
+
+    const personResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, created_by, properties)
+       VALUES ($1, 'person', 'Weekly Resubmit Person', $2, $3)
+       RETURNING id`,
+      [testWorkspaceId, testUserId, JSON.stringify({ user_id: testUserId })]
+    )
+    testPersonId = personResult.rows[0].id
+
+    const projectResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, created_by)
+       VALUES ($1, 'project', 'Weekly Resubmit Project', $2)
+       RETURNING id`,
+      [testWorkspaceId, testUserId]
+    )
+    testProjectId = projectResult.rows[0].id
+
+    const sessionId = crypto.randomBytes(32).toString('hex')
+    await pool.query(
+      `INSERT INTO sessions (id, user_id, workspace_id, expires_at)
+       VALUES ($1, $2, $3, now() + interval '1 hour')`,
+      [sessionId, testUserId, testWorkspaceId]
+    )
+    sessionCookie = `session_id=${sessionId}`
+
+    const csrfRes = await request(app)
+      .get('/api/csrf-token')
+      .set('Cookie', sessionCookie)
+    csrfToken = csrfRes.body.token
+    const connectSidCookie = csrfRes.headers['set-cookie']?.[0]?.split(';')[0] || ''
+    if (connectSidCookie) {
+      sessionCookie = `${sessionCookie}; ${connectSidCookie}`
+    }
+  })
+
+  afterAll(async () => {
+    await pool.query('DELETE FROM document_associations WHERE document_id IN (SELECT id FROM documents WHERE workspace_id = $1)', [testWorkspaceId])
+    await pool.query('DELETE FROM sessions WHERE user_id = $1', [testUserId])
+    await pool.query('DELETE FROM documents WHERE workspace_id = $1', [testWorkspaceId])
+    await pool.query('DELETE FROM workspace_memberships WHERE user_id = $1', [testUserId])
+    await pool.query('DELETE FROM users WHERE id = $1', [testUserId])
+    await pool.query('DELETE FROM workspaces WHERE id = $1', [testWorkspaceId])
+  })
+
+  beforeEach(async () => {
+    await pool.query(
+      `DELETE FROM document_associations
+       WHERE document_id IN (
+         SELECT id FROM documents
+         WHERE workspace_id = $1 AND document_type IN ('sprint', 'weekly_plan', 'weekly_retro')
+       )`,
+      [testWorkspaceId]
+    )
+    await pool.query(
+      `DELETE FROM documents
+       WHERE workspace_id = $1 AND document_type IN ('sprint', 'weekly_plan', 'weekly_retro')`,
+      [testWorkspaceId]
+    )
+  })
+
+  it('moves plan_approval back to changed_since_approved after weekly plan edit', async () => {
+    const weekNumber = 17
+    const sprintResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, created_by, properties)
+       VALUES ($1, 'sprint', 'Week 17', $2, $3)
+       RETURNING id`,
+      [
+        testWorkspaceId,
+        testUserId,
+        JSON.stringify({
+          sprint_number: weekNumber,
+          project_id: testProjectId,
+          owner_id: testPersonId,
+          assignee_ids: [testPersonId],
+          plan_approval: {
+            state: 'changes_requested',
+            approved_by: testUserId,
+            approved_at: new Date().toISOString(),
+            feedback: 'Please make this plan more measurable.',
+          },
+        }),
+      ]
+    )
+    const sprintId = sprintResult.rows[0].id
+
+    const planResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, created_by, content, properties)
+       VALUES ($1, 'weekly_plan', 'Week 17 Plan', $2, $3, $4)
+       RETURNING id`,
+      [
+        testWorkspaceId,
+        testUserId,
+        JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Initial plan' }] }] }),
+        JSON.stringify({ person_id: testPersonId, project_id: testProjectId, week_number: weekNumber }),
+      ]
+    )
+    const planId = planResult.rows[0].id
+
+    const response = await request(app)
+      .patch(`/api/documents/${planId}`)
+      .set('Cookie', sessionCookie)
+      .set('x-csrf-token', csrfToken)
+      .send({
+        content: {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated plan with concrete deliverables.' }] }],
+        },
+      })
+
+    expect(response.status).toBe(200)
+
+    const sprintAfter = await pool.query(
+      `SELECT properties FROM documents WHERE id = $1`,
+      [sprintId]
+    )
+    expect(sprintAfter.rows[0].properties.plan_approval.state).toBe('changed_since_approved')
+    expect(sprintAfter.rows[0].properties.plan_approval.feedback).toBe('Please make this plan more measurable.')
+  })
+
+  it('moves review_approval back to changed_since_approved after weekly retro edit', async () => {
+    const weekNumber = 18
+    const sprintResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, created_by, properties)
+       VALUES ($1, 'sprint', 'Week 18', $2, $3)
+       RETURNING id`,
+      [
+        testWorkspaceId,
+        testUserId,
+        JSON.stringify({
+          sprint_number: weekNumber,
+          project_id: testProjectId,
+          owner_id: testPersonId,
+          assignee_ids: [testPersonId],
+          review_approval: {
+            state: 'changes_requested',
+            approved_by: testUserId,
+            approved_at: new Date().toISOString(),
+            feedback: 'Add evidence for delivered outcomes.',
+          },
+        }),
+      ]
+    )
+    const sprintId = sprintResult.rows[0].id
+
+    const retroResult = await pool.query(
+      `INSERT INTO documents (workspace_id, document_type, title, created_by, content, properties)
+       VALUES ($1, 'weekly_retro', 'Week 18 Retro', $2, $3, $4)
+       RETURNING id`,
+      [
+        testWorkspaceId,
+        testUserId,
+        JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Initial retro' }] }] }),
+        JSON.stringify({ person_id: testPersonId, project_id: testProjectId, week_number: weekNumber }),
+      ]
+    )
+    const retroId = retroResult.rows[0].id
+
+    const response = await request(app)
+      .patch(`/api/documents/${retroId}`)
+      .set('Cookie', sessionCookie)
+      .set('x-csrf-token', csrfToken)
+      .send({
+        content: {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Updated retro with evidence and links.' }] }],
+        },
+      })
+
+    expect(response.status).toBe(200)
+
+    const sprintAfter = await pool.query(
+      `SELECT properties FROM documents WHERE id = $1`,
+      [sprintId]
+    )
+    expect(sprintAfter.rows[0].properties.review_approval.state).toBe('changed_since_approved')
+    expect(sprintAfter.rows[0].properties.review_approval.feedback).toBe('Add evidence for delivered outcomes.')
+  })
+})
+
 describe('Documents API - Delete', () => {
   const app = createApp()
   // Use unique identifiers to avoid conflicts between concurrent test runs
