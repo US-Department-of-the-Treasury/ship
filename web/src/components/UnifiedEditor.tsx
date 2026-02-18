@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { PropertiesPanel } from '@/components/sidebars/PropertiesPanel';
@@ -403,6 +403,12 @@ export function UnifiedEditor({
   // AI quality banner — triggers analysis on content changes from the editor
   const [editorContent, setEditorContent] = useState<Record<string, unknown> | null>(null);
   const [aiScoringAnalysis, setAiScoringAnalysis] = useState<{ planAnalysis?: unknown; retroAnalysis?: unknown } | null>(null);
+
+  // Prevent stale AI feedback from leaking when navigating to a different document.
+  useEffect(() => {
+    setEditorContent(null);
+    setAiScoringAnalysis(null);
+  }, [document.id]);
 
   const handlePlanAnalysisChange = useCallback((analysis: unknown) => {
     setAiScoringAnalysis(analysis ? { planAnalysis: analysis } : null);
