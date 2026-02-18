@@ -119,23 +119,44 @@ export function PlanQualityBanner({
     onAnalysisChangeRef.current?.(data);
   }, []);
 
-  // Check AI availability and load persisted analysis from document properties
+  // Reinitialize state when switching documents, then load persisted data for this doc.
   useEffect(() => {
+    let cancelled = false;
+
+    // Invalidate any in-flight analysis from the previous document.
+    requestIdRef.current++;
+    lastContentRef.current = '';
+    persistedHashRef.current = null;
+    setLoading(false);
+    setAiAvailable(null);
+    setAnalysis(null);
+
     quietGet('/api/ai/status')
       .then(r => r.ok ? r.json() : null)
-      .then(data => setAiAvailable(data?.available ?? false))
-      .catch(() => setAiAvailable(false));
+      .then(data => {
+        if (cancelled) return;
+        setAiAvailable(data?.available ?? false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAiAvailable(false);
+      });
 
     // Load last analysis from document properties (including content hash)
     quietGet(`/api/documents/${documentId}`)
       .then(r => r.ok ? r.json() : null)
       .then(doc => {
+        if (cancelled) return;
         if (doc?.properties?.ai_analysis) {
           setAnalysis(doc.properties.ai_analysis);
           persistedHashRef.current = doc.properties.ai_analysis.content_hash || null;
         }
       })
       .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
   }, [documentId, setAnalysis]);
 
   // Save analysis to document properties
@@ -175,7 +196,10 @@ export function PlanQualityBanner({
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (thisRequestId !== requestIdRef.current) return;
+        setLoading(false);
+      });
   }, [persistAnalysis]);
 
   // Analyze when editorContent changes (debounced by Editor's onContentChange)
@@ -187,10 +211,17 @@ export function PlanQualityBanner({
   // On mount: if no persisted result, fetch content and run initial analysis
   useEffect(() => {
     if (!aiAvailable || analysis) return;
+    let cancelled = false;
     quietGet(`/api/documents/${documentId}`)
       .then(r => r.ok ? r.json() : null)
-      .then(doc => { if (doc?.content) runAnalysis(doc.content); })
+      .then(doc => {
+        if (cancelled) return;
+        if (doc?.content) runAnalysis(doc.content);
+      })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [aiAvailable, documentId, analysis, runAnalysis]);
 
   if (aiAvailable === false) return null;
@@ -290,9 +321,10 @@ export function RetroQualityBanner({
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const lastContentRef = useRef<string>('');
   const requestIdRef = useRef(0);
-  const initDoneRef = useRef(false);
   const persistedHashRef = useRef<string | null>(null);
+  const externalPlanContentRef = useRef(externalPlanContent);
   const onAnalysisChangeRef = useRef(onAnalysisChange);
+  externalPlanContentRef.current = externalPlanContent;
   onAnalysisChangeRef.current = onAnalysisChange;
 
   const setAnalysis = useCallback((data: RetroAnalysis | null) => {
@@ -300,21 +332,42 @@ export function RetroQualityBanner({
     onAnalysisChangeRef.current?.(data);
   }, []);
 
-  // On mount: check AI, load persisted analysis, and fetch plan content
+  // Keep externally provided plan content in sync without resetting analysis state.
   useEffect(() => {
-    if (initDoneRef.current) return;
-    initDoneRef.current = true;
+    if (externalPlanContent) {
+      setPlanContent(externalPlanContent);
+    }
+  }, [externalPlanContent]);
+
+  // Reinitialize state when switching documents, then load persisted data for this doc.
+  useEffect(() => {
+    let cancelled = false;
+
+    // Invalidate any in-flight analysis from the previous document.
+    requestIdRef.current++;
+    lastContentRef.current = '';
+    persistedHashRef.current = null;
+    setLoading(false);
+    setAiAvailable(null);
+    setAnalysis(null);
+    setPlanContent(externalPlanContentRef.current);
 
     quietGet('/api/ai/status')
       .then(r => r.ok ? r.json() : null)
-      .then(data => setAiAvailable(data?.available ?? false))
-      .catch(() => setAiAvailable(false));
+      .then(data => {
+        if (cancelled) return;
+        setAiAvailable(data?.available ?? false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAiAvailable(false);
+      });
 
     // Load retro doc to get persisted analysis AND plan content
     quietGet(`/api/documents/${documentId}`)
       .then(r => r.ok ? r.json() : null)
       .then(async (doc) => {
-        if (!doc) return;
+        if (cancelled || !doc) return;
         // Restore persisted analysis (including content hash for cache check)
         if (doc.properties?.ai_analysis) {
           setAnalysis(doc.properties.ai_analysis);
@@ -322,8 +375,9 @@ export function RetroQualityBanner({
         }
 
         // Fetch corresponding plan content
-        if (externalPlanContent) {
-          setPlanContent(externalPlanContent);
+        const currentExternalPlan = externalPlanContentRef.current;
+        if (currentExternalPlan) {
+          setPlanContent(currentExternalPlan);
           return;
         }
         const personId = doc.properties?.person_id;
@@ -333,7 +387,9 @@ export function RetroQualityBanner({
           const params = new URLSearchParams({ person_id: personId, week_number: String(weekNumber) });
           if (projectId) params.set('project_id', projectId);
           const planRes = await quietGet(`/api/weekly-plans?${params}`);
+          if (cancelled) return;
           const plans = planRes.ok ? await planRes.json() : [];
+          if (cancelled) return;
           if (plans && plans.length > 0 && plans[0].content) {
             setPlanContent(plans[0].content);
           } else {
@@ -345,7 +401,11 @@ export function RetroQualityBanner({
         }
       })
       .catch(() => {});
-  }, [documentId, externalPlanContent]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [documentId, setAnalysis]);
 
   const persistAnalysis = useCallback((data: RetroAnalysis) => {
     quietPatch(`/api/documents/${documentId}`, {
@@ -354,21 +414,21 @@ export function RetroQualityBanner({
   }, [documentId]);
 
   const runAnalysis = useCallback(async (retroContent: Record<string, unknown>, plan: Record<string, unknown>) => {
-    const contentStr = JSON.stringify(retroContent);
-    if (contentStr === lastContentRef.current) return;
+    const analysisInput = JSON.stringify({ retro_content: retroContent, plan_content: plan });
+    if (analysisInput === lastContentRef.current) return;
 
     // Check persisted hash before calling API (avoids re-analysis on page load)
     if (persistedHashRef.current) {
       const currentHash = await computeContentHash({ retro_content: retroContent, plan_content: plan });
       if (currentHash === persistedHashRef.current) {
-        lastContentRef.current = contentStr;
+        lastContentRef.current = analysisInput;
         persistedHashRef.current = null;
         return;
       }
       persistedHashRef.current = null;
     }
 
-    lastContentRef.current = contentStr;
+    lastContentRef.current = analysisInput;
     const thisRequestId = ++requestIdRef.current;
     setLoading(true);
 
@@ -382,7 +442,10 @@ export function RetroQualityBanner({
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (thisRequestId !== requestIdRef.current) return;
+        setLoading(false);
+      });
   }, [persistAnalysis]);
 
   // Analyze on editor content change
@@ -394,10 +457,17 @@ export function RetroQualityBanner({
   // On mount: if no persisted result and plan is loaded, run initial analysis
   useEffect(() => {
     if (!aiAvailable || analysis || !planContent) return;
+    let cancelled = false;
     quietGet(`/api/documents/${documentId}`)
       .then(r => r.ok ? r.json() : null)
-      .then(doc => { if (doc?.content) runAnalysis(doc.content, planContent); })
+      .then(doc => {
+        if (cancelled) return;
+        if (doc?.content) runAnalysis(doc.content, planContent);
+      })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [aiAvailable, documentId, analysis, planContent, runAnalysis]);
 
   if (aiAvailable === false) return null;

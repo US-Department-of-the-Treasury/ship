@@ -674,12 +674,12 @@ export function Editor({
 
   // Sync AI scoring data into the AIScoringDisplay extension storage
   useEffect(() => {
-    if (!editor || !aiScoringAnalysis) return;
+    if (!editor) return;
     const ext = editor.extensionManager.extensions.find(e => e.name === 'aiScoringDisplay');
     if (!ext) return;
 
-    ext.storage.planAnalysis = aiScoringAnalysis.planAnalysis || null;
-    ext.storage.retroAnalysis = aiScoringAnalysis.retroAnalysis || null;
+    ext.storage.planAnalysis = aiScoringAnalysis?.planAnalysis || null;
+    ext.storage.retroAnalysis = aiScoringAnalysis?.retroAnalysis || null;
 
     // Force ProseMirror to re-evaluate decorations
     const timer = setTimeout(() => {
