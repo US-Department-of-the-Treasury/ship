@@ -161,29 +161,39 @@ test.describe('Manager Reviews Visual Verification', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByText('Plan Approval')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('button', { name: 'Request Changes' })).toBeVisible();
+    const submitReviewButton = page.getByRole('button', { name: 'Submit Review' });
+    await expect(submitReviewButton).toBeVisible();
 
-    await page.getByRole('button', { name: 'Request Changes' }).click();
-    await expect(page.getByRole('button', { name: 'Submit Request' })).toBeVisible();
-    await page.getByPlaceholder('Explain what needs to be revised...').fill(
+    await submitReviewButton.click();
+    const requestDialog = page.getByRole('dialog');
+    await expect(requestDialog).toBeVisible();
+    await requestDialog.getByLabel('Request Changes').check();
+    await requestDialog.getByPlaceholder('Explain what needs to be revised...').fill(
       'Please add measurable outcomes for each planned deliverable.'
     );
+    const requestChangesSubmit = requestDialog.getByRole('button', { name: 'Request Changes' });
+    await expect(requestChangesSubmit).toHaveCSS('background-color', 'rgb(234, 88, 12)');
 
     await page.screenshot({
       path: testInfo.outputPath('plan-review-request-changes-form.png'),
       fullPage: true,
     });
 
-    await page.getByRole('button', { name: 'Submit Request' }).click();
+    await requestDialog.getByRole('button', { name: 'Request Changes' }).click();
+    await expect(requestDialog).not.toBeVisible();
     await expect(
       page.locator('span').filter({ hasText: /^Changes requested$/ }).first()
     ).toBeVisible();
     await expect(page.getByText('Please add measurable outcomes for each planned deliverable.')).toBeVisible();
 
-    await page.getByPlaceholder('Add context for this decision...').fill(
+    await submitReviewButton.click();
+    const approveDialog = page.getByRole('dialog');
+    await expect(approveDialog).toBeVisible();
+    await approveDialog.getByPlaceholder('Add context for this decision...').fill(
       'He onboarded last week and received equipment late; this pace is expected.'
     );
-    await page.getByRole('button', { name: 'Approve Plan' }).click();
+    await approveDialog.getByRole('button', { name: 'Approve Plan' }).click();
+    await expect(approveDialog).not.toBeVisible();
 
     await expect(page.getByText('Approved')).toBeVisible();
     await expect(
@@ -204,13 +214,19 @@ test.describe('Manager Reviews Visual Verification', () => {
     await page.waitForLoadState('networkidle');
 
     await expect(page.getByText('Performance Rating')).toBeVisible({ timeout: 10000 });
-    const rateButton = page.getByRole('button', { name: /Rate & Approve|Update Approval/ });
+    const submitReviewButton = page.getByRole('button', { name: 'Submit Review' });
+    await expect(submitReviewButton).toBeVisible();
+    await submitReviewButton.click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    const rateButton = dialog.getByRole('button', { name: /Rate & Approve|Update Approval|Re-approve & Rate/ });
     await expect(rateButton).toBeDisabled();
 
-    await page.getByPlaceholder('Add context for this decision...').fill(
+    await dialog.getByPlaceholder('Add context for this decision...').fill(
       'Strong retrospective quality for a first full week after onboarding.'
     );
-    await page.locator('button[title=\"Fully Successful\"]').click();
+    await dialog.locator('button[title=\"Fully Successful\"]').click();
     await expect(rateButton).toBeEnabled();
 
     await page.screenshot({
@@ -219,7 +235,7 @@ test.describe('Manager Reviews Visual Verification', () => {
     });
 
     await rateButton.click();
-    await expect(rateButton).toHaveText('Update Approval');
+    await expect(dialog).not.toBeVisible();
     await expect(page.getByText('Approval Note', { exact: true }).first()).toBeVisible();
     await expect(
       page.getByText('Strong retrospective quality for a first full week after onboarding.').first()

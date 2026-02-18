@@ -6,7 +6,7 @@ import { formatDateRange } from '@/lib/date-utils';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
-type Status = 'done' | 'due' | 'late' | 'future';
+type Status = 'done' | 'due' | 'late' | 'future' | 'changes_requested';
 
 interface Week {
   number: number;
@@ -50,6 +50,7 @@ const STATUS_COLORS: Record<Status, string> = {
   done: '#22c55e',   // green
   due: '#eab308',    // yellow
   late: '#ef4444',   // red
+  changes_requested: '#ea580c', // orange
   future: '#6b7280', // gray
 };
 
@@ -58,6 +59,7 @@ const STATUS_TEXT: Record<Status, string> = {
   done: 'done',
   due: 'due this week',
   late: 'late',
+  changes_requested: 'changes requested',
   future: 'not yet due',
 };
 

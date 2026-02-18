@@ -4,9 +4,8 @@
  * This component consolidates the 4 type-specific sidebars into a single entry point.
  * It adapts based on document_type while maintaining the same rendering patterns.
  */
-import { useMemo, useCallback, useEffect, useState } from 'react';
+import { useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
 import { WikiSidebar } from '@/components/sidebars/WikiSidebar';
 import { IssueSidebar } from '@/components/sidebars/IssueSidebar';
 import { ProjectSidebar } from '@/components/sidebars/ProjectSidebar';
@@ -16,9 +15,9 @@ import { ContentHistoryPanel } from '@/components/ContentHistoryPanel';
 import { PlanQualityAssistant, RetroQualityAssistant } from '@/components/sidebars/QualityAssistant';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/hooks/useAuth';
-import { apiGet, apiPost } from '@/lib/api';
+import { apiGet } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { useReviewQueue } from '@/contexts/ReviewQueueContext';
+import type { WeeklyReviewActionsState } from '@/hooks/useWeeklyReviewActions';
 import type { Person } from '@/components/PersonCombobox';
 import type { BelongsTo, ApprovalTracking } from '@ship/shared';
 
@@ -208,6 +207,8 @@ interface PropertiesPanelProps {
   onUpdate: (updates: Partial<PanelDocument>) => Promise<void>;
   /** Fields to highlight as missing (e.g., after type conversion) */
   highlightedFields?: string[];
+  /** Shared weekly review state used by sub-nav and sidebar */
+  weeklyReviewState?: WeeklyReviewActionsState | null;
 }
 
 // OPM 5-level performance rating scale
@@ -222,242 +223,36 @@ const OPM_RATINGS = [
 /**
  * WeeklyDocumentSidebar - Renders sidebar for weekly_plan/weekly_retro documents
  * with human-readable names instead of UUIDs.
- * In review mode (?review=true&sprintId=X), shows approve/rate controls.
+ * In review mode (?review=true&sprintId=X), actions move to the sub-nav.
  */
 function WeeklyDocumentSidebar({
   document,
+  weeklyReviewState,
 }: {
   document: WeeklyPlanDocument | WeeklyRetroDocument;
+  weeklyReviewState?: WeeklyReviewActionsState | null;
 }) {
-  const [searchParams] = useSearchParams();
-  const isReviewMode = searchParams.get('review') === 'true';
-  const sprintId = searchParams.get('sprintId');
-
   const docProperties = document.properties || {};
   const weekNumber = docProperties.week_number as number | undefined;
   const personId = docProperties.person_id as string | undefined;
   const projectId = docProperties.project_id as string | undefined;
 
   const isRetro = document.document_type === 'weekly_retro';
-  const reviewQueue = useReviewQueue();
-  const queueActive = reviewQueue?.state.active ?? false;
+  const isReviewMode = weeklyReviewState?.isReviewMode ?? false;
+  const effectiveSprintId = weeklyReviewState?.effectiveSprintId ?? null;
+  const approvalState = weeklyReviewState?.approvalState ?? null;
+  const approvedAt = weeklyReviewState?.approvedAt ?? null;
+  const approvalComment = weeklyReviewState?.approvalComment ?? null;
+  const requestChangesComment = weeklyReviewState?.requestChangesComment ?? null;
+  const approverName = weeklyReviewState?.approverName ?? null;
+  const currentRating = weeklyReviewState?.currentRating ?? null;
 
-  // Review action state (local only — canonical approval data comes from sprint queries)
-  const [selectedRating, setSelectedRating] = useState<number | null>(null);
-  const [approvalCommentInput, setApprovalCommentInput] = useState('');
-  const [showRequestChangesInput, setShowRequestChangesInput] = useState(false);
-  const [requestChangesFeedback, setRequestChangesFeedback] = useState('');
-  const [approving, setApproving] = useState(false);
-  // Local override after approval actions (cleared on navigation)
-  const [localApprovalOverride, setLocalApprovalOverride] = useState<{
-    state: string | null;
-    at: string | null;
-    comment: string | null;
-    feedback: string | null;
-    rating: number | null;
-  } | null>(null);
-
-  // Fetch person name
-  const { data: personDoc } = useQuery<{ title: string }>({
-    queryKey: ['document', personId],
-    queryFn: async () => {
-      const res = await apiGet(`/api/documents/${personId}`);
-      if (!res.ok) throw new Error('Failed to fetch person');
-      return res.json();
-    },
-    enabled: !!personId,
-  });
-
-  // Fetch project name
-  const { data: projectDoc } = useQuery<{ title: string }>({
-    queryKey: ['document', projectId],
-    queryFn: async () => {
-      const res = await apiGet(`/api/documents/${projectId}`);
-      if (!res.ok) throw new Error('Failed to fetch project');
-      return res.json();
-    },
-    enabled: !!projectId,
-  });
-
-  // Fetch sprint data with approval state + approver name in a single query
-  const { data: sprintData } = useQuery<{ id: string; properties: Record<string, unknown>; approverName?: string }>({
-    queryKey: ['sprint-approval-v2', sprintId || `lookup-${projectId}-${weekNumber}`],
-    queryFn: async () => {
-      let sid = sprintId;
-      if (!sid) {
-        const lookupRes = await apiGet(`/api/weeks/lookup?project_id=${projectId}&sprint_number=${weekNumber}`);
-        if (!lookupRes.ok) throw new Error('Sprint not found');
-        const lookup = await lookupRes.json();
-        sid = lookup.id;
-      }
-      const res = await apiGet(`/api/documents/${sid}`);
-      if (!res.ok) throw new Error('Failed to fetch sprint');
-      const data = await res.json();
-
-      // Resolve approver name if there's an approval
-      const props = data.properties || {};
-      const approval = isRetro ? props.review_approval : props.plan_approval;
-      if (approval?.approved_by) {
-        const personRes = await fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/weeks/lookup-person?user_id=${approval.approved_by}`, { credentials: 'include' });
-        if (personRes.ok) {
-          const person = await personRes.json();
-          data.approverName = person.title;
-        }
-      }
-      return data;
-    },
-    enabled: !!sprintId || (!!projectId && !!weekNumber),
-  });
-
-  const effectiveSprintId = sprintData?.id || sprintId || null;
-
-  // Derive approval state from sprint data (or local override after action)
-  const sprintProps = sprintData?.properties || {};
-  const planApproval = sprintProps.plan_approval as {
-    state?: string;
-    approved_by?: string;
-    approved_at?: string;
-    feedback?: string | null;
-    comment?: string | null;
-  } | null;
-  const reviewApproval = sprintProps.review_approval as {
-    state?: string;
-    approved_by?: string;
-    approved_at?: string;
-    feedback?: string | null;
-    comment?: string | null;
-  } | null;
-  const reviewRating = sprintProps.review_rating as { value?: number } | null;
-  const activeApproval = isRetro ? reviewApproval : planApproval;
-
-  const approvalState = localApprovalOverride !== null
-    ? localApprovalOverride.state
-    : activeApproval?.state || null;
-  const approvedAt = localApprovalOverride !== null
-    ? localApprovalOverride.at
-    : activeApproval?.approved_at || null;
-  const approvalComment = localApprovalOverride !== null
-    ? localApprovalOverride.comment
-    : (activeApproval?.comment ?? null);
-  const requestChangesComment = localApprovalOverride !== null
-    ? localApprovalOverride.feedback
-    : (activeApproval?.feedback ?? null);
-  const approverName = sprintData?.approverName || null;
-  const currentRating = localApprovalOverride !== null
-    ? localApprovalOverride.rating
-    : (reviewRating?.value || null);
-
-  const personName = personDoc?.title || (personId ? `${personId.substring(0, 8)}...` : null);
-  const projectName = projectDoc?.title || (projectId ? `${projectId.substring(0, 8)}...` : null);
-
-  // Initialize controls from current approval state when navigating between documents
-  useEffect(() => {
-    setSelectedRating(currentRating ?? null);
-    setApprovalCommentInput(approvalComment ?? '');
-    setShowRequestChangesInput(false);
-    setRequestChangesFeedback('');
-  }, [effectiveSprintId, currentRating, approvalComment]);
-
-  async function handleApprovePlan() {
-    if (!effectiveSprintId || approving) return;
-    setApproving(true);
-    try {
-      const res = await apiPost(`/api/weeks/${effectiveSprintId}/approve-plan`, {
-        comment: approvalCommentInput,
-      });
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const approval = data?.approval as { state?: string; approved_at?: string; comment?: string | null } | undefined;
-        setLocalApprovalOverride({
-          state: approval?.state ?? 'approved',
-          at: approval?.approved_at ?? new Date().toISOString(),
-          comment: approval?.comment ?? (approvalCommentInput.trim() || null),
-          feedback: null,
-          rating: currentRating,
-        });
-        setShowRequestChangesInput(false);
-        setRequestChangesFeedback('');
-        if (queueActive) reviewQueue?.advance();
-      } else {
-        console.error('Failed to approve plan:', res.status, await res.text().catch(() => ''));
-      }
-    } catch (err) {
-      console.error('Error approving plan:', err);
-    } finally {
-      setApproving(false);
-    }
-  }
-
-  async function handleRequestChanges() {
-    if (!effectiveSprintId || approving) return;
-    const feedback = requestChangesFeedback.trim();
-    if (!feedback) return;
-
-    setApproving(true);
-    try {
-      const endpoint = isRetro ? 'request-retro-changes' : 'request-plan-changes';
-      const res = await apiPost(`/api/weeks/${effectiveSprintId}/${endpoint}`, { feedback });
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const approval = data?.approval as { state?: string; approved_at?: string; feedback?: string | null } | undefined;
-        setLocalApprovalOverride({
-          state: approval?.state ?? 'changes_requested',
-          at: approval?.approved_at ?? new Date().toISOString(),
-          comment: null,
-          feedback: approval?.feedback ?? feedback,
-          rating: currentRating,
-        });
-        setShowRequestChangesInput(false);
-        setRequestChangesFeedback('');
-        if (queueActive) reviewQueue?.advance();
-      } else {
-        console.error('Failed to request changes:', res.status, await res.text().catch(() => ''));
-      }
-    } catch (err) {
-      console.error('Error requesting changes:', err);
-    } finally {
-      setApproving(false);
-    }
-  }
-
-  async function handleRateRetro() {
-    const ratingToSubmit = selectedRating ?? currentRating;
-    if (!effectiveSprintId || !ratingToSubmit || approving) return;
-
-    setApproving(true);
-    try {
-      const res = await apiPost(`/api/weeks/${effectiveSprintId}/approve-review`, {
-        rating: ratingToSubmit,
-        comment: approvalCommentInput,
-      });
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const approval = data?.approval as { state?: string; approved_at?: string; comment?: string | null } | undefined;
-        const rating = (data?.review_rating as { value?: number } | null)?.value ?? ratingToSubmit;
-        setLocalApprovalOverride({
-          state: approval?.state ?? 'approved',
-          at: approval?.approved_at ?? new Date().toISOString(),
-          comment: approval?.comment ?? (approvalCommentInput.trim() || null),
-          feedback: null,
-          rating,
-        });
-        setShowRequestChangesInput(false);
-        setRequestChangesFeedback('');
-        if (queueActive) reviewQueue?.advance();
-      } else {
-        console.error('Failed to rate retro:', res.status, await res.text().catch(() => ''));
-      }
-    } catch (err) {
-      console.error('Error rating retro:', err);
-    } finally {
-      setApproving(false);
-    }
-  }
+  const personName = weeklyReviewState?.personName || (personId ? `${personId.substring(0, 8)}...` : null);
+  const projectName = weeklyReviewState?.projectName || (projectId ? `${projectId.substring(0, 8)}...` : null);
 
   function formatApprovalDate(dateStr: string): string {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
-      ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    return weeklyReviewState?.formatApprovalDate(dateStr)
+      ?? new Date(dateStr).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
 
   return (
@@ -472,39 +267,19 @@ function WeeklyDocumentSidebar({
         )}
       </div>
 
-      {/* Queue progress + navigation */}
-      {isReviewMode && queueActive && reviewQueue && (
-        <div className="border-b border-border pb-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="rounded bg-accent/20 px-2 py-0.5 text-xs font-medium text-accent">
-              {reviewQueue.state.currentIndex + 1} of {reviewQueue.state.queue.length}
-            </span>
-            <button
-              onClick={reviewQueue.exit}
-              className="text-xs text-muted hover:text-foreground transition-colors"
-            >
-              Exit Review
-            </button>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={reviewQueue.skip}
-              className="flex-1 rounded border border-border py-1.5 text-xs text-muted hover:text-foreground hover:bg-border/50 transition-colors"
-            >
-              Skip
-            </button>
-          </div>
+      {isReviewMode && (
+        <div className="rounded border border-border bg-border/20 px-2.5 py-2 text-xs text-muted">
+          Use <span className="font-medium text-foreground">Submit Review</span> in the sub-nav to approve or request changes.
         </div>
       )}
 
-      {/* Approval status (always shown) + controls (review mode only) */}
+      {/* Approval status (always shown) */}
       {effectiveSprintId && (
         <div className="border-b border-border pb-4">
           {isRetro ? (
             <div>
               <label className="text-xs font-medium text-muted mb-2 block">Performance Rating</label>
-              {/* Read-only rating display when not in review mode */}
-              {!isReviewMode && currentRating ? (
+              {currentRating ? (
                 <div className="mb-2">
                   <div className="flex items-center gap-2">
                     <span className={cn('text-sm font-bold', OPM_RATINGS.find(r => r.value === currentRating)?.color)}>
@@ -521,9 +296,9 @@ function WeeklyDocumentSidebar({
                     </p>
                   )}
                 </div>
-              ) : !isReviewMode && !currentRating ? (
+              ) : (
                 <p className="text-xs text-muted italic mb-2">Not yet rated</p>
-              ) : null}
+              )}
 
               {approvalComment && (
                 <div className="mb-3 rounded border border-border bg-border/20 px-2.5 py-2">
@@ -533,104 +308,10 @@ function WeeklyDocumentSidebar({
               )}
 
               {requestChangesComment && (
-                <div className="mb-3 rounded border border-purple-500/30 bg-purple-500/10 px-2.5 py-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-purple-400">Changes Requested</p>
-                  <p className="mt-1 text-xs text-purple-200">{requestChangesComment}</p>
+                <div className="mb-3 rounded border border-orange-500/30 bg-orange-500/10 px-2.5 py-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-orange-400">Changes Requested</p>
+                  <p className="mt-1 text-xs text-orange-200">{requestChangesComment}</p>
                 </div>
-              )}
-
-              {/* Editable rating/comment controls in review mode */}
-              {isReviewMode && (
-                <>
-                  {!showRequestChangesInput ? (
-                    <>
-                      <div className="grid grid-cols-5 gap-1.5 mb-3">
-                        {OPM_RATINGS.map(r => (
-                          <button
-                            key={r.value}
-                            onClick={() => setSelectedRating(r.value)}
-                            className={cn(
-                              'flex flex-col items-center gap-0.5 rounded py-2 text-xs transition-all',
-                              (selectedRating ?? currentRating) === r.value
-                                ? 'bg-accent/20 ring-1 ring-accent'
-                                : 'bg-border/30 hover:bg-border/50'
-                            )}
-                            title={r.label}
-                          >
-                            <span className={cn('text-sm font-bold', r.color)}>{r.value}</span>
-                          </button>
-                        ))}
-                      </div>
-
-                      <label className="text-xs font-medium text-muted mb-1 block">Approval Note (optional)</label>
-                      <textarea
-                        value={approvalCommentInput}
-                        onChange={(e) => setApprovalCommentInput(e.target.value)}
-                        placeholder="Add context for this decision..."
-                        rows={3}
-                        className="mb-3 w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleRateRetro}
-                          disabled={!(selectedRating ?? currentRating) || approving}
-                          className={cn(
-                            'w-full rounded py-2 text-sm font-medium transition-colors',
-                            (selectedRating ?? currentRating)
-                              ? 'bg-green-600 text-white hover:bg-green-500 cursor-pointer'
-                              : 'bg-border/30 text-muted cursor-not-allowed'
-                          )}
-                        >
-                          {approvalState === 'approved' ? 'Update Approval' : approvalState === 'changed_since_approved' ? 'Re-approve & Rate' : 'Rate & Approve'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowRequestChangesInput(true);
-                            setRequestChangesFeedback('');
-                          }}
-                          className="rounded px-3 py-2 text-sm font-medium text-purple-400 hover:bg-purple-500/10 transition-colors"
-                        >
-                          Request Changes
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div>
-                      <label className="text-xs font-medium text-muted mb-1 block">What needs to change?</label>
-                      <textarea
-                        value={requestChangesFeedback}
-                        onChange={(e) => setRequestChangesFeedback(e.target.value)}
-                        placeholder="Explain what needs to be revised..."
-                        rows={3}
-                        className="mb-3 w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-purple-500"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleRequestChanges}
-                          disabled={!requestChangesFeedback.trim() || approving}
-                          className={cn(
-                            'flex-1 rounded py-2 text-sm font-medium transition-colors',
-                            requestChangesFeedback.trim()
-                              ? 'bg-purple-600 text-white hover:bg-purple-500'
-                              : 'bg-border/30 text-muted cursor-not-allowed'
-                          )}
-                        >
-                          Submit Request
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowRequestChangesInput(false);
-                            setRequestChangesFeedback('');
-                          }}
-                          className="rounded px-3 py-2 text-sm text-muted hover:text-foreground hover:bg-border/50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
               )}
             </div>
           ) : (
@@ -647,7 +328,7 @@ function WeeklyDocumentSidebar({
                     Changed since approved
                   </span>
                 ) : approvalState === 'changes_requested' ? (
-                  <span className="inline-flex items-center gap-1 rounded bg-purple-600/20 px-2 py-1 text-xs font-medium text-purple-400">
+                  <span className="inline-flex items-center gap-1 rounded bg-orange-600/20 px-2 py-1 text-xs font-medium text-orange-400">
                     Changes requested
                   </span>
                 ) : (
@@ -670,84 +351,10 @@ function WeeklyDocumentSidebar({
               )}
 
               {requestChangesComment && (
-                <div className="mb-3 rounded border border-purple-500/30 bg-purple-500/10 px-2.5 py-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-purple-400">Changes Requested</p>
-                  <p className="mt-1 text-xs text-purple-200">{requestChangesComment}</p>
+                <div className="mb-3 rounded border border-orange-500/30 bg-orange-500/10 px-2.5 py-2">
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-orange-400">Changes Requested</p>
+                  <p className="mt-1 text-xs text-orange-200">{requestChangesComment}</p>
                 </div>
-              )}
-
-              {isReviewMode && (
-                <>
-                  {!showRequestChangesInput ? (
-                    <div>
-                      <label className="text-xs font-medium text-muted mb-1 block">Approval Note (optional)</label>
-                      <textarea
-                        value={approvalCommentInput}
-                        onChange={(e) => setApprovalCommentInput(e.target.value)}
-                        placeholder="Add context for this decision..."
-                        rows={3}
-                        className="mb-3 w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleApprovePlan}
-                          disabled={approving}
-                          className={cn(
-                            'flex-1 rounded py-2 text-sm font-medium transition-colors',
-                            approvalState === 'changed_since_approved'
-                              ? 'bg-orange-600 text-white hover:bg-orange-500'
-                              : 'bg-green-600 text-white hover:bg-green-500'
-                          )}
-                        >
-                          {approvalState === 'approved' ? 'Update Approval' : approvalState === 'changed_since_approved' ? 'Re-approve Plan' : 'Approve Plan'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowRequestChangesInput(true);
-                            setRequestChangesFeedback('');
-                          }}
-                          className="rounded px-3 py-2 text-sm font-medium text-purple-400 hover:bg-purple-500/10 transition-colors"
-                        >
-                          Request Changes
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="text-xs font-medium text-muted mb-1 block">What needs to change?</label>
-                      <textarea
-                        value={requestChangesFeedback}
-                        onChange={(e) => setRequestChangesFeedback(e.target.value)}
-                        placeholder="Explain what needs to be revised..."
-                        rows={3}
-                        className="mb-3 w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted resize-none focus:outline-none focus:ring-1 focus:ring-purple-500"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleRequestChanges}
-                          disabled={!requestChangesFeedback.trim() || approving}
-                          className={cn(
-                            'flex-1 rounded py-2 text-sm font-medium transition-colors',
-                            requestChangesFeedback.trim()
-                              ? 'bg-purple-600 text-white hover:bg-purple-500'
-                              : 'bg-border/30 text-muted cursor-not-allowed'
-                          )}
-                        >
-                          Submit Request
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowRequestChangesInput(false);
-                            setRequestChangesFeedback('');
-                          }}
-                          className="rounded px-3 py-2 text-sm text-muted hover:text-foreground hover:bg-border/50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
               )}
             </div>
           )}
@@ -840,6 +447,7 @@ export function PropertiesPanel({
   panelProps,
   onUpdate,
   highlightedFields = [],
+  weeklyReviewState = null,
 }: PropertiesPanelProps) {
   const { isWorkspaceAdmin } = useWorkspace();
   const { user } = useAuth();
@@ -976,6 +584,7 @@ export function PropertiesPanel({
         return (
           <WeeklyDocumentSidebar
             document={document as WeeklyPlanDocument | WeeklyRetroDocument}
+            weeklyReviewState={weeklyReviewState}
           />
         );
       }
@@ -991,7 +600,7 @@ export function PropertiesPanel({
           </div>
         );
     }
-  }, [document, panelProps, onUpdate, highlightedFields, canApprove, userNames, handleApprovalUpdate]);
+  }, [document, panelProps, onUpdate, highlightedFields, canApprove, userNames, handleApprovalUpdate, weeklyReviewState]);
 
   return panel;
 }
