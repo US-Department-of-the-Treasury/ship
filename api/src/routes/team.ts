@@ -1695,6 +1695,8 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
          jsonb_array_elements_text(s.properties->'assignee_ids') as person_id,
          (s.properties->>'sprint_number')::int as sprint_number,
          s.properties->>'project_id' as project_id,
+         s.properties->'plan_approval'->>'state' as plan_approval_state,
+         s.properties->'review_approval'->>'state' as review_approval_state,
          proj.title as project_name,
          proj.properties->>'color' as project_color,
          prog_da.related_id as program_id,
@@ -1718,6 +1720,8 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
       programId: string | null;
       programName: string | null;
       programColor: string | null;
+      planApprovalState: string | null;
+      reviewApprovalState: string | null;
     }>> = {};
 
     for (const row of explicitAssignmentsResult.rows) {
@@ -1735,6 +1739,8 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
         programId: row.program_id,
         programName: row.program_name,
         programColor: row.program_color,
+        planApprovalState: row.plan_approval_state || null,
+        reviewApprovalState: row.review_approval_state || null,
       };
     }
 
@@ -1822,6 +1828,8 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
             programId: primaryProject.programId,
             programName: primaryProject.programName,
             programColor: primaryProject.programColor,
+            planApprovalState: null,
+            reviewApprovalState: null,
           };
         }
       }
@@ -1863,8 +1871,10 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
       docId: string | null,
       docContent: unknown,
       weekStartDate: Date,
-      type: 'plan' | 'retro'
-    ): 'done' | 'due' | 'late' | 'future' => {
+      type: 'plan' | 'retro',
+      approvalState: string | null
+    ): 'done' | 'due' | 'late' | 'future' | 'changes_requested' => {
+      if (approvalState === 'changes_requested') return 'changes_requested';
       if (docId && hasContent(docContent)) return 'done';
 
       const now = new Date();
@@ -1915,6 +1925,8 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
           const planData = projectId ? plans.get(`${projectId}_${personId}_${week.number}`) : null;
           const retroData = projectId ? retros.get(`${projectId}_${personId}_${week.number}`) : null;
           const weekStartDate = new Date(week.startDate);
+          const planApprovalState = allocation?.planApprovalState || null;
+          const reviewApprovalState = allocation?.reviewApprovalState || null;
 
           return [
             week.number,
@@ -1923,9 +1935,9 @@ router.get('/accountability-grid-v3', authMiddleware, async (req: Request, res: 
               projectName: allocation?.projectName || null,
               projectColor: allocation?.projectColor || null,
               planId: planData?.id || null,
-              planStatus: projectId ? calculateStatus(planData?.id || null, planData?.content, weekStartDate, 'plan') : null,
+              planStatus: projectId ? calculateStatus(planData?.id || null, planData?.content, weekStartDate, 'plan', planApprovalState) : null,
               retroId: retroData?.id || null,
-              retroStatus: projectId ? calculateStatus(retroData?.id || null, retroData?.content, weekStartDate, 'retro') : null,
+              retroStatus: projectId ? calculateStatus(retroData?.id || null, retroData?.content, weekStartDate, 'retro', reviewApprovalState) : null,
             },
           ];
         })

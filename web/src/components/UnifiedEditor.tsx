@@ -2,6 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Editor } from '@/components/Editor';
 import { PropertiesPanel } from '@/components/sidebars/PropertiesPanel';
+import { WeeklyReviewSubNav } from '@/components/review/WeeklyReviewSubNav';
+import { useWeeklyReviewActions } from '@/hooks/useWeeklyReviewActions';
 import type {
   PanelDocument,
   WikiPanelProps,
@@ -266,6 +268,19 @@ export function UnifiedEditor({
   // Determine placeholder based on document type if not provided
   const effectivePlaceholder = placeholder || getDefaultPlaceholder(document.document_type);
 
+  // Weekly plans and retros have review-mode sub-nav controls
+  const isWeeklyDoc = document.document_type === 'weekly_plan' || document.document_type === 'weekly_retro';
+
+  const weeklyReviewState = useWeeklyReviewActions(
+    isWeeklyDoc
+      ? {
+          id: document.id,
+          document_type: document.document_type as 'weekly_plan' | 'weekly_retro',
+          properties: document.properties as { person_id?: string; project_id?: string; week_number?: number } | undefined,
+        }
+      : null
+  );
+
   // Check if this document type can have its type changed
   const canChangeType = ['wiki', 'issue', 'project', 'sprint'].includes(document.document_type);
 
@@ -342,9 +357,10 @@ export function UnifiedEditor({
         panelProps={panelProps}
         onUpdate={onUpdate as (updates: Partial<PanelDocument>) => Promise<void>}
         highlightedFields={missingFields}
+        weeklyReviewState={weeklyReviewState}
       />
     );
-  }, [document, panelProps, onUpdate, missingFields]);
+  }, [document, panelProps, onUpdate, missingFields, weeklyReviewState]);
 
   // Compose full sidebar with type selector
   const sidebar = useMemo(() => {
@@ -387,7 +403,6 @@ export function UnifiedEditor({
   // AI quality banner — triggers analysis on content changes from the editor
   const [editorContent, setEditorContent] = useState<Record<string, unknown> | null>(null);
   const [aiScoringAnalysis, setAiScoringAnalysis] = useState<{ planAnalysis?: unknown; retroAnalysis?: unknown } | null>(null);
-  const isWeeklyDoc = document.document_type === 'weekly_plan' || document.document_type === 'weekly_retro';
 
   const handlePlanAnalysisChange = useCallback((analysis: unknown) => {
     setAiScoringAnalysis(analysis ? { planAnalysis: analysis } : null);
@@ -407,6 +422,11 @@ export function UnifiedEditor({
     return undefined;
   }, [document.id, document.document_type, editorContent, handlePlanAnalysisChange, handleRetroAnalysisChange]);
 
+  const secondaryHeader = useMemo(() => {
+    if (!weeklyReviewState?.isReviewMode) return undefined;
+    return <WeeklyReviewSubNav reviewState={weeklyReviewState} />;
+  }, [weeklyReviewState]);
+
   return (
     <Editor
       documentId={document.id}
@@ -423,6 +443,7 @@ export function UnifiedEditor({
       onNavigateToDocument={handleNavigateToDocument}
       onDocumentConverted={onDocumentConverted}
       headerBadge={headerBadge}
+      secondaryHeader={secondaryHeader}
       sidebar={sidebar}
       documentType={document.document_type}
       onPlanChange={document.document_type === 'sprint' || document.document_type === 'project' ? handlePlanChange : undefined}
@@ -465,4 +486,3 @@ export type {
   ProjectPanelProps,
   SprintPanelProps,
 } from '@/components/sidebars/PropertiesPanel';
-
