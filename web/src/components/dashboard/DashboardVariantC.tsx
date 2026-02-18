@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useDashboardActionItems, ActionItem } from '@/hooks/useDashboardActionItems';
 import { useDashboardFocus, ProjectFocus, PlanItem } from '@/hooks/useDashboardFocus';
 import { cn } from '@/lib/cn';
+import { Tooltip } from '@/components/ui/Tooltip';
 
 export function DashboardVariantC() {
   const { data: actionItemsData, isLoading: actionItemsLoading } = useDashboardActionItems();
@@ -287,7 +288,23 @@ function FocusCard({
   const isCurrentPlan = plan === project.plan;
 
   return (
-    <div className="rounded-lg border border-border bg-background p-4">
+    <div
+      className="group relative rounded-lg border border-border bg-background p-4 cursor-pointer hover:shadow-md transition-shadow focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background"
+      tabIndex={0}
+    >
+      {/* Hover-reveal menu */}
+      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity z-10">
+        <Tooltip content="View project">
+          <Link
+            to={`/documents/${project.id}`}
+            className="p-0.5 rounded hover:bg-border/50 text-muted hover:text-foreground"
+            aria-label={`View project: ${project.title}`}
+          >
+            <OpenIcon className="h-4 w-4" />
+          </Link>
+        </Tooltip>
+      </div>
+
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2.5">
           <span className="h-2 w-2 rounded-sm bg-accent shrink-0" />
@@ -318,5 +335,15 @@ function FocusCard({
         </div>
       )}
     </div>
+  );
+}
+
+function OpenIcon({ className }: { className?: string }) {
+  return (
+    <svg className={cn('h-4 w-4', className)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
   );
 }
