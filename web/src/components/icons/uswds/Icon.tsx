@@ -1,4 +1,10 @@
-import { type ComponentType, type SVGProps, lazy, Suspense, useMemo } from 'react';
+import {
+  type ComponentType,
+  type SVGProps,
+  lazy,
+  Suspense,
+  useMemo,
+} from 'react';
 import { type IconName, isValidIconName } from './types';
 
 export interface IconProps {
@@ -16,7 +22,7 @@ type SvgComponent = ComponentType<SVGProps<SVGSVGElement>>;
 // This works because glob imports are resolved at build time
 const iconModules = import.meta.glob<{ default: SvgComponent }>(
   '/node_modules/@uswds/uswds/dist/img/usa-icons/*.svg',
-  { query: '?react' }
+  { query: '?react' },
 );
 
 // Build a map from icon name to its loader function
@@ -24,6 +30,7 @@ const iconLoaders = new Map<string, () => Promise<{ default: SvgComponent }>>();
 for (const [path, loader] of Object.entries(iconModules)) {
   // Extract icon name from path: /node_modules/@uswds/uswds/dist/img/usa-icons/check.svg -> check
   const name = path.split('/').pop()?.replace('.svg', '');
+
   if (name) {
     iconLoaders.set(name, loader);
   }
@@ -36,12 +43,12 @@ const iconCache = new Map<string, ReturnType<typeof lazy<SvgComponent>>>();
 function getLazyIcon(name: string) {
   if (!iconCache.has(name)) {
     const loader = iconLoaders.get(name);
-    if (!loader) {
-      return null;
-    }
+    if (!loader) return null;
+
     const LazyIcon = lazy<SvgComponent>(loader);
     iconCache.set(name, LazyIcon);
   }
+
   return iconCache.get(name)!;
 }
 
@@ -65,12 +72,19 @@ function getLazyIcon(name: string) {
  *   <Icon name="info" className="h-4 w-4" />
  * </span>
  */
-export function Icon({ name, className, title }: IconProps): JSX.Element | null {
+export function Icon({
+  name,
+  className,
+  title,
+}: IconProps): JSX.Element | null {
   // Validate icon name at runtime
   if (!isValidIconName(name)) {
     if (process.env.NODE_ENV !== 'production') {
-      console.warn(`Icon: Invalid icon name "${name}". Check available icons in types.ts.`);
+      console.warn(
+        `Icon: Invalid icon name "${name}". Check available icons in types.ts.`,
+      );
     }
+
     return null;
   }
 
@@ -80,13 +94,22 @@ export function Icon({ name, className, title }: IconProps): JSX.Element | null 
   // Handle case where icon loader wasn't found (shouldn't happen if types are in sync)
   if (!LazyIcon) {
     if (process.env.NODE_ENV !== 'production') {
-      console.warn(`Icon: Could not load icon "${name}". Icon may not be available.`);
+      console.warn(
+        `Icon: Could not load icon "${name}". Icon may not be available.`,
+      );
     }
+
     return null;
   }
 
   // Generate unique ID for title if needed
-  const titleId = title ? `icon-title-${name}-${Math.random().toString(36).slice(2, 9)}` : undefined;
+  const titleId = useMemo(
+    () =>
+      title
+        ? `icon-title-${name}-${Math.random().toString(36).slice(2, 9)}`
+        : undefined,
+    [title, name],
+  );
 
   // Accessibility attributes following USWDS patterns
   const accessibilityProps = title

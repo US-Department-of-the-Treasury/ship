@@ -349,7 +349,10 @@ export function LoginPage() {
               dev@ship.local / admin123
             </p>
 
-            {/* USWDS Icon visual verification - different sizes and colors */}
+            {/*
+              USWDS Icon visual verification - different sizes and colors
+              Used in E2E tests to verify icons are loading correctly 
+             */}
             <div className="mt-6 border-t border-border pt-4">
               <p className="mb-2 text-muted">USWDS Icons:</p>
               <div className="flex items-center justify-center gap-3">
