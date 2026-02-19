@@ -45,6 +45,7 @@ export default async function globalSetup() {
     execSync('pnpm build:web', {
       cwd: PROJECT_ROOT,
       stdio: 'inherit',
+      env: { ...process.env, VITE_APP_ENV: 'test_e2e' },
     });
     console.log('✓ Web build complete');
   } catch (error) {
