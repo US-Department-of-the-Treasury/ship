@@ -49,7 +49,7 @@ pnpm build:shared
 
 echo ""
 echo "Building frontend..."
-pnpm build:web
+VITE_APP_ENV=production pnpm build:web
 
 echo ""
 echo "Deploying to S3 bucket: $BUCKET_NAME"

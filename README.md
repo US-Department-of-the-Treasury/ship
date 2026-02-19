@@ -97,6 +97,7 @@ pnpm install
 
 # 3. Configure environment
 cp api/.env.example api/.env.local
+cp web/.env.example web/.env
 
 # 4. Start the database
 docker-compose up -d

@@ -25,8 +25,9 @@ COPY api/dist/ ./api/dist/
 # Expose port
 EXPOSE 80
 
-# Set NODE_ENV to production
+# Set production environment
 ENV NODE_ENV=production
+ENV VITE_APP_ENV=production
 ENV PORT=80
 
 # Start the application (run migrations first to ensure schema exists)

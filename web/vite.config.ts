@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import svgr from 'vite-plugin-svgr';
 import { resolve } from 'path';
 import { readFileSync, existsSync } from 'fs';
 
@@ -43,7 +44,36 @@ export default defineConfig(({ mode }) => {
   };
 
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      svgr({
+        // Allow importing SVGs as React components with ?react suffix
+        // e.g., import CheckIcon from '@uswds/uswds/dist/img/usa-icons/check.svg?react'
+        svgrOptions: {
+          // Use currentColor for fill to match existing icon patterns
+          plugins: ['@svgr/plugin-svgo', '@svgr/plugin-jsx'],
+          svgoConfig: {
+            plugins: [
+              {
+                name: 'preset-default',
+                params: {
+                  overrides: {
+                    removeViewBox: false,
+                  },
+                },
+              },
+              // Replace hardcoded colors with currentColor
+              {
+                name: 'convertColors',
+                params: {
+                  currentColor: true,
+                },
+              },
+            ],
+          },
+        },
+      }),
+    ],
     resolve: {
       alias: {
         '@': resolve(__dirname, './src'),
