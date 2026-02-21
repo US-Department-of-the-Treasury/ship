@@ -182,7 +182,7 @@ export function Editor({
   aiScoringAnalysis,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
-  const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleInputRef = useRef<HTMLTextAreaElement>(null);
 
   // Track if user has made local changes (to prevent stale server responses from overwriting)
   const hasLocalChangesRef = useRef(false);
@@ -213,6 +213,15 @@ export function Editor({
       lastSyncedTitleRef.current = initialTitle;
     }
   }, [initialTitle, title]);
+
+  // Auto-resize title textarea when title changes or on mount
+  useEffect(() => {
+    const el = titleInputRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  }, [title]);
   const [provider, setProvider] = useState<WebsocketProvider | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('connecting');
   const [isBrowserOnline, setIsBrowserOnline] = useState(navigator.onLine);
@@ -794,7 +803,7 @@ export function Editor({
   }, [editor, onPlanChange]);
 
   // Handle title changes
-  const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newTitle = e.target.value;
     hasLocalChangesRef.current = true; // Mark as having local changes to prevent stale overwrites
     setTitle(newTitle);
@@ -911,9 +920,8 @@ export function Editor({
               </div>
             )}
             {/* Large document title */}
-            <input
+            <textarea
               ref={titleInputRef}
-              type="text"
               value={title}
               onChange={titleReadOnly ? undefined : handleTitleChange}
               onKeyDown={(e) => {
@@ -922,10 +930,16 @@ export function Editor({
                   editor?.commands.focus('start');
                 }
               }}
+              onInput={(e) => {
+                const el = e.currentTarget;
+                el.style.height = 'auto';
+                el.style.height = `${el.scrollHeight}px`;
+              }}
               placeholder="Untitled"
               readOnly={titleReadOnly}
+              rows={1}
               className={cn(
-                "mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none pl-8",
+                "mb-6 w-full bg-transparent text-3xl font-bold text-foreground placeholder:text-muted/30 focus:outline-none pl-8 resize-none overflow-hidden",
                 titleReadOnly && "cursor-default"
               )}
             />
