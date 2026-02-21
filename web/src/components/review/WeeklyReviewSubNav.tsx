@@ -119,7 +119,15 @@ export function WeeklyReviewSubNav({ reviewState }: WeeklyReviewSubNavProps) {
         </Dialog.Trigger>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-[100] bg-black/60" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-[101] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background shadow-xl focus:outline-none">
+          <Dialog.Content
+            className="fixed left-1/2 top-1/2 z-[101] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background shadow-xl focus:outline-none"
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !submitDisabled) {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
+          >
             <div className="flex items-center justify-between border-b border-border px-5 py-3">
               <Dialog.Title className="text-lg font-semibold text-foreground">Submit Review</Dialog.Title>
               <Dialog.Close className="rounded p-1 text-muted hover:bg-border hover:text-foreground" aria-label="Close">
@@ -229,6 +237,7 @@ export function WeeklyReviewSubNav({ reviewState }: WeeklyReviewSubNavProps) {
                     ? (submitDisabled ? 'bg-border/40 text-muted cursor-not-allowed' : 'bg-green-600 hover:bg-green-500')
                     : (submitDisabled ? 'bg-border/40 text-muted cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-500')
                 )}
+                title="⌘ Enter"
               >
                 {reviewState.approving
                   ? 'Submitting...'

@@ -64,6 +64,7 @@ export function TeamModePage() {
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [filterMode, setFilterMode] = useState<'my-team' | 'everyone' | null>(null);
+  const [nameFilter, setNameFilter] = useState('');
   const [sprintRange, setSprintRange] = useState<{ min: number; max: number } | null>(null);
   const [collapsedPrograms, setCollapsedPrograms] = useState<Set<string>>(new Set());
   const [viewAsSprintNumber, setViewAsSprintNumber] = useState<number | null>(null);
@@ -86,14 +87,19 @@ export function TeamModePage() {
     }
   }, [data, filterMode, hasDirectReports]);
 
-  // Filter users based on filter mode
+  // Filter users based on filter mode and name search
   const filteredUsers = useMemo(() => {
     if (!data) return [];
+    let users = data.users;
     if (filterMode === 'my-team' && user?.id) {
-      return data.users.filter(u => u.reportsTo === user.id);
+      users = users.filter(u => u.reportsTo === user.id);
     }
-    return data.users;
-  }, [data, filterMode, user?.id]);
+    if (nameFilter.trim()) {
+      const query = nameFilter.trim().toLowerCase();
+      users = users.filter(u => u.name.toLowerCase().includes(query));
+    }
+    return users;
+  }, [data, filterMode, user?.id, nameFilter]);
 
   // Group users by their assignment's program for the viewed sprint
   const groupingSprintNumber = viewAsSprintNumber ?? currentSprintNumber;
@@ -536,6 +542,25 @@ export function TeamModePage() {
               </button>
             </div>
           )}
+          <div className="relative">
+            <input
+              type="text"
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+              placeholder="Filter by name..."
+              className="h-6 w-36 rounded border border-border bg-transparent px-2 text-xs text-foreground placeholder:text-muted focus:border-accent focus:outline-none"
+            />
+            {nameFilter && (
+              <button
+                onClick={() => setNameFilter('')}
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted hover:text-foreground"
+              >
+                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
           {viewAsSprintNumber !== null && (
             <div className="flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-xs text-accent">
               <span>Viewing as {data.weeks.find(w => w.number === viewAsSprintNumber)?.name ?? `Week ${viewAsSprintNumber}`}</span>
