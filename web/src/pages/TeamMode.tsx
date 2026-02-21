@@ -63,7 +63,18 @@ export function TeamModePage() {
   const [loadingMore, setLoadingMore] = useState<'left' | 'right' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [filterMode, setFilterMode] = useState<'my-team' | 'everyone' | null>(null);
+  const [showPastWeeks, setShowPastWeeks] = useState(() => {
+    try {
+      return localStorage.getItem('ship:allocation-show-past-weeks') === 'true';
+    } catch { return false; }
+  });
+  const [filterMode, setFilterMode] = useState<'my-team' | 'everyone' | null>(() => {
+    try {
+      const stored = localStorage.getItem('ship:allocation-filter-mode');
+      if (stored === 'my-team' || stored === 'everyone') return stored;
+    } catch { /* ignore */ }
+    return null;
+  });
   const [nameFilter, setNameFilter] = useState('');
   const [sprintRange, setSprintRange] = useState<{ min: number; max: number } | null>(null);
   const [collapsedPrograms, setCollapsedPrograms] = useState<Set<string>>(new Set());
@@ -74,18 +85,36 @@ export function TeamModePage() {
   // Find the current sprint number
   const currentSprintNumber = data?.currentSprintNumber ?? null;
 
+  // Filter weeks to hide past weeks when showPastWeeks is false
+  const visibleWeeks = useMemo(() => {
+    if (!data) return [];
+    if (showPastWeeks || currentSprintNumber === null) return data.weeks;
+    return data.weeks.filter(s => s.number >= currentSprintNumber);
+  }, [data, showPastWeeks, currentSprintNumber]);
+
   // Smart default: if user has direct reports, default to "my-team"
   const hasDirectReports = useMemo(() => {
     if (!data || !user?.id) return false;
     return data.users.some(u => u.reportsTo === user.id);
   }, [data, user?.id]);
 
-  // Set smart default when data first loads
+  // Set smart default when data first loads (only if no stored value)
   useEffect(() => {
     if (data && filterMode === null) {
       setFilterMode(hasDirectReports ? 'my-team' : 'everyone');
     }
   }, [data, filterMode, hasDirectReports]);
+
+  // Persist filter mode and past-weeks visibility to localStorage
+  useEffect(() => {
+    if (filterMode !== null) {
+      localStorage.setItem('ship:allocation-filter-mode', filterMode);
+    }
+  }, [filterMode]);
+
+  useEffect(() => {
+    localStorage.setItem('ship:allocation-show-past-weeks', String(showPastWeeks));
+  }, [showPastWeeks]);
 
   // Filter users based on filter mode and name search
   const filteredUsers = useMemo(() => {
@@ -185,8 +214,9 @@ export function TeamModePage() {
     fetchTeamGrid(sprintRange?.min, sprintRange?.max, showArchived);
   }, [showArchived]);
 
-  // Scroll to current sprint on initial load
+  // Scroll to current sprint on initial load (only when past weeks are shown)
   useEffect(() => {
+    if (!showPastWeeks) return; // No need to scroll when past weeks are hidden
     if (data && scrollContainerRef.current && !hasScrolledToCurrentRef.current) {
       const currentSprintIndex = data.weeks.findIndex(s => s.isCurrent);
       if (currentSprintIndex >= 0) {
@@ -200,7 +230,7 @@ export function TeamModePage() {
         });
       }
     }
-  }, [data]);
+  }, [data, showPastWeeks]);
 
   async function fetchTeamGrid(fromSprint?: number, toSprint?: number, includeArchived = false) {
     try {
@@ -452,14 +482,14 @@ export function TeamModePage() {
 
     const { scrollLeft, scrollWidth, clientWidth } = container;
 
-    if (scrollLeft < SCROLL_THRESHOLD && sprintRange && sprintRange.min > 1) {
+    if (showPastWeeks && scrollLeft < SCROLL_THRESHOLD && sprintRange && sprintRange.min > 1) {
       fetchMoreSprints('left');
     }
 
     if (scrollWidth - scrollLeft - clientWidth < SCROLL_THRESHOLD) {
       fetchMoreSprints('right');
     }
-  }, [fetchMoreSprints, loadingMore, sprintRange]);
+  }, [fetchMoreSprints, loadingMore, sprintRange, showPastWeeks]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -577,6 +607,20 @@ export function TeamModePage() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => setShowPastWeeks(prev => !prev)}
+            className={cn(
+              'flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs transition-colors',
+              showPastWeeks
+                ? 'bg-accent text-white border-accent'
+                : 'text-muted hover:text-foreground hover:border-foreground/30'
+            )}
+          >
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            {showPastWeeks ? 'Hide' : 'Show'} past weeks
+          </button>
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input
               type="checkbox"
@@ -688,7 +732,7 @@ export function TeamModePage() {
                 </div>
               )}
 
-              {data.weeks.map((sprint) => {
+              {visibleWeeks.map((sprint) => {
                 const isActiveViewAs = sprint.number === viewAsSprintNumber;
                 const isDefaultCurrent = sprint.isCurrent && viewAsSprintNumber === null;
                 const showViewAsButton = !isActiveViewAs && !isDefaultCurrent;
@@ -698,7 +742,7 @@ export function TeamModePage() {
                   {/* Sprint header */}
                   <div
                     className={cn(
-                      'group flex h-10 w-[180px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background relative',
+                      'group flex h-10 w-[180px] flex-col items-center justify-center border-b border-r border-border px-2 sticky top-0 z-10 bg-background',
                       sprint.isCurrent && 'ring-1 ring-inset ring-accent/30',
                       isActiveViewAs && 'ring-2 ring-inset ring-accent/50 bg-accent/5'
                     )}
