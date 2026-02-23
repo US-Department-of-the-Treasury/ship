@@ -90,7 +90,7 @@ export const IssueResponseSchema = z.object({
   rejection_reason: z.string().nullable().optional().openapi({
     description: 'Reason if issue was rejected from triage',
   }),
-  content: z.record(z.unknown()).nullable(),
+  content: z.record(z.string(), z.unknown()).nullable(),
   created_at: DateTimeSchema,
   updated_at: DateTimeSchema,
   created_by: UuidSchema.optional(),

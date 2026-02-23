@@ -64,7 +64,7 @@ export const StandupContextSchema = z.object({
   }),
   recent_standups: z.array(z.object({
     id: UuidSchema,
-    content: z.record(z.unknown()).nullable(),
+    content: z.record(z.string(), z.unknown()).nullable(),
     created_at: DateTimeSchema,
     author_name: z.string(),
   })),
@@ -108,7 +108,7 @@ export const ReviewContextSchema = z.object({
   }),
   previous_review: z.object({
     plan_validated: z.boolean().nullable(),
-    content: z.record(z.unknown()).nullable(),
+    content: z.record(z.string(), z.unknown()).nullable(),
   }).nullable(),
 }).openapi('ReviewContext');
 

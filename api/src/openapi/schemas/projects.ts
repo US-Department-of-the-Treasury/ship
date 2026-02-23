@@ -148,7 +148,7 @@ export const ProjectRetroSchema = z.object({
   monetary_impact_actual: z.string().max(500).nullable().optional(),
   success_criteria: z.array(z.string().max(500)).nullable().optional(),
   next_steps: z.string().max(2000).nullable().optional(),
-  content: z.record(z.unknown()).optional(),
+  content: z.record(z.string(), z.unknown()).optional(),
 }).openapi('ProjectRetro');
 
 registry.register('ProjectRetro', ProjectRetroSchema);
@@ -314,7 +314,7 @@ registry.registerPath({
             monetary_impact_actual: z.string().nullable(),
             success_criteria: z.array(z.string()).nullable(),
             next_steps: z.string().nullable(),
-            content: z.record(z.unknown()).nullable(),
+            content: z.record(z.string(), z.unknown()).nullable(),
             sprints: z.array(z.object({
               id: UuidSchema,
               title: z.string(),

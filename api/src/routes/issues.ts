@@ -565,7 +565,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const parsed = createIssueSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -681,7 +681,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const parsed = updateIssueSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -1078,7 +1078,7 @@ router.post('/:id/history', authMiddleware, async (req: Request, res: Response) 
 
     const parsed = logHistorySchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -1131,7 +1131,7 @@ router.post('/bulk', authMiddleware, async (req: Request, res: Response) => {
   try {
     const parsed = bulkUpdateSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -1450,7 +1450,7 @@ router.post('/:id/iterations', authMiddleware, async (req: Request, res: Respons
 
     const parsed = createIterationSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 

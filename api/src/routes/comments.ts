@@ -62,7 +62,7 @@ documentCommentsRouter.post('/:id/comments', authMiddleware, async (req: Request
 
     const parsed = createCommentSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -145,7 +145,7 @@ commentsRouter.patch('/:id', authMiddleware, async (req: Request, res: Response)
 
     const parsed = updateCommentSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 

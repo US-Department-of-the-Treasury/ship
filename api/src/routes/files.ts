@@ -90,7 +90,7 @@ filesRouter.post('/upload', authMiddleware, async (req: Request, res: Response) 
   try {
     const validation = uploadRequestSchema.safeParse(req.body);
     if (!validation.success) {
-      res.status(400).json({ error: 'Invalid request', details: validation.error.errors });
+      res.status(400).json({ error: 'Invalid request', details: validation.error.issues });
       return;
     }
 

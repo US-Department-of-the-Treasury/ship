@@ -51,7 +51,7 @@ export const TeamGridAssociationSchema = z.object({
 export const TeamGridResponseSchema = z.object({
   users: z.array(PersonSchema),
   sprints: z.array(SprintPeriodSchema),
-  associations: z.record(z.record(TeamGridAssociationSchema)).openapi({
+  associations: z.record(z.string(), z.record(z.string(), TeamGridAssociationSchema)).openapi({
     description: 'Map of user_id -> sprint_number -> associations',
   }),
 }).openapi('TeamGridResponse');
@@ -94,7 +94,7 @@ const ReviewsResponseSchema = z.object({
     programColor: z.string().nullable(),
   })),
   weeks: z.array(SprintPeriodSchema),
-  reviews: z.record(z.record(ReviewCellSchema)).openapi({
+  reviews: z.record(z.string(), z.record(z.string(), ReviewCellSchema)).openapi({
     description: 'Map of personId -> sprintNumber -> review cell data',
   }),
   currentSprintNumber: z.number().int(),

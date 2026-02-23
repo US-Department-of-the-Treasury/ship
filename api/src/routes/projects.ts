@@ -116,7 +116,7 @@ const projectRetroSchema = z.object({
   monetary_impact_actual: z.string().max(500).nullable().optional(),
   success_criteria: z.array(z.string().max(500)).nullable().optional(),
   next_steps: z.string().max(2000).nullable().optional(),
-  content: z.record(z.unknown()).optional(), // TipTap content for narrative
+  content: z.record(z.string(), z.unknown()).optional(), // TipTap content for narrative
 });
 
 // Helper to generate pre-filled retro content for a project
@@ -519,7 +519,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const parsed = createProjectSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -606,7 +606,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const parsed = updateProjectSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -1001,7 +1001,7 @@ router.post('/:id/retro', authMiddleware, async (req: Request, res: Response) =>
 
     const parsed = projectRetroSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -1328,7 +1328,7 @@ router.post('/:id/sprints', authMiddleware, async (req: Request, res: Response) 
 
     const parsed = createProjectSprintSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -1499,7 +1499,7 @@ router.patch('/:id/retro', authMiddleware, async (req: Request, res: Response) =
 
     const parsed = projectRetroSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 

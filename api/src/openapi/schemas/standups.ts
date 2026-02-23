@@ -10,7 +10,7 @@ import { UuidSchema, DateTimeSchema, UserReferenceSchema } from './common.js';
 export const StandupResponseSchema = z.object({
   id: UuidSchema,
   title: z.string(),
-  content: z.record(z.unknown()).nullable(),
+  content: z.record(z.string(), z.unknown()).nullable(),
   author: UserReferenceSchema,
   sprint_id: UuidSchema.openapi({ description: 'Parent sprint ID' }),
   created_at: DateTimeSchema,
@@ -37,14 +37,14 @@ registry.register('StandupStatus', StandupStatusSchema);
 export const CreateStandupSchema = z.object({
   sprint_id: UuidSchema.openapi({ description: 'Sprint to attach standup to' }),
   title: z.string().max(200).optional(),
-  content: z.record(z.unknown()).optional(),
+  content: z.record(z.string(), z.unknown()).optional(),
 }).openapi('CreateStandup');
 
 registry.register('CreateStandup', CreateStandupSchema);
 
 export const UpdateStandupSchema = z.object({
   title: z.string().max(200).optional(),
-  content: z.record(z.unknown()).optional(),
+  content: z.record(z.string(), z.unknown()).optional(),
 }).openapi('UpdateStandup');
 
 registry.register('UpdateStandup', UpdateStandupSchema);

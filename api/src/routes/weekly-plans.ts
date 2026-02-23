@@ -185,7 +185,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const parsed = weeklyPlanSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -554,7 +554,7 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
   try {
     const parsed = weeklyRetroSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
