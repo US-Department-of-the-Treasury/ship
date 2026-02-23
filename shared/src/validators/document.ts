@@ -1,4 +1,21 @@
 import { z } from 'zod';
+import type {
+  DocumentVisibility, BelongsToType, DocumentType, IssueState, IssuePriority,
+  IssueSource, AccountabilityType, WeekStatus, ICEScore, ApprovalState,
+  BelongsTo, IncompleteChild, CascadeWarning, PlanHistoryEntry, ApprovalTracking,
+  IssueProperties, ProgramProperties, ProjectProperties, WeekProperties,
+  PersonProperties, WikiProperties, WeeklyPlanProperties, WeeklyRetroProperties,
+  StandupProperties, WeeklyReviewProperties, Document,
+  WikiDocumentV1, IssueDocumentV1, ProgramDocumentV1, ProjectDocumentV1,
+  WeekDocumentV1, PersonDocumentV1, WeeklyPlanDocumentV1, WeeklyRetroDocumentV1,
+  StandupDocumentV1, WeeklyReviewDocumentV1,
+} from '../types/document.js';
+
+// ─── Type Alignment Utility ─────────────────────────────────────────────────
+// Bidirectional check: ensures z.infer<Schema> and the TS interface are assignable
+// in both directions. Catches missing fields, extra fields, and type mismatches.
+type AssertMutuallyAssignable<A, B> =
+  [A] extends [B] ? ([B] extends [A] ? true : never) : never;
 
 // ─── Enum / Literal Schemas ──────────────────────────────────────────────────
 
@@ -325,3 +342,54 @@ export const WeeklyReviewDocumentV1Schema = DocumentSchema.extend({
   properties: WeeklyReviewPropertiesSchema,
   version: z.literal(1).optional(),
 });
+
+// ─── Bidirectional Type Checks ──────────────────────────────────────────────
+// These compile-time assertions ensure Zod schemas stay in sync with TS interfaces.
+// If you add a field to an interface but forget the Zod schema (or vice versa),
+// TypeScript will produce a compile error here.
+
+// Enum / literal types
+type _Check_DocumentVisibility = AssertMutuallyAssignable<z.infer<typeof DocumentVisibilitySchema>, DocumentVisibility>;
+type _Check_BelongsToType = AssertMutuallyAssignable<z.infer<typeof BelongsToTypeSchema>, BelongsToType>;
+type _Check_DocumentType = AssertMutuallyAssignable<z.infer<typeof DocumentTypeSchema>, DocumentType>;
+type _Check_IssueState = AssertMutuallyAssignable<z.infer<typeof IssueStateSchema>, IssueState>;
+type _Check_IssuePriority = AssertMutuallyAssignable<z.infer<typeof IssuePrioritySchema>, IssuePriority>;
+type _Check_IssueSource = AssertMutuallyAssignable<z.infer<typeof IssueSourceSchema>, IssueSource>;
+type _Check_AccountabilityType = AssertMutuallyAssignable<z.infer<typeof AccountabilityTypeSchema>, AccountabilityType>;
+type _Check_WeekStatus = AssertMutuallyAssignable<z.infer<typeof WeekStatusSchema>, WeekStatus>;
+type _Check_ICEScore = AssertMutuallyAssignable<z.infer<typeof ICEScoreSchema>, ICEScore>;
+type _Check_ApprovalState = AssertMutuallyAssignable<z.infer<typeof ApprovalStateSchema>, ApprovalState>;
+
+// Helper / association types
+type _Check_BelongsTo = AssertMutuallyAssignable<z.infer<typeof BelongsToSchema>, BelongsTo>;
+type _Check_IncompleteChild = AssertMutuallyAssignable<z.infer<typeof IncompleteChildSchema>, IncompleteChild>;
+type _Check_CascadeWarning = AssertMutuallyAssignable<z.infer<typeof CascadeWarningSchema>, CascadeWarning>;
+type _Check_PlanHistoryEntry = AssertMutuallyAssignable<z.infer<typeof PlanHistoryEntrySchema>, PlanHistoryEntry>;
+type _Check_ApprovalTracking = AssertMutuallyAssignable<z.infer<typeof ApprovalTrackingSchema>, ApprovalTracking>;
+
+// Property types
+type _Check_IssueProperties = AssertMutuallyAssignable<z.infer<typeof IssuePropertiesSchema>, IssueProperties>;
+type _Check_ProgramProperties = AssertMutuallyAssignable<z.infer<typeof ProgramPropertiesSchema>, ProgramProperties>;
+type _Check_ProjectProperties = AssertMutuallyAssignable<z.infer<typeof ProjectPropertiesSchema>, ProjectProperties>;
+type _Check_WeekProperties = AssertMutuallyAssignable<z.infer<typeof WeekPropertiesSchema>, WeekProperties>;
+type _Check_PersonProperties = AssertMutuallyAssignable<z.infer<typeof PersonPropertiesSchema>, PersonProperties>;
+type _Check_WikiProperties = AssertMutuallyAssignable<z.infer<typeof WikiPropertiesSchema>, WikiProperties>;
+type _Check_WeeklyPlanProperties = AssertMutuallyAssignable<z.infer<typeof WeeklyPlanPropertiesSchema>, WeeklyPlanProperties>;
+type _Check_WeeklyRetroProperties = AssertMutuallyAssignable<z.infer<typeof WeeklyRetroPropertiesSchema>, WeeklyRetroProperties>;
+type _Check_StandupProperties = AssertMutuallyAssignable<z.infer<typeof StandupPropertiesSchema>, StandupProperties>;
+type _Check_WeeklyReviewProperties = AssertMutuallyAssignable<z.infer<typeof WeeklyReviewPropertiesSchema>, WeeklyReviewProperties>;
+
+// Base document
+type _Check_Document = AssertMutuallyAssignable<z.infer<typeof DocumentSchema>, Document>;
+
+// Typed document variants (V1)
+type _Check_WikiDocumentV1 = AssertMutuallyAssignable<z.infer<typeof WikiDocumentV1Schema>, WikiDocumentV1>;
+type _Check_IssueDocumentV1 = AssertMutuallyAssignable<z.infer<typeof IssueDocumentV1Schema>, IssueDocumentV1>;
+type _Check_ProgramDocumentV1 = AssertMutuallyAssignable<z.infer<typeof ProgramDocumentV1Schema>, ProgramDocumentV1>;
+type _Check_ProjectDocumentV1 = AssertMutuallyAssignable<z.infer<typeof ProjectDocumentV1Schema>, ProjectDocumentV1>;
+type _Check_WeekDocumentV1 = AssertMutuallyAssignable<z.infer<typeof WeekDocumentV1Schema>, WeekDocumentV1>;
+type _Check_PersonDocumentV1 = AssertMutuallyAssignable<z.infer<typeof PersonDocumentV1Schema>, PersonDocumentV1>;
+type _Check_WeeklyPlanDocumentV1 = AssertMutuallyAssignable<z.infer<typeof WeeklyPlanDocumentV1Schema>, WeeklyPlanDocumentV1>;
+type _Check_WeeklyRetroDocumentV1 = AssertMutuallyAssignable<z.infer<typeof WeeklyRetroDocumentV1Schema>, WeeklyRetroDocumentV1>;
+type _Check_StandupDocumentV1 = AssertMutuallyAssignable<z.infer<typeof StandupDocumentV1Schema>, StandupDocumentV1>;
+type _Check_WeeklyReviewDocumentV1 = AssertMutuallyAssignable<z.infer<typeof WeeklyReviewDocumentV1Schema>, WeeklyReviewDocumentV1>;

@@ -5,6 +5,7 @@ import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui/Tooltip';
 
 import { apiGet, apiPost } from '@/lib/api';
+import type { DocumentType } from '@ship/shared';
 
 interface SearchableDocument {
   id: string;
@@ -17,7 +18,7 @@ interface SearchableDocument {
   };
 }
 
-type ConvertibleDocumentType = 'wiki' | 'issue' | 'project' | 'sprint';
+type ConvertibleDocumentType = Extract<DocumentType, 'wiki' | 'issue' | 'project' | 'sprint'>;
 
 interface CommandPaletteProps {
   open: boolean;
