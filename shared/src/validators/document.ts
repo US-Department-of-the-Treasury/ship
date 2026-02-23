@@ -46,7 +46,7 @@ export const IssueStateSchema = z.enum([
   'cancelled',
 ]);
 
-export const IssuePrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
+export const IssuePrioritySchema = z.enum(['none', 'low', 'medium', 'high', 'urgent']);
 
 export const IssueSourceSchema = z.enum(['internal', 'external', 'action_items']);
 

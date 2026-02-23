@@ -355,11 +355,11 @@ components:
     IssuePriority:
       type: string
       enum:
-        - urgent
-        - high
-        - medium
-        - low
         - none
+        - low
+        - medium
+        - high
+        - urgent
       description: Issue priority level
     IssueSource:
       type: string
@@ -400,11 +400,11 @@ components:
         priority:
           type: string
           enum:
-            - urgent
-            - high
-            - medium
-            - low
             - none
+            - low
+            - medium
+            - high
+            - urgent
           description: Issue priority level
         assignee_id:
           type: string
@@ -453,11 +453,14 @@ components:
           enum:
             - standup
             - weekly_plan
+            - weekly_retro
             - weekly_review
             - week_start
             - week_issues
             - project_plan
             - project_retro
+            - changes_requested_plan
+            - changes_requested_retro
             - null
           description: Type of accountability task for auto-generated issues
         rejection_reason:
@@ -560,11 +563,11 @@ components:
         priority:
           type: string
           enum:
-            - urgent
-            - high
-            - medium
-            - low
             - none
+            - low
+            - medium
+            - high
+            - urgent
           default: medium
           description: Issue priority level
         assignee_id:
@@ -609,11 +612,14 @@ components:
           enum:
             - standup
             - weekly_plan
+            - weekly_retro
             - weekly_review
             - week_start
             - week_issues
             - project_plan
             - project_retro
+            - changes_requested_plan
+            - changes_requested_retro
             - null
           description: Type of accountability task for auto-generated issues
       required:
@@ -639,11 +645,11 @@ components:
         priority:
           type: string
           enum:
-            - urgent
-            - high
-            - medium
-            - low
             - none
+            - low
+            - medium
+            - high
+            - urgent
           description: Issue priority level
         assignee_id:
           type: string
@@ -3863,11 +3869,11 @@ paths:
         - schema:
                       type: string
                       enum:
-                        - urgent
-                        - high
-                        - medium
-                        - low
                         - none
+                        - low
+                        - medium
+                        - high
+                        - urgent
                       description: Issue priority level
                     required: false
                     description: Issue priority level
@@ -4359,11 +4365,11 @@ paths:
                         priority:
                           type: string
                           enum:
-                            - urgent
-                            - high
-                            - medium
-                            - low
                             - none
+                            - low
+                            - medium
+                            - high
+                            - urgent
                           description: Issue priority level
                         ticket_number:
                           type: integer
@@ -4383,11 +4389,14 @@ paths:
                           enum:
                             - standup
                             - weekly_plan
+                            - weekly_retro
                             - weekly_review
                             - week_start
                             - week_issues
                             - project_plan
                             - project_retro
+                            - changes_requested_plan
+                            - changes_requested_retro
                             - null
                           description: Type of accountability task for auto-generated issues
                         accountability_target_id:

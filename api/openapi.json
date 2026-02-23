@@ -442,11 +442,11 @@
       "IssuePriority": {
         "type": "string",
         "enum": [
-          "urgent",
-          "high",
-          "medium",
+          "none",
           "low",
-          "none"
+          "medium",
+          "high",
+          "urgent"
         ],
         "description": "Issue priority level"
       },
@@ -497,11 +497,11 @@
           "priority": {
             "type": "string",
             "enum": [
-              "urgent",
-              "high",
-              "medium",
+              "none",
               "low",
-              "none"
+              "medium",
+              "high",
+              "urgent"
             ],
             "description": "Issue priority level"
           },
@@ -561,11 +561,14 @@
             "enum": [
               "standup",
               "weekly_plan",
+              "weekly_retro",
               "weekly_review",
               "week_start",
               "week_issues",
               "project_plan",
               "project_retro",
+              "changes_requested_plan",
+              "changes_requested_retro",
               null
             ],
             "description": "Type of accountability task for auto-generated issues"
@@ -690,11 +693,11 @@
           "priority": {
             "type": "string",
             "enum": [
-              "urgent",
-              "high",
-              "medium",
+              "none",
               "low",
-              "none"
+              "medium",
+              "high",
+              "urgent"
             ],
             "default": "medium",
             "description": "Issue priority level"
@@ -748,11 +751,14 @@
             "enum": [
               "standup",
               "weekly_plan",
+              "weekly_retro",
               "weekly_review",
               "week_start",
               "week_issues",
               "project_plan",
               "project_retro",
+              "changes_requested_plan",
+              "changes_requested_retro",
               null
             ],
             "description": "Type of accountability task for auto-generated issues"
@@ -786,11 +792,11 @@
           "priority": {
             "type": "string",
             "enum": [
-              "urgent",
-              "high",
-              "medium",
+              "none",
               "low",
-              "none"
+              "medium",
+              "high",
+              "urgent"
             ],
             "description": "Issue priority level"
           },
@@ -5082,11 +5088,11 @@
             "schema": {
               "type": "string",
               "enum": [
-                "urgent",
-                "high",
-                "medium",
+                "none",
                 "low",
-                "none"
+                "medium",
+                "high",
+                "urgent"
               ],
               "description": "Issue priority level"
             },
@@ -5815,11 +5821,11 @@
                           "priority": {
                             "type": "string",
                             "enum": [
-                              "urgent",
-                              "high",
-                              "medium",
+                              "none",
                               "low",
-                              "none"
+                              "medium",
+                              "high",
+                              "urgent"
                             ],
                             "description": "Issue priority level"
                           },
@@ -5845,11 +5851,14 @@
                             "enum": [
                               "standup",
                               "weekly_plan",
+                              "weekly_retro",
                               "weekly_review",
                               "week_start",
                               "week_issues",
                               "project_plan",
                               "project_retro",
+                              "changes_requested_plan",
+                              "changes_requested_retro",
                               null
                             ],
                             "description": "Type of accountability task for auto-generated issues"

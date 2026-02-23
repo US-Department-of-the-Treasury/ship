@@ -4,21 +4,11 @@
 
 import { z, registry } from '../registry.js';
 import { UuidSchema, DateTimeSchema, BelongsToResponseSchema } from './common.js';
+import { DocumentTypeSchema as SharedDocumentTypeSchema } from '@ship/shared';
 
 // ============== Document Types ==============
 
-export const DocumentTypeSchema = z.enum([
-  'wiki',
-  'issue',
-  'program',
-  'project',
-  'sprint',
-  'person',
-  'weekly_plan',
-  'weekly_retro',
-  'standup',
-  'weekly_review',
-]).openapi({
+export const DocumentTypeSchema = SharedDocumentTypeSchema.openapi({
   description: 'Type of document',
 });
 
