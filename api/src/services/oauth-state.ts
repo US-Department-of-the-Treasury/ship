@@ -53,7 +53,8 @@ export function generateSecureSessionId(): string {
 export async function storeOAuthState(
   state: string,
   nonce: string,
-  codeVerifier: string
+  codeVerifier: string,
+  returnTo?: string
 ): Promise<void> {
   // Validate state format (defense in depth)
   if (!isValidStateFormat(state)) {
@@ -68,8 +69,8 @@ export async function storeOAuthState(
   }
 
   await pool.query(
-    'INSERT INTO oauth_state (state_id, nonce, code_verifier, expires_at) VALUES ($1, $2, $3, $4)',
-    [state, nonce, codeVerifier, expiresAt]
+    'INSERT INTO oauth_state (state_id, nonce, code_verifier, expires_at, return_to) VALUES ($1, $2, $3, $4, $5)',
+    [state, nonce, codeVerifier, expiresAt, returnTo || null]
   );
 }
 
@@ -80,14 +81,14 @@ export async function storeOAuthState(
  */
 export async function consumeOAuthState(
   state: string
-): Promise<{ nonce: string; codeVerifier: string } | null> {
+): Promise<{ nonce: string; codeVerifier: string; returnTo: string | null } | null> {
   // Validate state format before database query
   if (!isValidStateFormat(state)) {
     return null;
   }
 
   const result = await pool.query(
-    'DELETE FROM oauth_state WHERE state_id = $1 AND expires_at > NOW() RETURNING nonce, code_verifier',
+    'DELETE FROM oauth_state WHERE state_id = $1 AND expires_at > NOW() RETURNING nonce, code_verifier, return_to',
     [state]
   );
 
@@ -98,5 +99,6 @@ export async function consumeOAuthState(
   return {
     nonce: result.rows[0].nonce,
     codeVerifier: result.rows[0].code_verifier,
+    returnTo: result.rows[0].return_to || null,
   };
 }

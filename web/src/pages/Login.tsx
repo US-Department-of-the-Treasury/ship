@@ -118,7 +118,11 @@ export function LoginPage() {
     setIsCaiaLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/caia/login`, {
+      const caiaLoginUrl = new URL(`${API_URL}/api/auth/caia/login`, window.location.origin);
+      if (from && from !== '/') {
+        caiaLoginUrl.searchParams.set('returnTo', from);
+      }
+      const res = await fetch(caiaLoginUrl.toString(), {
         credentials: 'include',
       });
       const data = await res.json();
