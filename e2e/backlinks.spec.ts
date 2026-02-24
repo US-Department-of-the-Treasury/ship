@@ -1,4 +1,5 @@
 import { test, expect, Page } from './fixtures/isolated-env'
+import { triggerMentionPopup } from './fixtures/test-helpers'
 
 /**
  * Backlinks E2E Tests
@@ -66,26 +67,7 @@ test.describe('Backlinks', () => {
     await setDocumentTitle(page, 'Document B')
 
     const editor = page.locator('.ProseMirror')
-    await editor.click()
-    // Wait for editor to be focused and ready to receive input
-    await expect(editor).toBeFocused({ timeout: 3000 })
-    await page.waitForTimeout(500) // Wait for TipTap mention extension to initialize
-
-    // Create mention to Document A
-    // Type @ first to trigger mention popup, then search text
-    await page.keyboard.type('@')
-
-    // Wait for mention popup with retry logic
-    const mentionPopup = page.locator('[role="listbox"]')
-    await expect(async () => {
-      if (!(await mentionPopup.isVisible())) {
-        // Re-trigger mention if popup didn't appear
-        await page.keyboard.press('Backspace')
-        await page.waitForTimeout(500)
-        await page.keyboard.type('@')
-      }
-      await expect(mentionPopup).toBeVisible({ timeout: 5000 })
-    }).toPass({ timeout: 15000, intervals: [1000, 2000, 3000, 4000] })
+    await triggerMentionPopup(page, editor)
 
     // Type search term to filter
     await page.keyboard.type('Document A')
@@ -135,25 +117,7 @@ test.describe('Backlinks', () => {
     await setDocumentTitle(page, 'Doc with Mention')
 
     const editor = page.locator('.ProseMirror')
-    await editor.click()
-    // Wait for editor to be focused and ready to receive input
-    await expect(editor).toBeFocused({ timeout: 3000 })
-    await page.waitForTimeout(200) // Small delay for TipTap initialization
-
-    // Create mention to Document A
-    // Type @ first to trigger mention popup, then search text
-    await page.keyboard.type('@')
-
-    // Wait for mention popup with retry logic
-    const mentionPopup = page.locator('[role="listbox"]')
-    await expect(async () => {
-      if (!(await mentionPopup.isVisible())) {
-        await page.keyboard.press('Backspace')
-        await page.waitForTimeout(300)
-        await page.keyboard.type('@')
-      }
-      await expect(mentionPopup).toBeVisible({ timeout: 3000 })
-    }).toPass({ timeout: 10000, intervals: [1000, 2000, 3000] })
+    await triggerMentionPopup(page, editor)
 
     await page.keyboard.type('Doc to Mention')
     await page.waitForTimeout(500)
@@ -225,24 +189,7 @@ test.describe('Backlinks', () => {
     await setDocumentTitle(page, 'Referencing Document')
 
     const editor = page.locator('.ProseMirror')
-    await editor.click()
-    // Wait for editor to be focused and ready to receive input
-    await expect(editor).toBeFocused({ timeout: 3000 })
-    await page.waitForTimeout(200) // Small delay for TipTap initialization
-
-    // Create mention to Target Document
-    await page.keyboard.type('@')
-
-    // Wait for mention popup with retry logic
-    const mentionPopup = page.locator('[role="listbox"]')
-    await expect(async () => {
-      if (!(await mentionPopup.isVisible())) {
-        await page.keyboard.press('Backspace')
-        await page.waitForTimeout(300)
-        await page.keyboard.type('@')
-      }
-      await expect(mentionPopup).toBeVisible({ timeout: 3000 })
-    }).toPass({ timeout: 10000, intervals: [1000, 2000, 3000] })
+    await triggerMentionPopup(page, editor)
 
     await page.keyboard.type('Target Document')
     await page.waitForTimeout(500)
@@ -297,24 +244,7 @@ test.describe('Backlinks', () => {
     await setDocumentTitle(page, 'Source Doc')
 
     const editor = page.locator('.ProseMirror')
-    await editor.click()
-    // Wait for editor to be focused and ready to receive input
-    await expect(editor).toBeFocused({ timeout: 3000 })
-    await page.waitForTimeout(200) // Small delay for TipTap initialization
-
-    // Mention Document M
-    await page.keyboard.type('@')
-
-    // Wait for mention popup with retry logic
-    const mentionPopup = page.locator('[role="listbox"]')
-    await expect(async () => {
-      if (!(await mentionPopup.isVisible())) {
-        await page.keyboard.press('Backspace')
-        await page.waitForTimeout(300)
-        await page.keyboard.type('@')
-      }
-      await expect(mentionPopup).toBeVisible({ timeout: 3000 })
-    }).toPass({ timeout: 10000, intervals: [1000, 2000, 3000] })
+    await triggerMentionPopup(page, editor)
 
     await page.keyboard.type('Mentioned Doc')
     await page.waitForTimeout(500)
@@ -394,22 +324,7 @@ test.describe('Backlinks', () => {
 
     // In page2, mention Document P
     const editor2 = page2.locator('.ProseMirror')
-    await editor2.click()
-
-    // Type @ first to trigger mention popup, then type search term
-    await page2.keyboard.type('@')
-
-    // Wait for mention popup to appear - retry if needed (popup can be slow on first trigger)
-    const mentionPopup = page2.locator('[role="listbox"]')
-    await expect(async () => {
-      if (!(await mentionPopup.isVisible())) {
-        // Re-trigger mention if popup didn't appear
-        await page2.keyboard.press('Backspace')
-        await page2.waitForTimeout(300)
-        await page2.keyboard.type('@')
-      }
-      await expect(mentionPopup).toBeVisible({ timeout: 3000 })
-    }).toPass({ timeout: 10000, intervals: [1000, 2000, 3000] })
+    await triggerMentionPopup(page2, editor2)
 
     // Type search term to filter
     await page2.keyboard.type('Real-time Doc')

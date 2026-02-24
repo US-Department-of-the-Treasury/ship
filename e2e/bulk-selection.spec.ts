@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures/isolated-env';
+import { hoverWithRetry, waitForTableData } from './fixtures/test-helpers';
 
 /**
  * Bulk Selection and Actions for Issues List/Kanban
@@ -48,16 +49,15 @@ test.describe('Bulk Selection - List View', () => {
       await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
 
       const firstRow = page.locator('tbody tr').first();
-      await expect(firstRow).toBeVisible();
+      await waitForTableData(page);
 
       // Get checkbox container before hover
       const checkboxContainer = firstRow.locator('td').first().locator('div');
 
-      // Hover over the row
-      await firstRow.hover();
-
-      // The checkbox container should now be visible (opacity: 1)
-      await expect(checkboxContainer).toHaveCSS('opacity', '1');
+      // Hover over the row with retry — under load, hover may not register on first attempt
+      await hoverWithRetry(firstRow, async () => {
+        await expect(checkboxContainer).toHaveCSS('opacity', '1', { timeout: 3000 });
+      });
     });
 
     test('checkbox remains visible when item is selected', async ({ page }) => {
@@ -887,16 +887,15 @@ test.describe('Global j/k Vim-Style Navigation', () => {
       await expect(page.getByRole('heading', { name: 'Issues', level: 1 })).toBeVisible({ timeout: 10000 });
 
       const rows = page.locator('tbody tr');
-      await expect(rows.first()).toBeVisible();
+      await waitForTableData(page);
 
       const rowCount = await rows.count();
       expect(rowCount, 'Seed data should provide at least 3 issues. Run: pnpm db:seed').toBeGreaterThanOrEqual(3);
 
-      // Hover over the third row (not first, to verify it's setting focus correctly)
-      await rows.nth(2).hover();
-
-      // Third row should have focus ring - wait for data-focused attribute
-      await expect(rows.nth(2)).toHaveAttribute('data-focused', 'true', { timeout: 5000 });
+      // Hover over the third row with retry — under load, hover may not register on first attempt
+      await hoverWithRetry(rows.nth(2), async () => {
+        await expect(rows.nth(2)).toHaveAttribute('data-focused', 'true', { timeout: 3000 });
+      });
       await expect(rows.nth(2)).toHaveClass(/ring-2/, { timeout: 3000 });
 
       // Now press j and focus should move from third to fourth row (if exists)
@@ -1787,9 +1786,13 @@ test.describe('Bulk Selection - Kanban View', () => {
       // Before hover, checkbox container should exist but be invisible (opacity-0)
       await expect(checkboxContainer).toHaveCSS('opacity', '0');
 
-      // Hover card to reveal checkbox
-      await firstCard.hover();
-      await expect(checkboxContainer).toHaveCSS('opacity', '1');
+      // Wait for kanban data to stabilize before interacting
+      await page.waitForLoadState('networkidle');
+
+      // Hover card to reveal checkbox — retry under load if hover doesn't register
+      await hoverWithRetry(firstCard, async () => {
+        await expect(checkboxContainer).toHaveCSS('opacity', '1', { timeout: 3000 });
+      });
     });
 
     test('clicking checkbox selects kanban card', async ({ page }) => {

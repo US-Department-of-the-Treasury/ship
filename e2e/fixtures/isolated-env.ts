@@ -333,13 +333,15 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
   const passwordHash = await bcrypt.hash('admin123', 10);
 
   // Create workspace with sprint_start_date 3 months ago (matches full seed)
-  const threeMonthsAgo = new Date();
-  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  // IMPORTANT: Use UTC throughout to match the API's date math (team.ts parses as UTC)
+  const nowUtc = new Date();
+  const threeMonthsAgoUtc = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth() - 3, nowUtc.getUTCDate()));
+  const sprintStartDateStr = threeMonthsAgoUtc.toISOString().split('T')[0];
   const workspaceResult = await pool.query(
     `INSERT INTO workspaces (name, sprint_start_date)
      VALUES ('Test Workspace', $1)
      RETURNING id`,
-    [threeMonthsAgo.toISOString().split('T')[0]]
+    [sprintStartDateStr]
   );
   const workspaceId = workspaceResult.rows[0].id;
 
@@ -412,9 +414,9 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     programIds[prog.key] = result.rows[0].id;
   }
 
-  // Calculate current sprint number (1-week sprints)
-  const today = new Date();
-  const daysSinceStart = Math.floor((today.getTime() - threeMonthsAgo.getTime()) / (1000 * 60 * 60 * 24));
+  // Calculate current sprint number (1-week sprints) using UTC to match API (team.ts:1639-1647)
+  const todayUtc = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate()));
+  const daysSinceStart = Math.floor((todayUtc.getTime() - threeMonthsAgoUtc.getTime()) / (1000 * 60 * 60 * 24));
   const currentSprintNumber = Math.max(1, Math.floor(daysSinceStart / 7) + 1);
 
   // Create sprints for each program (current-2 to current+2)
@@ -426,9 +428,8 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
     sprintIds[prog.key] = {};
     for (let sprintNum = currentSprintNumber - 2; sprintNum <= currentSprintNumber + 2; sprintNum++) {
       if (sprintNum > 0) {
-        // Calculate sprint start date (1-week sprints starting from threeMonthsAgo)
-        const sprintStartDate = new Date(threeMonthsAgo);
-        sprintStartDate.setDate(sprintStartDate.getDate() + (sprintNum - 1) * 7);
+        // Calculate sprint start date (1-week sprints starting from threeMonthsAgoUtc)
+        const sprintStartDate = new Date(threeMonthsAgoUtc.getTime() + (sprintNum - 1) * 7 * 24 * 60 * 60 * 1000);
         const startDateStr = sprintStartDate.toISOString().split('T')[0];
 
         const result = await pool.query(
@@ -722,7 +723,7 @@ async function seedMinimalTestData(pool: Pool): Promise<void> {
         owner_id: userId,
         project_id: projectIds['SHIP'],
         assignee_ids: [personId],
-        start_date: new Date(threeMonthsAgo.getTime() + (currentSprintNumber - 1) * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        start_date: new Date(threeMonthsAgoUtc.getTime() + (currentSprintNumber - 1) * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       }),
       userId,
     ]

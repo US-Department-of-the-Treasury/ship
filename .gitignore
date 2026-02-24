@@ -36,6 +36,9 @@ Thumbs.db
 # Ralph loop local state
 .claude/ralph-loop.local.md
 
+# PRD test enforcement timestamp (written by bash-command-validator.sh, read by prd-enforcement.sh)
+.claude/.last-test-run
+
 # Claude agents
 .claude/agents/
 
