@@ -33,7 +33,7 @@ async function createNewDocument(page: Page) {
   )
 
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
-  await expect(page.locator('input[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 })
+  await expect(page.locator('textarea[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 })
 }
 
 // Helper to login
@@ -66,7 +66,7 @@ test.describe('Data Integrity - Document Persistence', () => {
     await createNewDocument(page)
 
     const editor = page.locator('.ProseMirror')
-    const titleInput = page.locator('input[placeholder="Untitled"]')
+    const titleInput = page.locator('textarea[placeholder="Untitled"]')
 
     // Set title
     await titleInput.click()
@@ -166,7 +166,7 @@ test.describe('Data Integrity - Document Persistence', () => {
   test('empty document saves correctly', async ({ page }) => {
     await createNewDocument(page)
 
-    const titleInput = page.locator('input[placeholder="Untitled"]')
+    const titleInput = page.locator('textarea[placeholder="Untitled"]')
 
     // Just set title, leave content empty
     await titleInput.click()

@@ -62,7 +62,7 @@ test.describe('Edge Cases', () => {
     const longTitle = 'A'.repeat(200)
 
     // Find the title input - wait for it to be visible first
-    const titleInput = page.locator('input[placeholder="Untitled"]')
+    const titleInput = page.locator('textarea[placeholder="Untitled"]')
     await expect(titleInput).toBeVisible({ timeout: 5000 })
 
     // Click and clear first, then fill (ensures React receives the event properly)
@@ -94,7 +94,7 @@ test.describe('Edge Cases', () => {
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 })
 
     // The title input should have our long title
-    const titleInputAfterReload = page.locator('input').first()
+    const titleInputAfterReload = page.locator('textarea[placeholder="Untitled"]')
     await expect(titleInputAfterReload).toBeVisible({ timeout: 5000 })
 
     // Verify the long title is preserved (check for at least 100 chars - 200 is our target)
@@ -301,7 +301,7 @@ test.describe('Edge Cases', () => {
     // Title with special characters
     const specialTitle = '~!@#$%^&*()_+-={}[]|:;<>,.?/'
 
-    const titleInput = page.locator('input[placeholder="Untitled"]')
+    const titleInput = page.locator('textarea[placeholder="Untitled"]')
     await titleInput.click()
     await titleInput.fill(specialTitle)
 
