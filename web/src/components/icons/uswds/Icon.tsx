@@ -102,20 +102,13 @@ export function Icon({
     return null;
   }
 
-  // Generate unique ID for title if needed
-  const titleId = useMemo(
-    () =>
-      title
-        ? `icon-title-${name}-${Math.random().toString(36).slice(2, 9)}`
-        : undefined,
-    [title, name],
-  );
-
   // Accessibility attributes following USWDS patterns
+  // Note: SVGR-generated components don't forward children, so we use
+  // aria-label instead of aria-labelledby + <title> child element.
   const accessibilityProps = title
     ? {
         role: 'img' as const,
-        'aria-labelledby': titleId,
+        'aria-label': title,
       }
     : {
         'aria-hidden': true as const,
@@ -129,9 +122,7 @@ export function Icon({
         className={className}
         fill="currentColor"
         {...accessibilityProps}
-      >
-        {title && <title id={titleId}>{title}</title>}
-      </LazyIcon>
+      />
     </Suspense>
   );
 }
