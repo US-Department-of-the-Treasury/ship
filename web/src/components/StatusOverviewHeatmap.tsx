@@ -201,18 +201,12 @@ export function StatusOverviewHeatmap({ showArchived = false }: StatusOverviewHe
       return;
     }
 
-    // Can't create without a project allocation
-    if (!projectId) {
-      console.warn('No project allocation for this person/week');
-      return;
-    }
-
     setNavigatingCell({ personId, weekNumber, type });
     try {
       const documentId = await createOrGetWeeklyDocumentId({
         kind: type,
         personId,
-        projectId,
+        projectId: projectId || undefined,
         weekNumber,
       });
       if (documentId) {

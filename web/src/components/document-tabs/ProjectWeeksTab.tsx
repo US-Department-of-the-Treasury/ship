@@ -143,7 +143,7 @@ export default function ProjectWeeksTab({ documentId }: DocumentTabProps) {
       const createdDocumentId = await createOrGetWeeklyDocumentId({
         kind: type,
         personId,
-        projectId: documentId,
+        projectId: documentId || undefined,
         weekNumber,
       });
       if (createdDocumentId) {
