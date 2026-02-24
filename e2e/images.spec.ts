@@ -42,7 +42,7 @@ async function createNewDocument(page: Page) {
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
 
   // Verify this is a NEW document (title should be "Untitled")
-  await expect(page.locator('input[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 });
+  await expect(page.locator('textarea[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 });
 }
 
 // Create a test image file path

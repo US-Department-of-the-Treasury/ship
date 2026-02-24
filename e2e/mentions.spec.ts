@@ -33,7 +33,7 @@ async function createNewDocument(page: Page) {
 
   // Verify this is a NEW document (title should be "Untitled")
   // The title input has placeholder="Untitled" and should be empty or show "Untitled"
-  await expect(page.locator('input[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 });
+  await expect(page.locator('textarea[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 });
 }
 
 test.describe('Mentions', () => {

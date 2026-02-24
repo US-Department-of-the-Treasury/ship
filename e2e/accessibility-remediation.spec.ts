@@ -836,7 +836,7 @@ test.describe('Phase 2: Serious Violations', () => {
       const propertiesAside = page.locator('aside[aria-label="Document properties"], #properties-portal')
       const hasProperties = await propertiesAside.count() > 0
       // Only require properties if we successfully navigated to a document editor
-      if (await page.locator('input[placeholder="Untitled"]').isVisible().catch(() => false)) {
+      if (await page.locator('textarea[placeholder="Untitled"]').isVisible().catch(() => false)) {
         expect(hasProperties).toBeTruthy()
       }
     })

@@ -181,7 +181,7 @@ test.describe('Real Integration - Document Editor', () => {
     await page.waitForTimeout(500);
 
     // Click the title input
-    const titleInput = page.locator('input[placeholder="Untitled"]');
+    const titleInput = page.locator('textarea[placeholder="Untitled"]');
     await expect(titleInput).toBeVisible({ timeout: 5000 });
     await titleInput.click();
     await titleInput.fill('Test Title'); // Type something to ensure it's focused

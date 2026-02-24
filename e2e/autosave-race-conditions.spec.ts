@@ -38,7 +38,7 @@ async function createNewDocument(page: Page) {
   );
 
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
-  await expect(page.locator('input[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 });
+  await expect(page.locator('textarea[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 });
 }
 
 // Helper to create a new issue
@@ -53,7 +53,7 @@ async function createNewIssue(page: Page) {
 
   await page.waitForURL(/\/documents\/[a-f0-9-]+/, { timeout: 10000 });
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
-  await expect(page.locator('input[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 });
+  await expect(page.locator('textarea[placeholder="Untitled"]')).toBeVisible({ timeout: 3000 });
 }
 
 test.describe('Auto-Save Race Conditions - Title Field', () => {
@@ -64,7 +64,7 @@ test.describe('Auto-Save Race Conditions - Title Field', () => {
   test('type-pause-type: stale response does not overwrite local title', async ({ page }) => {
     await createNewDocument(page);
 
-    const titleInput = page.locator('input[placeholder="Untitled"]');
+    const titleInput = page.locator('textarea[placeholder="Untitled"]');
 
     // Type first part of title
     await titleInput.click();
@@ -86,13 +86,13 @@ test.describe('Auto-Save Race Conditions - Title Field', () => {
     // Reload to verify "Hello World" was actually saved
     await page.reload();
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('input[placeholder="Untitled"]').or(page.locator('input').first())).toHaveValue('Hello World');
+    await expect(page.locator('textarea[placeholder="Untitled"]')).toHaveValue('Hello World');
   });
 
   test('rapid typing with throttle: intermediate saves do not overwrite', async ({ page }) => {
     await createNewDocument(page);
 
-    const titleInput = page.locator('input[placeholder="Untitled"]');
+    const titleInput = page.locator('textarea[placeholder="Untitled"]');
     // Use focus() instead of click() and wait for focus to be established
     await titleInput.focus();
     await expect(titleInput).toBeFocused({ timeout: 2000 });
@@ -113,13 +113,13 @@ test.describe('Auto-Save Race Conditions - Title Field', () => {
     // Reload to verify full title was saved
     await page.reload();
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('input').first()).toHaveValue(fullTitle);
+    await expect(page.locator('textarea[placeholder="Untitled"]')).toHaveValue(fullTitle);
   });
 
   test('multiple pause-resume cycles preserve all changes', async ({ page }) => {
     await createNewDocument(page);
 
-    const titleInput = page.locator('input[placeholder="Untitled"]');
+    const titleInput = page.locator('textarea[placeholder="Untitled"]');
     await titleInput.click();
 
     // First segment
@@ -140,13 +140,13 @@ test.describe('Auto-Save Race Conditions - Title Field', () => {
     // Reload to verify
     await page.reload();
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('input').first()).toHaveValue('Part 1 and Part 2 and Part 3');
+    await expect(page.locator('textarea[placeholder="Untitled"]')).toHaveValue('Part 1 and Part 2 and Part 3');
   });
 
   test('issue title: stale response does not overwrite', async ({ page }) => {
     await createNewIssue(page);
 
-    const titleInput = page.locator('input[placeholder="Untitled"]');
+    const titleInput = page.locator('textarea[placeholder="Untitled"]');
 
     // Type first part
     await titleInput.click();
@@ -167,7 +167,7 @@ test.describe('Auto-Save Race Conditions - Title Field', () => {
     // Reload to verify
     await page.reload();
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('input').first()).toHaveValue('Bug: login fails');
+    await expect(page.locator('textarea[placeholder="Untitled"]')).toHaveValue('Bug: login fails');
   });
 });
 
@@ -196,7 +196,7 @@ test.describe('Auto-Save Race Conditions - Throttle Behavior', () => {
 
     await createNewDocument(page);
 
-    const titleInput = page.locator('input[placeholder="Untitled"]');
+    const titleInput = page.locator('textarea[placeholder="Untitled"]');
     await titleInput.click();
 
     // Type continuously for 3 seconds
@@ -217,7 +217,7 @@ test.describe('Auto-Save Race Conditions - Throttle Behavior', () => {
     const currentValue = await titleInput.inputValue();
     await page.reload();
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('input').first()).toHaveValue(currentValue);
+    await expect(page.locator('textarea[placeholder="Untitled"]')).toHaveValue(currentValue);
   });
 });
 
@@ -229,7 +229,7 @@ test.describe('Auto-Save Race Conditions - Error Recovery', () => {
   test('failed save is retried silently', async ({ page, context }) => {
     await createNewDocument(page);
 
-    const titleInput = page.locator('input[placeholder="Untitled"]');
+    const titleInput = page.locator('textarea[placeholder="Untitled"]');
     await titleInput.click();
 
     // Set up route to fail first request, succeed on retry
@@ -264,7 +264,7 @@ test.describe('Auto-Save Race Conditions - Error Recovery', () => {
     await page.reload();
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 5000 });
     // Should have the title (either from retry or subsequent save)
-    const finalTitle = await page.locator('input').first().inputValue();
+    const finalTitle = await page.locator('textarea[placeholder="Untitled"]').inputValue();
     expect(finalTitle).toContain('Retryable');
   });
 });
@@ -287,7 +287,7 @@ test.describe('Auto-Save Race Conditions - Slow Network', () => {
       await route.continue();
     });
 
-    const titleInput = page.locator('input[placeholder="Untitled"]');
+    const titleInput = page.locator('textarea[placeholder="Untitled"]');
     await titleInput.click();
 
     // Type "Slow" - this will trigger a save that takes 2s to respond
