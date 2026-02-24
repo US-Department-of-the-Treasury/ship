@@ -315,9 +315,14 @@ export function UnifiedDocumentPage() {
       navigate('/sprints');
     } else if (document?.document_type === 'program') {
       navigate('/programs');
-    } else if ((document?.document_type === 'weekly_plan' || document?.document_type === 'weekly_retro') && weeklyDocProjectId) {
-      // Navigate back to project's Weeks tab
-      navigate(`/documents/${weeklyDocProjectId}/weeks`);
+    } else if (document?.document_type === 'weekly_plan' || document?.document_type === 'weekly_retro') {
+      if (weeklyDocProjectId) {
+        // Navigate back to project's Weeks tab if project association exists
+        navigate(`/documents/${weeklyDocProjectId}/weeks`);
+      } else {
+        // Navigate to My Week dashboard for standalone plans/retros
+        navigate('/my-week');
+      }
     } else {
       navigate('/docs');
     }

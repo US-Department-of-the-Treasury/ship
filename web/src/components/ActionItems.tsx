@@ -64,13 +64,13 @@ function ActionItemRow({ item }: { item: ActionItem }) {
 
     // For weekly plan/retro types, create/find the actual document before navigating
     const weeklyDocKind = getWeeklyDocumentKindForAccountabilityType(item.accountability_type);
-    if (weeklyDocKind && item.person_id && item.project_id && item.week_number != null) {
+    if (weeklyDocKind && item.person_id && item.week_number != null) {
       setNavigating(true);
       try {
         const documentId = await createOrGetWeeklyDocumentId({
           kind: weeklyDocKind,
           personId: item.person_id,
-          projectId: item.project_id,
+          projectId: item.project_id || undefined,
           weekNumber: item.week_number,
         });
         if (documentId) {

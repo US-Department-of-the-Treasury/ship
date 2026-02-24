@@ -43,7 +43,7 @@ export function isWeeklyDocumentAccountabilityType(
 interface CreateOrGetWeeklyDocumentParams {
   kind: WeeklyDocumentKind;
   personId: string;
-  projectId: string;
+  projectId?: string;
   weekNumber: number;
 }
 
@@ -54,11 +54,14 @@ export async function createOrGetWeeklyDocumentId({
   weekNumber,
 }: CreateOrGetWeeklyDocumentParams): Promise<string | null> {
   const endpoint = kind === 'retro' ? '/api/weekly-retros' : '/api/weekly-plans';
-  const response = await apiPost(endpoint, {
+  const body: Record<string, unknown> = {
     person_id: personId,
-    project_id: projectId,
     week_number: weekNumber,
-  });
+  };
+  if (projectId) {
+    body.project_id = projectId;
+  }
+  const response = await apiPost(endpoint, body);
 
   if (!response.ok) return null;
 

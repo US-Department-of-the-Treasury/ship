@@ -128,13 +128,13 @@ export function ActionItemsModal({ open, onClose }: ActionItemsModalProps) {
 
   const handleItemClick = async (item: ActionItem) => {
     const weeklyDocKind = getWeeklyDocumentKindForAccountabilityType(item.accountability_type);
-    if (weeklyDocKind && item.person_id && item.project_id && item.week_number != null) {
+    if (weeklyDocKind && item.person_id && item.week_number != null) {
       setNavigatingItemId(item.id);
       try {
         const documentId = await createOrGetWeeklyDocumentId({
           kind: weeklyDocKind,
           personId: item.person_id,
-          projectId: item.project_id,
+          projectId: item.project_id || undefined,
           weekNumber: item.week_number,
         });
         const fallbackUrl = item.accountability_target_id
