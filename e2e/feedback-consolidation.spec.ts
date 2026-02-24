@@ -1,5 +1,9 @@
 import { test, expect } from './fixtures/isolated-env';
 
+// Force serial execution — tests in this file mutate shared state (accept/reject triage issues)
+// which causes flakiness when fullyParallel allows describe blocks to interleave
+test.describe.configure({ mode: 'serial' });
+
 /**
  * Feedback Consolidation Tests
  *
@@ -50,12 +54,13 @@ test.describe('Issues List: Source Display', () => {
     await page.goto('/issues');
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
+    // Wait for issues table to load before interacting with filters
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
+
     // Click "Needs Triage" filter to show triage issues (external issues are seeded as state=triage)
-    const triageTab = page.locator('button, [role="tab"]', { hasText: 'Needs Triage' });
-    if (await triageTab.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await triageTab.click();
-      await page.waitForTimeout(1000);
-    }
+    const triageTab = page.getByRole('tab', { name: /needs triage/i });
+    await expect(triageTab).toBeVisible({ timeout: 10000 });
+    await triageTab.click();
 
     // Find an external issue (seeded: 'External feature request from user')
     const externalIssue = page.locator('tr[role="row"]', { hasText: 'External feature request' });
@@ -216,28 +221,13 @@ test.describe('Program View: Feedback Tab Removed', () => {
     // Click Issues tab
     await page.getByRole('tab', { name: /issues/i }).click();
 
-    // Wait for the issues tab content to load
-    await page.waitForTimeout(2000);
-
-    // Check if there are any issues - this depends on seed data
-    const noIssuesMessage = page.getByText('No issues found');
+    // Wait for issues table to load (lazy-loaded tab + API fetch can be slow under load)
     const tableRows = page.locator('table tbody tr');
+    await expect(tableRows.first()).toBeVisible({ timeout: 15000 });
 
-    // Wait a bit for data to load
-    await page.waitForTimeout(1000);
-
-    // Check if we have a "No issues found" message
-    const hasNoIssues = await noIssuesMessage.isVisible().catch(() => false);
-
-    // Issues should exist in seed data - fail if they don't
-    expect(hasNoIssues).toBe(false)
-
-    // Wait for issues table to load and verify issues are displayed
-    await expect(tableRows.first()).toBeVisible({ timeout: 10000 });
-
-    // Verify at least some issues are shown (program should have issues)
+    // Verify issues exist in seed data (implicitly confirms "No issues found" is not showing)
     const issueCount = await tableRows.count();
-    expect(issueCount).toBeGreaterThan(0);
+    expect(issueCount, 'Seed data should provide issues for Ship Core program').toBeGreaterThan(0);
   });
 });
 
@@ -249,17 +239,23 @@ test.describe('Data Migration', () => {
     await page.goto('/issues');
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
+    // Wait for table data to load before interacting with filters
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
+
     // Filter to triage
-    await page.getByRole('tab', { name: /needs triage/i }).click();
+    const triageTab = page.getByRole('tab', { name: /needs triage/i });
+    await expect(triageTab).toBeVisible({ timeout: 10000 });
+    await triageTab.click();
 
     // External issues in triage exist (represents migrated submitted feedback)
-    // Use tbody to skip header row
+    // Use tbody to skip header row — wait for filtered results to appear
     const triageIssues = page.locator('tbody tr[role="row"]');
+    await expect(triageIssues.first()).toBeVisible({ timeout: 10000 });
+
     const count = await triageIssues.count();
     expect(count).toBeGreaterThan(0);
 
     // Verify at least one external issue exists in triage (migrated feedback)
-    // Note: All issues in triage should be external (from public feedback form)
     await expect(triageIssues.first().locator('span:text-is("External")')).toBeVisible({ timeout: 5000 });
   });
 
@@ -288,6 +284,9 @@ test.describe('Data Migration', () => {
     await page.goto('/issues');
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
+    // Wait for table data to fully load
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
+
     // All external issues should show "External" not "feedback"
     await expect(page.locator('span:text-is("External")').first()).toBeVisible({ timeout: 10000 });
     await expect(page.locator('span:text-is("feedback")')).not.toBeVisible();
@@ -299,6 +298,7 @@ test.describe('Data Migration', () => {
     await expect(page.locator('h1', { hasText: 'Issues' })).toBeVisible({ timeout: 10000 });
 
     // Wait for issue table data to fully load
+    await expect(page.locator('table tbody tr').first()).toBeVisible({ timeout: 15000 });
     await page.waitForLoadState('networkidle');
 
     // Internal issues should show "Internal"

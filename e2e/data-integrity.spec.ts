@@ -83,13 +83,21 @@ test.describe('Data Integrity - Document Persistence', () => {
     await page.waitForTimeout(200)
 
     // Heading using markdown shortcut (## at start of line)
-    await page.keyboard.type('## My Test Heading')
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(300)
+    // Retry if markdown conversion doesn't trigger — under load, keystrokes may be buffered
+    await expect(async () => {
+      // Clear editor content and try again
+      await editor.click()
+      await page.keyboard.press('Meta+a')
+      await page.keyboard.press('Delete')
+      await page.waitForTimeout(200)
+      await page.keyboard.type('## My Test Heading', { delay: 20 })
+      await page.keyboard.press('Enter')
+      await expect(editor.locator('h2')).toContainText('My Test Heading', { timeout: 5000 })
+    }).toPass({ timeout: 15000, intervals: [1000, 2000, 3000] })
 
     // Ensure editor still has focus after markdown conversion
     await editor.click()
-    await page.waitForTimeout(200)
+    await expect(editor).toBeFocused({ timeout: 3000 })
 
     // Plain paragraph content - focus on data integrity, not formatting shortcuts
     await page.keyboard.type('This is regular paragraph text with unique identifier XYZ123 to verify persistence.')
