@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   Theme CSS custom properties (RGB triplets for Tailwind alpha)
+   Dark values exactly match the original hex palette.
+   ============================================================ */
+:root {
+  --color-background: 13 13 13;       /* #0d0d0d */
+  --color-foreground: 245 245 245;    /* #f5f5f5 */
+  --color-muted: 138 138 138;         /* #8a8a8a */
+  --color-border: 38 38 38;           /* #262626 */
+  --color-accent: 0 94 162;           /* #005ea2 */
+  --color-accent-hover: 0 113 188;    /* #0071bc */
+
+  /* Status indicator colors (dark-bg defaults) */
+  --status-red: #fca5a5;              /* red-300 */
+  --status-amber: #fcd34d;            /* amber-300 */
+  --status-green: #86efac;            /* green-300 */
+  --status-green-bold: #4ade80;       /* green-400 */
+  --status-muted-dim: rgb(138 138 138 / 0.5); /* muted/50 */
+  --status-muted-mid: rgb(138 138 138 / 0.6); /* muted/60 */
+  --status-dot-red: #ef4444;           /* red-500 */
+  --status-dot-amber: #f59e0b;         /* amber-500 */
+  --status-dot-green: #22c55e;         /* green-500 */
+  --zen-pill-bg: #1a1a1a;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -1029,4 +1054,246 @@ span[data-emoji] {
   padding-left: 26px;
   color: rgba(251, 146, 60, 0.8);
   font-style: italic;
+}
+
+/* ============================================================
+   LIGHT THEME OVERRIDES
+   Purely additive — no existing dark mode rules are modified.
+   ============================================================ */
+
+/* Light theme Tailwind color variables */
+[data-theme="light"] {
+  --color-background: 255 255 255;    /* #ffffff */
+  --color-foreground: 23 23 23;       /* #171717 */
+  --color-muted: 99 99 99;            /* #636363 — 6.01:1 on white, 5.51:1 on surface */
+  --color-border: 229 229 229;        /* #e5e5e5 */
+  --color-accent: 0 94 162;           /* #005ea2 — same blue */
+  --color-accent-hover: 0 77 138;     /* #004d8a — darker on hover for light bg */
+
+  /* Status indicator colors — darker variants for light backgrounds */
+  --status-red: #b91c1c;              /* red-700 — 6.47:1 on white */
+  --status-amber: #b45309;            /* amber-700 — 5.02:1 on white */
+  --status-green: #15803d;            /* green-700 — 5.02:1 on white */
+  --status-green-bold: #15803d;       /* green-700 — 5.02:1 on white */
+  --status-muted-dim: #636363;        /* full muted — 6.01:1 on white */
+  --status-muted-mid: #636363;        /* full muted — 6.01:1 on white */
+  --status-dot-red: #dc2626;           /* red-600 — 3.76:1 on white (passes 3:1) */
+  --status-dot-amber: #d97706;         /* amber-600 — 3.19:1 on white */
+  --status-dot-green: #16a34a;         /* green-600 — 3.30:1 on white */
+  --zen-pill-bg: #f3f4f6;             /* light surface instead of dark */
+}
+
+/* Body & root */
+[data-theme="light"] body {
+  background-color: #ffffff;
+  color: #171717;
+}
+
+/* Focus outline — keep the same blue, it works on both */
+
+/* Placeholder text */
+[data-theme="light"] input::placeholder {
+  color: #a3a3a3;
+}
+
+/* Editor: code blocks & pre — keep dark for readability (like GitHub) */
+/* Syntax highlighting stays dark — no overrides needed */
+
+/* Editor: blockquote */
+[data-theme="light"] .ProseMirror blockquote {
+  border-left-color: #d4d4d4;
+  color: #636363;
+}
+
+/* Editor: list markers */
+[data-theme="light"] .ProseMirror li::marker {
+  color: #171717;
+}
+
+/* Editor: empty paragraph placeholder */
+[data-theme="light"] .ProseMirror p.is-editor-empty:first-child::before {
+  color: #a3a3a3;
+}
+
+/* Editor: details/toggle block */
+[data-theme="light"] .ProseMirror .details-block:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme="light"] .ProseMirror .details-summary {
+  color: #171717;
+}
+
+[data-theme="light"] .ProseMirror .details-summary:empty::before {
+  color: #a3a3a3;
+}
+
+[data-theme="light"] .ProseMirror .details-content {
+  color: #171717;
+}
+
+[data-theme="light"] .ProseMirror .toggle-arrow:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* Editor: tables */
+[data-theme="light"] .ProseMirror td,
+[data-theme="light"] .ProseMirror th {
+  border-color: #d4d4d4;
+}
+
+[data-theme="light"] .ProseMirror th {
+  background-color: #f5f5f5;
+}
+
+/* Editor: drag handle */
+[data-theme="light"] .editor-drag-handle {
+  color: #6b6b6b;
+}
+
+[data-theme="light"] .editor-drag-handle:hover {
+  background: #e5e5e5;
+  color: #525252;
+}
+
+/* Editor: task list checkboxes */
+[data-theme="light"] .ProseMirror ul.task-list li.task-item > label input[type="checkbox"] {
+  border-color: #6b6b6b;
+}
+
+[data-theme="light"] .ProseMirror ul.task-list li.task-item[data-checked="true"] > div {
+  color: #6b6b6b;
+}
+
+/* File attachments */
+[data-theme="light"] .file-attachment {
+  background: #f5f5f5;
+  border-color: #e5e5e5;
+}
+
+[data-theme="light"] .file-attachment:hover {
+  background: #ebebeb;
+  border-color: #d4d4d4;
+}
+
+[data-theme="light"] .file-attachment-icon {
+  background: #e5e5e5;
+}
+
+[data-theme="light"] .file-attachment-name {
+  color: #171717;
+}
+
+[data-theme="light"] .file-attachment-meta {
+  color: #636363;
+}
+
+[data-theme="light"] .file-attachment-progress {
+  background: #e5e5e5;
+}
+
+[data-theme="light"] .file-attachment-download {
+  color: #636363;
+}
+
+[data-theme="light"] .file-attachment-download:hover {
+  background: #e5e5e5;
+  color: #171717;
+}
+
+/* Table of contents */
+[data-theme="light"] .toc-container {
+  border-color: #d4d4d4;
+  background: #f5f5f5;
+}
+
+[data-theme="light"] .toc-header {
+  color: #171717;
+}
+
+[data-theme="light"] .toc-empty {
+  color: #636363;
+}
+
+[data-theme="light"] .toc-item {
+  color: #525252;
+}
+
+[data-theme="light"] .toc-item:hover {
+  background: #e5e5e5;
+  color: #171717;
+}
+
+[data-theme="light"] .toc-item-h3 {
+  color: #636363;
+}
+
+[data-theme="light"] .toc-item-h3:hover {
+  color: #171717;
+}
+
+/* Comment threads */
+[data-theme="light"] .comment-thread-inline {
+  background: rgba(243, 244, 246, 0.95);
+  border-color: #d4d4d4;
+}
+
+[data-theme="light"] .comment-quoted-text {
+  border-bottom-color: #e5e5e5;
+  color: #636363;
+}
+
+[data-theme="light"] .comment-author {
+  color: #171717;
+}
+
+[data-theme="light"] .comment-time {
+  color: #6b6b6b;
+}
+
+[data-theme="light"] .comment-body {
+  color: #404040;
+}
+
+[data-theme="light"] .comment-resolve-btn {
+  border-color: #d4d4d4;
+  color: #636363;
+}
+
+[data-theme="light"] .comment-reply,
+[data-theme="light"] .comment-reply-area {
+  border-top-color: #e5e5e5;
+}
+
+[data-theme="light"] .comment-reply-input,
+[data-theme="light"] .comment-pending-field {
+  background: #ffffff;
+  border-color: #d4d4d4;
+  color: #171717;
+}
+
+[data-theme="light"] .comment-reply-input::placeholder,
+[data-theme="light"] .comment-pending-field::placeholder {
+  color: #a3a3a3;
+}
+
+[data-theme="light"] .comment-thread-resolved {
+  color: #636363;
+}
+
+[data-theme="light"] .comment-pending-label {
+  color: #636363;
+}
+
+[data-theme="light"] .comment-pending-hint {
+  color: #6b6b6b;
+}
+
+/* AI scoring */
+[data-theme="light"] .ai-scoring-text {
+  color: #525252;
+}
+
+[data-theme="light"] .ai-scoring-badge {
+  background: rgba(0, 0, 0, 0.06);
 }
