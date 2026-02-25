@@ -56,3 +56,26 @@ Started: 2026-02-25
   - Electric delivers JSONB as parsed objects, not strings — parseProperties must handle both
   - Plan items preview not available since content column excluded from shapes (acceptable trade-off)
 - Next: Verify real-time sync works end-to-end
+
+---
+
+## Iteration 5 - Verify real-time sync works end-to-end
+- Completed: Verified INSERT and UPDATE via psql appear on MyWeekPage in real-time without page reload
+- Files changed: (none - verification only)
+- Learnings:
+  - INSERT standup via psql: appeared on page within ~2 seconds (Playwright waitFor confirmed)
+  - UPDATE title via psql: updated on page within ~2 seconds
+  - Electric long-polling works correctly through the proxy
+  - Session timeout (15 min) expired during UI create test - expected behavior
+  - No full page refreshes needed for sync - Electric streaming works
+- Next: Document JSONB/shape compatibility findings
+
+---
+
+## Iteration 6 - Document JSONB/shape compatibility findings
+- Completed: Created docs/electric-tanstack-findings.md with comprehensive analysis of each shape, JSONB gaps, schema change recommendations, and go/no-go recommendation
+- Files changed: docs/electric-tanstack-findings.md (new)
+- Learnings: see findings document for full details
+- ALL STORIES COMPLETE
+
+---

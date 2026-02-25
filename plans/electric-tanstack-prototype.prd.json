@@ -119,7 +119,7 @@
         "myweek-live-queries"
       ],
       "priority": "medium",
-      "passes": false
+      "passes": true
     },
     {
       "id": "compatibility-findings",
@@ -139,7 +139,7 @@
         "realtime-sync-verification"
       ],
       "priority": "medium",
-      "passes": false
+      "passes": true
     }
   ],
   "postCompletion": {
