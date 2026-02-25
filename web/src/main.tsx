@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
@@ -248,6 +248,16 @@ function AppRoutes() {
   );
 }
 
+// Debug helper: exposes window.__navigate for Playwright client-side navigation
+function DebugNavigator() {
+  const navigate = useNavigate();
+  React.useEffect(() => {
+    (window as any).__navigate = (path: string) => navigate(path);
+    return () => { delete (window as any).__navigate; };
+  }, [navigate]);
+  return null;
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <PersistQueryClientProvider
@@ -257,6 +267,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <ToastProvider>
         <MutationErrorToast />
         <BrowserRouter>
+          <DebugNavigator />
           <ReviewQueueProvider>
             <App />
           </ReviewQueueProvider>

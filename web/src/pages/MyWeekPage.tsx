@@ -1,6 +1,25 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useMyWeekQuery, StandupSlot } from '@/hooks/useMyWeekQuery';
+import { useLiveQuery } from '@tanstack/react-db';
+import { and, eq, isNull } from '@tanstack/db';
+import { useAuth } from '@/hooks/useAuth';
+import {
+  workspacesCollection,
+  personsCollection,
+  weeklyPlansCollection,
+  weeklyRetrosCollection,
+  standupsCollection,
+  sprintsCollection,
+  projectsCollection,
+} from '@/electric/collections';
+import {
+  parseProperties,
+  type PersonProperties,
+  type WeeklyPlanProperties,
+  type WeeklyRetroProperties,
+  type StandupProperties,
+  type SprintProperties,
+} from '@/electric/schemas';
 import { apiPost } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
@@ -25,17 +44,190 @@ function isDateToday(dateStr: string): boolean {
   return dateStr === todayStr;
 }
 
+// Compute week number from workspace sprint start date
+function computeWeekInfo(sprintStartDate: string, targetWeekNumber?: number) {
+  const workspaceStartDate = new Date(sprintStartDate + 'T00:00:00Z');
+  const sprintDuration = 7;
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const daysSinceStart = Math.floor((today.getTime() - workspaceStartDate.getTime()) / (1000 * 60 * 60 * 24));
+  const currentWeekNumber = Math.floor(daysSinceStart / sprintDuration) + 1;
+
+  const weekNumber = targetWeekNumber ?? currentWeekNumber;
+  const isCurrent = weekNumber === currentWeekNumber;
+
+  const weekStart = new Date(workspaceStartDate);
+  weekStart.setUTCDate(weekStart.getUTCDate() + (weekNumber - 1) * sprintDuration);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + sprintDuration - 1);
+
+  // Build 7-day date array for standups
+  const standupDates: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setUTCDate(d.getUTCDate() + i);
+    standupDates.push(d.toISOString().split('T')[0] as string);
+  }
+
+  return {
+    weekNumber,
+    currentWeekNumber,
+    isCurrent,
+    startDate: weekStart.toISOString().split('T')[0] as string,
+    endDate: weekEnd.toISOString().split('T')[0] as string,
+    previousWeekNumber: weekNumber - 1,
+    standupDates,
+  };
+}
+
 export function MyWeekPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const weekNumberParam = searchParams.get('week_number');
-  const weekNumber = weekNumberParam ? parseInt(weekNumberParam, 10) : undefined;
+  const targetWeekNumber = weekNumberParam ? parseInt(weekNumberParam, 10) : undefined;
 
-  const { data, isLoading, error } = useMyWeekQuery(weekNumber);
   const [creating, setCreating] = useState<string | null>(null);
 
+  // --- Electric/TanStack DB live queries ---
+
+  // 1. Get workspace (single row, no filtering needed)
+  const { data: workspace } = useLiveQuery((q) =>
+    q.from({ ws: workspacesCollection }).findOne()
+  );
+
+  // 2. Get current user's person document (JSONB property filter)
+  const userId = user?.id;
+  const { data: person } = useLiveQuery(
+    (q) => userId
+      ? q.from({ p: personsCollection })
+          .fn.where((row) => parseProperties<PersonProperties>(row.p)?.user_id === userId)
+          .findOne()
+      : null,
+    [userId],
+  );
+
+  // Compute week info from workspace sprint_start_date (pure computation, not a filter)
+  const weekInfo = useMemo(() => {
+    if (!workspace) return null;
+    return computeWeekInfo(workspace.sprint_start_date, targetWeekNumber);
+  }, [workspace, targetWeekNumber]);
+
+  // 3. Get weekly plan — fn.select extracts submitted_at from JSONB
+  const personId = person?.id;
+  const weekNumber = weekInfo?.weekNumber;
+  const { data: plan } = useLiveQuery(
+    (q) => personId && weekNumber != null
+      ? q.from({ plan: weeklyPlansCollection })
+          .where(({ plan }) => and(isNull(plan.archived_at), isNull(plan.deleted_at)))
+          .fn.where((row) => {
+            const props = parseProperties<WeeklyPlanProperties>(row.plan);
+            return props?.person_id === personId && props?.week_number === weekNumber;
+          })
+          .fn.select((row) => ({
+            id: row.plan.id,
+            title: row.plan.title,
+            submitted_at: parseProperties<WeeklyPlanProperties>(row.plan)?.submitted_at ?? null,
+          }))
+          .findOne()
+      : null,
+    [personId, weekNumber],
+  );
+
+  // 4. Get weekly retro — fn.select extracts submitted_at from JSONB
+  const { data: retro } = useLiveQuery(
+    (q) => personId && weekNumber != null
+      ? q.from({ retro: weeklyRetrosCollection })
+          .where(({ retro }) => and(isNull(retro.archived_at), isNull(retro.deleted_at)))
+          .fn.where((row) => {
+            const props = parseProperties<WeeklyRetroProperties>(row.retro);
+            return props?.person_id === personId && props?.week_number === weekNumber;
+          })
+          .fn.select((row) => ({
+            id: row.retro.id,
+            title: row.retro.title,
+            submitted_at: parseProperties<WeeklyRetroProperties>(row.retro)?.submitted_at ?? null,
+          }))
+          .findOne()
+      : null,
+    [personId, weekNumber],
+  );
+
+  // 5. Get previous week's retro — fn.select extracts submitted_at from JSONB
+  const prevWeekNumber = weekInfo?.previousWeekNumber ?? 0;
+  const { data: previousRetro } = useLiveQuery(
+    (q) => personId && prevWeekNumber > 0
+      ? q.from({ retro: weeklyRetrosCollection })
+          .where(({ retro }) => and(isNull(retro.archived_at), isNull(retro.deleted_at)))
+          .fn.where((row) => {
+            const props = parseProperties<WeeklyRetroProperties>(row.retro);
+            return props?.person_id === personId && props?.week_number === prevWeekNumber;
+          })
+          .fn.select((row) => ({
+            id: row.retro.id,
+            submitted_at: parseProperties<WeeklyRetroProperties>(row.retro)?.submitted_at ?? null,
+          }))
+          .findOne()
+      : null,
+    [personId, prevWeekNumber],
+  );
+
+  // 6. Get standups — fn.select extracts date from JSONB so render doesn't need parseProperties
+  const { data: userStandups } = useLiveQuery(
+    (q) => userId
+      ? q.from({ s: standupsCollection })
+          .where(({ s }) => isNull(s.deleted_at))
+          .fn.where((row) => parseProperties<StandupProperties>(row.s)?.author_id === userId)
+          .fn.select((row) => ({
+            id: row.s.id,
+            title: row.s.title,
+            date: parseProperties<StandupProperties>(row.s)?.date ?? '',
+          }))
+      : null,
+    [userId],
+  );
+
+  // 7. Get projects via sprint subquery join
+  //    Subquery: filter sprints by person + week, extract project_id via fn.select
+  //    Main: inner join projects on project_id — no imperative bridging code needed
+  const { data: projects } = useLiveQuery(
+    (q) => personId && weekNumber != null
+      ? (() => {
+          const sprintSub = q
+            .from({ sp: sprintsCollection })
+            .fn.where((row) => {
+              const props = parseProperties<SprintProperties>(row.sp);
+              return props?.sprint_number === weekNumber
+                && (props?.assignee_ids?.includes(personId) ?? false);
+            })
+            .fn.select((row) => ({
+              project_id: parseProperties<SprintProperties>(row.sp)?.project_id ?? '',
+            }));
+
+          return q
+            .from({ proj: projectsCollection })
+            .where(({ proj }) => isNull(proj.archived_at))
+            .innerJoin(
+              { sprint: sprintSub },
+              ({ proj, sprint }) => eq(proj.id, sprint.project_id)
+            )
+            .fn.select((row) => ({
+              id: row.proj.id,
+              title: row.proj.title,
+              program_name: null as string | null,
+            }));
+        })()
+      : null,
+    [personId, weekNumber],
+  );
+
+  // --- Derived state ---
+  const isLoading = !workspace || !person || !weekInfo;
+  const projectList = projects ?? [];
+
   const navigateToWeek = (wn: number) => {
-    if (data && wn === data.week.current_week_number) {
+    if (weekInfo && wn === weekInfo.currentWeekNumber) {
       setSearchParams({});
     } else {
       setSearchParams({ week_number: String(wn) });
@@ -43,12 +235,12 @@ export function MyWeekPage() {
   };
 
   const handleCreatePlan = async () => {
-    if (!data) return;
+    if (!person || !weekInfo) return;
     setCreating('plan');
     try {
       const res = await apiPost('/api/weekly-plans', {
-        person_id: data.person_id,
-        week_number: data.week.week_number,
+        person_id: person.id,
+        week_number: weekInfo.weekNumber,
       });
       if (res.ok) {
         const doc = await res.json();
@@ -60,11 +252,11 @@ export function MyWeekPage() {
   };
 
   const handleCreateRetro = async (weekNum: number) => {
-    if (!data) return;
+    if (!person) return;
     setCreating('retro');
     try {
       const res = await apiPost('/api/weekly-retros', {
-        person_id: data.person_id,
+        person_id: person.id,
         week_number: weekNum,
       });
       if (res.ok) {
@@ -97,20 +289,20 @@ export function MyWeekPage() {
     );
   }
 
-  if (error || !data) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-sm text-red-400">Failed to load week data</p>
-      </div>
-    );
-  }
+  const week = {
+    week_number: weekInfo.weekNumber,
+    current_week_number: weekInfo.currentWeekNumber,
+    start_date: weekInfo.startDate,
+    end_date: weekInfo.endDate,
+    is_current: weekInfo.isCurrent,
+  };
 
-  const { week, plan, retro, previous_retro, standups, projects } = data;
-  const showPreviousRetroNudge = week.is_current
-    && previous_retro
-    && previous_retro.id !== null
-    ? !previous_retro.submitted_at
-    : week.is_current && previous_retro && previous_retro.id === null;
+  const planSubmittedAt = plan?.submitted_at ?? null;
+  const retroSubmittedAt = retro?.submitted_at ?? null;
+
+  const showPreviousRetroNudge = week.is_current && prevWeekNumber > 0 && (
+    previousRetro === undefined || !previousRetro.submitted_at
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -149,11 +341,11 @@ export function MyWeekPage() {
       <div className="max-w-3xl mx-auto px-6 py-8">
 
         {/* Project Assignments */}
-        {projects.length > 0 && (
+        {projectList.length > 0 && (
           <section className="mb-6">
             <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Assigned Projects</h2>
             <div className="space-y-1.5">
-              {projects.map(project => (
+              {projectList.map(project => (
                 <Link
                   key={project.id}
                   to={`/documents/${project.id}`}
@@ -175,18 +367,18 @@ export function MyWeekPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-orange-300">Last week's retro is not complete</p>
-                <p className="text-xs text-orange-300/70 mt-0.5">Week {previous_retro!.week_number} retro needs your input</p>
+                <p className="text-xs text-orange-300/70 mt-0.5">Week {prevWeekNumber} retro needs your input</p>
               </div>
-              {previous_retro!.id ? (
+              {previousRetro ? (
                 <Link
-                  to={`/documents/${previous_retro!.id}`}
+                  to={`/documents/${previousRetro.id}`}
                   className="text-xs font-medium text-orange-300 hover:text-orange-200 underline"
                 >
                   Complete retro
                 </Link>
               ) : (
                 <button
-                  onClick={() => handleCreateRetro(previous_retro!.week_number)}
+                  onClick={() => handleCreateRetro(prevWeekNumber)}
                   disabled={creating === 'retro'}
                   className="text-xs font-medium text-orange-300 hover:text-orange-200 underline disabled:opacity-50"
                 >
@@ -207,37 +399,20 @@ export function MyWeekPage() {
                 className="block rounded-lg border border-border bg-surface p-4 hover:border-accent/50 transition-colors relative"
               >
                 {(() => {
-                  const isDue = !plan.submitted_at && week.week_number <= week.current_week_number && projects.length > 0;
-                  const isSubmitted = !!plan.submitted_at;
-                  const hasContent = (plan.items ?? []).length > 0;
+                  const isDue = !planSubmittedAt && week.week_number <= week.current_week_number && projectList.length > 0;
+                  const isSubmitted = !!planSubmittedAt;
                   if (isDue) {
                     return <span className="absolute top-3 right-3 text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">Due today</span>;
                   }
                   if (isSubmitted) {
                     return <span className="absolute top-3 right-3 text-xs bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded">Submitted</span>;
                   }
-                  if (hasContent) {
-                    return <span className="absolute top-3 right-3 text-xs bg-border text-muted px-1.5 py-0.5 rounded">Unsubmitted</span>;
-                  }
-                  return null;
+                  return <span className="absolute top-3 right-3 text-xs bg-border text-muted px-1.5 py-0.5 rounded">Unsubmitted</span>;
                 })()}
-                {(plan.items ?? []).length > 0 ? (
-                  <div className="space-y-0 max-h-[300px] overflow-hidden">
-                    {plan.items.map((item, i) => (
-                      <div key={i} className="flex items-start gap-2.5 py-1.5">
-                        <span className="text-[11px] font-semibold text-muted/50 w-4 text-right shrink-0 mt-0.5">
-                          {i + 1}.
-                        </span>
-                        <span className="text-sm text-foreground leading-relaxed">{item.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted">+ Create plan for this week</p>
-                )}
+                <p className="text-sm text-foreground">{plan.title}</p>
               </Link>
             ) : (() => {
-              const isDue = week.week_number <= week.current_week_number && projects.length > 0;
+              const isDue = week.week_number <= week.current_week_number && projectList.length > 0;
               return (
                 <button
                   onClick={handleCreatePlan}
@@ -266,43 +441,26 @@ export function MyWeekPage() {
                 className="block rounded-lg border border-border bg-surface p-4 hover:border-accent/50 transition-colors relative"
               >
                 {(() => {
-                  const todayDay = new Date().getDay(); // 0=Sun, 5=Fri, 6=Sat
+                  const todayDay = new Date().getDay();
                   const isFridayOrLater = todayDay === 0 || todayDay >= 5;
                   const retroDueForWeek = week.week_number < week.current_week_number || (week.week_number === week.current_week_number && isFridayOrLater);
-                  const isDue = !retro.submitted_at && retroDueForWeek && projects.length > 0;
-                  const isSubmitted = !!retro.submitted_at;
-                  const hasContent = (retro.items ?? []).length > 0;
+                  const isDue = !retroSubmittedAt && retroDueForWeek && projectList.length > 0;
+                  const isSubmitted = !!retroSubmittedAt;
                   if (isDue) {
                     return <span className="absolute top-3 right-3 text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">Due today</span>;
                   }
                   if (isSubmitted) {
                     return <span className="absolute top-3 right-3 text-xs bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded">Submitted</span>;
                   }
-                  if (hasContent) {
-                    return <span className="absolute top-3 right-3 text-xs bg-border text-muted px-1.5 py-0.5 rounded">Unsubmitted</span>;
-                  }
-                  return null;
+                  return <span className="absolute top-3 right-3 text-xs bg-border text-muted px-1.5 py-0.5 rounded">Unsubmitted</span>;
                 })()}
-                {(retro.items ?? []).length > 0 ? (
-                  <div className="space-y-0 max-h-[300px] overflow-hidden">
-                    {retro.items.map((item, i) => (
-                      <div key={i} className="flex items-start gap-2.5 py-1.5">
-                        <span className="text-[11px] font-semibold text-muted/50 w-4 text-right shrink-0 mt-0.5">
-                          {i + 1}.
-                        </span>
-                        <span className="text-sm text-foreground leading-relaxed">{item.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted">+ Create retro for this week</p>
-                )}
+                <p className="text-sm text-foreground">{retro.title}</p>
               </Link>
             ) : (() => {
               const todayDay = new Date().getDay();
               const isFridayOrLater = todayDay === 0 || todayDay >= 5;
               const retroDueForWeek = week.week_number < week.current_week_number || (week.week_number === week.current_week_number && isFridayOrLater);
-              const isDue = retroDueForWeek && projects.length > 0;
+              const isDue = retroDueForWeek && projectList.length > 0;
               return (
                 <button
                   onClick={() => handleCreateRetro(week.week_number)}
@@ -328,9 +486,11 @@ export function MyWeekPage() {
         <section className="mb-6">
           <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Daily Updates</h2>
           <div className="space-y-1.5">
-            {standups.map((slot: StandupSlot) => {
-              const isPast = isDateInPast(slot.date);
-              const isToday = isDateToday(slot.date);
+            {weekInfo.standupDates.map((date) => {
+              const standup = (userStandups ?? []).find((s) => s.date === date);
+              const dayOfWeek = new Date(date + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+              const isPast = isDateInPast(date);
+              const isToday = isDateToday(date);
               const isFuture = !isPast && !isToday;
 
               const rowClass = cn(
@@ -343,26 +503,26 @@ export function MyWeekPage() {
               const dateLabel = (
                 <div className="w-20 flex-shrink-0">
                   <span className={cn('text-xs font-medium', isToday ? 'text-accent' : 'text-muted')}>
-                    {slot.day.slice(0, 3)}
+                    {dayOfWeek.slice(0, 3)}
                   </span>
                   <span className="text-xs text-muted ml-1">
-                    {new Date(slot.date + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', timeZone: 'UTC' })}
+                    {new Date(date + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', timeZone: 'UTC' })}
                   </span>
                 </div>
               );
 
-              const statusDot = slot.standup
+              const statusDot = standup
                 ? <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
                 : isPast
                   ? <div className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
                   : null;
 
-              if (slot.standup) {
+              if (standup) {
                 return (
-                  <Link key={slot.date} to={`/documents/${slot.standup.id}`} className={rowClass}>
+                  <Link key={date} to={`/documents/${standup.id}`} className={rowClass}>
                     {dateLabel}
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-foreground truncate block">{slot.standup.title}</span>
+                      <span className="text-sm text-foreground truncate block">{standup.title}</span>
                     </div>
                     {statusDot}
                   </Link>
@@ -371,7 +531,7 @@ export function MyWeekPage() {
 
               if (isFuture) {
                 return (
-                  <div key={slot.date} className={rowClass}>
+                  <div key={date} className={rowClass}>
                     {dateLabel}
                     <div className="flex-1 min-w-0">
                       <span className="text-xs text-muted italic">Upcoming</span>
@@ -382,15 +542,15 @@ export function MyWeekPage() {
 
               return (
                 <button
-                  key={slot.date}
-                  onClick={() => handleCreateStandup(slot.date)}
-                  disabled={creating === `standup-${slot.date}`}
+                  key={date}
+                  onClick={() => handleCreateStandup(date)}
+                  disabled={creating === `standup-${date}`}
                   className={cn(rowClass, 'w-full text-left cursor-pointer disabled:opacity-50')}
                 >
                   {dateLabel}
                   <div className="flex-1 min-w-0">
                     <span className="text-xs text-muted">
-                      {creating === `standup-${slot.date}` ? 'Creating...' : '+ Write update'}
+                      {creating === `standup-${date}` ? 'Creating...' : '+ Write update'}
                     </span>
                   </div>
                   {statusDot}

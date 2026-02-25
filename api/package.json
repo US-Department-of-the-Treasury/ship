@@ -27,6 +27,7 @@
     "@aws-sdk/client-secrets-manager": "^3.985.0",
     "@aws-sdk/client-ssm": "^3.985.0",
     "@aws-sdk/s3-request-presigner": "^3.985.0",
+    "@electric-sql/client": "^1.5.8",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@ship/shared": "workspace:*",
     "bcryptjs": "^3.0.3",

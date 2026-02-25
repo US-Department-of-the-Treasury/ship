@@ -111,5 +111,8 @@ vendor/
 .dev-ports
 .claude/settings.local.json
 
+# HTTP/2 dev proxy TLS certificates
+scripts/certs/
+
 # Vite PWA dev artifacts
 web/dev-dist/

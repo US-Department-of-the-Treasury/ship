@@ -1,0 +1,155 @@
+{
+  "name": "Electric + TanStack DB Prototype",
+  "description": "Prototype integrating ElectricSQL and @tanstack/db into the Ship web app to evaluate real-time Postgres sync as a replacement for REST-based data fetching. The MyWeekPage is the test surface. Key question: how well does Electric's single-table shapes model work with our JSONB-heavy unified document schema? Read-only sync; writes remain via existing REST API.",
+  "created": "2026-02-25",
+  "ship_project_id": null,
+  "task_ids": {
+    "electric-docker-setup": "1",
+    "electric-proxy-endpoint": "2",
+    "tanstack-db-collections": "3",
+    "myweek-live-queries": "4",
+    "realtime-sync-verification": "5",
+    "compatibility-findings": "6"
+  },
+  "feedbackLoops": {
+    "typeCheck": "pnpm type-check",
+    "test": "pnpm test",
+    "build": "pnpm build"
+  },
+  "userStories": [
+    {
+      "id": "electric-docker-setup",
+      "task_id": "1",
+      "title": "Set up Electric sync engine in Docker",
+      "userStory": "As a developer, I want Electric running locally alongside my Postgres so that I can sync documents from the database to the browser in real-time.",
+      "context": "Electric is the foundational infrastructure for this prototype. Without it running and connected to Postgres with logical replication enabled, no sync can happen. This story unblocks all other work.",
+      "description": "Create a docker-compose file for Electric that connects to the local Postgres instance. Configure Postgres for logical replication (wal_level=logical). Verify Electric starts and can connect to the database. Electric requires Postgres v14+ with a user that has REPLICATION role.",
+      "technicalNotes": "- Create `docker-compose.electric.yml` in project root\n- Electric image: `electricsql/electric:latest` (or canary)\n- Required env vars: `DATABASE_URL`, `ELECTRIC_INSECURE=true` (dev only)\n- Local Postgres must have `wal_level=logical` in postgresql.conf\n- Check current wal_level: `SHOW wal_level;` via psql\n- If wal_level needs changing, requires Postgres restart\n- Electric default port: 3000 (conflicts with API), use 3060 or similar\n- Electric needs REPLICATION role on the connecting user\n- Reference: AGENTS.md docker-compose example",
+      "verification": [
+        "docker compose -f docker-compose.electric.yml up starts without errors",
+        "Electric logs show successful connection to Postgres",
+        "curl http://localhost:3060/v1/shape?table=documents&offset=-1 returns shape data (or valid empty response)",
+        "Postgres SHOW wal_level returns 'logical'"
+      ],
+      "dependencies": [],
+      "priority": "high",
+      "passes": true
+    },
+    {
+      "id": "electric-proxy-endpoint",
+      "task_id": "2",
+      "title": "Add Electric proxy endpoint to Express API",
+      "userStory": "As a frontend developer, I want to fetch Electric shape data through our existing API server so that auth is handled consistently and the Electric service is not directly exposed to the browser.",
+      "context": "Electric should never be called directly from the browser in production. A proxy endpoint enforces auth, controls which shapes are available, and follows Electric's security best practices from AGENTS.md.",
+      "description": "Add an Express route that proxies GET requests to the Electric sync engine. The proxy should forward Electric protocol query params (offset, handle, live, etc.) while controlling the table/where/columns params server-side. Support multiple shape configurations via a shape name parameter.",
+      "technicalNotes": "- Add route at `GET /api/electric/:shapeName`\n- Use `@electric-sql/client` package's `ELECTRIC_PROTOCOL_QUERY_PARAMS` to know which params to forward\n- Shape configs defined server-side (map of shapeName \u2192 {table, where?, columns?})\n- Forward response headers from Electric (important for caching/streaming)\n- Strip content-encoding and content-length headers from proxied response\n- Must preserve streaming response (Electric uses chunked transfer)\n- Auth: use existing `authMiddleware` to ensure user is authenticated\n- Reference: AGENTS.md proxy example (adapted from TanStack Start to Express)",
+      "verification": [
+        "GET /api/electric/documents (authenticated) proxies to Electric and returns shape data",
+        "GET /api/electric/documents (unauthenticated) returns 401",
+        "Electric protocol params (offset, handle, live) are forwarded correctly",
+        "Response streams properly (not buffered entirely in memory)",
+        "Shape table/where params are set server-side, not from client query string"
+      ],
+      "dependencies": [
+        "electric-docker-setup"
+      ],
+      "priority": "high",
+      "passes": true
+    },
+    {
+      "id": "tanstack-db-collections",
+      "task_id": "3",
+      "title": "Install TanStack DB and define document collections",
+      "userStory": "As a developer, I want typed TanStack DB collections backed by Electric shapes so that I can query synced Postgres data reactively on the client.",
+      "context": "This story bridges Electric (sync) and the UI. Collections define how data flows from Electric shapes into queryable client-side stores. Each document type needed by MyWeekPage gets its own collection, plus workspaces.",
+      "description": "Install @tanstack/db, @tanstack/react-db, @tanstack/electric-db-collection, and @electric-sql/client. Define collections for: documents (filtered by document_type where possible), and workspaces. Each collection needs a schema (using zod), getKey function, and shapeOptions pointing to the proxy endpoint. Document the ideal shape filtering strategy for each collection.",
+      "technicalNotes": "- Install: `pnpm --filter @ship/web add @tanstack/db @tanstack/react-db @tanstack/electric-db-collection @electric-sql/client`\n- Create `web/src/electric/collections.ts` for collection definitions\n- Create `web/src/electric/schemas.ts` for zod schemas matching DB types\n- Collections needed:\n  1. `workspacesCollection` - shape on `workspaces` table\n  2. `weeklyPlansCollection` - shape on `documents` where document_type::text = 'weekly_plan'\n  3. `weeklyRetrosCollection` - shape on `documents` where document_type::text = 'weekly_retro'\n  4. `standupsCollection` - shape on `documents` where document_type::text = 'standup'\n  5. `personsCollection` - shape on `documents` where document_type::text = 'person'\n  6. `sprintsCollection` - shape on `documents` where document_type::text = 'sprint'\n  7. `projectsCollection` - shape on `documents` where document_type::text = 'project'\n- Note: document_type is a Postgres ENUM, must cast to text in Electric where clause\n- JSONB filtering (properties->>'person_id', etc.) happens client-side in live queries\n- For each collection, add a comment documenting ideal shape filtering (what we'd want if Electric supported JSONB)\n- columns option: select only columns needed (id, workspace_id, document_type, title, properties, ticket_number, created_at, updated_at, archived_at, deleted_at) - skip content, yjs_state (large, not needed for list views)\n- Corresponding proxy shape configs must be added to the API endpoint",
+      "verification": [
+        "pnpm type-check passes with no errors in web package",
+        "Collections are defined with proper TypeScript types inferred from zod schemas",
+        "Each collection has shapeOptions pointing to /api/electric/<shapeName>",
+        "Each collection has a comment documenting ideal vs actual shape filtering",
+        "workspaces collection syncs from the workspaces table (not documents)"
+      ],
+      "dependencies": [
+        "electric-proxy-endpoint"
+      ],
+      "priority": "high",
+      "passes": true
+    },
+    {
+      "id": "myweek-live-queries",
+      "task_id": "4",
+      "title": "Rewrite MyWeekPage with TanStack DB live queries",
+      "userStory": "As a user, I want MyWeekPage to show my weekly plan, retro, standups, and project assignments using real-time synced data so that changes appear instantly without page reload.",
+      "context": "This is the core prototype deliverable. It proves whether the Electric + TanStack DB + live queries pattern can replace the current REST-based data fetching for a real page with complex data requirements.",
+      "description": "Rewrite MyWeekPage.tsx to use useLiveQuery instead of useMyWeekQuery. Replace the single REST endpoint call with multiple live queries across the document collections. Compute week numbers client-side using the workspace sprint_start_date. Keep the existing UI/layout identical - only change the data source.",
+      "technicalNotes": "- Import useLiveQuery from @tanstack/react-db and eq/and operators\n- Replace useMyWeekQuery with individual live queries:\n  1. Query personsCollection for current user's person doc (filter by properties.user_id)\n  2. Query workspacesCollection for sprint_start_date\n  3. Compute week numbers client-side (same logic as API route)\n  4. Query weeklyPlansCollection for matching person_id + week_number\n  5. Query weeklyRetrosCollection same pattern\n  6. Query standupsCollection for matching author_id + date range\n  7. Query sprintsCollection for sprints containing person in assignee_ids\n  8. Query projectsCollection for projects referenced by sprints\n- All JSONB property filtering done via live query where clauses\n- The properties column arrives as a JSON object from Electric - access as item.properties.person_id etc.\n- Keep existing create handlers (handleCreatePlan, handleCreateRetro, handleCreateStandup) using REST API - writes are out of scope\n- After a REST write, the new document should appear via Electric sync automatically\n- Preserve all existing UI: week navigation, status badges, standup slots, project list",
+      "verification": [
+        "MyWeekPage renders with weekly plan, retro, standups, and projects for current user",
+        "Week navigation (previous/next) works correctly",
+        "Plan/retro submission status badges display correctly",
+        "Standup slots show correct dates and existing standups",
+        "Project assignments section shows assigned projects",
+        "Previous week retro nudge displays when applicable",
+        "pnpm type-check passes with no errors",
+        "No console errors in browser when page loads"
+      ],
+      "dependencies": [
+        "tanstack-db-collections"
+      ],
+      "priority": "high",
+      "passes": true
+    },
+    {
+      "id": "realtime-sync-verification",
+      "task_id": "5",
+      "title": "Verify real-time sync works end-to-end",
+      "userStory": "As a developer evaluating this stack, I want to see that database changes appear on MyWeekPage in real-time so that I can confirm Electric sync is working correctly.",
+      "context": "The whole point of Electric is real-time sync from Postgres. This story verifies the core value proposition works with our schema. If changes don't appear in real-time, the prototype fails to prove the concept.",
+      "description": "With the dev server and Electric running, make changes directly in Postgres (via psql) and verify they appear on MyWeekPage without page reload. Test: insert a standup document, update a weekly plan title, verify both appear live. Also test that creating documents through the existing UI (which writes via REST API) triggers Electric sync back to the page.",
+      "technicalNotes": "- Start all services: pnpm dev + docker compose for Electric\n- Open MyWeekPage in browser\n- Use psql to insert a test standup document for the current user/date\n- Verify it appears in the Daily Updates section without refresh\n- Use the UI to create a weekly plan (existing REST flow)\n- Verify the plan appears/updates via Electric sync\n- Check browser console for Electric streaming activity\n- If sync is slow, check if HTTP/2 is needed (Electric AGENTS.md mentions HTTP/1.1 6-connection limit)\n- Document observed sync latency",
+      "verification": [
+        "INSERT a standup document via psql \u2192 appears on MyWeekPage within 2 seconds",
+        "UPDATE a document title via psql \u2192 title updates on MyWeekPage within 2 seconds",
+        "Create a weekly plan via UI \u2192 plan card appears without page reload",
+        "No full page refreshes needed for any sync operation"
+      ],
+      "dependencies": [
+        "myweek-live-queries"
+      ],
+      "priority": "medium",
+      "passes": true
+    },
+    {
+      "id": "compatibility-findings",
+      "task_id": "6",
+      "title": "Document JSONB/shape compatibility findings",
+      "userStory": "As a team evaluating this technology, I want a clear document describing what works, what doesn't, and what schema changes would be needed to use Electric in production so that we can make an informed decision.",
+      "context": "This is the analytical deliverable of the prototype. The whole point is answering: 'Can we use Electric with our JSONB-heavy schema?' This document captures the answer with specifics.",
+      "description": "Create a findings document that covers: (1) which Electric shape filters work with our schema, (2) which JSONB properties can't be filtered server-side, (3) how much unnecessary data we're syncing due to broad shapes, (4) what schema changes would fix the gaps, (5) performance observations, (6) recommendation on path forward.",
+      "technicalNotes": "- Create `docs/electric-tanstack-findings.md`\n- For each shape/collection, document:\n  - Current: what we're actually filtering on (document_type only)\n  - Ideal: what we'd want to filter on (person_id, week_number, etc.)\n  - Gap: what's missing and why (JSONB not supported in shapes)\n  - Fix: schema change that would close the gap (e.g., add person_id column)\n- Include data volume analysis: how many documents of each type exist, how many we actually need\n- Document Electric's current limitations:\n  - Single-table shapes (no joins)\n  - Immutable shape definitions\n  - Enum casting requirement\n  - JSONB filtering support (or lack thereof)\n- Performance observations: sync latency, live query performance, memory usage\n- Recommendation: is this viable for Ship? Under what conditions?",
+      "verification": [
+        "docs/electric-tanstack-findings.md exists and contains all sections listed above",
+        "Each shape has a documented current/ideal/gap/fix analysis",
+        "Document includes specific schema change recommendations",
+        "Document includes a clear yes/no/conditional recommendation"
+      ],
+      "dependencies": [
+        "realtime-sync-verification"
+      ],
+      "priority": "medium",
+      "passes": true
+    }
+  ],
+  "postCompletion": {
+    "securityReview": true,
+    "codeQualityReview": true,
+    "testsAdded": true,
+    "seedDataChecked": true,
+    "fixturesUpdated": true,
+    "docsChecked": true,
+    "learningsExtracted": true,
+    "criticalFindings": []
+  }
+}

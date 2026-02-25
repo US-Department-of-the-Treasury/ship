@@ -1,0 +1,81 @@
+# Progress Log
+PRD: plans/electric-tanstack-prototype.prd.json
+Started: 2026-02-25
+
+---
+
+(Progress will be appended here as stories complete)
+
+---
+
+## Iteration 1 - Set up Electric sync engine in Docker
+- Completed: Added Electric 1.0.4 + wal_level=logical to docker-compose.yml
+- Files changed: docker-compose.yml
+- Learnings:
+  - Electric latest (1.4.7) has arm64 compatibility issue with ex_sqlean SQLite extensions (linux-arm64 .so files missing from image). Fell back to 1.0.4 which works.
+  - Enum casting (document_type::text='person') works in Electric where clauses
+  - Ship user in Docker Postgres already has REPLICATION role (superuser)
+  - JSONB properties come through as stringified JSON in shape responses
+- Next: Add Electric proxy endpoint to Express API
+
+---
+
+## Iteration 2 - Add Electric proxy endpoint to Express API
+- Completed: Created api/src/routes/electric.ts with GET /api/electric/:shapeName, registered in app.ts
+- Files changed: api/src/routes/electric.ts (new), api/src/app.ts
+- Learnings:
+  - Upgraded Electric from 1.0.4 to canary (1.4.7-1) which fixes arm64 Docker issue
+  - Electric needs fresh volumes after image change (stale replication slot)
+  - Enum filtering (document_type::text='person') works through proxy
+  - Session auth works for proxy (cookies forwarded by browser automatically)
+  - Electric response streams correctly through Express proxy
+- Next: Install TanStack DB and define document collections
+
+---
+
+## Iteration 3 - Install TanStack DB and define document collections
+- Completed: Installed @tanstack/db, @tanstack/react-db, @tanstack/electric-db-collection, @electric-sql/client, zod. Created web/src/electric/schemas.ts and web/src/electric/collections.ts with 8 collections (1 workspace + 7 document types)
+- Files changed: web/package.json, web/src/electric/schemas.ts (new), web/src/electric/collections.ts (new)
+- Learnings:
+  - Electric sends JSONB as stringified JSON strings, need manual JSON.parse
+  - Zod schemas with z.coerce.number() handle Postgres integer strings
+  - electricCollectionOptions requires getKey function returning string|number
+  - Each collection documents ideal/gap/fix for JSONB filtering
+- Next: Rewrite MyWeekPage with TanStack DB live queries
+
+---
+
+## Iteration 4 - Rewrite MyWeekPage with TanStack DB live queries
+- Completed: Rewrote MyWeekPage to use useLiveQuery against Electric-synced collections instead of useMyWeekQuery REST hook. Week numbers computed client-side from workspace sprint_start_date. Writes remain via REST API.
+- Files changed: web/src/pages/MyWeekPage.tsx, web/src/electric/schemas.ts, web/src/electric/collections.ts, api/src/routes/electric.ts, api/src/app.ts
+- Learnings:
+  - Electric's ShapeStream needs fetchClient with credentials:'include' for cookie-based auth
+  - CORS must expose Electric-specific headers (electric-offset, electric-handle, electric-schema)
+  - Must strip Electric's Access-Control-* headers from proxy (let Express CORS middleware handle it)
+  - ELECTRIC_PROTOCOL_QUERY_PARAMS from @electric-sql/client is the correct set of params to forward (includes 'log' param)
+  - Electric delivers JSONB as parsed objects, not strings — parseProperties must handle both
+  - Plan items preview not available since content column excluded from shapes (acceptable trade-off)
+- Next: Verify real-time sync works end-to-end
+
+---
+
+## Iteration 5 - Verify real-time sync works end-to-end
+- Completed: Verified INSERT and UPDATE via psql appear on MyWeekPage in real-time without page reload
+- Files changed: (none - verification only)
+- Learnings:
+  - INSERT standup via psql: appeared on page within ~2 seconds (Playwright waitFor confirmed)
+  - UPDATE title via psql: updated on page within ~2 seconds
+  - Electric long-polling works correctly through the proxy
+  - Session timeout (15 min) expired during UI create test - expected behavior
+  - No full page refreshes needed for sync - Electric streaming works
+- Next: Document JSONB/shape compatibility findings
+
+---
+
+## Iteration 6 - Document JSONB/shape compatibility findings
+- Completed: Created docs/electric-tanstack-findings.md with comprehensive analysis of each shape, JSONB gaps, schema change recommendations, and go/no-go recommendation
+- Files changed: docs/electric-tanstack-findings.md (new)
+- Learnings: see findings document for full details
+- ALL STORIES COMPLETE
+
+---
