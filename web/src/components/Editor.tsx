@@ -86,6 +86,8 @@ interface EditorProps {
   onContentChange?: (content: Record<string, unknown>) => void;
   /** AI scoring analysis data to render as inline decorations */
   aiScoringAnalysis?: { planAnalysis?: unknown; retroAnalysis?: unknown } | null;
+  /** Suffix displayed after the title in the header (e.g., author name) */
+  titleSuffix?: string;
 }
 
 type SyncStatus = 'connecting' | 'cached' | 'synced' | 'disconnected';
@@ -180,6 +182,7 @@ export function Editor({
   contentBanner,
   onContentChange,
   aiScoringAnalysis,
+  titleSuffix,
 }: EditorProps) {
   const [title, setTitle] = useState(initialTitle === 'Untitled' ? '' : initialTitle);
   const titleInputRef = useRef<HTMLTextAreaElement>(null);
@@ -839,6 +842,7 @@ export function Editor({
           {/* WCAG 1.4.12: min-w-[3rem] prevents collapse, overflow-visible shows text */}
           <h1 className="flex-1 min-w-[3rem] overflow-visible text-sm font-medium text-foreground m-0">
             {title || 'Untitled'}
+            {titleSuffix && <span className="text-muted font-normal"> &mdash; {titleSuffix}</span>}
           </h1>
 
           {/* Sync status - WCAG 4.1.3 aria-live for status messages */}

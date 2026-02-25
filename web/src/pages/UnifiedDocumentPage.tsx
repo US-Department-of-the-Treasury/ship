@@ -299,10 +299,17 @@ export function UnifiedDocumentPage() {
     await deleteMutation.mutateAsync(id);
   }, [deleteMutation, id]);
 
-  // Extract project_id for weekly documents
-  const weeklyDocProjectId = (document?.document_type === 'weekly_plan' || document?.document_type === 'weekly_retro')
-    ? (document?.properties?.project_id as string | undefined)
-    : undefined;
+  const isWeeklyDoc = document?.document_type === 'weekly_plan' || document?.document_type === 'weekly_retro';
+  const isStandup = document?.document_type === 'standup';
+  const hideBackButton = isWeeklyDoc || isStandup;
+
+  // Resolve standup author name for title suffix
+  const standupAuthorName = useMemo(() => {
+    if (!isStandup) return undefined;
+    const authorId = document?.properties?.author_id as string | undefined;
+    if (!authorId) return undefined;
+    return teamMembersData.find(m => m.user_id === authorId)?.name;
+  }, [isStandup, document?.properties?.author_id, teamMembersData]);
 
   // Handle back navigation
   const handleBack = useCallback(() => {
@@ -315,32 +322,22 @@ export function UnifiedDocumentPage() {
       navigate('/sprints');
     } else if (document?.document_type === 'program') {
       navigate('/programs');
-    } else if (document?.document_type === 'weekly_plan' || document?.document_type === 'weekly_retro') {
-      if (weeklyDocProjectId) {
-        // Navigate back to project's Weeks tab if project association exists
-        navigate(`/documents/${weeklyDocProjectId}/weeks`);
-      } else {
-        // Navigate to My Week dashboard for standalone plans/retros
-        navigate('/my-week');
-      }
     } else {
       navigate('/docs');
     }
-  }, [document, navigate, weeklyDocProjectId]);
+  }, [document, navigate]);
 
   // Compute back label based on document type (just the noun - Editor adds "Back to")
+  // Weekly plans/retros don't show a back button
   const backLabel = useMemo(() => {
     switch (document?.document_type) {
       case 'issue': return 'issues';
       case 'project': return 'projects';
       case 'sprint': return 'weeks';
       case 'program': return 'programs';
-      case 'weekly_plan':
-      case 'weekly_retro':
-        return weeklyDocProjectId ? 'project' : 'docs';
       default: return 'docs';
     }
-  }, [document?.document_type, weeklyDocProjectId]);
+  }, [document?.document_type]);
 
   // Build sidebar data based on document type
   const sidebarData: SidebarData = useMemo(() => {
@@ -523,10 +520,11 @@ export function UnifiedDocumentPage() {
       onUpdate={handleUpdate}
       onTypeChange={handleTypeChange}
       onDocumentConverted={handleDocumentConverted}
-      onBack={handleBack}
-      backLabel={backLabel}
+      onBack={hideBackButton ? undefined : handleBack}
+      backLabel={hideBackButton ? undefined : backLabel}
       onDelete={handleDelete}
       showTypeSelector={true}
+      titleSuffix={standupAuthorName}
     />
   );
 }

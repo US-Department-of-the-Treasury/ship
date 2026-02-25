@@ -179,6 +179,9 @@ export function AppLayout() {
 
   const activeMode = getActiveMode();
   const isMyWeekPage = location.pathname.startsWith('/my-week');
+  const isWeeklyDoc = currentDocumentType === 'weekly_plan' || currentDocumentType === 'weekly_retro';
+  const isStandup = currentDocumentType === 'standup';
+  const hideLeftSidebar = isMyWeekPage || isWeeklyDoc || isStandup;
 
   // Get the active document ID from URL - works for /documents/:id and legacy routes
   const getActiveDocumentId = (): string | undefined => {
@@ -384,7 +387,7 @@ export function AppLayout() {
           </div>
 
           {/* Expand sidebar button (shows when collapsed) */}
-          {leftSidebarCollapsed && !isMyWeekPage && (
+          {leftSidebarCollapsed && !hideLeftSidebar && (
             <Tooltip content="Expand sidebar" side="right">
               <button
                 onClick={() => setLeftSidebarCollapsed(false)}
@@ -418,7 +421,7 @@ export function AppLayout() {
         <aside
           className={cn(
             'flex flex-col border-r border-border transition-all duration-200 overflow-hidden select-none',
-            (leftSidebarCollapsed || isMyWeekPage) ? 'w-0 border-r-0' : 'w-56'
+            (leftSidebarCollapsed || hideLeftSidebar) ? 'w-0 border-r-0' : 'w-56'
           )}
           aria-label="Document list"
         >
