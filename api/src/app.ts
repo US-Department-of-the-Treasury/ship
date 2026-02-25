@@ -33,6 +33,7 @@ import accountabilityRoutes from './routes/accountability.js';
 import aiRoutes from './routes/ai.js';
 import weeklyPlansRoutes, { weeklyRetrosRouter } from './routes/weekly-plans.js';
 import { documentCommentsRouter, commentsRouter } from './routes/comments.js';
+import electricRoutes from './routes/electric.js';
 import { setupSwagger } from './swagger.js';
 import { initializeCAIA } from './services/caia.js';
 
@@ -207,6 +208,9 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
 
   // Dashboard routes are read-only GET endpoints - no CSRF needed
   app.use('/api/dashboard', dashboardRoutes);
+
+  // Electric proxy - streams shape data from Electric sync engine (read-only GET)
+  app.use('/api/electric', electricRoutes);
 
   // Accountability routes - inference-based action items (read-only GET)
   app.use('/api/accountability', accountabilityRoutes);

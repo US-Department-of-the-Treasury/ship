@@ -1,0 +1,32 @@
+# Progress Log
+PRD: plans/electric-tanstack-prototype.prd.json
+Started: 2026-02-25
+
+---
+
+(Progress will be appended here as stories complete)
+
+---
+
+## Iteration 1 - Set up Electric sync engine in Docker
+- Completed: Added Electric 1.0.4 + wal_level=logical to docker-compose.yml
+- Files changed: docker-compose.yml
+- Learnings:
+  - Electric latest (1.4.7) has arm64 compatibility issue with ex_sqlean SQLite extensions (linux-arm64 .so files missing from image). Fell back to 1.0.4 which works.
+  - Enum casting (document_type::text='person') works in Electric where clauses
+  - Ship user in Docker Postgres already has REPLICATION role (superuser)
+  - JSONB properties come through as stringified JSON in shape responses
+- Next: Add Electric proxy endpoint to Express API
+
+---
+
+## Iteration 2 - Add Electric proxy endpoint to Express API
+- Completed: Created api/src/routes/electric.ts with GET /api/electric/:shapeName, registered in app.ts
+- Files changed: api/src/routes/electric.ts (new), api/src/app.ts
+- Learnings:
+  - Upgraded Electric from 1.0.4 to canary (1.4.7-1) which fixes arm64 Docker issue
+  - Electric needs fresh volumes after image change (stale replication slot)
+  - Enum filtering (document_type::text='person') works through proxy
+  - Session auth works for proxy (cookies forwarded by browser automatically)
+  - Electric response streams correctly through Express proxy
+- Next: Install TanStack DB and define document collections

@@ -1,22 +1,17 @@
 # =============================================================================
-# OPTIONAL: Docker-based PostgreSQL for local development
+# Local development: PostgreSQL + ElectricSQL
 # =============================================================================
-# This file is NOT required. Most developers use native PostgreSQL instead.
-# See CLAUDE.md for the recommended setup using local PostgreSQL.
+# Start services:
+#   docker compose up -d
 #
 # The credentials below are LOCAL DEV DEFAULTS ONLY - not real secrets.
-# They are intentionally simple for ease of local development.
 # Production secrets are managed via AWS Secrets Manager and .env.local.
-#
-# To use this instead of native PostgreSQL:
-#   docker-compose up -d
 # =============================================================================
-
-version: '3.8'
 
 services:
   postgres:
     image: postgres:16
+    command: postgres -c wal_level=logical
     environment:
       POSTGRES_DB: ship_dev
       POSTGRES_USER: ship
@@ -30,6 +25,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  electric:
+    image: electricsql/electric:canary
+    environment:
+      DATABASE_URL: postgresql://ship:ship_dev_password@postgres:5432/ship_dev
+      ELECTRIC_INSECURE: "true"
+    ports:
+      - "3060:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:
