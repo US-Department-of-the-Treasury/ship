@@ -63,7 +63,7 @@ export function UnifiedDocumentPage() {
   // Sync current document context for rail highlighting
   useEffect(() => {
     if (document && id) {
-      const docType = document.document_type as 'wiki' | 'issue' | 'project' | 'program' | 'sprint' | 'person' | 'weekly_plan' | 'weekly_retro';
+      const docType = document.document_type as 'wiki' | 'issue' | 'project' | 'program' | 'sprint' | 'person' | 'weekly_plan' | 'weekly_retro' | 'standup';
       // Extract projectId for weekly documents
       const projectId = (document.document_type === 'weekly_plan' || document.document_type === 'weekly_retro')
         ? (document.properties?.project_id as string | undefined) ?? null
@@ -74,6 +74,8 @@ export function UnifiedDocumentPage() {
       clearCurrentDocument();
     };
   }, [document, id, setCurrentDocument, clearCurrentDocument]);
+
+
 
   // Set default active tab when document loads (status-aware for sprints)
   const tabConfig = document ? getTabsForDocument(document) : [];

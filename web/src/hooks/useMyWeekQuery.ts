@@ -65,6 +65,6 @@ export function useMyWeekQuery(weekNumber?: number) {
   return useQuery({
     queryKey: ['dashboard', 'my-week', weekNumber ?? 'current'],
     queryFn: () => fetchMyWeek(weekNumber),
-    staleTime: 1000 * 60 * 5,
+    staleTime: 0, // Always refetch on mount — plan/retro content is saved via Yjs WebSocket so there's no client-side mutation to trigger invalidation
   });
 }
