@@ -209,13 +209,17 @@ export function MyWeekPage() {
                 {(() => {
                   const isDue = !plan.submitted_at && week.week_number <= week.current_week_number && projects.length > 0;
                   const isSubmitted = !!plan.submitted_at;
+                  const hasContent = (plan.items ?? []).length > 0;
                   if (isDue) {
                     return <span className="absolute top-3 right-3 text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">Due today</span>;
                   }
                   if (isSubmitted) {
                     return <span className="absolute top-3 right-3 text-xs bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded">Submitted</span>;
                   }
-                  return <span className="absolute top-3 right-3 text-xs bg-border text-muted px-1.5 py-0.5 rounded">Unsubmitted</span>;
+                  if (hasContent) {
+                    return <span className="absolute top-3 right-3 text-xs bg-border text-muted px-1.5 py-0.5 rounded">Unsubmitted</span>;
+                  }
+                  return null;
                 })()}
                 {(plan.items ?? []).length > 0 ? (
                   <div className="space-y-0">
@@ -267,13 +271,17 @@ export function MyWeekPage() {
                   const retroDueForWeek = week.week_number < week.current_week_number || (week.week_number === week.current_week_number && isFridayOrLater);
                   const isDue = !retro.submitted_at && retroDueForWeek && projects.length > 0;
                   const isSubmitted = !!retro.submitted_at;
+                  const hasContent = (retro.items ?? []).length > 0;
                   if (isDue) {
                     return <span className="absolute top-3 right-3 text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">Due today</span>;
                   }
                   if (isSubmitted) {
                     return <span className="absolute top-3 right-3 text-xs bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded">Submitted</span>;
                   }
-                  return <span className="absolute top-3 right-3 text-xs bg-border text-muted px-1.5 py-0.5 rounded">Unsubmitted</span>;
+                  if (hasContent) {
+                    return <span className="absolute top-3 right-3 text-xs bg-border text-muted px-1.5 py-0.5 rounded">Unsubmitted</span>;
+                  }
+                  return null;
                 })()}
                 {(retro.items ?? []).length > 0 ? (
                   <div className="space-y-0">
