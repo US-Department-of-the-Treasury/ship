@@ -185,27 +185,29 @@ export interface WikiProperties {
   maintainer_id?: string | null;
   [key: string]: unknown;
 }
-// Weekly plan properties - per-person accountability document
+// Weekly plan properties - per-person-per-week accountability document
 export interface WeeklyPlanProperties {
   person_id: string;       // REQUIRED - person document ID who wrote this plan
-  project_id: string;      // REQUIRED - project this plan is for
+  project_id?: string;     // OPTIONAL - legacy field, no longer used for uniqueness
   week_number: number;     // REQUIRED - week number (same as sprint_number concept)
   submitted_at?: string | null;  // ISO timestamp when first saved with content
   [key: string]: unknown;
 }
 
-// Weekly retro properties - per-person retrospective document
+// Weekly retro properties - per-person-per-week retrospective document
 export interface WeeklyRetroProperties {
   person_id: string;       // REQUIRED - person document ID who wrote this retro
-  project_id: string;      // REQUIRED - project this retro is for
+  project_id?: string;     // OPTIONAL - legacy field, no longer used for uniqueness
   week_number: number;     // REQUIRED - week number (same as sprint_number concept)
   submitted_at?: string | null;  // ISO timestamp when first saved with content
   [key: string]: unknown;
 }
 
-// Standup properties - comment-like entries on sprints
+// Standup properties - standalone daily entries per user
 export interface StandupProperties {
-  author_id: string;  // REQUIRED - who posted this standup
+  author_id: string;  // REQUIRED - who posted this standup (user ID)
+  date?: string;      // OPTIONAL - ISO date string (e.g., '2026-02-24') for standalone standups
+  submitted_at?: string | null;  // ISO timestamp when first saved with content
   [key: string]: unknown;
 }
 

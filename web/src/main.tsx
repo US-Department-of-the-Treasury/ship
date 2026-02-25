@@ -28,6 +28,7 @@ import { FeedbackEditorPage } from '@/pages/FeedbackEditor';
 import { PublicFeedbackPage } from '@/pages/PublicFeedback';
 import { ProjectsPage } from '@/pages/Projects';
 import { DashboardPage } from '@/pages/Dashboard';
+import { MyWeekPage } from '@/pages/MyWeekPage';
 import { AdminDashboardPage } from '@/pages/AdminDashboard';
 import { AdminWorkspaceDetailPage } from '@/pages/AdminWorkspaceDetail';
 import { WorkspaceSettingsPage } from '@/pages/WorkspaceSettings';
@@ -210,9 +211,9 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route index element={<Navigate to="/my-week" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="my-week" element={<Navigate to="/dashboard" replace />} />
+        <Route path="my-week" element={<MyWeekPage />} />
         <Route path="docs" element={<DocumentsPage />} />
         <Route path="docs/:id" element={<DocumentRedirect />} />
         <Route path="documents/:id/*" element={<UnifiedDocumentPage />} />

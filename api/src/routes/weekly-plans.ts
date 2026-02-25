@@ -140,7 +140,7 @@ function buildRetroTemplateWithPlanItems(planItems: string[], planDocumentId: st
 // Schema for creating/getting a weekly plan
 const weeklyPlanSchema = z.object({
   person_id: z.string().uuid(),
-  project_id: z.string().uuid(),
+  project_id: z.string().uuid().optional(),  // Optional - legacy field, not used for uniqueness
   week_number: z.number().int().min(1),
 });
 
@@ -158,7 +158,6 @@ const weeklyPlanSchema = z.object({
  *             type: object
  *             required:
  *               - person_id
- *               - project_id
  *               - week_number
  *             properties:
  *               person_id:
@@ -167,6 +166,7 @@ const weeklyPlanSchema = z.object({
  *               project_id:
  *                 type: string
  *                 format: uuid
+ *                 description: Optional legacy field
  *               week_number:
  *                 type: integer
  *                 minimum: 1
@@ -178,7 +178,7 @@ const weeklyPlanSchema = z.object({
  *       400:
  *         description: Invalid input
  *       404:
- *         description: Person or project not found
+ *         description: Person not found
  */
 router.post('/', authMiddleware, async (req: Request, res: Response) => {
   const client = await pool.connect();
@@ -204,26 +204,29 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     }
     const personName = personResult.rows[0].title;
 
-    // Verify project exists in this workspace
-    const projectResult = await client.query(
-      `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
-      [project_id, workspaceId]
-    );
-    if (projectResult.rows.length === 0) {
-      res.status(404).json({ error: 'Project not found' });
-      return;
+    // Verify project exists if provided.
+    // Note that project_id is a legacy field that is no longer present on new documents
+    if (project_id) {
+      const projectResult = await client.query(
+        `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+        [project_id, workspaceId]
+      );
+      if (projectResult.rows.length === 0) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
     }
 
-    // Check if weekly plan already exists for this person+project+week
+    // Check if weekly plan already exists for this person+week (uniqueness by person+week only)
     const existingResult = await client.query(
       `SELECT id, title, content, properties, created_at, updated_at
        FROM documents
        WHERE workspace_id = $1
          AND document_type = 'weekly_plan'
          AND (properties->>'person_id') = $2
-         AND (properties->>'project_id') = $3
-         AND (properties->>'week_number')::int = $4`,
-      [workspaceId, person_id, project_id, week_number]
+         AND (properties->>'week_number')::int = $3
+         AND archived_at IS NULL`,
+      [workspaceId, person_id, week_number]
     );
 
     if (existingResult.rows.length > 0) {
@@ -248,12 +251,15 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 
     const docId = uuidv4();
     const title = `Week ${week_number} Plan`; // Base title without person name
-    const properties = {
+    const properties: Record<string, unknown> = {
       person_id,
-      project_id,
       week_number,
       submitted_at: null,
     };
+
+    if (project_id) {
+      properties.project_id = project_id;
+    }
 
     // Insert the document with template content
     const insertResult = await client.query(
@@ -263,12 +269,14 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       [docId, workspaceId, title, JSON.stringify(WEEKLY_PLAN_TEMPLATE), JSON.stringify(properties), userId]
     );
 
-    // Create association with project
-    await client.query(
-      `INSERT INTO document_associations (id, document_id, related_id, relationship_type)
-       VALUES ($1, $2, $3, 'project')`,
-      [uuidv4(), docId, project_id]
-    );
+    // Create association with project only if provided
+    if (project_id) {
+      await client.query(
+        `INSERT INTO document_associations (id, document_id, related_id, relationship_type)
+         VALUES ($1, $2, $3, 'project')`,
+        [uuidv4(), docId, project_id]
+      );
+    }
 
     await client.query('COMMIT');
 
@@ -511,7 +519,7 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
 // Schema for creating/getting a weekly retro
 const weeklyRetroSchema = z.object({
   person_id: z.string().uuid(),
-  project_id: z.string().uuid(),
+  project_id: z.string().uuid().optional(),  // Optional - legacy field, not used for uniqueness
   week_number: z.number().int().min(1),
 });
 
@@ -529,7 +537,6 @@ const weeklyRetroSchema = z.object({
  *             type: object
  *             required:
  *               - person_id
- *               - project_id
  *               - week_number
  *             properties:
  *               person_id:
@@ -538,6 +545,7 @@ const weeklyRetroSchema = z.object({
  *               project_id:
  *                 type: string
  *                 format: uuid
+ *                 description: Optional legacy field
  *               week_number:
  *                 type: integer
  *                 minimum: 1
@@ -573,26 +581,28 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
     }
     const personName = personResult.rows[0].title;
 
-    // Verify project exists in this workspace
-    const projectResult = await client.query(
-      `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
-      [project_id, workspaceId]
-    );
-    if (projectResult.rows.length === 0) {
-      res.status(404).json({ error: 'Project not found' });
-      return;
+    // Verify project exists if provided
+    if (project_id) {
+      const projectResult = await client.query(
+        `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
+        [project_id, workspaceId]
+      );
+      if (projectResult.rows.length === 0) {
+        res.status(404).json({ error: 'Project not found' });
+        return;
+      }
     }
 
-    // Check if weekly retro already exists for this person+project+week
+    // Check if weekly retro already exists for this person+week (uniqueness by person+week only)
     const existingResult = await client.query(
       `SELECT id, title, content, properties, created_at, updated_at
        FROM documents
        WHERE workspace_id = $1
          AND document_type = 'weekly_retro'
          AND (properties->>'person_id') = $2
-         AND (properties->>'project_id') = $3
-         AND (properties->>'week_number')::int = $4`,
-      [workspaceId, person_id, project_id, week_number]
+         AND (properties->>'week_number')::int = $3
+         AND archived_at IS NULL`,
+      [workspaceId, person_id, week_number]
     );
 
     if (existingResult.rows.length > 0) {
@@ -617,23 +627,26 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
 
     const docId = uuidv4();
     const title = `Week ${week_number} Retro`; // Base title without person name
-    const properties = {
+    const properties: Record<string, unknown> = {
       person_id,
-      project_id,
       week_number,
       submitted_at: null,
     };
+    
+    if (project_id) {
+      properties.project_id = project_id;
+    }
 
-    // Fetch corresponding plan to auto-populate retro with plan items
+    // Fetch corresponding plan to auto-populate retro with plan items (by person+week only)
     let retroTemplate = WEEKLY_RETRO_TEMPLATE;
     const planResult = await client.query(
       `SELECT id, content FROM documents
        WHERE workspace_id = $1
          AND document_type = 'weekly_plan'
          AND (properties->>'person_id') = $2
-         AND (properties->>'project_id') = $3
-         AND (properties->>'week_number')::int = $4`,
-      [workspaceId, person_id, project_id, week_number]
+         AND (properties->>'week_number')::int = $3
+         AND archived_at IS NULL`,
+      [workspaceId, person_id, week_number]
     );
 
     if (planResult.rows.length > 0 && planResult.rows[0].content) {
@@ -651,12 +664,14 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
       [docId, workspaceId, title, JSON.stringify(retroTemplate), JSON.stringify(properties), userId]
     );
 
-    // Create association with project
-    await client.query(
-      `INSERT INTO document_associations (id, document_id, related_id, relationship_type)
-       VALUES ($1, $2, $3, 'project')`,
-      [uuidv4(), docId, project_id]
-    );
+    // Create association with project only if provided
+    if (project_id) {
+      await client.query(
+        `INSERT INTO document_associations (id, document_id, related_id, relationship_type)
+         VALUES ($1, $2, $3, 'project')`,
+        [uuidv4(), docId, project_id]
+      );
+    }
 
     await client.query('COMMIT');
 

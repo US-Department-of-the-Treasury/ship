@@ -162,6 +162,8 @@ interface UnifiedEditorProps {
   showTypeSelector?: boolean;
   /** Handler for document type changes (if different from onUpdate) */
   onTypeChange?: (newType: DocumentType) => Promise<void>;
+  /** Suffix displayed after the title in the header (e.g., author name) */
+  titleSuffix?: string;
 }
 
 /**
@@ -196,6 +198,7 @@ export function UnifiedEditor({
   headerBadge,
   showTypeSelector = false,
   onTypeChange,
+  titleSuffix,
 }: UnifiedEditorProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -456,6 +459,7 @@ export function UnifiedEditor({
       contentBanner={qualityBanner}
       onContentChange={isWeeklyDoc ? setEditorContent : undefined}
       aiScoringAnalysis={isWeeklyDoc ? aiScoringAnalysis : undefined}
+      titleSuffix={titleSuffix}
     />
   );
 }

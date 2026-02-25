@@ -1129,9 +1129,10 @@
             "nullable": true,
             "enum": [
               "approved",
-              "changed_since_approved"
+              "changed_since_approved",
+              "changes_requested"
             ],
-            "description": "Approval state: null = pending, approved = current version approved, changed_since_approved = needs re-review"
+            "description": "Approval state: null = pending, approved = current version approved, changed_since_approved = needs re-review, changes_requested = reviewer requested revisions"
           },
           "approved_by": {
             "type": "string",
@@ -1151,6 +1152,16 @@
             "type": "integer",
             "nullable": true,
             "description": "document_history.id that was approved"
+          },
+          "feedback": {
+            "type": "string",
+            "nullable": true,
+            "description": "Feedback explaining required revisions when state is changes_requested"
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional manager note attached to an approval decision"
           }
         },
         "required": [
@@ -1289,6 +1300,16 @@
             "type": "boolean",
             "description": "Whether project has a retrospective document"
           },
+          "has_design_review": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Whether design review has been completed"
+          },
+          "design_review_notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional notes from design review"
+          },
           "target_date": {
             "type": "string",
             "nullable": true,
@@ -1369,6 +1390,8 @@
           "plan_approval",
           "retro_approval",
           "has_retro",
+          "has_design_review",
+          "design_review_notes",
           "target_date",
           "inferred_status",
           "sprint_count",
@@ -1582,6 +1605,15 @@
             "format": "date-time",
             "description": "ISO 8601 datetime string",
             "example": "2025-01-30T14:30:00.000Z"
+          },
+          "has_design_review": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "design_review_notes": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
           }
         }
       },
@@ -1839,6 +1871,114 @@
             "example": "2025-01-30T14:30:00.000Z"
           }
         }
+      },
+      "MergePreview": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "UUID identifier",
+                "example": "550e8400-e29b-41d4-a716-446655440000"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "UUID identifier",
+                "example": "550e8400-e29b-41d4-a716-446655440000"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "projects": {
+                "type": "integer"
+              },
+              "issues": {
+                "type": "integer"
+              },
+              "sprints": {
+                "type": "integer"
+              },
+              "wikis": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "projects",
+              "issues",
+              "sprints",
+              "wikis"
+            ]
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ]
+            }
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "counts",
+          "conflicts"
+        ]
+      },
+      "MergeProgramRequest": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Target program ID to merge into",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "confirm_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Source program name for type-to-confirm safeguard"
+          }
+        },
+        "required": [
+          "target_id",
+          "confirm_name"
+        ]
       },
       "Week": {
         "type": "object",
@@ -2259,6 +2399,12 @@
           "title": {
             "type": "string"
           },
+          "document_type": {
+            "type": "string",
+            "enum": [
+              "standup"
+            ]
+          },
           "content": {
             "type": "object",
             "nullable": true,
@@ -2266,14 +2412,13 @@
               "nullable": true
             }
           },
-          "author": {
-            "$ref": "#/components/schemas/UserReference"
-          },
-          "sprint_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Parent sprint ID",
-            "example": "550e8400-e29b-41d4-a716-446655440000"
+          "properties": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "Properties including author_id and date"
           },
           "created_at": {
             "type": "string",
@@ -2291,9 +2436,9 @@
         "required": [
           "id",
           "title",
+          "document_type",
           "content",
-          "author",
-          "sprint_id",
+          "properties",
           "created_at",
           "updated_at"
         ]
@@ -2321,25 +2466,15 @@
       "CreateStandup": {
         "type": "object",
         "properties": {
-          "sprint_id": {
+          "date": {
             "type": "string",
-            "format": "uuid",
-            "description": "Sprint to attach standup to",
-            "example": "550e8400-e29b-41d4-a716-446655440000"
-          },
-          "title": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "content": {
-            "type": "object",
-            "additionalProperties": {
-              "nullable": true
-            }
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Date for the standup (YYYY-MM-DD)",
+            "example": "2025-01-30"
           }
         },
         "required": [
-          "sprint_id"
+          "date"
         ]
       },
       "UpdateStandup": {
@@ -2534,6 +2669,194 @@
           "users",
           "sprints",
           "associations"
+        ]
+      },
+      "ReviewCell": {
+        "type": "object",
+        "properties": {
+          "planApproval": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "approved",
+                  "changed_since_approved"
+                ]
+              },
+              "approved_by": {
+                "type": "string",
+                "nullable": true,
+                "format": "uuid",
+                "description": "UUID identifier",
+                "example": "550e8400-e29b-41d4-a716-446655440000"
+              },
+              "approved_at": {
+                "type": "string",
+                "nullable": true
+              },
+              "approved_version_id": {
+                "type": "number",
+                "nullable": true
+              }
+            },
+            "required": [
+              "state",
+              "approved_by",
+              "approved_at",
+              "approved_version_id"
+            ]
+          },
+          "reviewApproval": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "approved",
+                  "changed_since_approved"
+                ]
+              },
+              "approved_by": {
+                "type": "string",
+                "nullable": true,
+                "format": "uuid",
+                "description": "UUID identifier",
+                "example": "550e8400-e29b-41d4-a716-446655440000"
+              },
+              "approved_at": {
+                "type": "string",
+                "nullable": true
+              },
+              "approved_version_id": {
+                "type": "number",
+                "nullable": true
+              }
+            },
+            "required": [
+              "state",
+              "approved_by",
+              "approved_at",
+              "approved_version_id"
+            ]
+          },
+          "reviewRating": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "value": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              "rated_by": {
+                "type": "string",
+                "format": "uuid",
+                "description": "UUID identifier",
+                "example": "550e8400-e29b-41d4-a716-446655440000"
+              },
+              "rated_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "value",
+              "rated_by",
+              "rated_at"
+            ]
+          },
+          "hasPlan": {
+            "type": "boolean"
+          },
+          "hasRetro": {
+            "type": "boolean"
+          },
+          "sprintId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          }
+        },
+        "required": [
+          "planApproval",
+          "reviewApproval",
+          "reviewRating",
+          "hasPlan",
+          "hasRetro",
+          "sprintId"
+        ]
+      },
+      "ReviewsResponse": {
+        "type": "object",
+        "properties": {
+          "people": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "personId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "UUID identifier",
+                  "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "programId": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "uuid",
+                  "description": "UUID identifier",
+                  "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "programName": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "programColor": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "personId",
+                "name",
+                "programId",
+                "programName",
+                "programColor"
+              ]
+            }
+          },
+          "weeks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SprintPeriod"
+            }
+          },
+          "reviews": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/components/schemas/ReviewCell"
+              }
+            },
+            "description": "Map of personId -> sprintNumber -> review cell data"
+          },
+          "currentSprintNumber": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "people",
+          "weeks",
+          "reviews",
+          "currentSprintNumber"
         ]
       },
       "Workspace": {
@@ -3923,6 +4246,427 @@
           "daysRemaining"
         ]
       },
+      "PlanItem": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "checked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "checked"
+        ]
+      },
+      "FocusPlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "week_number": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanItem"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "week_number",
+          "items"
+        ]
+      },
+      "RecentActivityItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string"
+          },
+          "ticket_number": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "ticket_number",
+          "state",
+          "updated_at"
+        ]
+      },
+      "FocusProject": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string"
+          },
+          "program_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "plan": {
+            "$ref": "#/components/schemas/FocusPlan"
+          },
+          "previous_plan": {
+            "$ref": "#/components/schemas/FocusPlan"
+          },
+          "recent_activity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentActivityItem"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "program_name",
+          "plan",
+          "previous_plan",
+          "recent_activity"
+        ]
+      },
+      "MyFocusResponse": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "current_week_number": {
+            "type": "integer"
+          },
+          "week_start": {
+            "type": "string",
+            "description": "ISO date string (YYYY-MM-DD)"
+          },
+          "week_end": {
+            "type": "string",
+            "description": "ISO date string (YYYY-MM-DD)"
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FocusProject"
+            }
+          }
+        },
+        "required": [
+          "person_id",
+          "current_week_number",
+          "week_start",
+          "week_end",
+          "projects"
+        ]
+      },
+      "WeekMetadata": {
+        "type": "object",
+        "properties": {
+          "week_number": {
+            "type": "integer"
+          },
+          "current_week_number": {
+            "type": "integer"
+          },
+          "start_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "ISO 8601 date string (YYYY-MM-DD)",
+            "example": "2025-01-30"
+          },
+          "end_date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "ISO 8601 date string (YYYY-MM-DD)",
+            "example": "2025-01-30"
+          },
+          "is_current": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "week_number",
+          "current_week_number",
+          "start_date",
+          "end_date",
+          "is_current"
+        ]
+      },
+      "MyWeekPlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string"
+          },
+          "submitted_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "ISO 8601 datetime string",
+            "example": "2025-01-30T14:30:00.000Z"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanItem"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "submitted_at",
+          "items"
+        ]
+      },
+      "MyWeekRetro": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string"
+          },
+          "submitted_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "ISO 8601 datetime string",
+            "example": "2025-01-30T14:30:00.000Z"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanItem"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "submitted_at",
+          "items"
+        ]
+      },
+      "PreviousRetro": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "submitted_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "ISO 8601 datetime string",
+            "example": "2025-01-30T14:30:00.000Z"
+          },
+          "week_number": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "submitted_at",
+          "week_number"
+        ]
+      },
+      "StandupSlot": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "ISO 8601 date string (YYYY-MM-DD)",
+            "example": "2025-01-30"
+          },
+          "day": {
+            "type": "string",
+            "description": "Day of week name (e.g., \"Monday\")"
+          },
+          "standup": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "UUID identifier",
+                "example": "550e8400-e29b-41d4-a716-446655440000"
+              },
+              "title": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "description": "ISO 8601 date string (YYYY-MM-DD)",
+                "example": "2025-01-30"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 datetime string",
+                "example": "2025-01-30T14:30:00.000Z"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "date",
+              "created_at"
+            ]
+          }
+        },
+        "required": [
+          "date",
+          "day",
+          "standup"
+        ]
+      },
+      "WeekProject": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string"
+          },
+          "program_name": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "program_name"
+        ]
+      },
+      "MyWeekResponse": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "person_name": {
+            "type": "string"
+          },
+          "week": {
+            "$ref": "#/components/schemas/WeekMetadata"
+          },
+          "plan": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MyWeekPlan"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "retro": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MyWeekRetro"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "previous_retro": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PreviousRetro"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "standups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StandupSlot"
+            },
+            "description": "7-slot array, one per day of the week"
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WeekProject"
+            }
+          }
+        },
+        "required": [
+          "person_id",
+          "person_name",
+          "week",
+          "plan",
+          "retro",
+          "previous_retro",
+          "standups",
+          "projects"
+        ]
+      },
       "InferredAccountabilityType": {
         "type": "string",
         "enum": [
@@ -3932,7 +4676,9 @@
           "week_start",
           "week_issues",
           "project_plan",
-          "project_retro"
+          "project_retro",
+          "changes_requested_plan",
+          "changes_requested_retro"
         ],
         "description": "Type of accountability task"
       },
@@ -3986,7 +4732,9 @@
               "week_start",
               "week_issues",
               "project_plan",
-              "project_retro"
+              "project_retro",
+              "changes_requested_plan",
+              "changes_requested_retro"
             ],
             "description": "Type of accountability task"
           },
@@ -4038,11 +4786,640 @@
           },
           "total": {
             "type": "integer"
+          },
+          "has_overdue": {
+            "type": "boolean",
+            "description": "True if any item has days_overdue > 0"
+          },
+          "has_due_today": {
+            "type": "boolean",
+            "description": "True if any item has days_overdue === 0"
           }
         },
         "required": [
           "items",
-          "total"
+          "total",
+          "has_overdue",
+          "has_due_today"
+        ]
+      },
+      "WeeklyPlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string"
+          },
+          "document_type": {
+            "type": "string",
+            "enum": [
+              "weekly_plan"
+            ]
+          },
+          "content": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "properties": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "person_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "project_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 datetime string",
+            "example": "2025-01-30T14:30:00.000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 datetime string",
+            "example": "2025-01-30T14:30:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "document_type",
+          "content",
+          "properties",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateWeeklyPlan": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Person document ID",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional legacy project reference",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "week_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sprint/week number"
+          }
+        },
+        "required": [
+          "person_id",
+          "week_number"
+        ]
+      },
+      "WeeklyRetro": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "title": {
+            "type": "string"
+          },
+          "document_type": {
+            "type": "string",
+            "enum": [
+              "weekly_retro"
+            ]
+          },
+          "content": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "properties": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "person_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "project_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 datetime string",
+            "example": "2025-01-30T14:30:00.000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 datetime string",
+            "example": "2025-01-30T14:30:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "document_type",
+          "content",
+          "properties",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateWeeklyRetro": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Person document ID",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional legacy project reference",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "week_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sprint/week number"
+          }
+        },
+        "required": [
+          "person_id",
+          "week_number"
+        ]
+      },
+      "ContentHistoryEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "old_content": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "new_content": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 datetime string",
+            "example": "2025-01-30T14:30:00.000Z"
+          },
+          "changed_by": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "UUID identifier",
+                "example": "550e8400-e29b-41d4-a716-446655440000"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "old_content",
+          "new_content",
+          "created_at",
+          "changed_by"
+        ]
+      },
+      "AllocationWeek": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "ISO 8601 date string (YYYY-MM-DD)",
+            "example": "2025-01-30"
+          },
+          "endDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "ISO 8601 date string (YYYY-MM-DD)",
+            "example": "2025-01-30"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "number",
+          "name",
+          "startDate",
+          "endDate",
+          "isCurrent"
+        ]
+      },
+      "WeekStatus": {
+        "type": "object",
+        "properties": {
+          "isAllocated": {
+            "type": "boolean"
+          },
+          "planId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "planStatus": {
+            "type": "string",
+            "enum": [
+              "done",
+              "due",
+              "late",
+              "future"
+            ]
+          },
+          "retroId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "retroStatus": {
+            "type": "string",
+            "enum": [
+              "done",
+              "due",
+              "late",
+              "future"
+            ]
+          }
+        },
+        "required": [
+          "isAllocated",
+          "planId",
+          "planStatus",
+          "retroId",
+          "retroStatus"
+        ]
+      },
+      "AllocationPerson": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string"
+          },
+          "weeks": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WeekStatus"
+            },
+            "description": "Map of week number to allocation/status data"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "weeks"
+        ]
+      },
+      "AllocationGridResponse": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "projectTitle": {
+            "type": "string"
+          },
+          "currentSprintNumber": {
+            "type": "integer"
+          },
+          "weeks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationWeek"
+            }
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationPerson"
+            }
+          }
+        },
+        "required": [
+          "projectId",
+          "projectTitle",
+          "currentSprintNumber",
+          "weeks",
+          "people"
+        ]
+      },
+      "CommentResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "comment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Thread identifier matching TipTap mark commentId",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "parent_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Parent comment ID for replies, null for root comments",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "content": {
+            "type": "string"
+          },
+          "resolved_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When the thread was resolved, null if unresolved",
+            "example": "2025-01-30T14:30:00.000Z"
+          },
+          "author": {
+            "$ref": "#/components/schemas/UserReference"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 datetime string",
+            "example": "2025-01-30T14:30:00.000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 datetime string",
+            "example": "2025-01-30T14:30:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "document_id",
+          "comment_id",
+          "parent_id",
+          "content",
+          "resolved_at",
+          "author",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateComment": {
+        "type": "object",
+        "properties": {
+          "comment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Thread identifier (generated client-side, matches TipTap mark)",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "parent_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Parent comment ID to reply to",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          }
+        },
+        "required": [
+          "comment_id",
+          "content"
+        ]
+      },
+      "UpdateComment": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 datetime string",
+                "example": "2025-01-30T14:30:00.000Z"
+              },
+              {
+                "nullable": true
+              },
+              {
+                "nullable": true
+              }
+            ],
+            "description": "Set to ISO datetime to resolve, null to un-resolve"
+          }
+        }
+      },
+      "PlanItemAnalysis": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "feedback": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "text",
+          "score",
+          "feedback",
+          "issues"
+        ]
+      },
+      "PlanAnalysisResult": {
+        "type": "object",
+        "properties": {
+          "overall_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanItemAnalysis"
+            }
+          },
+          "workload_assessment": {
+            "type": "string",
+            "enum": [
+              "light",
+              "moderate",
+              "heavy",
+              "excessive"
+            ]
+          },
+          "workload_feedback": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "overall_score",
+          "items",
+          "workload_assessment",
+          "workload_feedback"
+        ]
+      },
+      "RetroItemAnalysis": {
+        "type": "object",
+        "properties": {
+          "plan_item": {
+            "type": "string"
+          },
+          "addressed": {
+            "type": "boolean"
+          },
+          "has_evidence": {
+            "type": "boolean"
+          },
+          "feedback": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_item",
+          "addressed",
+          "has_evidence",
+          "feedback"
+        ]
+      },
+      "RetroAnalysisResult": {
+        "type": "object",
+        "properties": {
+          "overall_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "plan_coverage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetroItemAnalysis"
+            }
+          },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "overall_score",
+          "plan_coverage",
+          "suggestions"
+        ]
+      },
+      "AiStatus": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available"
         ]
       }
     },
@@ -5989,6 +7366,111 @@
         }
       }
     },
+    "/programs/{id}/merge-preview": {
+      "get": {
+        "operationId": "get_program_merge_preview",
+        "tags": [
+          "Programs"
+        ],
+        "summary": "Preview program merge",
+        "description": "Returns counts of entities that will be moved from source to target program, plus any conflicts.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Target program ID to merge into",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "target_id",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Merge preview with entity counts and conflicts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (missing target_id, same program, or archived program)"
+          },
+          "404": {
+            "description": "Program not found"
+          }
+        }
+      }
+    },
+    "/programs/{id}/merge": {
+      "post": {
+        "operationId": "merge_program",
+        "tags": [
+          "Programs"
+        ],
+        "summary": "Merge program into another",
+        "description": "Re-parents all child entities from source program to target program, archives the source with merge metadata.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeProgramRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated target program after merge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Program"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (same program or archived program)"
+          },
+          "404": {
+            "description": "Program not found"
+          },
+          "409": {
+            "description": "Confirmation name does not match"
+          }
+        }
+      }
+    },
     "/weeks": {
       "get": {
         "tags": [
@@ -6877,7 +8359,7 @@
           "Weeks"
         ],
         "summary": "Approve sprint plan",
-        "description": "Mark the sprint plan as approved by the accountable person.",
+        "description": "Mark the sprint plan as approved by the accountable person. Optionally include a manager comment.",
         "parameters": [
           {
             "schema": {
@@ -6891,6 +8373,23 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "comment": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 2000,
+                    "description": "Optional manager note to persist with approval"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Plan approved",
@@ -6917,7 +8416,7 @@
           "Weeks"
         ],
         "summary": "Approve sprint review",
-        "description": "Mark the sprint review as approved by the accountable person.",
+        "description": "Mark the sprint review as approved by the accountable person. Rating is required (1-5 OPM scale). Optional manager comment can be included.",
         "parameters": [
           {
             "schema": {
@@ -6931,6 +8430,32 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rating": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "description": "Required performance rating (1=Unacceptable, 2=Minimally Satisfactory, 3=Fully Successful, 4=Exceeds Expectations, 5=Outstanding)"
+                  },
+                  "comment": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 2000,
+                    "description": "Optional manager note to persist with approval"
+                  }
+                },
+                "required": [
+                  "rating"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Review approved",
@@ -6944,6 +8469,130 @@
           },
           "403": {
             "description": "Not authorized to approve (not the accountable person)"
+          },
+          "404": {
+            "description": "Sprint not found"
+          }
+        }
+      }
+    },
+    "/weeks/{id}/request-plan-changes": {
+      "post": {
+        "tags": [
+          "Weeks"
+        ],
+        "summary": "Request changes on sprint plan",
+        "description": "Request changes on the sprint plan. Requires feedback text explaining what needs to change. Sets plan_approval.state to changes_requested.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "feedback": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Feedback explaining what changes are needed"
+                  }
+                },
+                "required": [
+                  "feedback"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Changes requested on plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Week"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Feedback is required"
+          },
+          "403": {
+            "description": "Not authorized (not the accountable person)"
+          },
+          "404": {
+            "description": "Sprint not found"
+          }
+        }
+      }
+    },
+    "/weeks/{id}/request-retro-changes": {
+      "post": {
+        "tags": [
+          "Weeks"
+        ],
+        "summary": "Request changes on sprint retro",
+        "description": "Request changes on the sprint retro. Requires feedback text explaining what needs to change. Sets review_approval.state to changes_requested.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "feedback": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Feedback explaining what changes are needed"
+                  }
+                },
+                "required": [
+                  "feedback"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Changes requested on retro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Week"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Feedback is required"
+          },
+          "403": {
+            "description": "Not authorized (not the accountable person)"
           },
           "404": {
             "description": "Sprint not found"
@@ -7112,45 +8761,35 @@
         "tags": [
           "Standups"
         ],
-        "summary": "List standups",
-        "description": "List standups with optional filtering by sprint.",
+        "summary": "List standups for current user",
+        "description": "Get standups for the current user within a date range.",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "format": "uuid",
-              "description": "UUID identifier",
-              "example": "550e8400-e29b-41d4-a716-446655440000"
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "Start date (YYYY-MM-DD)",
+              "example": "2025-01-30"
             },
-            "required": false,
-            "name": "sprint_id",
+            "required": true,
+            "name": "date_from",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "format": "uuid",
-              "description": "UUID identifier",
-              "example": "550e8400-e29b-41d4-a716-446655440000"
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "description": "End date (YYYY-MM-DD)",
+              "example": "2025-01-30"
             },
-            "required": false,
-            "name": "author_id",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
-            },
-            "required": false,
-            "name": "limit",
+            "required": true,
+            "name": "date_to",
             "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "List of standups",
+            "description": "List of standups in the date range",
             "content": {
               "application/json": {
                 "schema": {
@@ -7161,6 +8800,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Missing required date_from or date_to params"
           }
         }
       },
@@ -7168,7 +8810,8 @@
         "tags": [
           "Standups"
         ],
-        "summary": "Create standup",
+        "summary": "Create standup (idempotent)",
+        "description": "Create a standalone standup for the current user on a given date. Returns existing standup if one already exists for that date.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7179,8 +8822,18 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Existing standup returned (idempotent)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Standup"
+                }
+              }
+            }
+          },
           "201": {
-            "description": "Created standup",
+            "description": "New standup created",
             "content": {
               "application/json": {
                 "schema": {
@@ -7196,40 +8849,6 @@
       }
     },
     "/standups/{id}": {
-      "get": {
-        "tags": [
-          "Standups"
-        ],
-        "summary": "Get standup by ID",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "UUID identifier",
-              "example": "550e8400-e29b-41d4-a716-446655440000"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Standup details",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Standup"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Standup not found"
-          }
-        }
-      },
       "patch": {
         "tags": [
           "Standups"
@@ -7305,6 +8924,53 @@
           },
           "404": {
             "description": "Standup not found"
+          }
+        }
+      }
+    },
+    "/team/reviews": {
+      "get": {
+        "tags": [
+          "Team"
+        ],
+        "summary": "Get manager review grid",
+        "description": "Get person-by-week matrix of plan approval status, review approval status, and performance ratings.",
+        "operationId": "get_team_reviews",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "description": "Number of weeks to include (default: 5)"
+            },
+            "required": false,
+            "name": "sprint_count",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "boolean",
+              "nullable": true
+            },
+            "required": false,
+            "name": "showArchived",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Manager review grid data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
           }
         }
       }
@@ -8785,6 +10451,67 @@
         }
       }
     },
+    "/dashboard/my-focus": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Get my project focus for the current week",
+        "description": "Returns the current user's project context: allocated projects, current and previous week plans with parsed items, and recent issue activity.",
+        "responses": {
+          "200": {
+            "description": "Project focus data for the current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyFocusResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Person not found for current user"
+          }
+        }
+      }
+    },
+    "/dashboard/my-week": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Get my week dashboard data",
+        "description": "Returns aggregated data for the current user's week: plan, retro, standups (7 slots), and project allocations. Supports ?week_number=N for navigation.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "exclusiveMinimum": true,
+              "description": "Target week number (defaults to current week)"
+            },
+            "required": false,
+            "name": "week_number",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Week dashboard data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyWeekResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Person or workspace not found"
+          }
+        }
+      }
+    },
     "/accountability/action-items": {
       "get": {
         "tags": [
@@ -8802,6 +10529,680 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/weekly-plans": {
+      "post": {
+        "tags": [
+          "Weekly Plans"
+        ],
+        "summary": "Create or get weekly plan (idempotent)",
+        "description": "Creates a weekly plan for a person+week combination, or returns existing one. Uniqueness is by person_id + week_number.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWeeklyPlan"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing weekly plan returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyPlan"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New weekly plan created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyPlan"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Person not found"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Weekly Plans"
+        ],
+        "summary": "Query weekly plans",
+        "description": "List weekly plans with optional filtering by person, project, or week number.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": false,
+            "name": "person_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": false,
+            "name": "project_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            },
+            "required": false,
+            "name": "week_number",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of weekly plans",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WeeklyPlan"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/weekly-plans/{id}": {
+      "get": {
+        "tags": [
+          "Weekly Plans"
+        ],
+        "summary": "Get weekly plan by ID",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Weekly plan document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyPlan"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Weekly plan not found"
+          }
+        }
+      }
+    },
+    "/weekly-plans/{id}/history": {
+      "get": {
+        "tags": [
+          "Weekly Plans"
+        ],
+        "summary": "Get weekly plan content history",
+        "description": "Get content version history for a weekly plan.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of content versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContentHistoryEntry"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Weekly plan not found"
+          }
+        }
+      }
+    },
+    "/weekly-plans/project-allocation-grid/{projectId}": {
+      "get": {
+        "tags": [
+          "Weekly Plans"
+        ],
+        "summary": "Get project allocation grid",
+        "description": "Returns people allocated to a project (via sprint assignee_ids), weeks, and plan/retro status per person per week.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Allocation grid data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationGridResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        }
+      }
+    },
+    "/weekly-retros": {
+      "post": {
+        "tags": [
+          "Weekly Retros"
+        ],
+        "summary": "Create or get weekly retro (idempotent)",
+        "description": "Creates a weekly retro for a person+week combination, or returns existing one. Auto-populates with plan items if a plan exists for the same week.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWeeklyRetro"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Existing weekly retro returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyRetro"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New weekly retro created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyRetro"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Person not found"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Weekly Retros"
+        ],
+        "summary": "Query weekly retros",
+        "description": "List weekly retros with optional filtering by person, project, or week number.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": false,
+            "name": "person_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": false,
+            "name": "project_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "nullable": true
+            },
+            "required": false,
+            "name": "week_number",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of weekly retros",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WeeklyRetro"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/weekly-retros/{id}": {
+      "get": {
+        "tags": [
+          "Weekly Retros"
+        ],
+        "summary": "Get weekly retro by ID",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Weekly retro document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyRetro"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Weekly retro not found"
+          }
+        }
+      }
+    },
+    "/weekly-retros/{id}/history": {
+      "get": {
+        "tags": [
+          "Weekly Retros"
+        ],
+        "summary": "Get weekly retro content history",
+        "description": "Get content version history for a weekly retro.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of content versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContentHistoryEntry"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Weekly retro not found"
+          }
+        }
+      }
+    },
+    "/api/documents/{id}/comments": {
+      "get": {
+        "operationId": "list_document_comments",
+        "summary": "List comments for a document",
+        "tags": [
+          "Comments"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of comments grouped by thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CommentResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "create_document_comment",
+        "summary": "Create a comment on a document",
+        "tags": [
+          "Comments"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateComment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created comment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/comments/{id}": {
+      "patch": {
+        "operationId": "update_comment",
+        "summary": "Update a comment (edit content or resolve/un-resolve)",
+        "tags": [
+          "Comments"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateComment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated comment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_comment",
+        "summary": "Delete a comment",
+        "tags": [
+          "Comments"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUID identifier",
+              "example": "550e8400-e29b-41d4-a716-446655440000"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Comment deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/status": {
+      "get": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "Check AI analysis availability",
+        "description": "Returns whether the AI analysis service is available (Bedrock client initialized).",
+        "responses": {
+          "200": {
+            "description": "AI availability status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ai/analyze-plan": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "Analyze weekly plan quality",
+        "description": "Evaluates plan items for verifiability (falsifiability) and workload. Returns per-item scores and feedback. Advisory only — does not block plan submission.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "TipTap JSON content of the weekly plan"
+                  }
+                },
+                "required": [
+                  "content"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plan analysis result (or {error: \"ai_unavailable\"} if service is down)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanAnalysisResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (max 10 per hour)"
+          }
+        }
+      }
+    },
+    "/ai/analyze-retro": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "Analyze weekly retro quality",
+        "description": "Compares retro against plan for coverage and evidence. Returns per-item mapping and suggestions. Advisory only — does not block retro submission.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "retro_content": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "TipTap JSON content of the weekly retro"
+                  },
+                  "plan_content": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "TipTap JSON content of the weekly plan for comparison"
+                  }
+                },
+                "required": [
+                  "retro_content",
+                  "plan_content"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Retro analysis result (or {error: \"ai_unavailable\"} if service is down)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetroAnalysisResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (max 10 per hour)"
           }
         }
       }

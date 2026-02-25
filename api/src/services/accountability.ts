@@ -383,10 +383,10 @@ async function checkWeeklyPersonAccountability(
          WHERE workspace_id = $1
            AND document_type = 'weekly_plan'
            AND (properties->>'person_id') = $2
-           AND (properties->>'project_id') = $3
-           AND (properties->>'week_number')::int = $4
+           AND (properties->>'week_number')::int = $3
+           AND archived_at IS NULL
            AND deleted_at IS NULL`,
-        [workspaceId, personId, projectId, sprintNumber]
+        [workspaceId, personId, sprintNumber]
       );
 
       const planDoc = planResult.rows[0];
@@ -413,10 +413,10 @@ async function checkWeeklyPersonAccountability(
          WHERE workspace_id = $1
            AND document_type = 'weekly_retro'
            AND (properties->>'person_id') = $2
-           AND (properties->>'project_id') = $3
-           AND (properties->>'week_number')::int = $4
+           AND (properties->>'week_number')::int = $3
+           AND archived_at IS NULL
            AND deleted_at IS NULL`,
-        [workspaceId, personId, projectId, sprintNumber]
+        [workspaceId, personId, sprintNumber]
       );
 
       const retroDoc = retroResult.rows[0];
