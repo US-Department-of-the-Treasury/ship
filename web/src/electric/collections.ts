@@ -7,7 +7,7 @@ import {
   type DocumentRow,
 } from './schemas.js'
 
-const API_URL = import.meta.env.VITE_API_URL ?? ''
+const API_URL = import.meta.env.VITE_API_URL ?? window.location.origin
 
 function shapeUrl(shapeName: string): string {
   return `${API_URL}/api/electric/${shapeName}`

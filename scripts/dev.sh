@@ -6,6 +6,7 @@
 # 2. Pick first available port pair (API: 3000+, Web: 5173+)
 # 3. Write .ports file for reference (which worktree is where)
 # 4. Start dev servers with those ports
+# 5. Start HTTP/2 reverse proxy for Electric SQL shape stream multiplexing
 
 set -e
 
@@ -64,6 +65,7 @@ fi
 # Base ports
 API_BASE=3000
 WEB_BASE=5173
+H2_BASE=4443
 
 # Find an available port starting from base
 find_available_port() {
@@ -87,9 +89,14 @@ find_available_port() {
 echo "Finding available ports..."
 API_PORT=$(find_available_port $API_BASE)
 WEB_PORT=$(find_available_port $WEB_BASE)
+H2_PORT=$(find_available_port $H2_BASE)
 
 echo "Using API port: $API_PORT"
 echo "Using Web port: $WEB_PORT"
+echo "Using H2 proxy port: $H2_PORT"
+
+# Generate TLS certs for the HTTP/2 proxy (no-op if already present)
+bash "$SCRIPT_DIR/generate-dev-certs.sh"
 
 # Write .ports file for reference
 cat > "$ROOT_DIR/.ports" << EOF
@@ -98,6 +105,7 @@ cat > "$ROOT_DIR/.ports" << EOF
 # DO NOT EDIT - will be overwritten on next dev start
 API=$API_PORT
 WEB=$WEB_PORT
+H2=$H2_PORT
 STARTED=$(date -Iseconds)
 WORKTREE=$(basename "$ROOT_DIR")
 EOF
@@ -114,15 +122,36 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Export environment variables and start dev servers
+# Note: VITE_API_URL is intentionally unset so API calls use relative URLs
+# and go through the Vite proxy. This is required for the HTTP/2 proxy to work
+# (all requests must be same-origin for cookie/auth to work over HTTP/2).
 export PORT=$API_PORT
-export CORS_ORIGIN="http://localhost:$WEB_PORT"
+export CORS_ORIGIN="https://localhost:$H2_PORT"
 export VITE_PORT=$WEB_PORT
-export VITE_API_URL="http://localhost:$API_PORT"
+export H2_PORT=$H2_PORT
 
+echo ""
 echo "Starting dev servers..."
-echo "  API: http://localhost:$API_PORT"
-echo "  Web: http://localhost:$WEB_PORT"
+echo "  API:      http://localhost:$API_PORT"
+echo "  Vite:     http://localhost:$WEB_PORT (internal)"
+echo "  ────────────────────────────────────────────"
+echo "  Open:     https://localhost:$H2_PORT  (HTTP/2)"
 echo ""
 
 cd "$ROOT_DIR"
+
+# Start the HTTP/2 proxy in the background alongside pnpm dev
+node "$SCRIPT_DIR/h2-dev-proxy.mjs" &
+H2_PID=$!
+
+# Ensure the H2 proxy is killed on exit
+cleanup_all() {
+  kill $H2_PID 2>/dev/null || true
+  if [ -f "$ROOT_DIR/.ports" ]; then
+    rm -f "$ROOT_DIR/.ports"
+    echo "Cleaned up .ports file"
+  fi
+}
+trap cleanup_all EXIT INT TERM
+
 pnpm --parallel --recursive run dev

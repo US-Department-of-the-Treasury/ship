@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useLiveQuery } from '@tanstack/react-db';
+import { and, eq, isNull } from '@tanstack/db';
 import { useAuth } from '@/hooks/useAuth';
 import {
   workspacesCollection,
@@ -18,7 +19,6 @@ import {
   type WeeklyRetroProperties,
   type StandupProperties,
   type SprintProperties,
-  type DocumentRow,
 } from '@/electric/schemas';
 import { apiPost } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -81,11 +81,6 @@ function computeWeekInfo(sprintStartDate: string, targetWeekNumber?: number) {
   };
 }
 
-// Helper to get properties from a document row
-function getProps<T>(row: DocumentRow): T | null {
-  return parseProperties<T>(row);
-}
-
 export function MyWeekPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -97,144 +92,139 @@ export function MyWeekPage() {
 
   // --- Electric/TanStack DB live queries ---
 
-  // 1. Get workspace for sprint_start_date
-  const { data: workspaces } = useLiveQuery((q) =>
-    q.from({ ws: workspacesCollection })
+  // 1. Get workspace (single row, no filtering needed)
+  const { data: workspace } = useLiveQuery((q) =>
+    q.from({ ws: workspacesCollection }).findOne()
   );
-  const workspace = workspaces?.[0];
 
-  // 2. Get current user's person document
-  const { data: allPersons } = useLiveQuery((q) =>
-    q.from({ p: personsCollection })
+  // 2. Get current user's person document (JSONB property filter)
+  const userId = user?.id;
+  const { data: person } = useLiveQuery(
+    (q) => userId
+      ? q.from({ p: personsCollection })
+          .fn.where((row) => parseProperties<PersonProperties>(row.p)?.user_id === userId)
+          .findOne()
+      : null,
+    [userId],
   );
-  const person = useMemo(() => {
-    if (!allPersons || !user?.id) return null;
-    return allPersons.find((p) => {
-      const props = getProps<PersonProperties>(p);
-      return props?.user_id === user.id;
-    }) ?? null;
-  }, [allPersons, user?.id]);
 
-  // Compute week info from workspace sprint_start_date
+  // Compute week info from workspace sprint_start_date (pure computation, not a filter)
   const weekInfo = useMemo(() => {
     if (!workspace) return null;
     return computeWeekInfo(workspace.sprint_start_date, targetWeekNumber);
   }, [workspace, targetWeekNumber]);
 
-  // 3. Get weekly plans
-  const { data: allPlans } = useLiveQuery((q) =>
-    q.from({ plan: weeklyPlansCollection })
+  // 3. Get weekly plan — fn.select extracts submitted_at from JSONB
+  const personId = person?.id;
+  const weekNumber = weekInfo?.weekNumber;
+  const { data: plan } = useLiveQuery(
+    (q) => personId && weekNumber != null
+      ? q.from({ plan: weeklyPlansCollection })
+          .where(({ plan }) => and(isNull(plan.archived_at), isNull(plan.deleted_at)))
+          .fn.where((row) => {
+            const props = parseProperties<WeeklyPlanProperties>(row.plan);
+            return props?.person_id === personId && props?.week_number === weekNumber;
+          })
+          .fn.select((row) => ({
+            id: row.plan.id,
+            title: row.plan.title,
+            submitted_at: parseProperties<WeeklyPlanProperties>(row.plan)?.submitted_at ?? null,
+          }))
+          .findOne()
+      : null,
+    [personId, weekNumber],
   );
-  const plan = useMemo(() => {
-    if (!allPlans || !person || !weekInfo) return null;
-    return allPlans.find((p) => {
-      const props = getProps<WeeklyPlanProperties>(p);
-      return props?.person_id === person.id
-        && props?.week_number === weekInfo.weekNumber
-        && !p.archived_at && !p.deleted_at;
-    }) ?? null;
-  }, [allPlans, person, weekInfo]);
 
-  // 4. Get weekly retros (current + previous)
-  const { data: allRetros } = useLiveQuery((q) =>
-    q.from({ retro: weeklyRetrosCollection })
+  // 4. Get weekly retro — fn.select extracts submitted_at from JSONB
+  const { data: retro } = useLiveQuery(
+    (q) => personId && weekNumber != null
+      ? q.from({ retro: weeklyRetrosCollection })
+          .where(({ retro }) => and(isNull(retro.archived_at), isNull(retro.deleted_at)))
+          .fn.where((row) => {
+            const props = parseProperties<WeeklyRetroProperties>(row.retro);
+            return props?.person_id === personId && props?.week_number === weekNumber;
+          })
+          .fn.select((row) => ({
+            id: row.retro.id,
+            title: row.retro.title,
+            submitted_at: parseProperties<WeeklyRetroProperties>(row.retro)?.submitted_at ?? null,
+          }))
+          .findOne()
+      : null,
+    [personId, weekNumber],
   );
-  const retro = useMemo(() => {
-    if (!allRetros || !person || !weekInfo) return null;
-    return allRetros.find((r) => {
-      const props = getProps<WeeklyRetroProperties>(r);
-      return props?.person_id === person.id
-        && props?.week_number === weekInfo.weekNumber
-        && !r.archived_at && !r.deleted_at;
-    }) ?? null;
-  }, [allRetros, person, weekInfo]);
 
-  const previousRetro = useMemo(() => {
-    if (!allRetros || !person || !weekInfo || weekInfo.previousWeekNumber <= 0) return null;
-    const found = allRetros.find((r) => {
-      const props = getProps<WeeklyRetroProperties>(r);
-      return props?.person_id === person.id
-        && props?.week_number === weekInfo.previousWeekNumber
-        && !r.archived_at && !r.deleted_at;
-    });
-    if (found) {
-      const props = getProps<WeeklyRetroProperties>(found);
-      return {
-        id: found.id as string | null,
-        title: found.title as string | null,
-        submitted_at: props?.submitted_at ?? null,
-        week_number: weekInfo.previousWeekNumber,
-      };
-    }
-    return {
-      id: null,
-      title: null,
-      submitted_at: null,
-      week_number: weekInfo.previousWeekNumber,
-    };
-  }, [allRetros, person, weekInfo]);
+  // 5. Get previous week's retro — fn.select extracts submitted_at from JSONB
+  const prevWeekNumber = weekInfo?.previousWeekNumber ?? 0;
+  const { data: previousRetro } = useLiveQuery(
+    (q) => personId && prevWeekNumber > 0
+      ? q.from({ retro: weeklyRetrosCollection })
+          .where(({ retro }) => and(isNull(retro.archived_at), isNull(retro.deleted_at)))
+          .fn.where((row) => {
+            const props = parseProperties<WeeklyRetroProperties>(row.retro);
+            return props?.person_id === personId && props?.week_number === prevWeekNumber;
+          })
+          .fn.select((row) => ({
+            id: row.retro.id,
+            submitted_at: parseProperties<WeeklyRetroProperties>(row.retro)?.submitted_at ?? null,
+          }))
+          .findOne()
+      : null,
+    [personId, prevWeekNumber],
+  );
 
-  // 5. Get standups for this week
-  const { data: allStandups } = useLiveQuery((q) =>
-    q.from({ s: standupsCollection })
+  // 6. Get standups — fn.select extracts date from JSONB so render doesn't need parseProperties
+  const { data: userStandups } = useLiveQuery(
+    (q) => userId
+      ? q.from({ s: standupsCollection })
+          .where(({ s }) => isNull(s.deleted_at))
+          .fn.where((row) => parseProperties<StandupProperties>(row.s)?.author_id === userId)
+          .fn.select((row) => ({
+            id: row.s.id,
+            title: row.s.title,
+            date: parseProperties<StandupProperties>(row.s)?.date ?? '',
+          }))
+      : null,
+    [userId],
   );
-  const standupSlots = useMemo(() => {
-    if (!weekInfo || !user?.id) return [];
-    const standupMap = new Map<string, DocumentRow>();
-    if (allStandups) {
-      for (const s of allStandups) {
-        const props = getProps<StandupProperties>(s);
-        if (props?.author_id === user.id && props?.date && !s.deleted_at) {
-          standupMap.set(props.date, s);
-        }
-      }
-    }
-    return weekInfo.standupDates.map((date) => {
-      const standup = standupMap.get(date);
-      const dayOfWeek = new Date(date + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
-      return {
-        date,
-        day: dayOfWeek,
-        standup: standup ? {
-          id: standup.id,
-          title: standup.title,
-          date,
-          created_at: standup.created_at,
-        } : null,
-      };
-    });
-  }, [allStandups, weekInfo, user?.id]);
 
-  // 6. Get project assignments via sprints
-  const { data: allSprints } = useLiveQuery((q) =>
-    q.from({ sp: sprintsCollection })
+  // 7. Get projects via sprint subquery join
+  //    Subquery: filter sprints by person + week, extract project_id via fn.select
+  //    Main: inner join projects on project_id — no imperative bridging code needed
+  const { data: projects } = useLiveQuery(
+    (q) => personId && weekNumber != null
+      ? (() => {
+          const sprintSub = q
+            .from({ sp: sprintsCollection })
+            .fn.where((row) => {
+              const props = parseProperties<SprintProperties>(row.sp);
+              return props?.sprint_number === weekNumber
+                && (props?.assignee_ids?.includes(personId) ?? false);
+            })
+            .fn.select((row) => ({
+              project_id: parseProperties<SprintProperties>(row.sp)?.project_id ?? '',
+            }));
+
+          return q
+            .from({ proj: projectsCollection })
+            .where(({ proj }) => isNull(proj.archived_at))
+            .innerJoin(
+              { sprint: sprintSub },
+              ({ proj, sprint }) => eq(proj.id, sprint.project_id)
+            )
+            .fn.select((row) => ({
+              id: row.proj.id,
+              title: row.proj.title,
+              program_name: null as string | null,
+            }));
+        })()
+      : null,
+    [personId, weekNumber],
   );
-  const { data: allProjects } = useLiveQuery((q) =>
-    q.from({ proj: projectsCollection })
-  );
-  const projects = useMemo(() => {
-    if (!allSprints || !allProjects || !person || !weekInfo) return [];
-    // Find sprints for this week that include this person
-    const projectIds = new Set<string>();
-    for (const sp of allSprints) {
-      const props = getProps<SprintProperties>(sp);
-      if (!props) continue;
-      if (props.sprint_number !== weekInfo.weekNumber) continue;
-      if (!props.assignee_ids?.includes(person.id)) continue;
-      if (props.project_id) projectIds.add(props.project_id);
-    }
-    // Map to project details
-    return allProjects
-      .filter((p) => projectIds.has(p.id) && !p.archived_at)
-      .map((p) => ({
-        id: p.id,
-        title: p.title,
-        program_name: null as string | null, // Would need program association query
-      }));
-  }, [allSprints, allProjects, person, weekInfo]);
 
   // --- Derived state ---
   const isLoading = !workspace || !person || !weekInfo;
+  const projectList = projects ?? [];
 
   const navigateToWeek = (wn: number) => {
     if (weekInfo && wn === weekInfo.currentWeekNumber) {
@@ -307,14 +297,12 @@ export function MyWeekPage() {
     is_current: weekInfo.isCurrent,
   };
 
-  const planSubmittedAt = plan ? getProps<WeeklyPlanProperties>(plan)?.submitted_at ?? null : null;
-  const retroSubmittedAt = retro ? getProps<WeeklyRetroProperties>(retro)?.submitted_at ?? null : null;
+  const planSubmittedAt = plan?.submitted_at ?? null;
+  const retroSubmittedAt = retro?.submitted_at ?? null;
 
-  const showPreviousRetroNudge = week.is_current
-    && previousRetro
-    && previousRetro.id !== null
-    ? !previousRetro.submitted_at
-    : week.is_current && previousRetro && previousRetro.id === null;
+  const showPreviousRetroNudge = week.is_current && prevWeekNumber > 0 && (
+    previousRetro === undefined || !previousRetro.submitted_at
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -353,11 +341,11 @@ export function MyWeekPage() {
       <div className="max-w-3xl mx-auto px-6 py-8">
 
         {/* Project Assignments */}
-        {projects.length > 0 && (
+        {projectList.length > 0 && (
           <section className="mb-6">
             <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Assigned Projects</h2>
             <div className="space-y-1.5">
-              {projects.map(project => (
+              {projectList.map(project => (
                 <Link
                   key={project.id}
                   to={`/documents/${project.id}`}
@@ -379,18 +367,18 @@ export function MyWeekPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-orange-300">Last week's retro is not complete</p>
-                <p className="text-xs text-orange-300/70 mt-0.5">Week {previousRetro!.week_number} retro needs your input</p>
+                <p className="text-xs text-orange-300/70 mt-0.5">Week {prevWeekNumber} retro needs your input</p>
               </div>
-              {previousRetro!.id ? (
+              {previousRetro ? (
                 <Link
-                  to={`/documents/${previousRetro!.id}`}
+                  to={`/documents/${previousRetro.id}`}
                   className="text-xs font-medium text-orange-300 hover:text-orange-200 underline"
                 >
                   Complete retro
                 </Link>
               ) : (
                 <button
-                  onClick={() => handleCreateRetro(previousRetro!.week_number)}
+                  onClick={() => handleCreateRetro(prevWeekNumber)}
                   disabled={creating === 'retro'}
                   className="text-xs font-medium text-orange-300 hover:text-orange-200 underline disabled:opacity-50"
                 >
@@ -411,7 +399,7 @@ export function MyWeekPage() {
                 className="block rounded-lg border border-border bg-surface p-4 hover:border-accent/50 transition-colors relative"
               >
                 {(() => {
-                  const isDue = !planSubmittedAt && week.week_number <= week.current_week_number && projects.length > 0;
+                  const isDue = !planSubmittedAt && week.week_number <= week.current_week_number && projectList.length > 0;
                   const isSubmitted = !!planSubmittedAt;
                   if (isDue) {
                     return <span className="absolute top-3 right-3 text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">Due today</span>;
@@ -424,7 +412,7 @@ export function MyWeekPage() {
                 <p className="text-sm text-foreground">{plan.title}</p>
               </Link>
             ) : (() => {
-              const isDue = week.week_number <= week.current_week_number && projects.length > 0;
+              const isDue = week.week_number <= week.current_week_number && projectList.length > 0;
               return (
                 <button
                   onClick={handleCreatePlan}
@@ -456,7 +444,7 @@ export function MyWeekPage() {
                   const todayDay = new Date().getDay();
                   const isFridayOrLater = todayDay === 0 || todayDay >= 5;
                   const retroDueForWeek = week.week_number < week.current_week_number || (week.week_number === week.current_week_number && isFridayOrLater);
-                  const isDue = !retroSubmittedAt && retroDueForWeek && projects.length > 0;
+                  const isDue = !retroSubmittedAt && retroDueForWeek && projectList.length > 0;
                   const isSubmitted = !!retroSubmittedAt;
                   if (isDue) {
                     return <span className="absolute top-3 right-3 text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">Due today</span>;
@@ -472,7 +460,7 @@ export function MyWeekPage() {
               const todayDay = new Date().getDay();
               const isFridayOrLater = todayDay === 0 || todayDay >= 5;
               const retroDueForWeek = week.week_number < week.current_week_number || (week.week_number === week.current_week_number && isFridayOrLater);
-              const isDue = retroDueForWeek && projects.length > 0;
+              const isDue = retroDueForWeek && projectList.length > 0;
               return (
                 <button
                   onClick={() => handleCreateRetro(week.week_number)}
@@ -498,9 +486,11 @@ export function MyWeekPage() {
         <section className="mb-6">
           <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Daily Updates</h2>
           <div className="space-y-1.5">
-            {standupSlots.map((slot) => {
-              const isPast = isDateInPast(slot.date);
-              const isToday = isDateToday(slot.date);
+            {weekInfo.standupDates.map((date) => {
+              const standup = (userStandups ?? []).find((s) => s.date === date);
+              const dayOfWeek = new Date(date + 'T00:00:00Z').toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+              const isPast = isDateInPast(date);
+              const isToday = isDateToday(date);
               const isFuture = !isPast && !isToday;
 
               const rowClass = cn(
@@ -513,26 +503,26 @@ export function MyWeekPage() {
               const dateLabel = (
                 <div className="w-20 flex-shrink-0">
                   <span className={cn('text-xs font-medium', isToday ? 'text-accent' : 'text-muted')}>
-                    {slot.day.slice(0, 3)}
+                    {dayOfWeek.slice(0, 3)}
                   </span>
                   <span className="text-xs text-muted ml-1">
-                    {new Date(slot.date + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', timeZone: 'UTC' })}
+                    {new Date(date + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', timeZone: 'UTC' })}
                   </span>
                 </div>
               );
 
-              const statusDot = slot.standup
+              const statusDot = standup
                 ? <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
                 : isPast
                   ? <div className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
                   : null;
 
-              if (slot.standup) {
+              if (standup) {
                 return (
-                  <Link key={slot.date} to={`/documents/${slot.standup.id}`} className={rowClass}>
+                  <Link key={date} to={`/documents/${standup.id}`} className={rowClass}>
                     {dateLabel}
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-foreground truncate block">{slot.standup.title}</span>
+                      <span className="text-sm text-foreground truncate block">{standup.title}</span>
                     </div>
                     {statusDot}
                   </Link>
@@ -541,7 +531,7 @@ export function MyWeekPage() {
 
               if (isFuture) {
                 return (
-                  <div key={slot.date} className={rowClass}>
+                  <div key={date} className={rowClass}>
                     {dateLabel}
                     <div className="flex-1 min-w-0">
                       <span className="text-xs text-muted italic">Upcoming</span>
@@ -552,15 +542,15 @@ export function MyWeekPage() {
 
               return (
                 <button
-                  key={slot.date}
-                  onClick={() => handleCreateStandup(slot.date)}
-                  disabled={creating === `standup-${slot.date}`}
+                  key={date}
+                  onClick={() => handleCreateStandup(date)}
+                  disabled={creating === `standup-${date}`}
                   className={cn(rowClass, 'w-full text-left cursor-pointer disabled:opacity-50')}
                 >
                   {dateLabel}
                   <div className="flex-1 min-w-0">
                     <span className="text-xs text-muted">
-                      {creating === `standup-${slot.date}` ? 'Creating...' : '+ Write update'}
+                      {creating === `standup-${date}` ? 'Creating...' : '+ Write update'}
                     </span>
                   </div>
                   {statusDot}

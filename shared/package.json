@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch",
+    "dev": "tsc --watch --preserveWatchOutput",
     "clean": "rm -rf dist",
     "type-check": "tsc --noEmit"
   },
