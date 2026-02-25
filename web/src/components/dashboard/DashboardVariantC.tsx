@@ -43,7 +43,7 @@ export function DashboardVariantC() {
       {/* Prompt Cards or Zen Card */}
       {allComplete ? (
         <div className="rounded-lg border border-green-500/20 bg-background p-6 text-center">
-          <div className="text-base font-semibold text-green-400">
+          <div className="text-base font-semibold" style={{ color: 'var(--status-green-bold)' }}>
             You're in the zone
           </div>
           <div className="text-sm text-muted mt-1">
@@ -51,8 +51,8 @@ export function DashboardVariantC() {
           </div>
           {nextRitual && (
             <div className="flex justify-center mt-3">
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted bg-[#1a1a1a] px-3 py-1.5 rounded">
-                <span className="h-1.5 w-1.5 rounded-full bg-muted/50" />
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted px-3 py-1.5 rounded" style={{ backgroundColor: 'var(--zen-pill-bg)' }}>
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--status-muted-dim)' }} />
                 {nextRitual}
               </span>
             </div>
@@ -71,7 +71,7 @@ export function DashboardVariantC() {
 
       {/* Your Focus */}
       <div>
-        <h2 className="text-xs font-semibold text-muted/60 uppercase tracking-wider mb-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--status-muted-mid)' }}>
           Your Focus{allComplete ? ' This Week' : ''}
         </h2>
 
@@ -182,35 +182,38 @@ function WeekTimeline({ items, allComplete }: { items: TimelineDay[]; allComplet
             key={day.label}
             className={cn(
               'flex-1 px-3 py-3 border-r border-border/50 last:border-r-0 relative',
-              isToday && 'bg-[#1a1a1a]'
+              isToday && 'bg-[var(--zen-pill-bg)]'
             )}
           >
             {isToday && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent" />
             )}
-            <div className={cn(
-              'text-[10px] font-semibold uppercase tracking-wider mb-1.5',
-              isToday ? 'text-accent' : 'text-muted/50'
-            )}>
+            <div
+              className={cn(
+                'text-[10px] font-semibold uppercase tracking-wider mb-1.5',
+                isToday ? 'text-accent' : ''
+              )}
+              style={!isToday ? { color: 'var(--status-muted-dim)' } : undefined}
+            >
               {day.label}
             </div>
             {day.rituals.map((ritual, j) => {
-              const dotColor = {
-                overdue: 'bg-red-500',
-                due: 'bg-amber-500',
-                done: 'bg-green-500',
-                future: 'bg-muted/50',
+              const statusTextVar: Record<string, string> = {
+                overdue: 'var(--status-red)',
+                due: 'var(--status-amber)',
+                done: 'var(--status-green)',
+                future: 'var(--status-muted-dim)',
               };
-              const textColor = {
-                overdue: 'text-red-300',
-                due: 'text-amber-300',
-                done: 'text-green-300',
-                future: 'text-muted/50',
+              const statusDotVar: Record<string, string> = {
+                overdue: 'var(--status-dot-red)',
+                due: 'var(--status-dot-amber)',
+                done: 'var(--status-dot-green)',
+                future: 'var(--status-muted-dim)',
               };
 
               const content = (
-                <div key={j} className={cn('flex items-center gap-1.5 text-[11px] font-medium mt-1', textColor[ritual.status])}>
-                  <span className={cn('h-1.5 w-1.5 rounded-full', dotColor[ritual.status])} />
+                <div key={j} className={cn('flex items-center gap-1.5 text-[11px] font-medium mt-1')} style={{ color: statusTextVar[ritual.status] }}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: statusDotVar[ritual.status] }} />
                   {ritual.label}
                 </div>
               );
@@ -244,10 +247,10 @@ function PromptCard({ item }: { item: ActionItem }) {
       'rounded-lg border bg-background p-6',
       isOverdue ? 'border-red-500/30' : 'border-amber-500/30'
     )}>
-      <div className={cn(
-        'text-[10px] font-semibold uppercase tracking-wider mb-2',
-        isOverdue ? 'text-red-300' : 'text-amber-300'
-      )}>
+      <div
+        className="text-[10px] font-semibold uppercase tracking-wider mb-2"
+        style={{ color: isOverdue ? 'var(--status-red)' : 'var(--status-amber)' }}
+      >
         {isOverdue ? 'Overdue' : 'Due today'}
       </div>
       <div className="text-lg font-semibold text-foreground mb-1.5">
@@ -256,7 +259,7 @@ function PromptCard({ item }: { item: ActionItem }) {
       <div className="text-sm text-muted leading-relaxed mb-4">
         {description}
       </div>
-      <div className="text-xs text-muted/60 mb-4">
+      <div className="text-xs mb-4" style={{ color: 'var(--status-muted-mid)' }}>
         {item.program_name}
       </div>
       <div className="flex gap-2">
@@ -302,7 +305,7 @@ function FocusCard({
         <div className="space-y-0">
           {plan.items.map((item, i) => (
             <div key={i} className="flex items-start gap-2.5 py-1.5">
-              <span className="text-[11px] font-semibold text-muted/50 w-4 text-right shrink-0 mt-0.5">
+              <span className="text-[11px] font-semibold w-4 text-right shrink-0 mt-0.5" style={{ color: 'var(--status-muted-dim)' }}>
                 {i + 1}.
               </span>
               <span className="text-sm text-foreground leading-relaxed">{item.text}</span>

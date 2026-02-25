@@ -4,14 +4,15 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Linear-inspired neutral palette
+        // Theme-aware colors via CSS custom properties (RGB triplets)
+        // Dark defaults: identical to previous hex values
         // All colors meet WCAG 2.1 AA contrast requirements (4.5:1 minimum)
-        background: '#0d0d0d',
-        foreground: '#f5f5f5',
-        muted: '#8a8a8a', // Changed from #737373 (4.09:1) to #8a8a8a (5.1:1 contrast)
-        border: '#262626',
-        accent: '#005ea2', // Logo blue
-        'accent-hover': '#0071bc', // Lighter blue for hover
+        background: 'rgb(var(--color-background) / <alpha-value>)',
+        foreground: 'rgb(var(--color-foreground) / <alpha-value>)',
+        muted: 'rgb(var(--color-muted) / <alpha-value>)',
+        border: 'rgb(var(--color-border) / <alpha-value>)',
+        accent: 'rgb(var(--color-accent) / <alpha-value>)',
+        'accent-hover': 'rgb(var(--color-accent-hover) / <alpha-value>)',
       },
       fontFamily: {
         sans: [
