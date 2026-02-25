@@ -32,11 +32,13 @@ export interface MyWeekResponse {
     id: string;
     title: string;
     submitted_at: string | null;
+    items: Array<{ text: string; checked: boolean }>;
   } | null;
   retro: {
     id: string;
     title: string;
     submitted_at: string | null;
+    items: Array<{ text: string; checked: boolean }>;
   } | null;
   previous_retro: {
     id: string | null;

@@ -565,7 +565,7 @@ router.get('/my-week', authMiddleware, async (req: Request, res: Response) => {
 
     // 3. Fetch plan for target week (by person_id + week_number only)
     const planResult = await pool.query(
-      `SELECT id, title, properties, created_at, updated_at
+      `SELECT id, title, content, properties, created_at, updated_at
        FROM documents
        WHERE workspace_id = $1
          AND document_type = 'weekly_plan'
@@ -582,12 +582,13 @@ router.get('/my-week', authMiddleware, async (req: Request, res: Response) => {
           id: planResult.rows[0].id,
           title: planResult.rows[0].title,
           submitted_at: planResult.rows[0].properties?.submitted_at || null,
+          items: extractPlanItems(planResult.rows[0].content),
         }
       : null;
 
     // 4. Fetch retro for target week
     const retroResult = await pool.query(
-      `SELECT id, title, properties, created_at, updated_at
+      `SELECT id, title, content, properties, created_at, updated_at
        FROM documents
        WHERE workspace_id = $1
          AND document_type = 'weekly_retro'
@@ -604,6 +605,7 @@ router.get('/my-week', authMiddleware, async (req: Request, res: Response) => {
           id: retroResult.rows[0].id,
           title: retroResult.rows[0].title,
           submitted_at: retroResult.rows[0].properties?.submitted_at || null,
+          items: extractPlanItems(retroResult.rows[0].content),
         }
       : null;
 

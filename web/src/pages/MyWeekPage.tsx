@@ -197,35 +197,126 @@ export function MyWeekPage() {
           </div>
         )}
 
-        {/* Plan Section */}
-        <section className="mb-6">
-          <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Weekly Plan</h2>
-          {plan ? (
-            <Link
-              to={`/documents/${plan.id}`}
-              className="block rounded-lg border border-border bg-surface px-4 py-3 hover:border-accent/50 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-foreground">{plan.title}</span>
-                {plan.submitted_at ? (
-                  <span className="text-xs text-green-400">Submitted</span>
+        {/* Plan & Retro - two column layout */}
+        <div className="grid grid-cols-2 gap-8 mb-6">
+          <section>
+            <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Weekly Plan</h2>
+            {plan ? (
+              <Link
+                to={`/documents/${plan.id}`}
+                className="block rounded-lg border border-border bg-surface p-4 hover:border-accent/50 transition-colors relative"
+              >
+                {(() => {
+                  const isDue = !plan.submitted_at && week.week_number <= week.current_week_number && projects.length > 0;
+                  const isSubmitted = !!plan.submitted_at;
+                  if (isDue) {
+                    return <span className="absolute top-3 right-3 text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">Due today</span>;
+                  }
+                  if (isSubmitted) {
+                    return <span className="absolute top-3 right-3 text-xs bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded">Submitted</span>;
+                  }
+                  return <span className="absolute top-3 right-3 text-xs bg-border text-muted px-1.5 py-0.5 rounded">Unsubmitted</span>;
+                })()}
+                {(plan.items ?? []).length > 0 ? (
+                  <div className="space-y-0">
+                    {plan.items.map((item, i) => (
+                      <div key={i} className="flex items-start gap-2.5 py-1.5">
+                        <span className="text-[11px] font-semibold text-muted/50 w-4 text-right shrink-0 mt-0.5">
+                          {i + 1}.
+                        </span>
+                        <span className="text-sm text-foreground leading-relaxed">{item.text}</span>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
-                  <span className="text-xs text-muted">Draft</span>
+                  <p className="text-sm text-muted">+ Create plan for this week</p>
                 )}
-              </div>
-            </Link>
-          ) : (
-            <button
-              onClick={handleCreatePlan}
-              disabled={creating === 'plan'}
-              className="w-full rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted hover:border-accent/50 hover:text-foreground transition-colors disabled:opacity-50"
-            >
-              {creating === 'plan' ? 'Creating...' : '+ Create plan for this week'}
-            </button>
-          )}
-        </section>
+              </Link>
+            ) : (() => {
+              const isDue = week.week_number <= week.current_week_number && projects.length > 0;
+              return (
+                <button
+                  onClick={handleCreatePlan}
+                  disabled={creating === 'plan'}
+                  className={cn(
+                    'w-full rounded-lg border border-dashed px-4 py-3 text-sm transition-colors disabled:opacity-50 flex items-center justify-between',
+                    isDue
+                      ? 'border-red-500/40 text-red-400 font-semibold hover:border-red-500/60'
+                      : 'border-border text-muted hover:border-accent/50 hover:text-foreground'
+                  )}
+                >
+                  {isDue && (
+                    <span className="text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-medium">Due today</span>
+                  )}
+                  <span>{creating === 'plan' ? 'Creating...' : '+ Create plan for this week'}</span>
+                </button>
+              );
+            })()}
+          </section>
 
-        {/* Daily Standups */}
+          <section>
+            <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Weekly Retro</h2>
+            {retro ? (
+              <Link
+                to={`/documents/${retro.id}`}
+                className="block rounded-lg border border-border bg-surface p-4 hover:border-accent/50 transition-colors relative"
+              >
+                {(() => {
+                  const todayDay = new Date().getDay(); // 0=Sun, 5=Fri, 6=Sat
+                  const isFridayOrLater = todayDay === 0 || todayDay >= 5;
+                  const retroDueForWeek = week.week_number < week.current_week_number || (week.week_number === week.current_week_number && isFridayOrLater);
+                  const isDue = !retro.submitted_at && retroDueForWeek && projects.length > 0;
+                  const isSubmitted = !!retro.submitted_at;
+                  if (isDue) {
+                    return <span className="absolute top-3 right-3 text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">Due today</span>;
+                  }
+                  if (isSubmitted) {
+                    return <span className="absolute top-3 right-3 text-xs bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded">Submitted</span>;
+                  }
+                  return <span className="absolute top-3 right-3 text-xs bg-border text-muted px-1.5 py-0.5 rounded">Unsubmitted</span>;
+                })()}
+                {(retro.items ?? []).length > 0 ? (
+                  <div className="space-y-0">
+                    {retro.items.map((item, i) => (
+                      <div key={i} className="flex items-start gap-2.5 py-1.5">
+                        <span className="text-[11px] font-semibold text-muted/50 w-4 text-right shrink-0 mt-0.5">
+                          {i + 1}.
+                        </span>
+                        <span className="text-sm text-foreground leading-relaxed">{item.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted">+ Create retro for this week</p>
+                )}
+              </Link>
+            ) : (() => {
+              const todayDay = new Date().getDay();
+              const isFridayOrLater = todayDay === 0 || todayDay >= 5;
+              const retroDueForWeek = week.week_number < week.current_week_number || (week.week_number === week.current_week_number && isFridayOrLater);
+              const isDue = retroDueForWeek && projects.length > 0;
+              return (
+                <button
+                  onClick={() => handleCreateRetro(week.week_number)}
+                  disabled={creating === 'retro'}
+                  className={cn(
+                    'w-full rounded-lg border border-dashed px-4 py-3 text-sm transition-colors disabled:opacity-50 flex items-center justify-between',
+                    isDue
+                      ? 'border-red-500/40 text-red-400 font-semibold hover:border-red-500/60'
+                      : 'border-border text-muted hover:border-accent/50 hover:text-foreground'
+                  )}
+                >
+                  {isDue && (
+                    <span className="text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-medium">Due today</span>
+                  )}
+                  <span>{creating === 'retro' ? 'Creating...' : '+ Create retro for this week'}</span>
+                </button>
+              );
+            })()}
+          </section>
+        </div>
+
+        {/* Daily Updates */}
         <section className="mb-6">
           <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Daily Updates</h2>
           <div className="space-y-1.5">
@@ -234,81 +325,71 @@ export function MyWeekPage() {
               const isToday = isDateToday(slot.date);
               const isFuture = !isPast && !isToday;
 
-              return (
-                <div
-                  key={slot.date}
-                  className={cn(
-                    'flex items-center gap-3 rounded-lg border px-4 py-2.5',
-                    isToday ? 'border-accent/30 bg-accent/5' : 'border-border bg-surface',
-                    isFuture && 'opacity-40'
-                  )}
-                >
-                  <div className="w-20 flex-shrink-0">
-                    <span className={cn('text-xs font-medium', isToday ? 'text-accent' : 'text-muted')}>
-                      {slot.day.slice(0, 3)}
-                    </span>
-                    <span className="text-xs text-muted ml-1">
-                      {new Date(slot.date + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', timeZone: 'UTC' })}
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {slot.standup ? (
-                      <Link
-                        to={`/documents/${slot.standup.id}`}
-                        className="text-sm text-foreground hover:text-accent truncate block"
-                      >
-                        {slot.standup.title}
-                      </Link>
-                    ) : isFuture ? (
-                      <span className="text-xs text-muted italic">Upcoming</span>
-                    ) : (
-                      <button
-                        onClick={() => handleCreateStandup(slot.date)}
-                        disabled={creating === `standup-${slot.date}`}
-                        className="text-xs text-muted hover:text-foreground disabled:opacity-50"
-                      >
-                        {creating === `standup-${slot.date}` ? 'Creating...' : '+ Write standup'}
-                      </button>
-                    )}
-                  </div>
-                  {slot.standup && (
-                    <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
-                  )}
-                  {!slot.standup && isPast && !isFuture && (
-                    <div className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
-                  )}
+              const rowClass = cn(
+                'flex items-center gap-3 rounded-lg border px-4 py-2.5',
+                isToday ? 'border-accent/30 bg-accent/5' : 'border-border bg-surface',
+                isFuture && 'opacity-40',
+                !isFuture && 'hover:border-accent/50 transition-colors'
+              );
+
+              const dateLabel = (
+                <div className="w-20 flex-shrink-0">
+                  <span className={cn('text-xs font-medium', isToday ? 'text-accent' : 'text-muted')}>
+                    {slot.day.slice(0, 3)}
+                  </span>
+                  <span className="text-xs text-muted ml-1">
+                    {new Date(slot.date + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', timeZone: 'UTC' })}
+                  </span>
                 </div>
+              );
+
+              const statusDot = slot.standup
+                ? <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                : isPast
+                  ? <div className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
+                  : null;
+
+              if (slot.standup) {
+                return (
+                  <Link key={slot.date} to={`/documents/${slot.standup.id}`} className={rowClass}>
+                    {dateLabel}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm text-foreground truncate block">{slot.standup.title}</span>
+                    </div>
+                    {statusDot}
+                  </Link>
+                );
+              }
+
+              if (isFuture) {
+                return (
+                  <div key={slot.date} className={rowClass}>
+                    {dateLabel}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs text-muted italic">Upcoming</span>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <button
+                  key={slot.date}
+                  onClick={() => handleCreateStandup(slot.date)}
+                  disabled={creating === `standup-${slot.date}`}
+                  className={cn(rowClass, 'w-full text-left cursor-pointer disabled:opacity-50')}
+                >
+                  {dateLabel}
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs text-muted">
+                      {creating === `standup-${slot.date}` ? 'Creating...' : '+ Write update'}
+                    </span>
+                  </div>
+                  {statusDot}
+                </button>
               );
             })}
           </div>
-        </section>
-
-        {/* Retro Section */}
-        <section className="mb-6">
-          <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Weekly Retro</h2>
-          {retro ? (
-            <Link
-              to={`/documents/${retro.id}`}
-              className="block rounded-lg border border-border bg-surface px-4 py-3 hover:border-accent/50 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-foreground">{retro.title}</span>
-                {retro.submitted_at ? (
-                  <span className="text-xs text-green-400">Submitted</span>
-                ) : (
-                  <span className="text-xs text-muted">Draft</span>
-                )}
-              </div>
-            </Link>
-          ) : (
-            <button
-              onClick={() => handleCreateRetro(week.week_number)}
-              disabled={creating === 'retro'}
-              className="w-full rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted hover:border-accent/50 hover:text-foreground transition-colors disabled:opacity-50"
-            >
-              {creating === 'retro' ? 'Creating...' : '+ Create retro for this week'}
-            </button>
-          )}
         </section>
 
       </div>
