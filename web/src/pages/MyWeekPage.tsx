@@ -113,38 +113,61 @@ export function MyWeekPage() {
     : week.is_current && previous_retro && previous_retro.id === null;
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-6 py-8">
-        {/* Week Header */}
-        <div className="flex items-center gap-3 mb-8">
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border px-6 py-4">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-xl font-semibold text-foreground">Week {week.week_number}</h1>
+          {week.is_current && (
+            <span className="text-xs bg-accent/20 text-accent px-1.5 py-0.5 rounded">Current</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
           <button
             onClick={() => navigateToWeek(week.week_number - 1)}
             className="p-1.5 rounded hover:bg-border/50 text-muted hover:text-foreground transition-colors"
             aria-label="Previous week"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <div className="flex-1">
-            <h1 className="text-xl font-semibold text-foreground">
-              Week of {formatDateRange(week.start_date, week.end_date)}
-            </h1>
-            <p className="text-sm text-muted mt-0.5">
-              Week {week.week_number}
-              {week.is_current && <span className="ml-2 text-xs bg-accent/20 text-accent px-1.5 py-0.5 rounded">Current</span>}
-            </p>
-          </div>
+          <span className="text-sm text-muted px-1.5">{formatDateRange(week.start_date, week.end_date)}</span>
           <button
             onClick={() => navigateToWeek(week.week_number + 1)}
             className="p-1.5 rounded hover:bg-border/50 text-muted hover:text-foreground transition-colors"
             aria-label="Next week"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
           </button>
         </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+      <div className="max-w-3xl mx-auto px-6 py-8">
+
+        {/* Project Assignments */}
+        {projects.length > 0 && (
+          <section className="mb-6">
+            <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Assigned Projects</h2>
+            <div className="space-y-1.5">
+              {projects.map(project => (
+                <Link
+                  key={project.id}
+                  to={`/documents/${project.id}`}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2.5 hover:border-accent/50 transition-colors"
+                >
+                  <span className="text-sm text-foreground">{project.title}</span>
+                  {project.program_name && (
+                    <span className="text-xs text-muted">{project.program_name}</span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Previous Week Retro Nudge */}
         {showPreviousRetroNudge && (
@@ -204,7 +227,7 @@ export function MyWeekPage() {
 
         {/* Daily Standups */}
         <section className="mb-6">
-          <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Daily Standups</h2>
+          <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Daily Updates</h2>
           <div className="space-y-1.5">
             {standups.map((slot: StandupSlot) => {
               const isPast = isDateInPast(slot.date);
@@ -288,26 +311,7 @@ export function MyWeekPage() {
           )}
         </section>
 
-        {/* Project Assignments */}
-        {projects.length > 0 && (
-          <section>
-            <h2 className="text-sm font-medium text-muted uppercase tracking-wide mb-3">Assigned Projects</h2>
-            <div className="space-y-1.5">
-              {projects.map(project => (
-                <Link
-                  key={project.id}
-                  to={`/documents/${project.id}`}
-                  className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2.5 hover:border-accent/50 transition-colors"
-                >
-                  <span className="text-sm text-foreground">{project.title}</span>
-                  {project.program_name && (
-                    <span className="text-xs text-muted">{project.program_name}</span>
-                  )}
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
+      </div>
       </div>
     </div>
   );

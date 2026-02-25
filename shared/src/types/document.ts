@@ -207,6 +207,7 @@ export interface WeeklyRetroProperties {
 export interface StandupProperties {
   author_id: string;  // REQUIRED - who posted this standup (user ID)
   date?: string;      // OPTIONAL - ISO date string (e.g., '2026-02-24') for standalone standups
+  submitted_at?: string | null;  // ISO timestamp when first saved with content
   [key: string]: unknown;
 }
 

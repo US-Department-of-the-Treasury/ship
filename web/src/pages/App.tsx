@@ -149,7 +149,7 @@ export function AppLayout() {
 
   // Determine active mode from path or document type
   const getActiveMode = (): Mode => {
-    if (location.pathname.startsWith('/dashboard')) return 'dashboard';
+    if (location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/my-week')) return 'dashboard';
     // For /documents/:id routes, use document type from context
     if (location.pathname.startsWith('/documents/')) {
       if (currentDocumentType === 'wiki') return 'docs';
@@ -178,6 +178,7 @@ export function AppLayout() {
   };
 
   const activeMode = getActiveMode();
+  const isMyWeekPage = location.pathname.startsWith('/my-week');
 
   // Get the active document ID from URL - works for /documents/:id and legacy routes
   const getActiveDocumentId = (): string | undefined => {
@@ -198,7 +199,7 @@ export function AppLayout() {
 
   const handleModeClick = (mode: Mode) => {
     switch (mode) {
-      case 'dashboard': navigate('/dashboard'); break;
+      case 'dashboard': navigate('/my-week'); break;
       case 'docs': navigate('/docs'); break;
       case 'issues': navigate('/issues'); break;
       case 'projects': navigate('/projects'); break;
@@ -383,7 +384,7 @@ export function AppLayout() {
           </div>
 
           {/* Expand sidebar button (shows when collapsed) */}
-          {leftSidebarCollapsed && (
+          {leftSidebarCollapsed && !isMyWeekPage && (
             <Tooltip content="Expand sidebar" side="right">
               <button
                 onClick={() => setLeftSidebarCollapsed(false)}
@@ -417,7 +418,7 @@ export function AppLayout() {
         <aside
           className={cn(
             'flex flex-col border-r border-border transition-all duration-200 overflow-hidden select-none',
-            leftSidebarCollapsed ? 'w-0 border-r-0' : 'w-56'
+            (leftSidebarCollapsed || isMyWeekPage) ? 'w-0 border-r-0' : 'w-56'
           )}
           aria-label="Document list"
         >

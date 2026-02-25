@@ -381,11 +381,9 @@ export function RetroQualityBanner({
           return;
         }
         const personId = doc.properties?.person_id;
-        const projectId = doc.properties?.project_id;
         const weekNumber = doc.properties?.week_number;
         if (personId && weekNumber) {
           const params = new URLSearchParams({ person_id: personId, week_number: String(weekNumber) });
-          if (projectId) params.set('project_id', projectId);
           const planRes = await quietGet(`/api/weekly-plans?${params}`);
           if (cancelled) return;
           const plans = planRes.ok ? await planRes.json() : [];

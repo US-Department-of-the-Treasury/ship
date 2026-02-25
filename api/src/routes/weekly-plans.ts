@@ -204,7 +204,8 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
     }
     const personName = personResult.rows[0].title;
 
-    // Verify project exists if provided
+    // Verify project exists if provided.
+    // Note that project_id is a legacy field that is no longer present on new documents
     if (project_id) {
       const projectResult = await client.query(
         `SELECT id, title FROM documents WHERE id = $1 AND workspace_id = $2 AND document_type = 'project'`,
@@ -255,6 +256,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
       week_number,
       submitted_at: null,
     };
+
     if (project_id) {
       properties.project_id = project_id;
     }
@@ -630,6 +632,7 @@ weeklyRetrosRouter.post('/', authMiddleware, async (req: Request, res: Response)
       week_number,
       submitted_at: null,
     };
+    
     if (project_id) {
       properties.project_id = project_id;
     }
