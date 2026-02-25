@@ -75,7 +75,7 @@
         "electric-proxy-endpoint"
       ],
       "priority": "high",
-      "passes": false
+      "passes": true
     },
     {
       "id": "myweek-live-queries",
@@ -99,7 +99,7 @@
         "tanstack-db-collections"
       ],
       "priority": "high",
-      "passes": false
+      "passes": true
     },
     {
       "id": "realtime-sync-verification",

@@ -139,6 +139,14 @@ export function createApp(corsOrigin: string = 'http://localhost:5173'): express
   app.use(cors({
     origin: corsOrigin,
     credentials: true,
+    // Expose Electric-specific headers so the browser can read them
+    exposedHeaders: [
+      'electric-offset',
+      'electric-handle',
+      'electric-schema',
+      'electric-cursor',
+      'electric-up-to-date',
+    ],
   }));
   app.use(express.json({ limit: '10mb' }));  // Large wiki documents can be several MB
   app.use(express.urlencoded({ extended: true, limit: '10mb' })); // For HTML form submissions

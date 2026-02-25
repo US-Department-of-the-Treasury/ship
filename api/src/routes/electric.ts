@@ -1,21 +1,11 @@
 import { Router, Request, Response } from 'express';
+import { ELECTRIC_PROTOCOL_QUERY_PARAMS } from '@electric-sql/client';
 import { authMiddleware } from '../middleware/auth.js';
 
 type RouterType = ReturnType<typeof Router>;
 const router: RouterType = Router();
 
 const ELECTRIC_URL = process.env.ELECTRIC_URL || 'http://localhost:3060';
-
-// Electric protocol query params that should be forwarded from the client
-const ELECTRIC_PARAMS = [
-  'offset',
-  'handle',
-  'live',
-  'cursor',
-  'shape_id',
-  'replica',
-  'columns',
-];
 
 // Shape configurations: map of shape name to Electric shape params.
 // Shapes are defined server-side so the client cannot request arbitrary tables.
@@ -67,7 +57,7 @@ const SHAPE_CONFIGS: Record<string, ShapeConfig> = {
  * Proxies shape requests to the Electric sync engine.
  * - Auth is enforced via session/token middleware
  * - Shape configuration (table, where, columns) is defined server-side
- * - Electric protocol params (offset, handle, live) are forwarded from the client
+ * - Electric protocol params are forwarded from the client per ELECTRIC_PROTOCOL_QUERY_PARAMS
  */
 router.get('/:shapeName', authMiddleware, async (req: Request, res: Response) => {
   const shapeName = req.params.shapeName as string;
@@ -88,11 +78,10 @@ router.get('/:shapeName', authMiddleware, async (req: Request, res: Response) =>
     url.searchParams.set('columns', config.columns);
   }
 
-  // Forward Electric protocol params from the client request
-  for (const param of ELECTRIC_PARAMS) {
-    const value = req.query[param];
-    if (typeof value === 'string') {
-      url.searchParams.set(param, value);
+  // Forward all Electric protocol params from the client request
+  for (const [key, value] of Object.entries(req.query)) {
+    if (typeof value === 'string' && ELECTRIC_PROTOCOL_QUERY_PARAMS.includes(key)) {
+      url.searchParams.set(key, value);
     }
   }
 
@@ -103,10 +92,15 @@ router.get('/:shapeName', authMiddleware, async (req: Request, res: Response) =>
     res.status(response.status);
 
     // Forward response headers (important for Electric caching and streaming)
+    // Strip CORS headers (Express CORS middleware handles these) and encoding headers
     response.headers.forEach((value, key) => {
       const lower = key.toLowerCase();
-      // Skip headers that would conflict with our response
-      if (lower === 'content-encoding' || lower === 'content-length' || lower === 'transfer-encoding') {
+      if (
+        lower === 'content-encoding' ||
+        lower === 'content-length' ||
+        lower === 'transfer-encoding' ||
+        lower.startsWith('access-control-')
+      ) {
         return;
       }
       res.setHeader(key, value);

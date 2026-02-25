@@ -30,3 +30,29 @@ Started: 2026-02-25
   - Session auth works for proxy (cookies forwarded by browser automatically)
   - Electric response streams correctly through Express proxy
 - Next: Install TanStack DB and define document collections
+
+---
+
+## Iteration 3 - Install TanStack DB and define document collections
+- Completed: Installed @tanstack/db, @tanstack/react-db, @tanstack/electric-db-collection, @electric-sql/client, zod. Created web/src/electric/schemas.ts and web/src/electric/collections.ts with 8 collections (1 workspace + 7 document types)
+- Files changed: web/package.json, web/src/electric/schemas.ts (new), web/src/electric/collections.ts (new)
+- Learnings:
+  - Electric sends JSONB as stringified JSON strings, need manual JSON.parse
+  - Zod schemas with z.coerce.number() handle Postgres integer strings
+  - electricCollectionOptions requires getKey function returning string|number
+  - Each collection documents ideal/gap/fix for JSONB filtering
+- Next: Rewrite MyWeekPage with TanStack DB live queries
+
+---
+
+## Iteration 4 - Rewrite MyWeekPage with TanStack DB live queries
+- Completed: Rewrote MyWeekPage to use useLiveQuery against Electric-synced collections instead of useMyWeekQuery REST hook. Week numbers computed client-side from workspace sprint_start_date. Writes remain via REST API.
+- Files changed: web/src/pages/MyWeekPage.tsx, web/src/electric/schemas.ts, web/src/electric/collections.ts, api/src/routes/electric.ts, api/src/app.ts
+- Learnings:
+  - Electric's ShapeStream needs fetchClient with credentials:'include' for cookie-based auth
+  - CORS must expose Electric-specific headers (electric-offset, electric-handle, electric-schema)
+  - Must strip Electric's Access-Control-* headers from proxy (let Express CORS middleware handle it)
+  - ELECTRIC_PROTOCOL_QUERY_PARAMS from @electric-sql/client is the correct set of params to forward (includes 'log' param)
+  - Electric delivers JSONB as parsed objects, not strings — parseProperties must handle both
+  - Plan items preview not available since content column excluded from shapes (acceptable trade-off)
+- Next: Verify real-time sync works end-to-end
