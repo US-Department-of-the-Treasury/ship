@@ -1,18 +1,20 @@
 /**
- * Standup schemas - Daily updates attached to sprints
+ * Standup schemas - Standalone daily updates (date-based)
  */
 
 import { z, registry } from '../registry.js';
-import { UuidSchema, DateTimeSchema, UserReferenceSchema } from './common.js';
+import { UuidSchema, DateTimeSchema, DateSchema } from './common.js';
 
 // ============== Standup Response ==============
 
 export const StandupResponseSchema = z.object({
   id: UuidSchema,
   title: z.string(),
+  document_type: z.literal('standup'),
   content: z.record(z.unknown()).nullable(),
-  author: UserReferenceSchema,
-  sprint_id: UuidSchema.openapi({ description: 'Parent sprint ID' }),
+  properties: z.record(z.unknown()).nullable().openapi({
+    description: 'Properties including author_id and date',
+  }),
   created_at: DateTimeSchema,
   updated_at: DateTimeSchema,
 }).openapi('Standup');
@@ -35,9 +37,7 @@ registry.register('StandupStatus', StandupStatusSchema);
 // ============== Create/Update Standup ==============
 
 export const CreateStandupSchema = z.object({
-  sprint_id: UuidSchema.openapi({ description: 'Sprint to attach standup to' }),
-  title: z.string().max(200).optional(),
-  content: z.record(z.unknown()).optional(),
+  date: DateSchema.openapi({ description: 'Date for the standup (YYYY-MM-DD)' }),
 }).openapi('CreateStandup');
 
 registry.register('CreateStandup', CreateStandupSchema);
@@ -73,48 +73,25 @@ registry.registerPath({
   method: 'get',
   path: '/standups',
   tags: ['Standups'],
-  summary: 'List standups',
-  description: 'List standups with optional filtering by sprint.',
+  summary: 'List standups for current user',
+  description: 'Get standups for the current user within a date range.',
   request: {
     query: z.object({
-      sprint_id: UuidSchema.optional(),
-      author_id: UuidSchema.optional(),
-      limit: z.coerce.number().int().min(1).max(100).optional(),
+      date_from: DateSchema.openapi({ description: 'Start date (YYYY-MM-DD)' }),
+      date_to: DateSchema.openapi({ description: 'End date (YYYY-MM-DD)' }),
     }),
   },
   responses: {
     200: {
-      description: 'List of standups',
+      description: 'List of standups in the date range',
       content: {
         'application/json': {
           schema: z.array(StandupResponseSchema),
         },
       },
     },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/standups/{id}',
-  tags: ['Standups'],
-  summary: 'Get standup by ID',
-  request: {
-    params: z.object({
-      id: UuidSchema,
-    }),
-  },
-  responses: {
-    200: {
-      description: 'Standup details',
-      content: {
-        'application/json': {
-          schema: StandupResponseSchema,
-        },
-      },
-    },
-    404: {
-      description: 'Standup not found',
+    400: {
+      description: 'Missing required date_from or date_to params',
     },
   },
 });
@@ -123,7 +100,8 @@ registry.registerPath({
   method: 'post',
   path: '/standups',
   tags: ['Standups'],
-  summary: 'Create standup',
+  summary: 'Create standup (idempotent)',
+  description: 'Create a standalone standup for the current user on a given date. Returns existing standup if one already exists for that date.',
   request: {
     body: {
       content: {
@@ -134,8 +112,16 @@ registry.registerPath({
     },
   },
   responses: {
+    200: {
+      description: 'Existing standup returned (idempotent)',
+      content: {
+        'application/json': {
+          schema: StandupResponseSchema,
+        },
+      },
+    },
     201: {
-      description: 'Created standup',
+      description: 'New standup created',
       content: {
         'application/json': {
           schema: StandupResponseSchema,

@@ -25,6 +25,7 @@ export * from './backlinks.js';
 export * from './claude.js';
 export * from './dashboard.js';
 export * from './accountability.js';
+export * from './weekly-plans.js';
 export * from './comments.js';
 export * from './ai.js';
 
