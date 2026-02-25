@@ -38,7 +38,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response): Promise<vo
       error: {
         code: ERROR_CODES.VALIDATION_ERROR,
         message: 'Invalid request',
-        details: parseResult.error.flatten(),
+        details: parseResult.error.issues,
       },
     });
     return;

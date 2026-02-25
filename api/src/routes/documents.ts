@@ -39,7 +39,7 @@ const createDocumentSchema = z.object({
   parent_id: z.string().uuid().optional().nullable(),
   program_id: z.string().uuid().optional().nullable(),
   sprint_id: z.string().uuid().optional().nullable(),
-  properties: z.record(z.unknown()).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
   visibility: z.enum(['private', 'workspace']).optional(),
   content: z.any().optional(),
   belongs_to: z.array(z.object({
@@ -53,7 +53,7 @@ const updateDocumentSchema = z.object({
   content: z.any().optional(),
   parent_id: z.string().uuid().optional().nullable(),
   position: z.number().int().min(0).optional(),
-  properties: z.record(z.unknown()).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
   visibility: z.enum(['private', 'workspace']).optional(),
   document_type: z.enum(['wiki', 'issue', 'program', 'project', 'sprint', 'person']).optional(),
   // Issue-specific fields (stored in properties but accepted at top level for convenience)
@@ -507,7 +507,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
   try {
     const parsed = createDocumentSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -600,7 +600,7 @@ router.patch('/:id', authMiddleware, async (req: Request, res: Response) => {
 
     const parsed = updateDocumentSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 
@@ -1150,7 +1150,7 @@ router.post('/:id/convert', authMiddleware, async (req: Request, res: Response) 
 
     const parsed = convertDocumentSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 

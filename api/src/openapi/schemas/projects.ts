@@ -4,8 +4,9 @@
 
 import { z, registry } from '../registry.js';
 import { UuidSchema, DateTimeSchema, UserReferenceSchema } from './common.js';
-
 // ============== ICE Score ==============
+// NOTE: Kept as local definition because shared uses z.union([z.literal(1)...z.literal(5)])
+// which produces anyOf in OpenAPI spec. z.number().int().min(1).max(5) is cleaner for API consumers.
 
 export const ICEScoreSchema = z.number().int().min(1).max(5).openapi({
   description: 'ICE score component (1-5 scale)',
@@ -13,6 +14,10 @@ export const ICEScoreSchema = z.number().int().min(1).max(5).openapi({
 });
 
 // ============== Approval Tracking ==============
+// NOTE: ApprovalState and ApprovalTracking are kept as local definitions because
+// the shared versions use z.union([z.null(), z.literal(...)]) which produces
+// anyOf in OpenAPI spec instead of the expected nullable enum pattern.
+// The shared Zod schemas also lack OpenAPI-specific format annotations (uuid, datetime).
 
 export const ApprovalStateSchema = z.enum(['approved', 'changed_since_approved', 'changes_requested']).nullable().openapi({
   description: 'Approval state: null = pending, approved = current version approved, changed_since_approved = needs re-review, changes_requested = reviewer requested revisions',
@@ -148,7 +153,7 @@ export const ProjectRetroSchema = z.object({
   monetary_impact_actual: z.string().max(500).nullable().optional(),
   success_criteria: z.array(z.string().max(500)).nullable().optional(),
   next_steps: z.string().max(2000).nullable().optional(),
-  content: z.record(z.unknown()).optional(),
+  content: z.record(z.string(), z.unknown()).optional(),
 }).openapi('ProjectRetro');
 
 registry.register('ProjectRetro', ProjectRetroSchema);
@@ -314,7 +319,7 @@ registry.registerPath({
             monetary_impact_actual: z.string().nullable(),
             success_criteria: z.array(z.string()).nullable(),
             next_steps: z.string().nullable(),
-            content: z.record(z.unknown()).nullable(),
+            content: z.record(z.string(), z.unknown()).nullable(),
             sprints: z.array(z.object({
               id: UuidSchema,
               title: z.string(),

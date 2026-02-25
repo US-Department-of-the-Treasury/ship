@@ -1,6 +1,7 @@
 import { cn } from '@/lib/cn';
+import type { DocumentType as SharedDocumentType } from '@ship/shared';
 
-export type DocumentType = 'wiki' | 'issue' | 'project' | 'sprint';
+export type DocumentType = Extract<SharedDocumentType, 'wiki' | 'issue' | 'project' | 'sprint'>;
 
 interface DocumentTypeSelectorProps {
   value: DocumentType;

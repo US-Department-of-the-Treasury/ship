@@ -97,7 +97,7 @@ export const WeekReviewSchema = z.object({
   sprint_id: UuidSchema,
   owner_id: UuidSchema,
   plan_validated: z.boolean().nullable(),
-  content: z.record(z.unknown()).nullable(),
+  content: z.record(z.string(), z.unknown()).nullable(),
   created_at: DateTimeSchema,
   updated_at: DateTimeSchema,
 }).openapi('WeekReview');
@@ -332,7 +332,7 @@ registry.registerPath({
               ticket_number: z.number().int(),
               was_planned: z.boolean(),
             })),
-            content: z.record(z.unknown()).nullable(),
+            content: z.record(z.string(), z.unknown()).nullable(),
           }),
         },
       },
@@ -357,7 +357,7 @@ registry.registerPath({
         'application/json': {
           schema: z.object({
             plan_validated: z.boolean().nullable().optional(),
-            content: z.record(z.unknown()).optional(),
+            content: z.record(z.string(), z.unknown()).optional(),
           }),
         },
       },
@@ -387,7 +387,7 @@ registry.registerPath({
         'application/json': {
           schema: z.object({
             plan_validated: z.boolean().nullable().optional(),
-            content: z.record(z.unknown()).optional(),
+            content: z.record(z.string(), z.unknown()).optional(),
           }),
         },
       },
@@ -464,7 +464,7 @@ registry.registerPath({
           schema: z.array(z.object({
             id: UuidSchema,
             title: z.string(),
-            content: z.record(z.unknown()).nullable(),
+            content: z.record(z.string(), z.unknown()).nullable(),
             author_id: UuidSchema,
             author_name: z.string(),
             created_at: z.string(),
@@ -493,7 +493,7 @@ registry.registerPath({
         'application/json': {
           schema: z.object({
             title: z.string().max(200).optional(),
-            content: z.record(z.unknown()).optional(),
+            content: z.record(z.string(), z.unknown()).optional(),
           }),
         },
       },
@@ -507,7 +507,7 @@ registry.registerPath({
           schema: z.object({
             id: UuidSchema,
             title: z.string(),
-            content: z.record(z.unknown()).nullable(),
+            content: z.record(z.string(), z.unknown()).nullable(),
             author_id: UuidSchema,
             created_at: z.string(),
           }),

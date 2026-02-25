@@ -3,6 +3,10 @@
  */
 
 import { z, registry } from '../registry.js';
+import {
+  BelongsToTypeSchema as SharedBelongsToTypeSchema,
+  DocumentVisibilitySchema as SharedDocumentVisibilitySchema,
+} from '@ship/shared';
 
 // ============== Base Types ==============
 
@@ -56,7 +60,7 @@ export const PaginatedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =
 
 // ============== Belongs To (Document Associations) ==============
 
-export const BelongsToTypeSchema = z.enum(['program', 'project', 'sprint', 'parent']).openapi({
+export const BelongsToTypeSchema = SharedBelongsToTypeSchema.openapi({
   description: 'Type of document association',
 });
 
@@ -78,7 +82,7 @@ registry.register('BelongsToResponse', BelongsToResponseSchema);
 
 // ============== Document Visibility ==============
 
-export const DocumentVisibilitySchema = z.enum(['private', 'workspace']).openapi({
+export const DocumentVisibilitySchema = SharedDocumentVisibilitySchema.openapi({
   description: 'Document visibility scope',
 });
 

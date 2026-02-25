@@ -5,8 +5,9 @@ import { apiPost } from '@/lib/api';
 import { issueKeys } from '@/hooks/useIssuesQuery';
 import { projectKeys } from '@/hooks/useProjectsQuery';
 import { useToast } from '@/components/ui/Toast';
+import type { DocumentType as SharedDocumentType } from '@ship/shared';
 
-export type DocumentType = 'issue' | 'project';
+export type DocumentType = Extract<SharedDocumentType, 'issue' | 'project'>;
 
 interface UseDocumentConversionOptions {
   /** Navigate to the converted document after conversion */

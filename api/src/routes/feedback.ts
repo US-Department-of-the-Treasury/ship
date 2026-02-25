@@ -54,7 +54,7 @@ publicFeedbackRouter.post('/', async (req: Request, res: Response) => {
   try {
     const parsed = createFeedbackSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Invalid input', details: parsed.error.errors });
+      res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
       return;
     }
 

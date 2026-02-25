@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import type { DocumentType as SharedDocumentType } from '@ship/shared';
 
-type DocumentType = 'wiki' | 'issue' | 'project' | 'program' | 'sprint' | 'person' | 'weekly_plan' | 'weekly_retro' | null;
+type DocumentType = SharedDocumentType | null;
 
 interface CurrentDocumentContextValue {
   currentDocumentType: DocumentType;

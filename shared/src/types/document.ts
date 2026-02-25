@@ -47,7 +47,7 @@ export type DocumentType =
 export type IssueState = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
 
 // Issue priorities
-export type IssuePriority = 'low' | 'medium' | 'high' | 'urgent';
+export type IssuePriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 
 // Issue source - provenance, never changes after creation
 export type IssueSource = 'internal' | 'external' | 'action_items';
@@ -260,59 +260,83 @@ export interface Document {
   converted_from_id?: string | null;  // Points to original (set on new doc)
   converted_at?: Date | null;         // When conversion occurred
   converted_by?: string | null;       // User who performed conversion
+  // Schema version for JSONB document versioning
+  version?: number;
 }
 
-// Typed document variants for type safety in application code
-export interface WikiDocument extends Document {
+// Typed document variants for type safety in application code (V1 schemas)
+export interface WikiDocumentV1 extends Document {
   document_type: 'wiki';
   properties: WikiProperties;
+  version?: 1;
 }
 
-export interface IssueDocument extends Document {
+export interface IssueDocumentV1 extends Document {
   document_type: 'issue';
   properties: IssueProperties;
   ticket_number: number;
+  version?: 1;
 }
 
-export interface ProgramDocument extends Document {
+export interface ProgramDocumentV1 extends Document {
   document_type: 'program';
   properties: ProgramProperties;
+  version?: 1;
 }
 
-export interface ProjectDocument extends Document {
+export interface ProjectDocumentV1 extends Document {
   document_type: 'project';
   properties: ProjectProperties;
+  version?: 1;
 }
 
-export interface WeekDocument extends Document {
+export interface WeekDocumentV1 extends Document {
   document_type: 'sprint';
   properties: WeekProperties;
+  version?: 1;
 }
 
-export interface PersonDocument extends Document {
+export interface PersonDocumentV1 extends Document {
   document_type: 'person';
   properties: PersonProperties;
+  version?: 1;
 }
 
-export interface WeeklyPlanDocument extends Document {
+export interface WeeklyPlanDocumentV1 extends Document {
   document_type: 'weekly_plan';
   properties: WeeklyPlanProperties;
+  version?: 1;
 }
 
-export interface WeeklyRetroDocument extends Document {
+export interface WeeklyRetroDocumentV1 extends Document {
   document_type: 'weekly_retro';
   properties: WeeklyRetroProperties;
+  version?: 1;
 }
 
-export interface StandupDocument extends Document {
+export interface StandupDocumentV1 extends Document {
   document_type: 'standup';
   properties: StandupProperties;
+  version?: 1;
 }
 
-export interface WeeklyReviewDocument extends Document {
+export interface WeeklyReviewDocumentV1 extends Document {
   document_type: 'weekly_review';
   properties: WeeklyReviewProperties;
+  version?: 1;
 }
+
+// Backward-compatible type aliases (point to current version)
+export type WikiDocument = WikiDocumentV1;
+export type IssueDocument = IssueDocumentV1;
+export type ProgramDocument = ProgramDocumentV1;
+export type ProjectDocument = ProjectDocumentV1;
+export type WeekDocument = WeekDocumentV1;
+export type PersonDocument = PersonDocumentV1;
+export type WeeklyPlanDocument = WeeklyPlanDocumentV1;
+export type WeeklyRetroDocument = WeeklyRetroDocumentV1;
+export type StandupDocument = StandupDocumentV1;
+export type WeeklyReviewDocument = WeeklyReviewDocumentV1;
 
 // Default project properties - ICE and owner start as null (not yet set)
 export const DEFAULT_PROJECT_PROPERTIES: Partial<ProjectProperties> = {

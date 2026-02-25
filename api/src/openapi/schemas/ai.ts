@@ -74,7 +74,7 @@ registry.registerPath({
       content: {
         'application/json': {
           schema: z.object({
-            content: z.record(z.unknown()).describe('TipTap JSON content of the weekly plan'),
+            content: z.record(z.string(), z.unknown()).describe('TipTap JSON content of the weekly plan'),
           }),
         },
       },
@@ -102,8 +102,8 @@ registry.registerPath({
       content: {
         'application/json': {
           schema: z.object({
-            retro_content: z.record(z.unknown()).describe('TipTap JSON content of the weekly retro'),
-            plan_content: z.record(z.unknown()).describe('TipTap JSON content of the weekly plan for comparison'),
+            retro_content: z.record(z.string(), z.unknown()).describe('TipTap JSON content of the weekly retro'),
+            plan_content: z.record(z.string(), z.unknown()).describe('TipTap JSON content of the weekly plan for comparison'),
           }),
         },
       },

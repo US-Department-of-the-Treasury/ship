@@ -355,11 +355,11 @@ components:
     IssuePriority:
       type: string
       enum:
-        - urgent
-        - high
-        - medium
-        - low
         - none
+        - low
+        - medium
+        - high
+        - urgent
       description: Issue priority level
     IssueSource:
       type: string
@@ -400,11 +400,11 @@ components:
         priority:
           type: string
           enum:
-            - urgent
-            - high
-            - medium
-            - low
             - none
+            - low
+            - medium
+            - high
+            - urgent
           description: Issue priority level
         assignee_id:
           type: string
@@ -453,11 +453,15 @@ components:
           enum:
             - standup
             - weekly_plan
+            - weekly_retro
             - weekly_review
             - week_start
             - week_issues
             - project_plan
             - project_retro
+            - changes_requested_plan
+            - changes_requested_retro
+            - null
           description: Type of accountability task for auto-generated issues
         rejection_reason:
           type: string
@@ -559,11 +563,11 @@ components:
         priority:
           type: string
           enum:
-            - urgent
-            - high
-            - medium
-            - low
             - none
+            - low
+            - medium
+            - high
+            - urgent
           default: medium
           description: Issue priority level
         assignee_id:
@@ -608,11 +612,15 @@ components:
           enum:
             - standup
             - weekly_plan
+            - weekly_retro
             - weekly_review
             - week_start
             - week_issues
             - project_plan
             - project_retro
+            - changes_requested_plan
+            - changes_requested_retro
+            - null
           description: Type of accountability task for auto-generated issues
       required:
         - title
@@ -637,11 +645,11 @@ components:
         priority:
           type: string
           enum:
-            - urgent
-            - high
-            - medium
-            - low
             - none
+            - low
+            - medium
+            - high
+            - urgent
           description: Issue priority level
         assignee_id:
           type: string
@@ -897,7 +905,9 @@ components:
           enum:
             - approved
             - changed_since_approved
-          description: "Approval state: null = pending, approved = current version approved, changed_since_approved = needs re-review"
+            - changes_requested
+            - null
+          description: "Approval state: null = pending, approved = current version approved, changed_since_approved = needs re-review, changes_requested = reviewer requested revisions"
         approved_by:
           type: string
           nullable: true
@@ -914,6 +924,14 @@ components:
           type: integer
           nullable: true
           description: document_history.id that was approved
+        feedback:
+          type: string
+          nullable: true
+          description: Feedback explaining required revisions when state is changes_requested
+        comment:
+          type: string
+          nullable: true
+          description: Optional manager note attached to an approval decision
       required:
         - state
         - approved_by
@@ -1013,6 +1031,14 @@ components:
         has_retro:
           type: boolean
           description: Whether project has a retrospective document
+        has_design_review:
+          type: boolean
+          nullable: true
+          description: Whether design review has been completed
+        design_review_notes:
+          type: string
+          nullable: true
+          description: Optional notes from design review
         target_date:
           type: string
           nullable: true
@@ -1080,6 +1106,8 @@ components:
         - plan_approval
         - retro_approval
         - has_retro
+        - has_design_review
+        - design_review_notes
         - target_date
         - inferred_status
         - sprint_count
@@ -1261,6 +1289,13 @@ components:
           format: date-time
           description: ISO 8601 datetime string
           example: "2025-01-30T14:30:00.000Z"
+        has_design_review:
+          type: boolean
+          nullable: true
+        design_review_notes:
+          type: string
+          nullable: true
+          maxLength: 2000
     ProjectRetro:
       type: object
       properties:
@@ -1462,6 +1497,83 @@ components:
           format: date-time
           description: ISO 8601 datetime string
           example: "2025-01-30T14:30:00.000Z"
+    MergePreview:
+      type: object
+      properties:
+        source:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            name:
+              type: string
+          required:
+            - id
+            - name
+        target:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            name:
+              type: string
+          required:
+            - id
+            - name
+        counts:
+          type: object
+          properties:
+            projects:
+              type: integer
+            issues:
+              type: integer
+            sprints:
+              type: integer
+            wikis:
+              type: integer
+          required:
+            - projects
+            - issues
+            - sprints
+            - wikis
+        conflicts:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              message:
+                type: string
+            required:
+              - type
+              - message
+      required:
+        - source
+        - target
+        - counts
+        - conflicts
+    MergeProgramRequest:
+      type: object
+      properties:
+        target_id:
+          type: string
+          format: uuid
+          description: Target program ID to merge into
+          example: 550e8400-e29b-41d4-a716-446655440000
+        confirm_name:
+          type: string
+          minLength: 1
+          description: Source program name for type-to-confirm safeguard
+      required:
+        - target_id
+        - confirm_name
     Week:
       type: object
       properties:
@@ -1910,6 +2022,28 @@ components:
         - startDate
         - endDate
         - isCurrent
+    TeamGridResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/Person"
+        sprints:
+          type: array
+          items:
+            $ref: "#/components/schemas/SprintPeriod"
+        associations:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              $ref: "#/components/schemas/TeamGridAssociation"
+          description: Map of user_id -> sprint_number -> associations
+      required:
+        - users
+        - sprints
+        - associations
     TeamGridAssociation:
       type: object
       properties:
@@ -1962,28 +2096,148 @@ components:
       required:
         - programs
         - issues
-    TeamGridResponse:
+    ReviewCell:
       type: object
       properties:
-        users:
+        planApproval:
+          type: object
+          nullable: true
+          properties:
+            state:
+              type: string
+              enum:
+                - approved
+                - changed_since_approved
+            approved_by:
+              type: string
+              nullable: true
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            approved_at:
+              type: string
+              nullable: true
+            approved_version_id:
+              type: number
+              nullable: true
+          required:
+            - state
+            - approved_by
+            - approved_at
+            - approved_version_id
+        reviewApproval:
+          type: object
+          nullable: true
+          properties:
+            state:
+              type: string
+              enum:
+                - approved
+                - changed_since_approved
+            approved_by:
+              type: string
+              nullable: true
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            approved_at:
+              type: string
+              nullable: true
+            approved_version_id:
+              type: number
+              nullable: true
+          required:
+            - state
+            - approved_by
+            - approved_at
+            - approved_version_id
+        reviewRating:
+          type: object
+          nullable: true
+          properties:
+            value:
+              type: integer
+              minimum: 1
+              maximum: 5
+            rated_by:
+              type: string
+              format: uuid
+              description: UUID identifier
+              example: 550e8400-e29b-41d4-a716-446655440000
+            rated_at:
+              type: string
+          required:
+            - value
+            - rated_by
+            - rated_at
+        hasPlan:
+          type: boolean
+        hasRetro:
+          type: boolean
+        sprintId:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+      required:
+        - planApproval
+        - reviewApproval
+        - reviewRating
+        - hasPlan
+        - hasRetro
+        - sprintId
+    ReviewsResponse:
+      type: object
+      properties:
+        people:
           type: array
           items:
-            $ref: "#/components/schemas/Person"
-        sprints:
+            type: object
+            properties:
+              personId:
+                type: string
+                format: uuid
+                description: UUID identifier
+                example: 550e8400-e29b-41d4-a716-446655440000
+              name:
+                type: string
+              programId:
+                type: string
+                nullable: true
+                format: uuid
+                description: UUID identifier
+                example: 550e8400-e29b-41d4-a716-446655440000
+              programName:
+                type: string
+                nullable: true
+              programColor:
+                type: string
+                nullable: true
+            required:
+              - personId
+              - name
+              - programId
+              - programName
+              - programColor
+        weeks:
           type: array
           items:
             $ref: "#/components/schemas/SprintPeriod"
-        associations:
+        reviews:
           type: object
           additionalProperties:
             type: object
             additionalProperties:
-              $ref: "#/components/schemas/TeamGridAssociation"
-          description: Map of user_id -> sprint_number -> associations
+              $ref: "#/components/schemas/ReviewCell"
+          description: Map of personId -> sprintNumber -> review cell data
+        currentSprintNumber:
+          type: integer
       required:
-        - users
-        - sprints
-        - associations
+        - people
+        - weeks
+        - reviews
+        - currentSprintNumber
     Workspace:
       type: object
       properties:
@@ -3025,6 +3279,111 @@ components:
         - items
         - currentSprintNumber
         - daysRemaining
+    PlanItem:
+      type: object
+      properties:
+        text:
+          type: string
+        checked:
+          type: boolean
+      required:
+        - text
+        - checked
+    FocusPlan:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        week_number:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanItem"
+      required:
+        - id
+        - week_number
+        - items
+    RecentActivityItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        title:
+          type: string
+        ticket_number:
+          type: integer
+        state:
+          type: string
+        updated_at:
+          type: string
+      required:
+        - id
+        - title
+        - ticket_number
+        - state
+        - updated_at
+    FocusProject:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        title:
+          type: string
+        program_name:
+          type: string
+          nullable: true
+        plan:
+          $ref: "#/components/schemas/FocusPlan"
+        previous_plan:
+          $ref: "#/components/schemas/FocusPlan"
+        recent_activity:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentActivityItem"
+      required:
+        - id
+        - title
+        - program_name
+        - plan
+        - previous_plan
+        - recent_activity
+    MyFocusResponse:
+      type: object
+      properties:
+        person_id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        current_week_number:
+          type: integer
+        week_start:
+          type: string
+          description: ISO date string (YYYY-MM-DD)
+        week_end:
+          type: string
+          description: ISO date string (YYYY-MM-DD)
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/FocusProject"
+      required:
+        - person_id
+        - current_week_number
+        - week_start
+        - week_end
+        - projects
     InferredAccountabilityType:
       type: string
       enum:
@@ -3035,6 +3394,8 @@ components:
         - week_issues
         - project_plan
         - project_retro
+        - changes_requested_plan
+        - changes_requested_retro
       description: Type of accountability task
     InferredActionItem:
       type: object
@@ -3075,6 +3436,8 @@ components:
             - week_issues
             - project_plan
             - project_retro
+            - changes_requested_plan
+            - changes_requested_retro
           description: Type of accountability task
         accountability_target_id:
           type: string
@@ -3115,9 +3478,193 @@ components:
             $ref: "#/components/schemas/InferredActionItem"
         total:
           type: integer
+        has_overdue:
+          type: boolean
+          description: True if any item has days_overdue > 0
+        has_due_today:
+          type: boolean
+          description: True if any item has days_overdue === 0
       required:
         - items
         - total
+        - has_overdue
+        - has_due_today
+    CommentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        document_id:
+          type: string
+          format: uuid
+          description: UUID identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        comment_id:
+          type: string
+          format: uuid
+          description: Thread identifier matching TipTap mark commentId
+          example: 550e8400-e29b-41d4-a716-446655440000
+        parent_id:
+          type: string
+          nullable: true
+          format: uuid
+          description: Parent comment ID for replies, null for root comments
+          example: 550e8400-e29b-41d4-a716-446655440000
+        content:
+          type: string
+        resolved_at:
+          type: string
+          nullable: true
+          format: date-time
+          description: When the thread was resolved, null if unresolved
+          example: "2025-01-30T14:30:00.000Z"
+        author:
+          $ref: "#/components/schemas/UserReference"
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: ISO 8601 datetime string
+          example: "2025-01-30T14:30:00.000Z"
+      required:
+        - id
+        - document_id
+        - comment_id
+        - parent_id
+        - content
+        - resolved_at
+        - author
+        - created_at
+        - updated_at
+    CreateComment:
+      type: object
+      properties:
+        comment_id:
+          type: string
+          format: uuid
+          description: Thread identifier (generated client-side, matches TipTap mark)
+          example: 550e8400-e29b-41d4-a716-446655440000
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        parent_id:
+          type: string
+          format: uuid
+          description: Parent comment ID to reply to
+          example: 550e8400-e29b-41d4-a716-446655440000
+      required:
+        - comment_id
+        - content
+    UpdateComment:
+      type: object
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        resolved_at:
+          anyOf:
+            - type: string
+                            format: date-time
+                            description: ISO 8601 datetime string
+                            example: "2025-01-30T14:30:00.000Z"
+            - nullable: true
+          description: Set to ISO datetime to resolve, null to un-resolve
+    PlanAnalysisResult:
+      type: object
+      properties:
+        overall_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanItemAnalysis"
+        workload_assessment:
+          type: string
+          enum:
+            - light
+            - moderate
+            - heavy
+            - excessive
+        workload_feedback:
+          type: string
+      required:
+        - overall_score
+        - items
+        - workload_assessment
+        - workload_feedback
+    PlanItemAnalysis:
+      type: object
+      properties:
+        text:
+          type: string
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+        feedback:
+          type: string
+        issues:
+          type: array
+          items:
+            type: string
+      required:
+        - text
+        - score
+        - feedback
+        - issues
+    RetroAnalysisResult:
+      type: object
+      properties:
+        overall_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        plan_coverage:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetroItemAnalysis"
+        suggestions:
+          type: array
+          items:
+            type: string
+      required:
+        - overall_score
+        - plan_coverage
+        - suggestions
+    RetroItemAnalysis:
+      type: object
+      properties:
+        plan_item:
+          type: string
+        addressed:
+          type: boolean
+        has_evidence:
+          type: boolean
+        feedback:
+          type: string
+      required:
+        - plan_item
+        - addressed
+        - has_evidence
+        - feedback
+    AiStatus:
+      type: object
+      properties:
+        available:
+          type: boolean
+      required:
+        - available
   parameters:
 {}
 paths:
@@ -3143,6 +3690,7 @@ paths:
                         - weekly_review
                       description: Filter by document type
                     required: false
+                    description: Filter by document type
                     name: type
                     in: query
         - schema:
@@ -3151,6 +3699,7 @@ paths:
                       description: Filter by parent document ID
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: false
+                    description: Filter by parent document ID
                     name: parent_id
                     in: query
       responses:
@@ -3230,6 +3779,7 @@ paths:
                       description: Document ID
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: Document ID
                     name: id
                     in: path
       responses:
@@ -3264,6 +3814,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -3292,6 +3843,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -3311,24 +3863,27 @@ paths:
                       description: Filter by state(s), comma-separated
                       example: backlog,todo,in_progress
                     required: false
+                    description: Filter by state(s), comma-separated
                     name: state
                     in: query
         - schema:
                       type: string
                       enum:
-                        - urgent
-                        - high
-                        - medium
-                        - low
                         - none
+                        - low
+                        - medium
+                        - high
+                        - urgent
                       description: Issue priority level
                     required: false
+                    description: Issue priority level
                     name: priority
                     in: query
         - schema:
                       type: string
                       description: Filter by assignee ID. Use "null" or "unassigned" for unassigned issues.
                     required: false
+                    description: Filter by assignee ID. Use "null" or "unassigned" for unassigned issues.
                     name: assignee_id
                     in: query
         - schema:
@@ -3337,6 +3892,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: false
+                    description: UUID identifier
                     name: program_id
                     in: query
         - schema:
@@ -3345,6 +3901,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: false
+                    description: UUID identifier
                     name: sprint_id
                     in: query
         - schema:
@@ -3355,6 +3912,7 @@ paths:
                         - action_items
                       description: Issue source/provenance (never changes after creation)
                     required: false
+                    description: Issue source/provenance (never changes after creation)
                     name: source
                     in: query
         - schema:
@@ -3365,6 +3923,7 @@ paths:
                         - is_sub_issue
                       description: Filter by parent/child relationship
                     required: false
+                    description: Filter by parent/child relationship
                     name: parent_filter
                     in: query
       responses:
@@ -3406,6 +3965,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -3423,16 +3983,19 @@ paths:
                 type: string
                 description: URL to the new document
               required: true
+              description: URL to the new document
             X-Converted-Type:
               schema:
                 type: string
                 description: New document type
               required: true
+              description: New document type
             X-Converted-To:
               schema:
                 type: string
                 description: New document ID
               required: true
+              description: New document ID
         404:
           description: Issue not found
     patch:
@@ -3446,6 +4009,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -3482,6 +4046,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -3504,6 +4069,7 @@ paths:
                       description: "Ticket number (without the # prefix)"
                       example: 42
                     required: false
+                    description: "Ticket number (without the # prefix)"
                     name: number
                     in: path
       responses:
@@ -3530,6 +4096,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -3597,6 +4164,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -3623,6 +4191,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -3662,6 +4231,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -3688,6 +4258,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
         - schema:
@@ -3722,6 +4293,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -3793,11 +4365,11 @@ paths:
                         priority:
                           type: string
                           enum:
-                            - urgent
-                            - high
-                            - medium
-                            - low
                             - none
+                            - low
+                            - medium
+                            - high
+                            - urgent
                           description: Issue priority level
                         ticket_number:
                           type: integer
@@ -3817,11 +4389,15 @@ paths:
                           enum:
                             - standup
                             - weekly_plan
+                            - weekly_retro
                             - weekly_review
                             - week_start
                             - week_issues
                             - project_plan
                             - project_retro
+                            - changes_requested_plan
+                            - changes_requested_retro
+                            - null
                           description: Type of accountability task for auto-generated issues
                         accountability_target_id:
                           type: string
@@ -3864,6 +4440,7 @@ paths:
                       nullable: true
                       description: Include archived projects
                     required: false
+                    description: Include archived projects
                     name: archived
                     in: query
         - schema:
@@ -3890,6 +4467,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: false
+                    description: UUID identifier
                     name: program_id
                     in: query
       responses:
@@ -3931,6 +4509,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -3953,6 +4532,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -3980,6 +4560,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -4000,6 +4581,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -4106,6 +4688,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -4133,6 +4716,7 @@ paths:
                       nullable: true
                       description: Include archived programs
                     required: false
+                    description: Include archived programs
                     name: archived
                     in: query
       responses:
@@ -4174,6 +4758,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -4196,6 +4781,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -4223,6 +4809,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -4243,6 +4830,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
         - schema:
@@ -4314,6 +4902,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
         - schema:
@@ -4374,6 +4963,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
         - schema:
@@ -4419,6 +5009,78 @@ paths:
                     - completed_count
         404:
           description: Program not found
+  /programs/{id}/merge-preview:
+    get:
+      operationId: get_program_merge_preview
+      tags:
+        - Programs
+      summary: Preview program merge
+      description: Returns counts of entities that will be moved from source to target program, plus any conflicts.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    description: UUID identifier
+                    name: id
+                    in: path
+        - schema:
+                      type: string
+                      format: uuid
+                      description: Target program ID to merge into
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    description: Target program ID to merge into
+                    name: target_id
+                    in: query
+      responses:
+        200:
+          description: Merge preview with entity counts and conflicts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergePreview"
+        400:
+          description: Invalid request (missing target_id, same program, or archived program)
+        404:
+          description: Program not found
+  /programs/{id}/merge:
+    post:
+      operationId: merge_program
+      tags:
+        - Programs
+      summary: Merge program into another
+      description: Re-parents all child entities from source program to target program, archives the source with merge metadata.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    description: UUID identifier
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeProgramRequest"
+      responses:
+        200:
+          description: Updated target program after merge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Program"
+        400:
+          description: Invalid request (same program or archived program)
+        404:
+          description: Program not found
+        409:
+          description: Confirmation name does not match
   /weeks:
     get:
       tags:
@@ -4465,6 +5127,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: false
+                    description: UUID identifier
                     name: program_id
                     in: query
         - schema:
@@ -4500,6 +5163,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -4522,6 +5186,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -4549,6 +5214,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -4569,6 +5235,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -4598,6 +5265,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -4673,6 +5341,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -4704,6 +5373,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -4737,6 +5407,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
         - schema:
@@ -4804,6 +5475,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
         - schema:
@@ -4865,6 +5537,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -4928,6 +5601,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -4954,6 +5628,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -5017,7 +5692,7 @@ paths:
       tags:
         - Weeks
       summary: Approve sprint plan
-      description: Mark the sprint plan as approved by the accountable person.
+      description: Mark the sprint plan as approved by the accountable person. Optionally include a manager comment.
       parameters:
         - schema:
                       type: string
@@ -5025,8 +5700,20 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment:
+                  type: string
+                  nullable: true
+                  maxLength: 2000
+                  description: Optional manager note to persist with approval
       responses:
         200:
           description: Plan approved
@@ -5043,7 +5730,7 @@ paths:
       tags:
         - Weeks
       summary: Approve sprint review
-      description: Mark the sprint review as approved by the accountable person.
+      description: Mark the sprint review as approved by the accountable person. Rating is required (1-5 OPM scale). Optional manager comment can be included.
       parameters:
         - schema:
                       type: string
@@ -5051,8 +5738,27 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  description: Required performance rating (1=Unacceptable, 2=Minimally Satisfactory, 3=Fully Successful, 4=Exceeds Expectations, 5=Outstanding)
+                comment:
+                  type: string
+                  nullable: true
+                  maxLength: 2000
+                  description: Optional manager note to persist with approval
+              required:
+                - rating
       responses:
         200:
           description: Review approved
@@ -5062,6 +5768,88 @@ paths:
                 $ref: "#/components/schemas/Week"
         403:
           description: Not authorized to approve (not the accountable person)
+        404:
+          description: Sprint not found
+  /weeks/{id}/request-plan-changes:
+    post:
+      tags:
+        - Weeks
+      summary: Request changes on sprint plan
+      description: Request changes on the sprint plan. Requires feedback text explaining what needs to change. Sets plan_approval.state to changes_requested.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    description: UUID identifier
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                feedback:
+                  type: string
+                  minLength: 1
+                  description: Feedback explaining what changes are needed
+              required:
+                - feedback
+      responses:
+        200:
+          description: Changes requested on plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Week"
+        400:
+          description: Feedback is required
+        403:
+          description: Not authorized (not the accountable person)
+        404:
+          description: Sprint not found
+  /weeks/{id}/request-retro-changes:
+    post:
+      tags:
+        - Weeks
+      summary: Request changes on sprint retro
+      description: Request changes on the sprint retro. Requires feedback text explaining what needs to change. Sets review_approval.state to changes_requested.
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    description: UUID identifier
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                feedback:
+                  type: string
+                  minLength: 1
+                  description: Feedback explaining what changes are needed
+              required:
+                - feedback
+      responses:
+        200:
+          description: Changes requested on retro
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Week"
+        400:
+          description: Feedback is required
+        403:
+          description: Not authorized (not the accountable person)
         404:
           description: Sprint not found
   /weeks/{id}/scope-changes:
@@ -5077,6 +5865,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -5185,6 +5974,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: false
+                    description: UUID identifier
                     name: sprint_id
                     in: query
         - schema:
@@ -5193,6 +5983,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: false
+                    description: UUID identifier
                     name: author_id
                     in: query
         - schema:
@@ -5241,6 +6032,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -5264,6 +6056,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -5294,6 +6087,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -5303,6 +6097,38 @@ paths:
           description: Forbidden - only author or admin can delete
         404:
           description: Standup not found
+  /team/reviews:
+    get:
+      tags:
+        - Team
+      summary: Get manager review grid
+      description: Get person-by-week matrix of plan approval status, review approval status, and performance ratings.
+      operationId: get_team_reviews
+      parameters:
+        - schema:
+                      type: integer
+                      minimum: 1
+                      maximum: 20
+                      description: "Number of weeks to include (default: 5)"
+                    required: false
+                    description: "Number of weeks to include (default: 5)"
+                    name: sprint_count
+                    in: query
+        - schema:
+                      type: boolean
+                      nullable: true
+                    required: false
+                    name: showArchived
+                    in: query
+      responses:
+        200:
+          description: Manager review grid data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewsResponse"
+        403:
+          description: Admin access required
   /team/grid:
     get:
       tags:
@@ -5315,6 +6141,7 @@ paths:
                       nullable: true
                       description: "Start of sprint range (default: current - 7)"
                     required: false
+                    description: "Start of sprint range (default: current - 7)"
                     name: fromSprint
                     in: query
         - schema:
@@ -5322,6 +6149,7 @@ paths:
                       nullable: true
                       description: "End of sprint range (default: current + 7)"
                     required: false
+                    description: "End of sprint range (default: current + 7)"
                     name: toSprint
                     in: query
         - schema:
@@ -5329,6 +6157,7 @@ paths:
                       nullable: true
                       description: Include archived team members
                     required: false
+                    description: Include archived team members
                     name: includeArchived
                     in: query
       responses:
@@ -5373,6 +6202,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -5396,6 +6226,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -5438,6 +6269,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -5458,6 +6290,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -5542,6 +6375,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -5583,6 +6417,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -5613,6 +6448,7 @@ paths:
                       description: Search query
                       example: john
                     required: true
+                    description: Search query
                     name: q
                     in: query
       responses:
@@ -5633,6 +6469,7 @@ paths:
                       type: string
                       description: Search query
                     required: true
+                    description: Search query
                     name: q
                     in: query
         - schema:
@@ -5641,6 +6478,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: false
+                    description: UUID identifier
                     name: program_id
                     in: query
         - schema:
@@ -5686,6 +6524,7 @@ paths:
                         - weekly_review
                       description: Filter by document type
                     required: false
+                    description: Filter by document type
                     name: type
                     in: query
         - schema:
@@ -5783,6 +6622,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: fileId
                     in: path
       requestBody:
@@ -5819,6 +6659,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: fileId
                     in: path
       responses:
@@ -5842,6 +6683,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: fileId
                     in: path
       responses:
@@ -5866,6 +6708,7 @@ paths:
                         - sprint
                       description: Type of entity to get activity for
                     required: true
+                    description: Type of entity to get activity for
                     name: entityType
                     in: path
         - schema:
@@ -5874,6 +6717,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: entityId
                     in: path
       responses:
@@ -6001,6 +6845,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -6021,6 +6866,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -6047,6 +6893,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -6094,6 +6941,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -6119,6 +6967,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       requestBody:
@@ -6168,6 +7017,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
         - schema:
@@ -6176,6 +7026,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: relatedId
                     in: path
       responses:
@@ -6196,6 +7047,7 @@ paths:
                       description: UUID identifier
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: true
+                    description: UUID identifier
                     name: id
                     in: path
       responses:
@@ -6224,6 +7076,7 @@ paths:
                         - retro
                       description: Type of context to fetch
                     required: true
+                    description: Type of context to fetch
                     name: context_type
                     in: query
         - schema:
@@ -6232,6 +7085,7 @@ paths:
                       description: Required for standup and review context
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: false
+                    description: Required for standup and review context
                     name: sprint_id
                     in: query
         - schema:
@@ -6240,6 +7094,7 @@ paths:
                       description: Required for retro context
                       example: 550e8400-e29b-41d4-a716-446655440000
                     required: false
+                    description: Required for retro context
                     name: project_id
                     in: query
       responses:
@@ -6267,6 +7122,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MyWorkResponse"
+  /dashboard/my-focus:
+    get:
+      tags:
+        - Dashboard
+      summary: Get my project focus for the current week
+      description: "Returns the current user's project context: allocated projects, current and previous week plans with parsed items, and recent issue activity."
+      responses:
+        200:
+          description: Project focus data for the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyFocusResponse"
+        404:
+          description: Person not found for current user
   /accountability/action-items:
     get:
       tags:
@@ -6280,3 +7150,187 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountabilityActionItemsResponse"
+  /api/documents/{id}/comments:
+    get:
+      operationId: list_document_comments
+      summary: List comments for a document
+      tags:
+        - Comments
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    description: UUID identifier
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: List of comments grouped by thread
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommentResponse"
+    post:
+      operationId: create_document_comment
+      summary: Create a comment on a document
+      tags:
+        - Comments
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    description: UUID identifier
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateComment"
+      responses:
+        201:
+          description: Created comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentResponse"
+  /api/comments/{id}:
+    patch:
+      operationId: update_comment
+      summary: Update a comment (edit content or resolve/un-resolve)
+      tags:
+        - Comments
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    description: UUID identifier
+                    name: id
+                    in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateComment"
+      responses:
+        200:
+          description: Updated comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentResponse"
+    delete:
+      operationId: delete_comment
+      summary: Delete a comment
+      tags:
+        - Comments
+      parameters:
+        - schema:
+                      type: string
+                      format: uuid
+                      description: UUID identifier
+                      example: 550e8400-e29b-41d4-a716-446655440000
+                    required: true
+                    description: UUID identifier
+                    name: id
+                    in: path
+      responses:
+        200:
+          description: Comment deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    enum:
+                      - true
+                required:
+                  - success
+  /ai/status:
+    get:
+      tags:
+        - AI
+      summary: Check AI analysis availability
+      description: Returns whether the AI analysis service is available (Bedrock client initialized).
+      responses:
+        200:
+          description: AI availability status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiStatus"
+  /ai/analyze-plan:
+    post:
+      tags:
+        - AI
+      summary: Analyze weekly plan quality
+      description: Evaluates plan items for verifiability (falsifiability) and workload. Returns per-item scores and feedback. Advisory only — does not block plan submission.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: object
+                  additionalProperties:
+                    nullable: true
+                  description: TipTap JSON content of the weekly plan
+              required:
+                - content
+      responses:
+        200:
+          description: "Plan analysis result (or {error: \"ai_unavailable\"} if service is down)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanAnalysisResult"
+        429:
+          description: Rate limit exceeded (max 10 per hour)
+  /ai/analyze-retro:
+    post:
+      tags:
+        - AI
+      summary: Analyze weekly retro quality
+      description: Compares retro against plan for coverage and evidence. Returns per-item mapping and suggestions. Advisory only — does not block retro submission.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retro_content:
+                  type: object
+                  additionalProperties:
+                    nullable: true
+                  description: TipTap JSON content of the weekly retro
+                plan_content:
+                  type: object
+                  additionalProperties:
+                    nullable: true
+                  description: TipTap JSON content of the weekly plan for comparison
+              required:
+                - retro_content
+                - plan_content
+      responses:
+        200:
+          description: "Retro analysis result (or {error: \"ai_unavailable\"} if service is down)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetroAnalysisResult"
+        429:
+          description: Rate limit exceeded (max 10 per hour)

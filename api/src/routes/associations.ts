@@ -10,7 +10,7 @@ const router: RouterType = Router();
 const createAssociationSchema = z.object({
   related_id: z.string().uuid(),
   relationship_type: z.enum(['parent', 'project', 'sprint', 'program']),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 // Check if user can access document
@@ -97,7 +97,7 @@ router.post('/:id/associations', authMiddleware, async (req: Request, res: Respo
     // Validate input
     const parseResult = createAssociationSchema.safeParse(req.body);
     if (!parseResult.success) {
-      return res.status(400).json({ error: 'Invalid input', details: parseResult.error.errors });
+      return res.status(400).json({ error: 'Invalid input', details: parseResult.error.issues });
     }
 
     const { related_id, relationship_type, metadata } = parseResult.data;

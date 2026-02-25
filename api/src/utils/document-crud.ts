@@ -6,20 +6,13 @@
  */
 
 import { pool } from '../db/client.js';
+import type { BelongsTo } from '@ship/shared';
 
 // =============================================================================
 // Types
 // =============================================================================
 
-/**
- * Represents a belongs_to association entry from document_associations table
- */
-export interface BelongsToEntry {
-  id: string;
-  type: 'program' | 'project' | 'sprint' | 'parent';
-  title?: string;
-  color?: string;
-}
+export type BelongsToEntry = BelongsTo;
 
 /**
  * Fields that are tracked in document_history for audit trail

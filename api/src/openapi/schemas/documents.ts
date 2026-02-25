@@ -4,21 +4,11 @@
 
 import { z, registry } from '../registry.js';
 import { UuidSchema, DateTimeSchema, BelongsToResponseSchema } from './common.js';
+import { DocumentTypeSchema as SharedDocumentTypeSchema } from '@ship/shared';
 
 // ============== Document Types ==============
 
-export const DocumentTypeSchema = z.enum([
-  'wiki',
-  'issue',
-  'program',
-  'project',
-  'sprint',
-  'person',
-  'weekly_plan',
-  'weekly_retro',
-  'standup',
-  'weekly_review',
-]).openapi({
+export const DocumentTypeSchema = SharedDocumentTypeSchema.openapi({
   description: 'Type of document',
 });
 
@@ -30,10 +20,10 @@ export const BaseDocumentSchema = z.object({
   id: UuidSchema.openapi({ description: 'Document ID' }),
   title: z.string().openapi({ description: 'Document title' }),
   document_type: DocumentTypeSchema,
-  content: z.record(z.unknown()).nullable().openapi({
+  content: z.record(z.string(), z.unknown()).nullable().openapi({
     description: 'TipTap JSON content',
   }),
-  properties: z.record(z.unknown()).openapi({
+  properties: z.record(z.string(), z.unknown()).openapi({
     description: 'Type-specific properties (see individual document type schemas)',
   }),
   parent_id: UuidSchema.nullable().optional().openapi({
@@ -68,10 +58,10 @@ export const CreateDocumentSchema = z.object({
     description: 'Document title. Defaults to "Untitled".',
   }),
   document_type: DocumentTypeSchema,
-  content: z.record(z.unknown()).optional().openapi({
+  content: z.record(z.string(), z.unknown()).optional().openapi({
     description: 'TipTap JSON content',
   }),
-  properties: z.record(z.unknown()).optional().openapi({
+  properties: z.record(z.string(), z.unknown()).optional().openapi({
     description: 'Type-specific properties',
   }),
   parent_id: UuidSchema.nullable().optional().openapi({
@@ -86,8 +76,8 @@ registry.register('CreateDocument', CreateDocumentSchema);
 
 export const UpdateDocumentSchema = z.object({
   title: z.string().min(1).max(500).optional(),
-  content: z.record(z.unknown()).optional(),
-  properties: z.record(z.unknown()).optional(),
+  content: z.record(z.string(), z.unknown()).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
   parent_id: UuidSchema.nullable().optional(),
   visibility: z.enum(['private', 'workspace']).optional(),
 }).openapi('UpdateDocument');
