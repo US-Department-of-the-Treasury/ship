@@ -72,8 +72,12 @@ router.get('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { url, state, nonce, codeVerifier } = await getAuthorizationUrl();
 
+    // Validate and capture returnTo for post-login redirect
+    const returnTo = req.query.returnTo;
+    const validReturnTo = typeof returnTo === 'string' && isValidReturnTo(returnTo) ? returnTo : undefined;
+
     // Store OAuth state in database (survives server restarts)
-    await storeOAuthState(state, nonce, codeVerifier);
+    await storeOAuthState(state, nonce, codeVerifier, validReturnTo);
 
     res.json({
       success: true,
@@ -128,7 +132,7 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const { nonce: caiaNonce, codeVerifier } = oauthState;
+  const { nonce: caiaNonce, codeVerifier, returnTo: storedReturnTo } = oauthState;
 
   try {
     const { user: userInfo } = await handleCallback(
@@ -309,11 +313,10 @@ router.get('/callback', async (req: Request, res: Response): Promise<void> => {
       path: '/',
     });
 
-    // Get returnTo from query param (preserved through OAuth flow)
-    const returnTo = req.query.returnTo;
+    // Get returnTo from OAuth state (preserved through the flow)
     let redirectUrl = '/';
-    if (typeof returnTo === 'string' && isValidReturnTo(returnTo)) {
-      redirectUrl = returnTo;
+    if (storedReturnTo && isValidReturnTo(storedReturnTo)) {
+      redirectUrl = storedReturnTo;
     }
 
     // Redirect to app (OAuth state was already consumed from database above)

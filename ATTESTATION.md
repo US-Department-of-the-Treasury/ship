@@ -1,9 +1,9 @@
 ---
 title: Open Source Security Review Attestation
-date: 2026-02-21
-timestamp: 2026-02-21T14:53:24Z
-reviewer: Sam Corcos
-reviewer_email: samuel.corcos@treasury.gov
+date: 2026-02-23
+timestamp: 2026-02-23T16:29:40Z
+reviewer: Kneuman0
+reviewer_email: kylepneuman@gmail.com
 reviewer_title: Security Reviewer
 scan_result: PASS
 ---
@@ -12,7 +12,7 @@ scan_result: PASS
 
 ## Summary
 
-I, **Sam Corcos**, as **Security Reviewer**, have conducted a security review of this code and confirm that:
+I, **Kneuman0**, as **Security Reviewer**, have conducted a security review of this code and confirm that:
 
 - It contains no sensitive information
 - It contains no embedded credentials or secrets
@@ -24,7 +24,7 @@ I, **Sam Corcos**, as **Security Reviewer**, have conducted a security review of
 
 | Item | Value |
 |------|-------|
-| Review Date | 2026-02-21 |
+| Review Date | 2026-02-23 |
 | Scan Result | PASS |
 
 ### Scanning Tools Used
@@ -48,10 +48,10 @@ This attestation satisfies the security review requirements for open-source rele
 
 I attest that the above statements are accurate as of the date of this review.
 
-**Reviewer:** Sam Corcos
+**Reviewer:** Kneuman0
 **Title:** Security Reviewer
-**Email:** samuel.corcos@treasury.gov
-**Date:** 2026-02-21
+**Email:** kylepneuman@gmail.com
+**Date:** 2026-02-23
 
 ---
 *Full attestation history: `git log -p ATTESTATION.md`*
